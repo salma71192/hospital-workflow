@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Reception Dashboard</title>
+
+<style>
+
+body{
+margin:0;
+font-family:Arial;
+}
+
+.container{
+display:flex;
+height:100vh;
+}
+
+.sidebar{
+width:250px;
+background:#2c3e50;
+color:white;
+padding:20px;
+}
+
+.sidebar h2{
+margin-bottom:30px;
+}
+
+.sidebar button{
+display:block;
+width:100%;
+padding:10px;
+margin-bottom:10px;
+border:none;
+background:#34495e;
+color:white;
+cursor:pointer;
+}
+
+.sidebar button:hover{
+background:#1abc9c;
+}
+
+.content{
+flex:1;
+padding:30px;
+}
+
+.panel{
+display:none;
+}
+
+.panel.active{
+display:block;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<!-- LEFT MENU -->
+
+<div class="sidebar">
+
+<h2>Reception</h2>
+
+<button onclick="showPanel('dashboard')">Dashboard</button>
+<button onclick="showPanel('search')">Search Patient</button>
+<button onclick="showPanel('register')">Register Patient</button>
+
+</div>
+
+
+<!-- RIGHT CONTENT -->
+
+<div class="content">
+
+
+<!-- DASHBOARD PANEL -->
+
+<div id="dashboard" class="panel active">
+
+<h1>Dashboard</h1>
+
+<p>Patients today: {{ patients_today }}</p>
+<p>Patients this month: {{ patients_month }}</p>
+
+</div>
+
+
+<!-- SEARCH PANEL -->
+
+<div id="search" class="panel">
+
+<h2>Search Patient</h2>
+
+<form method="GET" action="/patients/search/">
+
+<input type="text" name="q" placeholder="Name or File Number">
+
+<button type="submit">Search</button>
+
+</form>
+
+</div>
+
+
+<!-- REGISTER PANEL -->
+
+<div id="register" class="panel">
+
+<h2>Register New Patient</h2>
+
+<form method="POST">
+
+{% csrf_token %}
+
+<input type="text" name="full_name" placeholder="Full Name" required>
+
+<br><br>
+
+<input type="text" name="file_number" placeholder="File Number" required>
+
+<br><br>
+
+<label>Assign Physiotherapist</label>
+
+<br>
+
+<select name="therapist">
+
+<option value="">Select Physio</option>
+
+{% for physio in physios %}
+<option value="{{ physio.id }}">{{ physio.username }}</option>
+{% endfor %}
+
+</select>
+
+<br><br>
+
+<button type="submit">Create Patient</button>
+
+</form>
+
+</div>
+
+
+</div>
+
+</div>
+
+
+<script>
+
+function showPanel(panel){
+
+document.querySelectorAll('.panel').forEach(p=>{
+p.classList.remove('active')
+})
+
+document.getElementById(panel).classList.add('active')
+
+}
+
+</script>
+
+</body>
+
+</html>

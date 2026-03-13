@@ -1,0 +1,9 @@
+<h1>Assign Session for {{ patient.full_name }}</h1>
+
+<form method="POST">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Assign Session</button>
+</form>
+
+<a href="{% url 'patient_profile' patient.id %}">Back to Profile</a>

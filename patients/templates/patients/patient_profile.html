@@ -1,0 +1,33 @@
+<h1>Patient Profile</h1>
+
+<p><strong>File Number:</strong> {{ patient.file_number }}</p>
+<p><strong>Name:</strong> {{ patient.full_name }}</p>
+<p><strong>Created by:</strong> {{ patient.created_by }}</p>
+
+<h2>Sessions</h2>
+
+<table border="1" cellpadding="5">
+<tr>
+<th>Date</th>
+<th>Physiotherapist</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+
+{% for session in sessions %}
+<tr>
+<td>{{ session.session_date }}</td>
+<td>{{ session.therapist }}</td>
+<td>{{ session.status }}</td>
+<td>
+<a href="{% url 'assign_session' patient.id %}">Assign New Session</a>
+</td>
+</tr>
+{% empty %}
+<tr>
+<td colspan="4">No sessions yet</td>
+</tr>
+{% endfor %}
+</table>
+
+<a href="{% url 'search_patient' %}">Back to search</a>
