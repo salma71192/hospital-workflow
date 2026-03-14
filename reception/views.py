@@ -7,8 +7,8 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 
-@role_required(['reception'])
-def reception_dashboard(request):
+# @role_required(['reception'])
+def dashboard(request):
 
     today = timezone.now().date()
 
