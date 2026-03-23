@@ -64,6 +64,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'users.middleware.RoleRedirectMiddleware',  # <-- add this
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -142,7 +143,6 @@ STATIC_URL = 'static/'
 
 AUTH_USER_MODEL = 'users.User'
 
-LOGIN_URL = '/accounts/login/'       # Where Django sends users if they’re not logged in
-LOGIN_REDIRECT_URL = '/dashboard/'   # After login, go to dashboard
-LOGOUT_REDIRECT_URL = '/'             # After logout, go to home
-
+LOGOUT_REDIRECT_URL = '/accounts/login/'
+LOGIN_URL = '/accounts/login/'
+LOGIN_REDIRECT_URL = '/dashboard/'
