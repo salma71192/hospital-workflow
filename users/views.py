@@ -5,7 +5,8 @@ from django.contrib.auth.decorators import login_required
 @login_required
 def dashboard_redirect(request):
     user = request.user
-
+    if user.is_superuser:
+        return redirect('/admin-panel/')  # Use your actual admin URL
     # Check role first
     if user.role == 'reception':
         return redirect('reception_dashboard')
