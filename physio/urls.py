@@ -1,6 +1,7 @@
+# physio/urls.py
 from django.urls import path
-from . import views
+from . import views  # import views locally
 
 urlpatterns = [
-    path('', views.dashboard, name='physio_dashboard'),
+    path('', views.physio_dashboard, name='physio_dashboard'),
 ]

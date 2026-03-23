@@ -33,3 +33,4 @@ def dashboard(request):
     }
 
     return render(request, "reception/dashboard.html", context)
+

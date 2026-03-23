@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Create New User</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 40px auto;
+        }
+        h2 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        form {
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px 12px;
+            margin: 6px 0 16px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .errorlist {
+            color: red;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Create New User</h2>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        
+        <label for="id_username">Username:</label>
+        {{ form.username.errors }}
+        {{ form.username }}
+
+        <label for="id_email">Email:</label>
+        {{ form.email.errors }}
+        {{ form.email }}
+
+        <label for="id_password">Password:</label>
+        {{ form.password.errors }}
+        {{ form.password }}
+
+        <label for="id_confirm_password">Confirm Password:</label>
+        {{ form.confirm_password.errors }}
+        {{ form.confirm_password }}
+
+        <label for="id_role">Role:</label>
+        {{ form.role.errors }}
+        {{ form.role }}
+
+        <button type="submit">Create User</button>
+    </form>
+</body>
+</html>

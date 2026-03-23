@@ -1,6 +1,12 @@
-# <app>/views.py
 from django.shortcuts import render
-from django.http import HttpResponse
+from users.decorators import role_required
 
-def dashboard(request):
-    return HttpResponse("<h1>Visitors Dashboard</h1>")  # main dashboard for Visitors
+@role_required(['visitors'])
+def visitors_dashboard(request):
+    # Add your dashboard logic here
+    # Example: list visitor logs or appointments
+    visitors_data = []  # Replace with real query
+    context = {
+        'visitors_data': visitors_data,
+    }
+    return render(request, "visitors/dashboard.html", context)

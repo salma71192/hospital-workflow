@@ -18,8 +18,9 @@ urlpatterns = [
     path('accounts/logout/', auth_views.LogoutView.as_view(next_page='/'), name='logout'),
     path('dashboard/', dashboard_redirect, name='dashboard_redirect'),
     path('admin-panel/', admin.site.urls),
+    path('users/', include('users.urls')),  # <--- include the user creation URL
     path('reception/', include('reception.urls')),
-    path('physio/', include('physio.urls')),
+    path('physio/', include('physio.urls')),  # Include the physio app
     path('callcenter/', include('callcenter.urls')),
     path('approvals/', include('approvals.urls')),
     path('rcm/', include('rcm.urls')),
