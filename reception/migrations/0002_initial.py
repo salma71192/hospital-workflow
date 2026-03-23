@@ -10,15 +10,16 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ("patients", "0001_initial"),
+        ("reception", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name="patient",
-            name="created_by",
+            model_name="therapysession",
+            name="therapist",
             field=models.ForeignKey(
+                limit_choices_to={"role": "physiotherapist"},
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
                 to=settings.AUTH_USER_MODEL,

@@ -1,0 +1,23 @@
+{
+  "name": "Django Hospital Workflow",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+
+  "features": {
+    "ghcr.io/devcontainers/features/postgres:1": {
+      "version": "15"
+    }
+  },
+
+  "postCreateCommand": "pip install -r requirements.txt",
+
+  "postStartCommand": "python manage.py migrate",
+
+  "forwardPorts": [8000],
+
+  "portsAttributes": {
+    "8000": {
+      "label": "Django Server",
+      "onAutoForward": "openBrowser"
+    }
+  }
+}
