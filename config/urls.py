@@ -14,9 +14,8 @@ from users.views import dashboard_redirect  # import the view
 
 urlpatterns = [
     path('', root_redirect),  # <--- this makes http://localhost:8000/ work
-    path('accounts/login/', auth_views.LoginView.as_view(template_name='users/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),  # uses LOGOUT_REDIRECT_URL
-
+    path('api/users/', include('users.api_urls')),
     path('dashboard/', dashboard_redirect, name='dashboard_redirect'),
     path('admin-panel/', admin.site.urls),
     path('users/', include('users.urls')),  # <--- include the user creation URL
