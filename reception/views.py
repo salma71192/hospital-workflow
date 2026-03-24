@@ -32,5 +32,5 @@ def dashboard(request):
         "physios": physios,
     }
 
-    return render(request, "reception/dashboard.html", context)
+ #   return render(request, "reception/dashboard.html", context)
 
