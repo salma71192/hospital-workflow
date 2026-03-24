@@ -1,21 +1,15 @@
-import { useNavigate } from 'react-router-dom';
-import api from '../api/api';
+import React from "react";
+import LogoutButton from "./LogoutButton";
 
-export default function LogoutButton() {
-  const navigate = useNavigate();
-
-  const handleLogout = async () => {
-    try {
-      await api.post('users/logout/');
-      navigate('/login');  // redirect to React login page
-    } catch (error) {
-      console.error('Logout failed');
-    }
-  };
-
+export default function Sidebar({ onSelectPanel, user }) {
   return (
-    <button onClick={handleLogout} style={{ background: 'red', color: 'white' }}>
-      Logout
-    </button>
+    <div className="sidebar">
+      <h2>Reception</h2>
+      <p className="welcome">Welcome, {user.username}!</p>
+      <button onClick={() => onSelectPanel("dashboard")}>Dashboard</button>
+      <button onClick={() => onSelectPanel("search")}>Search Patient</button>
+      <button onClick={() => onSelectPanel("register")}>Register Patient</button>
+      <LogoutButton />
+    </div>
   );
 }
