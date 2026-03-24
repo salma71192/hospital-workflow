@@ -43,7 +43,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     'rest_framework',  # Django REST Framework
-    'corsheaders'
     'users',
     'patients',
     'approvals',
@@ -54,6 +53,8 @@ INSTALLED_APPS = [
     'visitors',
     'admin_panel'
 ]
+
+INSTALLED_APPS += ['corsheaders']
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
