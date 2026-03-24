@@ -10,26 +10,18 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    if (!username || !password) {
-      alert("Please enter username and password");
-      return;
-    }
-
     try {
       const res = await api.post("users/login/", { username, password });
 
       if (res.data.success) {
         // ROLE-BASED REDIRECT
-        const role = res.data.role;
-        if (res.data.is_superuser) navigate("/admin");
-        else if (role === "reception") navigate("/reception");
-        else if (role === "physiotherapist") navigate("/physio");
-        else if (role === "callcenter") navigate("/callcenter");
-        else if (role === "approvals") navigate("/approvals");
-        else if (role === "rcm") navigate("/rcm");
+        if (res.data.is_superuser) navigate("/admin-panel");
+        else if (res.data.role === "reception") navigate("/reception");
+        else if (res.data.role === "physiotherapist") navigate("/physio");
+        else if (res.data.role === "callcenter") navigate("/callcenter");
+        else if (res.data.role === "approvals") navigate("/approvals");
+        else if (res.data.role === "rcm") navigate("/rcm");
         else navigate("/visitors");
-      } else {
-        alert("Invalid credentials");
       }
     } catch (err) {
       alert("Invalid credentials");
@@ -37,24 +29,19 @@ export default function Login() {
   };
 
   return (
-    <div className="login-container">
+    <div>
       <h1>Hospital Login</h1>
       <form onSubmit={handleLogin}>
         <input
-          type="text"
-          name="username"
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          required
         />
         <input
           type="password"
-          name="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          required
         />
         <button type="submit">Login</button>
       </form>
