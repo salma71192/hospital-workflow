@@ -1,18 +1,20 @@
-# config/urls.py
 from django.contrib import admin
-from django.urls import path, re_path, include
+from django.urls import path, include, re_path
 from django.views.generic import TemplateView
 
 urlpatterns = [
     # Admin
     path("admin-panel/", admin.site.urls),
 
-    # API endpoints
+    # API
     path("api/users/", include("users.api_urls")),
     path("api/patients/", include("patients.api_urls")),
 
-    # React frontend catch-all routes
-    path("", TemplateView.as_view(template_name="index.html")),  # root
-    re_path(r"^(reception|physio|callcenter|approvals|rcm|visitors)/.*$", 
-            TemplateView.as_view(template_name="index.html")),  # all React routes
+    # React app
+    path("", TemplateView.as_view(template_name="index.html")),
+
+    re_path(
+        r"^(reception|physio|callcenter|approvals|rcm|visitors)/.*$",
+        TemplateView.as_view(template_name="index.html"),
+    ),
 ]
