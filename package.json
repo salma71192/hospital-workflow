@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "react-scripts": "^5.0.1",
+    "vite": "^8.0.2"
+  }
+}

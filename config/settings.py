@@ -1,7 +1,9 @@
+# config/settings.py
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Load .env variables
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -11,12 +13,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ======================
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key")
 DEBUG = True
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]  # Codespaces requires '*' for public ports
 
 # ======================
 # INSTALLED APPS
 # ======================
 INSTALLED_APPS = [
+    "corsheaders",  # MUST be first for CORS
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -25,7 +28,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
 
     "rest_framework",
-    "corsheaders",
 
     "users",
     "patients",
@@ -41,7 +43,7 @@ INSTALLED_APPS = [
 # MIDDLEWARE
 # ======================
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
+    "corsheaders.middleware.CorsMiddleware",  # must be first
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -59,7 +61,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "frontend" / "build"],
+        "DIRS": [BASE_DIR / "frontend" / "build"],  # React build directory
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -96,10 +98,7 @@ AUTH_USER_MODEL = "users.User"
 # STATIC FILES (React)
 # ======================
 STATIC_URL = "/static/"
-
-STATICFILES_DIRS = [
-    BASE_DIR / "frontend" / "build" / "static",
-]
+STATICFILES_DIRS = [BASE_DIR / "frontend" / "build" / "static"]
 
 # ======================
 # DRF
@@ -114,12 +113,29 @@ REST_FRAMEWORK = {
 }
 
 # ======================
-# CORS / CSRF
+# CORS
 # ======================
-CORS_ALLOWED_ORIGINS = ["http://localhost:3000"]
+CORS_ALLOWED_ORIGINS = [
+    "https://miniature-train-4qrjjq6wvwhqwwr-3000.app.github.dev",
+    "https://miniature-train-4qrjjq6wvwhqwwr-3001.app.github.dev",
+]
+
 CORS_ALLOW_CREDENTIALS = True
 
-CSRF_TRUSTED_ORIGINS = ["http://localhost:3000"]
+# Allow headers that Axios sends
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",  # very important for JSON
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+CORS_ALLOW_METHODS = ["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"]
 
 # ======================
 # LOGIN SETTINGS

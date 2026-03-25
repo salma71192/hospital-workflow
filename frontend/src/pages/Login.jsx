@@ -1,6 +1,5 @@
-// src/pages/Login.jsx
 import { useState } from "react";
-import api from "../api/api"; // Axios instance
+import api from "../api/api";
 import { useNavigate } from "react-router-dom";
 
 export default function Login() {
@@ -17,24 +16,14 @@ export default function Login() {
       const res = await api.post("users/login/", { username, password });
 
       if (res.data.success) {
-        // Role-based redirect
-        if (res.data.is_superuser) {
-          navigate("/admin-panel");
-        } else if (res.data.role === "reception") {
-          navigate("/reception");
-        } else if (res.data.role === "physiotherapist") {
-          navigate("/physio");
-        } else if (res.data.role === "callcenter") {
-          navigate("/callcenter");
-        } else if (res.data.role === "approvals") {
-          navigate("/approvals");
-        } else if (res.data.role === "rcm") {
-          navigate("/rcm");
-        } else if (res.data.role === "visitors") {
-          navigate("/visitors");
-        } else {
-          navigate("/"); // fallback
-        }
+        if (res.data.is_superuser) navigate("/admin-panel");
+        else if (res.data.role === "reception") navigate("/reception");
+        else if (res.data.role === "physiotherapist") navigate("/physio");
+        else if (res.data.role === "callcenter") navigate("/callcenter");
+        else if (res.data.role === "approvals") navigate("/approvals");
+        else if (res.data.role === "rcm") navigate("/rcm");
+        else if (res.data.role === "visitors") navigate("/visitors");
+        else navigate("/"); // fallback
       } else {
         setError("Invalid credentials");
       }
@@ -65,7 +54,9 @@ export default function Login() {
             style={styles.input}
             required
           />
-          <button type="submit" style={styles.button}>Login</button>
+          <button type="submit" style={styles.button}>
+            Login
+          </button>
           {error && <p style={styles.error}>{error}</p>}
         </form>
       </div>
@@ -73,7 +64,6 @@ export default function Login() {
   );
 }
 
-// Simple inline styles
 const styles = {
   container: {
     display: "flex",

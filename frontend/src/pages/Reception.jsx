@@ -1,17 +1,39 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../api/api';
 import { useNavigate } from 'react-router-dom';
 
-export default function Reception() {
+export default function Reception({ physios = [] }) {
+  const [user, setUser] = useState(null);
   const [activePanel, setActivePanel] = useState('dashboard');
-  const [patientsToday, setPatientsToday] = useState(0);
-  const [patientsMonth, setPatientsMonth] = useState(0);
+
+  const [patientsToday] = useState(0);
+  const [patientsMonth] = useState(0);
+
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [fullName, setFullName] = useState('');
   const [fileNumber, setFileNumber] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+
+  const [searchFileNumber, setSearchFileNumber] = useState('');
+  const [foundPatient, setFoundPatient] = useState(null);
+  const [assignPhysioId, setAssignPhysioId] = useState('');
 
   const navigate = useNavigate();
+
+  // ✅ FETCH LOGGED-IN USER
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await api.get('users/me/');
+        setUser(res.data);
+      } catch (err) {
+        console.error(err);
+        navigate('/login');
+      }
+    };
+
+    fetchUser();
+  }, []);
 
   // Logout
   const handleLogout = async () => {
@@ -19,51 +41,86 @@ export default function Reception() {
     navigate('/login');
   };
 
-  // Create patient
+  // Search (general)
+  const handleSearch = (e) => {
+    e.preventDefault();
+    navigate(`/search?q=${searchQuery}`);
+  };
+
+  // Register Patient
   const handleCreatePatient = async (e) => {
     e.preventDefault();
-
     try {
       await api.post('patients/create/', {
         full_name: fullName,
         file_number: fileNumber,
       });
 
-      alert('Patient created');
+      alert(`✅ Patient "${fullName}" registered`);
       setFullName('');
       setFileNumber('');
-    } catch (err) {
+    } catch {
       alert('Error creating patient');
     }
   };
 
-  // Search patient
-  const handleSearch = async (e) => {
+  // Assign - search
+  const handleSearchPatient = async (e) => {
     e.preventDefault();
-    navigate(`/search?q=${searchQuery}`);
+    try {
+      const res = await api.get(`patients/search/?file_number=${searchFileNumber}`);
+
+      if (res.data.length > 0) {
+        setFoundPatient(res.data[0]);
+      } else {
+        setFoundPatient(null);
+        alert('Patient not found');
+      }
+    } catch {
+      alert('Error searching');
+    }
+  };
+
+  // Assign physio
+  const handleAssignPhysio = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post(`patients/${foundPatient.id}/assign_physio/`, {
+        physiotherapist_id: assignPhysioId,
+      });
+
+      alert('Assigned successfully');
+      setFoundPatient(null);
+      setSearchFileNumber('');
+    } catch {
+      alert('Error assigning');
+    }
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh' }}>
-
+    <div style={styles.container}>
       {/* Sidebar */}
-      <div style={{ width: '250px', background: '#2c3e50', color: 'white', padding: '20px' }}>
+      <div style={styles.sidebar}>
         <h2>Reception</h2>
-        <p>Welcome!</p>
 
-        <button onClick={() => setActivePanel('dashboard')}>Dashboard</button>
-        <button onClick={() => setActivePanel('search')}>Search Patient</button>
-        <button onClick={() => setActivePanel('register')}>Register Patient</button>
+        {/* ✅ USER NAME HERE */}
+        <p style={styles.welcome}>
+          Welcome back, <strong>{user?.username || '...'}</strong> 👋
+        </p>
 
-        <button onClick={handleLogout} style={{ background: 'red', color: 'white', marginTop: '20px' }}>
+        <button style={styles.button} onClick={() => setActivePanel('dashboard')}>Dashboard</button>
+        <button style={styles.button} onClick={() => setActivePanel('search')}>Search Patient</button>
+        <button style={styles.button} onClick={() => setActivePanel('assign')}>Assign Patient</button>
+        <button style={styles.button} onClick={() => setActivePanel('register')}>Register Patient</button>
+
+        <button style={{ ...styles.button, ...styles.logout }} onClick={handleLogout}>
           Logout
         </button>
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, padding: '30px' }}>
+      <div style={styles.content}>
 
-        {/* Dashboard */}
         {activePanel === 'dashboard' && (
           <div>
             <h1>Dashboard</h1>
@@ -72,46 +129,81 @@ export default function Reception() {
           </div>
         )}
 
-        {/* Search */}
         {activePanel === 'search' && (
+          <form onSubmit={handleSearch}>
+            <input style={styles.input} value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search..." />
+            <button style={styles.submitButton}>Search</button>
+          </form>
+        )}
+
+        {activePanel === 'assign' && (
           <div>
-            <h2>Search Patient</h2>
-            <form onSubmit={handleSearch}>
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Name or File Number"
+            <h2>Assign Patient</h2>
+
+            <form onSubmit={handleSearchPatient}>
+              <input style={styles.input}
+                placeholder="File Number"
+                value={searchFileNumber}
+                onChange={(e) => setSearchFileNumber(e.target.value)}
               />
-              <button type="submit">Search</button>
+              <button style={styles.submitButton}>Search</button>
             </form>
+
+            {foundPatient && (
+              <form onSubmit={handleAssignPhysio}>
+                <p>{foundPatient.full_name}</p>
+
+                <select style={styles.input}
+                  value={assignPhysioId}
+                  onChange={(e) => setAssignPhysioId(e.target.value)}>
+
+                  <option value="">Select Physio</option>
+                  {physios.map(p => (
+                    <option key={p.id} value={p.id}>{p.username}</option>
+                  ))}
+                </select>
+
+                <button style={styles.submitButton}>Assign</button>
+              </form>
+            )}
           </div>
         )}
 
-        {/* Register */}
         {activePanel === 'register' && (
-          <div>
-            <h2>Register Patient</h2>
-            <form onSubmit={handleCreatePatient}>
-              <input
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Full Name"
-                required
-              />
-              <br /><br />
-              <input
-                value={fileNumber}
-                onChange={(e) => setFileNumber(e.target.value)}
-                placeholder="File Number"
-                required
-              />
-              <br /><br />
-              <button type="submit">Create Patient</button>
-            </form>
-          </div>
+          <form onSubmit={handleCreatePatient}>
+            <input style={styles.input}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Full Name" />
+
+            <br /><br />
+
+            <input style={styles.input}
+              value={fileNumber}
+              onChange={(e) => setFileNumber(e.target.value)}
+              placeholder="File Number" />
+
+            <br /><br />
+
+            <button style={styles.submitButton}>Create</button>
+          </form>
         )}
 
       </div>
     </div>
   );
 }
+
+// Styles
+const styles = {
+  container: { display: 'flex', height: '100vh' },
+  sidebar: { width: '250px', background: '#2c3e50', color: 'white', padding: '20px' },
+  welcome: { marginBottom: '20px' },
+  button: { display: 'block', width: '100%', padding: '10px', marginBottom: '10px', background: '#34495e', color: 'white', border: 'none' },
+  logout: { background: '#e74c3c' },
+  content: { flex: 1, padding: '30px' },
+  input: { padding: '10px', width: '100%' },
+  submitButton: { padding: '10px', marginTop: '10px', background: '#1abc9c', color: 'white', border: 'none' },
+};
