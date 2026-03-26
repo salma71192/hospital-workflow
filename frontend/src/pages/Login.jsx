@@ -1,111 +1,32 @@
-import { useState } from "react";
-import api from "../api/api";
-import { useNavigate } from "react-router-dom";
+import React, { useState } from "react";
 
-export default function Login() {
+export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const navigate = useNavigate();
+  const [role, setRole] = useState("reception");
 
-  const handleLogin = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError("");
-
-    try {
-      const res = await api.post("users/login/", { username, password });
-
-      if (res.data.success) {
-        if (res.data.is_superuser) navigate("/admin-panel");
-        else if (res.data.role === "reception") navigate("/reception");
-        else if (res.data.role === "physiotherapist") navigate("/physio");
-        else if (res.data.role === "callcenter") navigate("/callcenter");
-        else if (res.data.role === "approvals") navigate("/approvals");
-        else if (res.data.role === "rcm") navigate("/rcm");
-        else if (res.data.role === "visitors") navigate("/visitors");
-        else navigate("/"); // fallback
-      } else {
-        setError("Invalid credentials");
-      }
-    } catch (err) {
-      console.error(err);
-      setError("Invalid credentials or server error");
-    }
+    onLogin(username, role);
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>Hospital Login</h1>
-        <form onSubmit={handleLogin} style={styles.form}>
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={styles.input}
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={styles.input}
-            required
-          />
-          <button type="submit" style={styles.button}>
-            Login
-          </button>
-          {error && <p style={styles.error}>{error}</p>}
-        </form>
-      </div>
+    <div style={{ padding: "50px" }}>
+      <h2>Login</h2>
+      <form onSubmit={handleSubmit}>
+        <input
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+        />
+        <br />
+        <select value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="reception">Reception</option>
+          <option value="physio">Physio</option>
+        </select>
+        <br />
+        <button type="submit">Login</button>
+      </form>
     </div>
   );
 }
-
-const styles = {
-  container: {
-    display: "flex",
-    height: "100vh",
-    justifyContent: "center",
-    alignItems: "center",
-    background: "#f5f5f5",
-  },
-  card: {
-    padding: "40px",
-    borderRadius: "8px",
-    background: "#fff",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-    width: "300px",
-    textAlign: "center",
-  },
-  title: {
-    marginBottom: "20px",
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  input: {
-    padding: "10px",
-    marginBottom: "15px",
-    borderRadius: "4px",
-    border: "1px solid #ccc",
-    fontSize: "16px",
-  },
-  button: {
-    padding: "10px",
-    borderRadius: "4px",
-    border: "none",
-    background: "#1abc9c",
-    color: "#fff",
-    fontSize: "16px",
-    cursor: "pointer",
-  },
-  error: {
-    color: "red",
-    marginTop: "10px",
-    fontSize: "14px",
-  },
-};

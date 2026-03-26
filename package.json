@@ -1,6 +1,8 @@
 {
   "dependencies": {
+    "npm": "^11.12.0",
     "react-scripts": "^5.0.1",
+    "start": "^5.1.0",
     "vite": "^8.0.2"
   }
 }

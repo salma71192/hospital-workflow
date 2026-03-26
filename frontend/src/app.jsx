@@ -1,28 +1,67 @@
 import React, { useState } from "react";
-import { BrowserRouter as Router } from "react-router-dom";
-import Sidebar from "./components/Sidebar";
-import Dashboard from "./pages/Dashboard";
-import SearchPatient from "./pages/SearchPatient";
-import RegisterPatient from "./pages/RegisterPatient";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+
+// Pages
+import ReceptionDashboard from "./pages/ReceptionDashboard";
+import PhysioDashboard from "./pages/PhysioDashboard";
+import Login from "./pages/Login";
+
+// Dummy login function for demo
+function fakeLogin(username, role) {
+  return { username, role }; // role: 'reception' | 'physio'
+}
 
 function App() {
-  const [panel, setPanel] = useState("dashboard");
-  const user = { username: "ReceptionUser" }; // replace with real login API later
+  const [user, setUser] = useState(null);
 
-  const renderPanel = () => {
-    if (panel === "dashboard") return <Dashboard />;
-    if (panel === "search") return <SearchPatient />;
-    if (panel === "register") return <RegisterPatient />;
+  // Handle login from Login page
+  const handleLogin = (username, role) => {
+    const loggedInUser = fakeLogin(username, role);
+    setUser(loggedInUser);
   };
 
   return (
     <Router>
-      <div className="container" style={{ display: "flex", height: "100vh" }}>
-        <Sidebar onSelectPanel={setPanel} user={user} />
-        <div className="content" style={{ flex: 1, padding: "30px", overflowY: "auto" }}>
-          {renderPanel()}
-        </div>
-      </div>
+      <Routes>
+        {/* Login page */}
+        <Route
+          path="/login"
+          element={<Login onLogin={handleLogin} />}
+        />
+
+        {/* Redirect "/" to login if not logged in */}
+        <Route
+          path="/"
+          element={!user ? <Navigate to="/login" /> : <Navigate to={`/${user.role}`} />}
+        />
+
+        {/* Reception dashboard */}
+        <Route
+          path="/reception"
+          element={
+            user && user.role === "reception" ? (
+              <ReceptionDashboard user={user} />
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        {/* Physio dashboard */}
+        <Route
+          path="/physio"
+          element={
+            user && user.role === "physio" ? (
+              <PhysioDashboard user={user} />
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+
+        {/* Catch-all for unknown routes */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
     </Router>
   );
 }

@@ -1,66 +1,35 @@
-import React, { useState, useEffect } from "react";
-import api from "../api/api";
+import React, { useState } from "react";
 
 export default function RegisterPatient() {
   const [fullName, setFullName] = useState("");
   const [fileNumber, setFileNumber] = useState("");
-  const [therapists, setTherapists] = useState([]);
-  const [selectedTherapist, setSelectedTherapist] = useState("");
 
-  useEffect(() => {
-    api.get("physios/")
-      .then(res => setTherapists(res.data))
-      .catch(err => console.error(err));
-  }, []);
-
-  const handleSubmit = async (e) => {
+  const handleRegister = (e) => {
     e.preventDefault();
-    try {
-      await api.post("patients/create/", {
-        full_name: fullName,
-        file_number: fileNumber,
-        therapist: selectedTherapist,
-      });
-      alert("Patient created!");
-      setFullName("");
-      setFileNumber("");
-      setSelectedTherapist("");
-    } catch (err) {
-      console.error(err);
-    }
+    // Replace alert with API call to register patient
+    alert(`Registering patient: ${fullName}, File Number: ${fileNumber}`);
+    setFullName("");
+    setFileNumber("");
   };
 
   return (
     <div>
-      <h2>Register Patient</h2>
-      <form onSubmit={handleSubmit}>
+      <h3>Register New Patient</h3>
+      <form onSubmit={handleRegister}>
         <input
-          type="text"
+          placeholder="Full Name"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
-          placeholder="Full Name"
           required
         />
-        <br />
+        <br /><br />
         <input
-          type="text"
+          placeholder="File Number"
           value={fileNumber}
           onChange={(e) => setFileNumber(e.target.value)}
-          placeholder="File Number"
           required
         />
-        <br />
-        <label>Assign Physiotherapist:</label>
-        <select
-          value={selectedTherapist}
-          onChange={(e) => setSelectedTherapist(e.target.value)}
-        >
-          <option value="">Select Physio</option>
-          {therapists.map((t) => (
-            <option key={t.id} value={t.id}>{t.username}</option>
-          ))}
-        </select>
-        <br />
+        <br /><br />
         <button type="submit">Create Patient</button>
       </form>
     </div>
