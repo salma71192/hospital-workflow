@@ -84,7 +84,7 @@ DATABASES = {
         "NAME": os.getenv("POSTGRES_DB", "hospital_workflow"),
         "USER": os.getenv("POSTGRES_USER", "postgres"),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
-        "HOST": os.getenv("POSTGRES_HOST", "localhost"),
+        "HOST": os.getenv("POSTGRES_HOST", "localhost"),  # or Codespaces DB host
         "PORT": os.getenv("POSTGRES_PORT", "5432"),
     }
 }

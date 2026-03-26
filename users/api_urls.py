@@ -1,11 +1,8 @@
-from django.contrib import admin
-from django.urls import path, include
+from django.urls import path
+from . import api_views
 
 urlpatterns = [
-    # Admin panel
-    path("admin/", admin.site.urls),
-
-    # API endpoints
-    path("api/users/", include("users.api_urls")),       # User login/logout etc.
-    path("api/patients/", include("patients.api_urls")), # Patient-related API
+    path("login/", api_views.login_api),
+    path("logout/", api_views.logout_api),
+    path("me/", api_views.current_user),  # ✅ important
 ]
