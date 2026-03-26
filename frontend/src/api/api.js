@@ -1,8 +1,8 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://miniature-train-4qrjjq6wvwhqwwr-8000.app.github.dev/api/",
-  withCredentials: true, // 🔥 VERY IMPORTANT
+  baseURL: "http://localhost:8000/api/",
+  withCredentials: true,
 });
 
 export default api;
