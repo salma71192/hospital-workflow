@@ -1,43 +1,47 @@
-from django.http import JsonResponse
 from django.contrib.auth import authenticate, login, logout
-from django.views.decorators.csrf import csrf_exempt
-import json
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 
 
-@csrf_exempt
+# 🔐 LOGIN
+@api_view(["POST"])
+@permission_classes([AllowAny])
 def login_api(request):
-    if request.method == "POST":
-        data = json.loads(request.body)
-        username = data.get("username")
-        password = data.get("password")
+    username = request.data.get("username")
+    password = request.data.get("password")
 
-        user = authenticate(request, username=username, password=password)
+    user = authenticate(request, username=username, password=password)
 
-        if user is not None:
-            login(request, user)
-            return JsonResponse({
-                "success": True,
-                "username": user.username,
-                "role": getattr(user, "role", ""),
-                "is_superuser": user.is_superuser
-            })
+    if user is not None:
+        login(request, user)
+        return Response({
+            "success": True,
+            "username": user.username,
+            "role": getattr(user, "role", None),
+            "is_superuser": user.is_superuser,
+        })
+    else:
+        return Response({
+            "success": False,
+            "error": "Invalid credentials"
+        }, status=401)
 
-        return JsonResponse({"success": False}, status=401)
 
-    return JsonResponse({"error": "Method not allowed"}, status=405)
-
-
-@csrf_exempt
+# 🔓 LOGOUT
+@api_view(["POST"])
 def logout_api(request):
     logout(request)
-    return JsonResponse({"success": True})
+    return Response({"success": True})
 
 
-# ✅ THIS IS THE IMPORTANT PART
-def current_user(request):
+# 👤 CURRENT USER (VERY IMPORTANT FOR REACT)
+@api_view(["GET"])
+def current_user_api(request):
     if request.user.is_authenticated:
-        return JsonResponse({
+        return Response({
             "username": request.user.username,
-            "role": getattr(request.user, "role", ""),
+            "role": getattr(request.user, "role", None),
+            "is_superuser": request.user.is_superuser,
         })
-    return JsonResponse({"error": "Not authenticated"}, status=401)
+    return Response({"detail": "Not authenticated"}, status=401)
