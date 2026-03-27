@@ -4,7 +4,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 
-# 🔐 LOGIN
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def login_api(request):
@@ -21,21 +20,19 @@ def login_api(request):
             "role": getattr(user, "role", None),
             "is_superuser": user.is_superuser,
         })
-    else:
-        return Response({
-            "success": False,
-            "error": "Invalid credentials"
-        }, status=401)
+
+    return Response({
+        "success": False,
+        "error": "Invalid credentials"
+    }, status=401)
 
 
-# 🔓 LOGOUT
 @api_view(["POST"])
 def logout_api(request):
     logout(request)
     return Response({"success": True})
 
 
-# 👤 CURRENT USER (VERY IMPORTANT FOR REACT)
 @api_view(["GET"])
 def current_user_api(request):
     if request.user.is_authenticated:
