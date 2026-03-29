@@ -3,28 +3,25 @@ from django.db import models
 
 
 class User(AbstractUser):
-
-    ROLE_ADMIN = "admin"
+    ROLE_RECEPTION = "reception"
     ROLE_PHYSIO = "physio"
-    ROLE_CALL_CENTER = "call_center"
-    ROLE_BILLING = "billing"
+    ROLE_VISITOR = "visitor"
+    ROLE_DOCTOR = "doctor"
+    ROLE_RCM = "rcm"
+    ROLE_CALLCENTER = "callcenter"
 
     ROLE_CHOICES = [
-    ('reception', 'Receptionist'),
-    ('physiotherapist', 'Physiotherapist'),
-    ('callcenter', 'Call Center'),
-    ('approvals', 'Approvals'),
-    ('rcm', 'RCM'),
-    ('visitors', 'Visitors'),
-    ('admin', 'Admin'),
-]
+        (ROLE_RECEPTION, "Reception"),
+        (ROLE_PHYSIO, "Physio"),
+        (ROLE_VISITOR, "Visitor"),
+        (ROLE_DOCTOR, "Doctor"),
+        (ROLE_RCM, "RCM"),
+        (ROLE_CALLCENTER, "Call Center"),
+    ]
 
     role = models.CharField(
         max_length=20,
         choices=ROLE_CHOICES,
-        default="visitors"
-
+        blank=True,
+        null=True
     )
-
-    def __str__(self):
-        return f"{self.username} - {self.role}"

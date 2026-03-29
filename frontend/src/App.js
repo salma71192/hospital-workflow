@@ -9,6 +9,7 @@ import api from "./api/api";
 import Login from "./pages/Login";
 import ReceptionDashboard from "./pages/ReceptionDashboard";
 import PhysioDashboard from "./pages/PhysioDashboard";
+import AdminDashboard from "./pages/AdminDashboard";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -17,18 +18,12 @@ function App() {
   useEffect(() => {
     api
       .get("users/me/")
-      .then((res) => {
-        setUser(res.data);
-      })
-      .catch(() => {
-        setUser(null);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      .then((res) => setUser(res.data))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
   }, []);
 
-  const handleLogin = async (userData) => {
+  const handleLogin = (userData) => {
     setUser(userData);
   };
 
@@ -52,6 +47,17 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login onLogin={handleLogin} />} />
+
+        <Route
+          path="/admin"
+          element={
+            user && user.is_superuser ? (
+              <AdminDashboard user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
 
         <Route
           path="/reception"
