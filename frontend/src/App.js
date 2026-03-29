@@ -48,6 +48,8 @@ function App() {
     }
   };
 
+  const isAdmin = user && (user.is_superuser || user.role === "admin");
+
   if (loading) {
     return <div style={{ padding: "20px" }}>Loading...</div>;
   }
@@ -61,7 +63,7 @@ function App() {
         <Route
           path="/admin"
           element={
-            user && (user.is_superuser || user.role === "admin") ? (
+            isAdmin ? (
               <AdminDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
@@ -72,7 +74,7 @@ function App() {
         <Route
           path="/reception"
           element={
-            user && (user.role === "reception" || user.is_superuser) ? (
+            user && (user.role === "reception" || isAdmin) ? (
               <ReceptionDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
@@ -83,7 +85,7 @@ function App() {
         <Route
           path="/physio"
           element={
-            user && (user.role === "physio" || user.is_superuser) ? (
+            user && (user.role === "physio" || isAdmin) ? (
               <PhysioDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
@@ -94,7 +96,7 @@ function App() {
         <Route
           path="/doctor"
           element={
-            user && (user.role === "doctor" || user.is_superuser) ? (
+            user && (user.role === "doctor" || isAdmin) ? (
               <DoctorDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
@@ -105,7 +107,7 @@ function App() {
         <Route
           path="/rcm"
           element={
-            user && (user.role === "rcm" || user.is_superuser) ? (
+            user && (user.role === "rcm" || isAdmin) ? (
               <RcmDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
@@ -116,7 +118,7 @@ function App() {
         <Route
           path="/callcenter"
           element={
-            user && (user.role === "callcenter" || user.is_superuser) ? (
+            user && (user.role === "callcenter" || isAdmin) ? (
               <CallCenterDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
@@ -127,7 +129,7 @@ function App() {
         <Route
           path="/visitors"
           element={
-            user && (user.role === "visitor" || user.is_superuser) ? (
+            user && (user.role === "visitor" || isAdmin) ? (
               <VisitorsDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />

@@ -1,7 +1,10 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 
 export default function AdminDashboard({ user, onLogout }) {
+  const navigate = useNavigate();
+
   const [formData, setFormData] = useState({
     username: "",
     password: "",
@@ -61,6 +64,30 @@ export default function AdminDashboard({ user, onLogout }) {
           <button style={styles.logoutButton} onClick={onLogout}>
             Logout
           </button>
+        </div>
+
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>Open Dashboards</h2>
+          <div style={styles.navGrid}>
+            <button style={styles.navButton} onClick={() => navigate("/reception")}>
+              Reception
+            </button>
+            <button style={styles.navButton} onClick={() => navigate("/physio")}>
+              Physio
+            </button>
+            <button style={styles.navButton} onClick={() => navigate("/doctor")}>
+              Doctor
+            </button>
+            <button style={styles.navButton} onClick={() => navigate("/rcm")}>
+              RCM
+            </button>
+            <button style={styles.navButton} onClick={() => navigate("/callcenter")}>
+              Call Center
+            </button>
+            <button style={styles.navButton} onClick={() => navigate("/visitors")}>
+              Visitors
+            </button>
+          </div>
         </div>
 
         <div style={styles.card}>
@@ -168,11 +195,27 @@ const styles = {
     borderRadius: "18px",
     padding: "24px",
     boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+    marginBottom: "20px",
   },
   cardTitle: {
     margin: "0 0 18px 0",
     fontSize: "24px",
     color: "#0f172a",
+  },
+  navGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: "12px",
+  },
+  navButton: {
+    background: "#e0ecff",
+    color: "#1d4ed8",
+    border: "none",
+    borderRadius: "10px",
+    padding: "14px 16px",
+    fontSize: "15px",
+    fontWeight: "600",
+    cursor: "pointer",
   },
   form: {
     display: "grid",
