@@ -6,7 +6,6 @@ export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
@@ -14,10 +13,7 @@ export default function Login({ onLogin }) {
     setError("");
 
     try {
-      const res = await api.post("users/login/", {
-        username,
-        password,
-      });
+      const res = await api.post("users/login/", { username, password });
 
       if (res.data.success) {
         const userData = {
@@ -29,7 +25,7 @@ export default function Login({ onLogin }) {
         onLogin(userData);
 
         if (res.data.is_superuser) {
-          navigate("/reception");
+          navigate("/admin");
         } else if (res.data.role === "reception") {
           navigate("/reception");
         } else if (res.data.role === "physio") {

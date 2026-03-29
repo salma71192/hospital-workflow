@@ -3,6 +3,8 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 
+from .models import User
+
 
 @csrf_exempt
 def login_api(request):
@@ -18,10 +20,7 @@ def login_api(request):
     password = data.get("password")
 
     if not username or not password:
-        return JsonResponse(
-            {"error": "Username and password are required"},
-            status=400
-        )
+        return JsonResponse({"error": "Username and password are required"}, status=400)
 
     user = authenticate(request, username=username, password=password)
 
@@ -57,4 +56,48 @@ def current_user_api(request):
         "username": request.user.username,
         "role": getattr(request.user, "role", ""),
         "is_superuser": request.user.is_superuser,
+    })
+
+
+@csrf_exempt
+def create_user_api(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return JsonResponse({"error": "Only admin can create users"}, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    username = data.get("username")
+    password = data.get("password")
+    role = data.get("role")
+    is_superuser = data.get("is_superuser", False)
+
+    allowed_roles = ["physio", "reception", "visitor", "doctor", "rcm", "callcenter"]
+
+    if not username or not password:
+        return JsonResponse({"error": "Username and password are required"}, status=400)
+
+    if role not in allowed_roles:
+        return JsonResponse({"error": "Invalid role"}, status=400)
+
+    if User.objects.filter(username=username).exists():
+        return JsonResponse({"error": "Username already exists"}, status=400)
+
+    user = User.objects.create_user(username=username, password=password)
+    user.role = role
+
+    if is_superuser:
+        user.is_staff = True
+        user.is_superuser = True
+
+    user.save()
+
+    return JsonResponse({
+        "success": True,
+        "message": f"User '{username}' created successfully",
     })

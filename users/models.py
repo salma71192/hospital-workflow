@@ -11,12 +11,12 @@ class User(AbstractUser):
     ROLE_CALLCENTER = "callcenter"
 
     ROLE_CHOICES = [
-        (ROLE_RECEPTION, "Reception"),
-        (ROLE_PHYSIO, "Physio"),
-        (ROLE_VISITOR, "Visitor"),
-        (ROLE_DOCTOR, "Doctor"),
-        (ROLE_RCM, "RCM"),
-        (ROLE_CALLCENTER, "Call Center"),
+        ("physio", "Physio"),
+        ("reception", "Reception"),
+        ("visitor", "Visitor"),
+        ("doctor", "Doctor"),
+        ("rcm", "RCM"),
+        ("callcenter", "Call Center"),
     ]
 
     role = models.CharField(
