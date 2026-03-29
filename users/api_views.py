@@ -118,3 +118,16 @@ def create_user_api(request):
         "success": True,
         "message": f"User '{username}' created successfully",
     })
+
+def list_users_api(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    if not (request.user.is_superuser or getattr(request.user, "role", "") == "admin"):
+        return JsonResponse({"error": "Only admin can view users"}, status=403)
+
+    users = list(
+        User.objects.values("id", "username", "role", "is_superuser", "is_staff")
+    )
+
+    return JsonResponse({"users": users})

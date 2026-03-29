@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 
-export default function AdminDashboard({ user, onLogout }) {
+export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
@@ -12,6 +12,7 @@ export default function AdminDashboard({ user, onLogout }) {
     is_superuser: false,
   });
 
+  const [users, setUsers] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -24,6 +25,29 @@ export default function AdminDashboard({ user, onLogout }) {
     "rcm",
     "callcenter",
   ];
+
+  const roleRoutes = {
+    admin: "/admin",
+    physio: "/physio",
+    reception: "/reception",
+    visitor: "/visitors",
+    doctor: "/doctor",
+    rcm: "/rcm",
+    callcenter: "/callcenter",
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const res = await api.get("users/list-users/");
+      setUsers(res.data.users || []);
+    } catch (err) {
+      console.error("Failed to load users", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -47,9 +71,18 @@ export default function AdminDashboard({ user, onLogout }) {
         role: "admin",
         is_superuser: false,
       });
+      fetchUsers();
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to create user");
     }
+  };
+
+  const handleActAsUser = (selectedUser) => {
+    onActAsUser(selectedUser);
+    const route = selectedUser.is_superuser
+      ? "/admin"
+      : roleRoutes[selectedUser.role] || "/admin";
+    navigate(route);
   };
 
   return (
@@ -64,30 +97,6 @@ export default function AdminDashboard({ user, onLogout }) {
           <button style={styles.logoutButton} onClick={onLogout}>
             Logout
           </button>
-        </div>
-
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Open Dashboards</h2>
-          <div style={styles.navGrid}>
-            <button style={styles.navButton} onClick={() => navigate("/reception")}>
-              Reception
-            </button>
-            <button style={styles.navButton} onClick={() => navigate("/physio")}>
-              Physio
-            </button>
-            <button style={styles.navButton} onClick={() => navigate("/doctor")}>
-              Doctor
-            </button>
-            <button style={styles.navButton} onClick={() => navigate("/rcm")}>
-              RCM
-            </button>
-            <button style={styles.navButton} onClick={() => navigate("/callcenter")}>
-              Call Center
-            </button>
-            <button style={styles.navButton} onClick={() => navigate("/visitors")}>
-              Visitors
-            </button>
-          </div>
         </div>
 
         <div style={styles.card}>
@@ -145,6 +154,31 @@ export default function AdminDashboard({ user, onLogout }) {
           {message && <p style={styles.success}>{message}</p>}
           {error && <p style={styles.error}>{error}</p>}
         </div>
+
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>All Users</h2>
+
+          <div style={styles.userGrid}>
+            {users.map((item) => (
+              <div key={item.id} style={styles.userCard}>
+                <div>
+                  <div style={styles.userName}>{item.username}</div>
+                  <div style={styles.userMeta}>
+                    Role: {item.role || "No role"}
+                    {item.is_superuser ? " • Superuser" : ""}
+                  </div>
+                </div>
+
+                <button
+                  style={styles.viewButton}
+                  onClick={() => handleActAsUser(item)}
+                >
+                  Open as User
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -158,7 +192,7 @@ const styles = {
     fontFamily: "Arial, sans-serif",
   },
   container: {
-    maxWidth: "900px",
+    maxWidth: "1000px",
     margin: "0 auto",
   },
   topBar: {
@@ -202,21 +236,6 @@ const styles = {
     fontSize: "24px",
     color: "#0f172a",
   },
-  navGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: "12px",
-  },
-  navButton: {
-    background: "#e0ecff",
-    color: "#1d4ed8",
-    border: "none",
-    borderRadius: "10px",
-    padding: "14px 16px",
-    fontSize: "15px",
-    fontWeight: "600",
-    cursor: "pointer",
-  },
   form: {
     display: "grid",
     gap: "14px",
@@ -252,5 +271,36 @@ const styles = {
     color: "#dc2626",
     marginTop: "14px",
     fontWeight: "600",
+  },
+  userGrid: {
+    display: "grid",
+    gap: "12px",
+  },
+  userCard: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "16px",
+    border: "1px solid #e2e8f0",
+    borderRadius: "12px",
+    padding: "16px",
+  },
+  userName: {
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: "6px",
+  },
+  userMeta: {
+    color: "#64748b",
+    fontSize: "14px",
+  },
+  viewButton: {
+    background: "#1d4ed8",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "10px 14px",
+    fontWeight: "600",
+    cursor: "pointer",
   },
 };

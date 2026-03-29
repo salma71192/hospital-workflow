@@ -16,7 +16,8 @@ import CallCenterDashboard from "./pages/CallCenterDashboard";
 import VisitorsDashboard from "./pages/VisitorsDashboard";
 
 function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(null); // real logged-in user
+  const [actingAs, setActingAs] = useState(null); // selected user from admin
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,10 +45,16 @@ function App() {
       console.error("Logout failed:", error);
     } finally {
       setUser(null);
+      setActingAs(null);
       window.location.href = "/login";
     }
   };
 
+  const stopImpersonation = () => {
+    setActingAs(null);
+  };
+
+  const currentUser = actingAs || user;
   const isAdmin = user && (user.is_superuser || user.role === "admin");
 
   if (loading) {
@@ -64,7 +71,11 @@ function App() {
           path="/admin"
           element={
             isAdmin ? (
-              <AdminDashboard user={user} onLogout={handleLogout} />
+              <AdminDashboard
+                user={user}
+                onLogout={handleLogout}
+                onActAsUser={setActingAs}
+              />
             ) : (
               <Navigate to="/login" replace />
             )
@@ -74,8 +85,13 @@ function App() {
         <Route
           path="/reception"
           element={
-            user && (user.role === "reception" || isAdmin) ? (
-              <ReceptionDashboard user={user} onLogout={handleLogout} />
+            currentUser && (currentUser.role === "reception" || isAdmin) ? (
+              <ReceptionDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
             ) : (
               <Navigate to="/login" replace />
             )
@@ -85,8 +101,13 @@ function App() {
         <Route
           path="/physio"
           element={
-            user && (user.role === "physio" || isAdmin) ? (
-              <PhysioDashboard user={user} onLogout={handleLogout} />
+            currentUser && (currentUser.role === "physio" || isAdmin) ? (
+              <PhysioDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
             ) : (
               <Navigate to="/login" replace />
             )
@@ -96,8 +117,13 @@ function App() {
         <Route
           path="/doctor"
           element={
-            user && (user.role === "doctor" || isAdmin) ? (
-              <DoctorDashboard user={user} onLogout={handleLogout} />
+            currentUser && (currentUser.role === "doctor" || isAdmin) ? (
+              <DoctorDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
             ) : (
               <Navigate to="/login" replace />
             )
@@ -107,8 +133,13 @@ function App() {
         <Route
           path="/rcm"
           element={
-            user && (user.role === "rcm" || isAdmin) ? (
-              <RcmDashboard user={user} onLogout={handleLogout} />
+            currentUser && (currentUser.role === "rcm" || isAdmin) ? (
+              <RcmDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
             ) : (
               <Navigate to="/login" replace />
             )
@@ -118,8 +149,13 @@ function App() {
         <Route
           path="/callcenter"
           element={
-            user && (user.role === "callcenter" || isAdmin) ? (
-              <CallCenterDashboard user={user} onLogout={handleLogout} />
+            currentUser && (currentUser.role === "callcenter" || isAdmin) ? (
+              <CallCenterDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
             ) : (
               <Navigate to="/login" replace />
             )
@@ -129,8 +165,13 @@ function App() {
         <Route
           path="/visitors"
           element={
-            user && (user.role === "visitor" || isAdmin) ? (
-              <VisitorsDashboard user={user} onLogout={handleLogout} />
+            currentUser && (currentUser.role === "visitor" || isAdmin) ? (
+              <VisitorsDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
             ) : (
               <Navigate to="/login" replace />
             )

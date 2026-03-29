@@ -1,6 +1,13 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-export default function ReceptionDashboard({ user, onLogout }) {
+export default function ReceptionDashboard({
+  user,
+  onLogout,
+  actingAs,
+  onStopImpersonation,
+}) {
+  const navigate = useNavigate();
   const [searchFile, setSearchFile] = useState("");
   const [assignedPatient, setAssignedPatient] = useState(null);
   const [message, setMessage] = useState("");
@@ -8,7 +15,6 @@ export default function ReceptionDashboard({ user, onLogout }) {
   const handleSearch = (e) => {
     e.preventDefault();
 
-    // temporary demo data
     const patient = {
       fileNumber: searchFile,
       fullName: "John Doe",
@@ -31,9 +37,23 @@ export default function ReceptionDashboard({ user, onLogout }) {
     setAssignedPatient(null);
   };
 
+  const handleBackToAdmin = () => {
+    onStopImpersonation();
+    navigate("/admin");
+  };
+
   return (
     <div style={styles.page}>
       <div style={styles.container}>
+        {actingAs && (
+          <div style={styles.banner}>
+            <span>Viewing as: {user?.username}</span>
+            <button style={styles.bannerButton} onClick={handleBackToAdmin}>
+              Back to Admin
+            </button>
+          </div>
+        )}
+
         <div style={styles.topBar}>
           <div>
             <h1 style={styles.title}>Reception Dashboard</h1>
@@ -137,6 +157,25 @@ const styles = {
   container: {
     maxWidth: "1100px",
     margin: "0 auto",
+  },
+  banner: {
+    background: "#fef3c7",
+    border: "1px solid #fcd34d",
+    color: "#92400e",
+    padding: "12px 16px",
+    borderRadius: "10px",
+    marginBottom: "18px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  bannerButton: {
+    background: "#92400e",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "8px 12px",
+    cursor: "pointer",
   },
   topBar: {
     display: "flex",
