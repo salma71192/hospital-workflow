@@ -104,13 +104,24 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # -------------------
 # CORS SETTINGS (VERY IMPORTANT)
 # -------------------
-CORS_ALLOW_ALL_ORIGINS = True
+# -------------------
+# CORS SETTINGS
+# -------------------
+CORS_ALLOWED_ORIGINS = [
+    "https://miniature-train-4qrjjq6wvwhqwwr-3000.app.github.dev",
+]
+
 CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://*.app.github.dev",
+    "https://miniature-train-4qrjjq6wvwhqwwr-3000.app.github.dev",
 ]
 
+SESSION_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_SECURE = True
+
+CSRF_COOKIE_SAMESITE = "None"
+CSRF_COOKIE_SECURE = True
 # -------------------
 # Custom User Model
 # -------------------
