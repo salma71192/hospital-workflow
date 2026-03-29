@@ -24,7 +24,7 @@ export default function Login({ onLogin }) {
 
         onLogin(userData);
 
-        if (res.data.is_superuser) {
+        if (res.data.is_superuser || res.data.role === "admin") {
           navigate("/admin");
         } else if (res.data.role === "reception") {
           navigate("/reception");

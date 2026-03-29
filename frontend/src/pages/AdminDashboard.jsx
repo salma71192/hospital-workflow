@@ -5,7 +5,7 @@ export default function AdminDashboard({ user, onLogout }) {
   const [formData, setFormData] = useState({
     username: "",
     password: "",
-    role: "physio",
+    role: "admin",
     is_superuser: false,
   });
 
@@ -13,6 +13,7 @@ export default function AdminDashboard({ user, onLogout }) {
   const [error, setError] = useState("");
 
   const roles = [
+    "admin",
     "physio",
     "reception",
     "visitor",
@@ -40,7 +41,7 @@ export default function AdminDashboard({ user, onLogout }) {
       setFormData({
         username: "",
         password: "",
-        role: "physio",
+        role: "admin",
         is_superuser: false,
       });
     } catch (err) {
@@ -106,7 +107,7 @@ export default function AdminDashboard({ user, onLogout }) {
                 checked={formData.is_superuser}
                 onChange={handleChange}
               />
-              Make this user admin
+              Make this user Django superuser
             </label>
 
             <button type="submit" style={styles.button}>

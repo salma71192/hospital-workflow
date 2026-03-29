@@ -3,14 +3,8 @@ from django.db import models
 
 
 class User(AbstractUser):
-    ROLE_RECEPTION = "reception"
-    ROLE_PHYSIO = "physio"
-    ROLE_VISITOR = "visitor"
-    ROLE_DOCTOR = "doctor"
-    ROLE_RCM = "rcm"
-    ROLE_CALLCENTER = "callcenter"
-
     ROLE_CHOICES = [
+        ("admin", "Admin"),
         ("physio", "Physio"),
         ("reception", "Reception"),
         ("visitor", "Visitor"),
@@ -20,8 +14,11 @@ class User(AbstractUser):
     ]
 
     role = models.CharField(
-        max_length=20,
+        max_length=50,
         choices=ROLE_CHOICES,
         blank=True,
-        null=True
+        null=True,
     )
+
+    def __str__(self):
+        return self.username

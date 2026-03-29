@@ -20,7 +20,10 @@ def login_api(request):
     password = data.get("password")
 
     if not username or not password:
-        return JsonResponse({"error": "Username and password are required"}, status=400)
+        return JsonResponse(
+            {"error": "Username and password are required"},
+            status=400
+        )
 
     user = authenticate(request, username=username, password=password)
 
@@ -64,7 +67,10 @@ def create_user_api(request):
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    if not request.user.is_authenticated or not request.user.is_superuser:
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    if not (request.user.is_superuser or request.user.role == "admin"):
         return JsonResponse({"error": "Only admin can create users"}, status=403)
 
     try:
@@ -77,7 +83,15 @@ def create_user_api(request):
     role = data.get("role")
     is_superuser = data.get("is_superuser", False)
 
-    allowed_roles = ["physio", "reception", "visitor", "doctor", "rcm", "callcenter"]
+    allowed_roles = [
+        "admin",
+        "physio",
+        "reception",
+        "visitor",
+        "doctor",
+        "rcm",
+        "callcenter",
+    ]
 
     if not username or not password:
         return JsonResponse({"error": "Username and password are required"}, status=400)
@@ -90,6 +104,9 @@ def create_user_api(request):
 
     user = User.objects.create_user(username=username, password=password)
     user.role = role
+
+    if role == "admin":
+        user.is_staff = True
 
     if is_superuser:
         user.is_staff = True

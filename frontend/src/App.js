@@ -18,9 +18,15 @@ function App() {
   useEffect(() => {
     api
       .get("users/me/")
-      .then((res) => setUser(res.data))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+      .then((res) => {
+        setUser(res.data);
+      })
+      .catch(() => {
+        setUser(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
   const handleLogin = (userData) => {
@@ -51,7 +57,7 @@ function App() {
         <Route
           path="/admin"
           element={
-            user && user.is_superuser ? (
+            user && (user.is_superuser || user.role === "admin") ? (
               <AdminDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
