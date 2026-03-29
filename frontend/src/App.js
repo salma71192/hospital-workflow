@@ -10,6 +10,10 @@ import Login from "./pages/Login";
 import ReceptionDashboard from "./pages/ReceptionDashboard";
 import PhysioDashboard from "./pages/PhysioDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import DoctorDashboard from "./pages/DoctorDashboard";
+import RcmDashboard from "./pages/RcmDashboard";
+import CallCenterDashboard from "./pages/CallCenterDashboard";
+import VisitorsDashboard from "./pages/VisitorsDashboard";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -81,6 +85,50 @@ function App() {
           element={
             user && (user.role === "physio" || user.is_superuser) ? (
               <PhysioDashboard user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route
+          path="/doctor"
+          element={
+            user && (user.role === "doctor" || user.is_superuser) ? (
+              <DoctorDashboard user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route
+          path="/rcm"
+          element={
+            user && (user.role === "rcm" || user.is_superuser) ? (
+              <RcmDashboard user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route
+          path="/callcenter"
+          element={
+            user && (user.role === "callcenter" || user.is_superuser) ? (
+              <CallCenterDashboard user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route
+          path="/visitors"
+          element={
+            user && (user.role === "visitor" || user.is_superuser) ? (
+              <VisitorsDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
             )
