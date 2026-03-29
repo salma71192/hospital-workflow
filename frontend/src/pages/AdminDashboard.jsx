@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 
@@ -26,6 +26,16 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     "callcenter",
   ];
 
+  const roleLabels = {
+    admin: "Admin",
+    physio: "Physio",
+    reception: "Reception",
+    visitor: "Visitors",
+    doctor: "Doctor",
+    rcm: "RCM",
+    callcenter: "Call Center",
+  };
+
   const roleRoutes = {
     admin: "/admin",
     physio: "/physio",
@@ -48,6 +58,29 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  const groupedUsers = useMemo(() => {
+    const groups = {
+      admin: [],
+      reception: [],
+      physio: [],
+      doctor: [],
+      rcm: [],
+      callcenter: [],
+      visitor: [],
+      no_role: [],
+    };
+
+    users.forEach((item) => {
+      if (groups[item.role]) {
+        groups[item.role].push(item);
+      } else {
+        groups.no_role.push(item);
+      }
+    });
+
+    return groups;
+  }, [users]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -84,6 +117,25 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       : roleRoutes[selectedUser.role] || "/admin";
     navigate(route);
   };
+
+  const renderUserCard = (item) => (
+    <div key={item.id} style={styles.userCard}>
+      <div>
+        <div style={styles.userName}>{item.username}</div>
+        <div style={styles.userMeta}>
+          Role: {item.role || "No role"}
+          {item.is_superuser ? " • Superuser" : ""}
+        </div>
+      </div>
+
+      <button
+        style={styles.viewButton}
+        onClick={() => handleActAsUser(item)}
+      >
+        Open as User
+      </button>
+    </div>
+  );
 
   return (
     <div style={styles.page}>
@@ -131,7 +183,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             >
               {roles.map((role) => (
                 <option key={role} value={role}>
-                  {role}
+                  {roleLabels[role]}
                 </option>
               ))}
             </select>
@@ -156,28 +208,20 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         </div>
 
         <div style={styles.card}>
-          <h2 style={styles.cardTitle}>All Users</h2>
+          <h2 style={styles.cardTitle}>Users by Category</h2>
 
-          <div style={styles.userGrid}>
-            {users.map((item) => (
-              <div key={item.id} style={styles.userCard}>
-                <div>
-                  <div style={styles.userName}>{item.username}</div>
-                  <div style={styles.userMeta}>
-                    Role: {item.role || "No role"}
-                    {item.is_superuser ? " • Superuser" : ""}
-                  </div>
-                </div>
+          {Object.entries(groupedUsers).map(([roleKey, items]) => {
+            if (!items.length) return null;
 
-                <button
-                  style={styles.viewButton}
-                  onClick={() => handleActAsUser(item)}
-                >
-                  Open as User
-                </button>
+            return (
+              <div key={roleKey} style={styles.section}>
+                <h3 style={styles.sectionTitle}>
+                  {roleKey === "no_role" ? "No Role" : roleLabels[roleKey]}
+                </h3>
+                <div style={styles.userGrid}>{items.map(renderUserCard)}</div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -271,6 +315,16 @@ const styles = {
     color: "#dc2626",
     marginTop: "14px",
     fontWeight: "600",
+  },
+  section: {
+    marginTop: "24px",
+  },
+  sectionTitle: {
+    margin: "0 0 12px 0",
+    fontSize: "20px",
+    color: "#1e293b",
+    borderBottom: "2px solid #e2e8f0",
+    paddingBottom: "8px",
   },
   userGrid: {
     display: "grid",
