@@ -15,6 +15,9 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const [users, setUsers] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [activeCategory, setActiveCategory] = useState(
+    localStorage.getItem("activeCategory") || "admin"
+  );
 
   const roles = [
     "admin",
@@ -34,6 +37,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     doctor: "Doctor",
     rcm: "RCM",
     callcenter: "Call Center",
+    no_role: "No Role",
   };
 
   const roleRoutes = {
@@ -82,6 +86,25 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     return groups;
   }, [users]);
 
+  const categoryOrder = [
+    "admin",
+    "reception",
+    "physio",
+    "doctor",
+    "rcm",
+    "callcenter",
+    "visitor",
+    "no_role",
+  ];
+
+  const visibleUsers =
+    groupedUsers[activeCategory] ?? groupedUsers.admin ?? [];
+
+  const handleCategoryChange = (category) => {
+    setActiveCategory(category);
+    localStorage.setItem("activeCategory", category);
+  };
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData((prev) => ({
@@ -105,6 +128,8 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         is_superuser: false,
       });
       fetchUsers();
+      localStorage.setItem("activeCategory", formData.role);
+      setActiveCategory(formData.role);
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to create user");
     }
@@ -128,10 +153,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         </div>
       </div>
 
-      <button
-        style={styles.viewButton}
-        onClick={() => handleActAsUser(item)}
-      >
+      <button style={styles.viewButton} onClick={() => handleActAsUser(item)}>
         Open as User
       </button>
     </div>
@@ -210,18 +232,30 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Users by Category</h2>
 
-          {Object.entries(groupedUsers).map(([roleKey, items]) => {
-            if (!items.length) return null;
+          <div style={styles.tabsWrap}>
+            {categoryOrder.map((category) => (
+              <button
+                key={category}
+                onClick={() => handleCategoryChange(category)}
+                style={{
+                  ...styles.tabButton,
+                  ...(activeCategory === category ? styles.activeTabButton : {}),
+                }}
+              >
+                {roleLabels[category]} ({groupedUsers[category]?.length || 0})
+              </button>
+            ))}
+          </div>
 
-            return (
-              <div key={roleKey} style={styles.section}>
-                <h3 style={styles.sectionTitle}>
-                  {roleKey === "no_role" ? "No Role" : roleLabels[roleKey]}
-                </h3>
-                <div style={styles.userGrid}>{items.map(renderUserCard)}</div>
-              </div>
-            );
-          })}
+          <div style={styles.tabPanel}>
+            <h3 style={styles.sectionTitle}>{roleLabels[activeCategory]}</h3>
+
+            {visibleUsers.length ? (
+              <div style={styles.userGrid}>{visibleUsers.map(renderUserCard)}</div>
+            ) : (
+              <div style={styles.emptyState}>No users in this category.</div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -316,15 +350,33 @@ const styles = {
     marginTop: "14px",
     fontWeight: "600",
   },
-  section: {
-    marginTop: "24px",
+  tabsWrap: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+    marginBottom: "20px",
+  },
+  tabButton: {
+    background: "#e2e8f0",
+    color: "#334155",
+    border: "none",
+    borderRadius: "999px",
+    padding: "10px 16px",
+    fontSize: "14px",
+    fontWeight: "600",
+    cursor: "pointer",
+  },
+  activeTabButton: {
+    background: "#1d4ed8",
+    color: "#fff",
+  },
+  tabPanel: {
+    marginTop: "8px",
   },
   sectionTitle: {
-    margin: "0 0 12px 0",
+    margin: "0 0 14px 0",
     fontSize: "20px",
     color: "#1e293b",
-    borderBottom: "2px solid #e2e8f0",
-    paddingBottom: "8px",
   },
   userGrid: {
     display: "grid",
@@ -356,5 +408,12 @@ const styles = {
     padding: "10px 14px",
     fontWeight: "600",
     cursor: "pointer",
+  },
+  emptyState: {
+    padding: "18px",
+    borderRadius: "12px",
+    background: "#f8fafc",
+    color: "#64748b",
+    border: "1px dashed #cbd5e1",
   },
 };
