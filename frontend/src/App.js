@@ -28,31 +28,19 @@ function App() {
       });
   }, []);
 
-  const handleLogin = async (username, password) => {
-    const res = await api.post("users/login/", { username, password });
-    setUser(res.data);
-    return res.data;
+  const handleLogin = async (userData) => {
+    setUser(userData);
   };
 
   const handleLogout = async () => {
     try {
       await api.post("users/logout/");
-    } catch (err) {
-      console.error("Logout failed", err);
+    } catch (error) {
+      console.error("Logout failed:", error);
     } finally {
       setUser(null);
+      window.location.href = "/login";
     }
-  };
-
-  const isPhysio = user?.role === "physio" || user?.role === "physiotherapist";
-  const isReception = user?.role === "reception";
-
-  const getHomeRoute = () => {
-    if (!user) return "/login";
-    if (user.is_superuser) return "/reception";
-    if (isPhysio) return "/physio";
-    if (isReception) return "/reception";
-    return "/login";
   };
 
   if (loading) {
@@ -62,32 +50,13 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route
-          path="/login"
-          element={
-            user ? (
-              <Navigate to={getHomeRoute()} replace />
-            ) : (
-              <Login onLogin={handleLogin} />
-            )
-          }
-        />
-
-        <Route
-          path="/physio"
-          element={
-            user && (isPhysio || user.is_superuser) ? (
-              <PhysioDashboard user={user} onLogout={handleLogout} />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<Login onLogin={handleLogin} />} />
 
         <Route
           path="/reception"
           element={
-            user && (isReception || user.is_superuser) ? (
+            user && (user.role === "reception" || user.is_superuser) ? (
               <ReceptionDashboard user={user} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
@@ -95,8 +64,18 @@ function App() {
           }
         />
 
-        <Route path="/" element={<Navigate to={getHomeRoute()} replace />} />
-        <Route path="*" element={<Navigate to={getHomeRoute()} replace />} />
+        <Route
+          path="/physio"
+          element={
+            user && (user.role === "physio" || user.is_superuser) ? (
+              <PhysioDashboard user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
   );

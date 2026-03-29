@@ -1,113 +1,128 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../api/api";
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
     try {
-      const data = await onLogin(username, password);
+      const res = await api.post("users/login/", {
+        username,
+        password,
+      });
 
-      if (data.is_superuser) {
-        navigate("/reception");
-      } else if (data.role === "reception") {
-        navigate("/reception");
-      } else if (data.role === "physio" || data.role === "physiotherapist") {
-        navigate("/physio");
+      if (res.data.success) {
+        const userData = {
+          username: res.data.username,
+          role: res.data.role,
+          is_superuser: res.data.is_superuser,
+        };
+
+        onLogin(userData);
+
+        if (res.data.is_superuser) {
+          navigate("/reception");
+        } else if (res.data.role === "reception") {
+          navigate("/reception");
+        } else if (res.data.role === "physio") {
+          navigate("/physio");
+        } else {
+          navigate("/login");
+        }
       } else {
-        navigate("/login");
+        setError("Wrong credentials");
       }
     } catch (err) {
-      setError(
-        err?.response?.data?.error || "Login failed. Please check credentials."
-      );
-    } finally {
-      setLoading(false);
+      setError("Wrong credentials");
     }
   };
 
   return (
-    <div style={styles.wrapper}>
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <h2 style={styles.title}>Hospital Login</h2>
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <h1 style={styles.title}>Hospital Login</h1>
 
-        <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-          style={styles.input}
-        />
+        <form onSubmit={handleLogin} style={styles.form}>
+          <input
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            style={styles.input}
+            required
+          />
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          style={styles.input}
-        />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={styles.input}
+            required
+          />
 
-        {error ? <p style={styles.error}>{error}</p> : null}
+          <button type="submit" style={styles.button}>
+            Login
+          </button>
 
-        <button type="submit" disabled={loading} style={styles.button}>
-          {loading ? "Logging in..." : "Login"}
-        </button>
-      </form>
+          {error && <p style={styles.error}>{error}</p>}
+        </form>
+      </div>
     </div>
   );
 }
 
 const styles = {
-  wrapper: {
+  page: {
     minHeight: "100vh",
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
     background: "#f4f6f8",
   },
-  form: {
-    width: "100%",
-    maxWidth: "380px",
+  card: {
+    width: "360px",
     background: "#fff",
-    padding: "30px",
+    padding: "32px",
     borderRadius: "12px",
-    boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
-    display: "flex",
-    flexDirection: "column",
-    gap: "14px",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
   },
   title: {
     textAlign: "center",
-    marginBottom: "10px",
+    marginBottom: "24px",
+    color: "#2c3e50",
+  },
+  form: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
   },
   input: {
     padding: "12px",
     borderRadius: "8px",
     border: "1px solid #ccc",
-    fontSize: "16px",
+    fontSize: "15px",
   },
   button: {
     padding: "12px",
-    border: "none",
     borderRadius: "8px",
-    background: "#2563eb",
-    color: "#fff",
+    border: "none",
+    background: "#1abc9c",
+    color: "white",
     fontSize: "16px",
     cursor: "pointer",
   },
   error: {
     color: "red",
-    fontSize: "14px",
     margin: 0,
+    textAlign: "center",
   },
 };
