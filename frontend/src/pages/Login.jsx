@@ -30,6 +30,14 @@ export default function Login({ onLogin }) {
           navigate("/reception");
         } else if (res.data.role === "physio") {
           navigate("/physio");
+        } else if (res.data.role === "doctor") {
+          navigate("/doctor");
+        } else if (res.data.role === "rcm") {
+          navigate("/rcm");
+        } else if (res.data.role === "callcenter") {
+          navigate("/callcenter");
+        } else if (res.data.role === "visitor") {
+          navigate("/visitors");
         } else {
           navigate("/login");
         }
