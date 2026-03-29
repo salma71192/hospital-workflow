@@ -1,16 +1,15 @@
 from django.contrib import admin
-from django.urls import path, include, re_path
-from django.views.generic import TemplateView
+from django.urls import path, include
+from django.http import JsonResponse
+
+
+def home(request):
+    return JsonResponse({"message": "API running"})
+
 
 urlpatterns = [
     path("admin-panel/", admin.site.urls),
-
     path("api/users/", include("users.api_urls")),
     path("api/patients/", include("patients.api_urls")),
-
-    path("", TemplateView.as_view(template_name="index.html")),
-    re_path(
-        r"^(reception|physio|callcenter|approvals|rcm|visitors)/.*$",
-        TemplateView.as_view(template_name="index.html"),
-    ),
+    path("", home),
 ]

@@ -1,25 +1,18 @@
-# config/settings.py
-import os
 from pathlib import Path
-from dotenv import load_dotenv
-
-# Load .env variables
-load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# ======================
-# SECURITY
-# ======================
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key")
-DEBUG = True
-ALLOWED_HOSTS = ["*"]  # Codespaces requires '*' for public ports
+SECRET_KEY = "django-insecure-dev-key"
 
-# ======================
-# INSTALLED APPS
-# ======================
+DEBUG = True
+
+ALLOWED_HOSTS = ["*"]
+
+# -------------------
+# Applications
+# -------------------
 INSTALLED_APPS = [
-    "corsheaders",  # MUST be first for CORS
+    "corsheaders",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -27,23 +20,17 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    "rest_framework",
-
+    # Your apps
     "users",
     "patients",
     "reception",
-    "physio",
-    "callcenter",
-    "approvals",
-    "rcm",
-    "visitors",
 ]
 
-# ======================
-# MIDDLEWARE
-# ======================
+# -------------------
+# Middleware
+# -------------------
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",  # must be first
+    "corsheaders.middleware.CorsMiddleware",   # MUST be first
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -53,15 +40,18 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+# -------------------
+# URLs
+# -------------------
 ROOT_URLCONF = "config.urls"
 
-# ======================
-# TEMPLATES (React)
-# ======================
+# -------------------
+# Templates
+# -------------------
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "frontend" / "build"],  # React build directory
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -75,71 +65,53 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# ======================
-# DATABASE (PostgreSQL)
-# ======================
+# -------------------
+# Database (SQLite)
+# -------------------
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB", "hospital_workflow"),
-        "USER": os.getenv("POSTGRES_USER", "postgres"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
-        "HOST": os.getenv("POSTGRES_HOST", "localhost"),  # or Codespaces DB host
-        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
-# ======================
-# AUTH
-# ======================
-AUTH_USER_MODEL = "users.User"
+# -------------------
+# Password validation
+# -------------------
+AUTH_PASSWORD_VALIDATORS = []
 
-# ======================
-# STATIC FILES (React)
-# ======================
-STATIC_URL = "/static/"
-STATICFILES_DIRS = [BASE_DIR / "frontend" / "build" / "static"]
+# -------------------
+# Internationalization
+# -------------------
+LANGUAGE_CODE = "en-us"
 
-# ======================
-# DRF
-# ======================
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
-    ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.AllowAny",
-    ],
-}
+TIME_ZONE = "UTC"
 
-# ======================
-# CORS
-# ======================
-CORS_ALLOWED_ORIGINS = [
-    "https://miniature-train-4qrjjq6wvwhqwwr-3000.app.github.dev",
-    "https://miniature-train-4qrjjq6wvwhqwwr-3001.app.github.dev",
-]
+USE_I18N = True
 
+USE_TZ = True
+
+# -------------------
+# Static files
+# -------------------
+STATIC_URL = "static/"
+
+# -------------------
+# Default primary key
+# -------------------
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# -------------------
+# CORS SETTINGS (VERY IMPORTANT)
+# -------------------
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
-# Allow headers that Axios sends
-CORS_ALLOW_HEADERS = [
-    "accept",
-    "accept-encoding",
-    "authorization",
-    "content-type",  # very important for JSON
-    "dnt",
-    "origin",
-    "user-agent",
-    "x-csrftoken",
-    "x-requested-with",
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.app.github.dev",
 ]
 
-CORS_ALLOW_METHODS = ["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"]
-
-# ======================
-# LOGIN SETTINGS
-# ======================
-LOGIN_URL = "/"
-LOGIN_REDIRECT_URL = "/"
-LOGOUT_REDIRECT_URL = "/"
+# -------------------
+# Custom User Model
+# -------------------
+AUTH_USER_MODEL = "users.User"

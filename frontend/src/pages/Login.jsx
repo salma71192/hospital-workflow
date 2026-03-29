@@ -1,135 +1,113 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api/api";
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
-      const res = await api.post("users/login/", {
-        username,
-        password,
-      });
+      const data = await onLogin(username, password);
 
-      if (res.data.success) {
-        const userData = {
-          username: res.data.username,
-          role: res.data.role,
-          is_superuser: res.data.is_superuser,
-        };
-
-        onLogin(userData);
-
-        if (res.data.is_superuser) {
-          navigate("/admin-panel");
-        } else if (res.data.role === "reception") {
-          navigate("/reception");
-        } else if (res.data.role === "physiotherapist") {
-          navigate("/physio");
-        } else if (res.data.role === "callcenter") {
-          navigate("/callcenter");
-        } else if (res.data.role === "approvals") {
-          navigate("/approvals");
-        } else if (res.data.role === "rcm") {
-          navigate("/rcm");
-        } else if (res.data.role === "visitors") {
-          navigate("/visitors");
-        } else {
-          navigate("/login");
-        }
+      if (data.is_superuser) {
+        navigate("/reception");
+      } else if (data.role === "reception") {
+        navigate("/reception");
+      } else if (data.role === "physio" || data.role === "physiotherapist") {
+        navigate("/physio");
       } else {
-        setError("Wrong credentials");
+        navigate("/login");
       }
     } catch (err) {
-      setError("Wrong credentials");
+      setError(
+        err?.response?.data?.error || "Login failed. Please check credentials."
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>Hospital Login</h1>
+    <div style={styles.wrapper}>
+      <form onSubmit={handleSubmit} style={styles.form}>
+        <h2 style={styles.title}>Hospital Login</h2>
 
-        <form onSubmit={handleLogin} style={styles.form}>
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={styles.input}
-            required
-          />
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+          style={styles.input}
+        />
 
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={styles.input}
-            required
-          />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          style={styles.input}
+        />
 
-          <button type="submit" style={styles.button}>
-            Login
-          </button>
+        {error ? <p style={styles.error}>{error}</p> : null}
 
-          {error && <p style={styles.error}>{error}</p>}
-        </form>
-      </div>
+        <button type="submit" disabled={loading} style={styles.button}>
+          {loading ? "Logging in..." : "Login"}
+        </button>
+      </form>
     </div>
   );
 }
 
 const styles = {
-  page: {
+  wrapper: {
     minHeight: "100vh",
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
     background: "#f4f6f8",
   },
-  card: {
-    width: "360px",
-    background: "#fff",
-    padding: "32px",
-    borderRadius: "12px",
-    boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
-  },
-  title: {
-    textAlign: "center",
-    marginBottom: "24px",
-    color: "#2c3e50",
-  },
   form: {
+    width: "100%",
+    maxWidth: "380px",
+    background: "#fff",
+    padding: "30px",
+    borderRadius: "12px",
+    boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
     display: "flex",
     flexDirection: "column",
     gap: "14px",
+  },
+  title: {
+    textAlign: "center",
+    marginBottom: "10px",
   },
   input: {
     padding: "12px",
     borderRadius: "8px",
     border: "1px solid #ccc",
-    fontSize: "15px",
+    fontSize: "16px",
   },
   button: {
     padding: "12px",
-    borderRadius: "8px",
     border: "none",
-    background: "#1abc9c",
-    color: "white",
+    borderRadius: "8px",
+    background: "#2563eb",
+    color: "#fff",
     fontSize: "16px",
     cursor: "pointer",
   },
   error: {
     color: "red",
+    fontSize: "14px",
     margin: 0,
-    textAlign: "center",
   },
 };

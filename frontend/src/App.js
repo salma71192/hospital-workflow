@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
 import api from "./api/api";
-
 import Login from "./pages/Login";
 import ReceptionDashboard from "./pages/ReceptionDashboard";
 import PhysioDashboard from "./pages/PhysioDashboard";
@@ -24,26 +28,47 @@ function App() {
       });
   }, []);
 
+  const handleLogin = async (username, password) => {
+    const res = await api.post("users/login/", { username, password });
+    setUser(res.data);
+    return res.data;
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.post("users/logout/");
+    } catch (err) {
+      console.error("Logout failed", err);
+    } finally {
+      setUser(null);
+    }
+  };
+
+  const isPhysio = user?.role === "physio" || user?.role === "physiotherapist";
+  const isReception = user?.role === "reception";
+
+  const getHomeRoute = () => {
+    if (!user) return "/login";
+    if (user.is_superuser) return "/reception";
+    if (isPhysio) return "/physio";
+    if (isReception) return "/reception";
+    return "/login";
+  };
+
   if (loading) {
-    return <div style={{ padding: "30px" }}>Loading...</div>;
+    return <div style={{ padding: "20px" }}>Loading...</div>;
   }
 
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={<Login onLogin={setUser} />} />
-
         <Route
-          path="/reception"
+          path="/login"
           element={
             user ? (
-              user.role === "reception" || user.is_superuser ? (
-                <ReceptionDashboard user={user} />
-              ) : (
-                <Navigate to={getDashboardPath(user)} />
-              )
+              <Navigate to={getHomeRoute()} replace />
             ) : (
-              <Navigate to="/login" />
+              <Login onLogin={handleLogin} />
             )
           }
         />
@@ -51,41 +76,30 @@ function App() {
         <Route
           path="/physio"
           element={
-            user ? (
-              user.role === "physiotherapist" || user.is_superuser ? (
-                <PhysioDashboard user={user} />
-              ) : (
-                <Navigate to={getDashboardPath(user)} />
-              )
+            user && (isPhysio || user.is_superuser) ? (
+              <PhysioDashboard user={user} onLogout={handleLogout} />
             ) : (
-              <Navigate to="/login" />
+              <Navigate to="/login" replace />
             )
           }
         />
 
         <Route
-          path="/"
+          path="/reception"
           element={
-            user ? <Navigate to={getDashboardPath(user)} /> : <Navigate to="/login" />
+            user && (isReception || user.is_superuser) ? (
+              <ReceptionDashboard user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
           }
         />
 
-        <Route path="*" element={<h2>404 - Page not found</h2>} />
+        <Route path="/" element={<Navigate to={getHomeRoute()} replace />} />
+        <Route path="*" element={<Navigate to={getHomeRoute()} replace />} />
       </Routes>
     </Router>
   );
-}
-
-function getDashboardPath(user) {
-  if (!user) return "/login";
-  if (user.is_superuser) return "/admin-panel";
-  if (user.role === "reception") return "/reception";
-  if (user.role === "physiotherapist") return "/physio";
-  if (user.role === "callcenter") return "/callcenter";
-  if (user.role === "approvals") return "/approvals";
-  if (user.role === "rcm") return "/rcm";
-  if (user.role === "visitors") return "/visitors";
-  return "/login";
 }
 
 export default App;

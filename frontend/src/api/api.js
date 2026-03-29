@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://YOUR-8000-URL.app.github.dev/api/",
+  baseURL: "https://miniature-train-4qrjjq6wvwhqwwr-8000.app.github.dev/api/",
   withCredentials: true,
 });
 

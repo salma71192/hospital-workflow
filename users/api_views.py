@@ -1,44 +1,60 @@
 from django.contrib.auth import authenticate, login, logout
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
 
 
-@api_view(["POST"])
-@permission_classes([AllowAny])
+@csrf_exempt
 def login_api(request):
-    username = request.data.get("username")
-    password = request.data.get("password")
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return JsonResponse(
+            {"error": "Username and password are required"},
+            status=400
+        )
 
     user = authenticate(request, username=username, password=password)
 
-    if user is not None:
-        login(request, user)
-        return Response({
-            "success": True,
-            "username": user.username,
-            "role": getattr(user, "role", None),
-            "is_superuser": user.is_superuser,
-        })
+    if user is None:
+        return JsonResponse({"error": "Invalid username or password"}, status=401)
 
-    return Response({
-        "success": False,
-        "error": "Invalid credentials"
-    }, status=401)
+    login(request, user)
+
+    return JsonResponse({
+        "success": True,
+        "id": user.id,
+        "username": user.username,
+        "role": getattr(user, "role", ""),
+        "is_superuser": user.is_superuser,
+    })
 
 
-@api_view(["POST"])
+@csrf_exempt
 def logout_api(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
     logout(request)
-    return Response({"success": True})
+    return JsonResponse({"success": True})
 
 
-@api_view(["GET"])
 def current_user_api(request):
-    if request.user.is_authenticated:
-        return Response({
-            "username": request.user.username,
-            "role": getattr(request.user, "role", None),
-            "is_superuser": request.user.is_superuser,
-        })
-    return Response({"detail": "Not authenticated"}, status=401)
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    return JsonResponse({
+        "id": request.user.id,
+        "username": request.user.username,
+        "role": getattr(request.user, "role", ""),
+        "is_superuser": request.user.is_superuser,
+    })
