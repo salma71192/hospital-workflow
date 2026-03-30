@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../api/api";
 import PatientSearch from "../components/PatientSearch";
 
 export default function PhysioDashboard({
@@ -9,11 +10,26 @@ export default function PhysioDashboard({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
+  const today = new Date().toISOString().split("T")[0];
+  const [assignments, setAssignments] = useState([]);
 
   const handleBackToAdmin = () => {
     onStopImpersonation();
     navigate("/admin");
   };
+
+  const loadAssignments = async () => {
+    try {
+      const res = await api.get(`reception/assignments/?date=${today}`);
+      setAssignments(res.data.assignments || []);
+    } catch (err) {
+      console.error("Failed to load assignments", err);
+    }
+  };
+
+  useEffect(() => {
+    loadAssignments();
+  }, []);
 
   return (
     <div style={styles.page}>
@@ -41,10 +57,28 @@ export default function PhysioDashboard({
         </div>
 
         <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Today&apos;s Queue</h2>
-          <div style={styles.listItem}>John Doe — Initial Assessment</div>
-          <div style={styles.listItem}>Sara Ali — Follow-up Session</div>
-          <div style={styles.listItem}>Ahmed Khan — Rehab Review</div>
+          <h2 style={styles.cardTitle}>Today&apos;s Assigned Patients</h2>
+
+          {assignments.length ? (
+            <div style={styles.assignmentList}>
+              {assignments.map((item) => (
+                <div key={item.id} style={styles.assignmentCard}>
+                  <div style={styles.assignmentPatient}>{item.patient_name}</div>
+                  <div style={styles.assignmentMeta}>
+                    Patient ID: {item.patient_file_id}
+                  </div>
+                  <div style={styles.assignmentMeta}>
+                    Date: {item.assignment_date}
+                  </div>
+                  {item.notes ? (
+                    <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={styles.emptyState}>No assigned patients for today.</div>
+          )}
         </div>
 
         <PatientSearch />
@@ -124,13 +158,32 @@ const styles = {
     fontSize: "22px",
     color: "#0f172a",
   },
-  listItem: {
-    padding: "12px 14px",
+  assignmentList: {
+    display: "grid",
+    gap: "12px",
+  },
+  assignmentCard: {
+    padding: "14px",
     border: "1px solid #dcfce7",
     background: "#f0fdf4",
-    borderRadius: "10px",
-    marginBottom: "10px",
+    borderRadius: "12px",
+  },
+  assignmentPatient: {
+    fontWeight: "700",
     color: "#14532d",
-    fontWeight: "500",
+    marginBottom: "6px",
+    fontSize: "17px",
+  },
+  assignmentMeta: {
+    color: "#166534",
+    fontSize: "14px",
+    marginBottom: "4px",
+  },
+  emptyState: {
+    padding: "18px",
+    borderRadius: "12px",
+    background: "#f8fafc",
+    color: "#64748b",
+    border: "1px dashed #cbd5e1",
   },
 };

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 import PatientSearch from "../components/PatientSearch";
@@ -11,7 +11,9 @@ export default function ReceptionDashboard({
 }) {
   const navigate = useNavigate();
 
-  const [formData, setFormData] = useState({
+  const today = new Date().toISOString().split("T")[0];
+
+  const [patientForm, setPatientForm] = useState({
     name: "",
     patient_id: "",
     current_approval_number: "",
@@ -20,6 +22,16 @@ export default function ReceptionDashboard({
     current_future_appointments: "",
   });
 
+  const [assignmentForm, setAssignmentForm] = useState({
+    patient_id: "",
+    therapist_id: "",
+    assignment_date: today,
+    notes: "",
+  });
+
+  const [patients, setPatients] = useState([]);
+  const [therapists, setTherapists] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -28,9 +40,50 @@ export default function ReceptionDashboard({
     navigate("/admin");
   };
 
-  const handleChange = (e) => {
+  const loadPatients = async () => {
+    try {
+      const res = await api.get("patients/");
+      setPatients(res.data.patients || []);
+    } catch (err) {
+      console.error("Failed to load patients", err);
+    }
+  };
+
+  const loadTherapists = async () => {
+    try {
+      const res = await api.get("reception/therapists/");
+      setTherapists(res.data.therapists || []);
+    } catch (err) {
+      console.error("Failed to load therapists", err);
+    }
+  };
+
+  const loadAssignments = async (dateValue = today) => {
+    try {
+      const res = await api.get(`reception/assignments/?date=${dateValue}`);
+      setAssignments(res.data.assignments || []);
+    } catch (err) {
+      console.error("Failed to load assignments", err);
+    }
+  };
+
+  useEffect(() => {
+    loadPatients();
+    loadTherapists();
+    loadAssignments(today);
+  }, []);
+
+  const handlePatientChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
+    setPatientForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleAssignmentChange = (e) => {
+    const { name, value } = e.target;
+    setAssignmentForm((prev) => ({
       ...prev,
       [name]: value,
     }));
@@ -42,9 +95,9 @@ export default function ReceptionDashboard({
     setError("");
 
     try {
-      const res = await api.post("patients/", formData);
+      const res = await api.post("patients/", patientForm);
       setMessage(res.data.message || "Patient file created successfully");
-      setFormData({
+      setPatientForm({
         name: "",
         patient_id: "",
         current_approval_number: "",
@@ -52,8 +105,29 @@ export default function ReceptionDashboard({
         taken_with: "",
         current_future_appointments: "",
       });
+      loadPatients();
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to create patient file");
+    }
+  };
+
+  const handleCreateAssignment = async (e) => {
+    e.preventDefault();
+    setMessage("");
+    setError("");
+
+    try {
+      const res = await api.post("reception/assignments/", assignmentForm);
+      setMessage(res.data.message || "Patient assigned successfully");
+      setAssignmentForm({
+        patient_id: "",
+        therapist_id: "",
+        assignment_date: today,
+        notes: "",
+      });
+      loadAssignments(today);
+    } catch (err) {
+      setError(err?.response?.data?.error || "Failed to assign patient");
     }
   };
 
@@ -90,8 +164,8 @@ export default function ReceptionDashboard({
               type="text"
               name="name"
               placeholder="Patient Name"
-              value={formData.name}
-              onChange={handleChange}
+              value={patientForm.name}
+              onChange={handlePatientChange}
               style={styles.input}
               required
             />
@@ -100,8 +174,8 @@ export default function ReceptionDashboard({
               type="text"
               name="patient_id"
               placeholder="Patient ID"
-              value={formData.patient_id}
-              onChange={handleChange}
+              value={patientForm.patient_id}
+              onChange={handlePatientChange}
               style={styles.input}
               required
             />
@@ -110,8 +184,8 @@ export default function ReceptionDashboard({
               type="text"
               name="current_approval_number"
               placeholder="Current Approval Number"
-              value={formData.current_approval_number}
-              onChange={handleChange}
+              value={patientForm.current_approval_number}
+              onChange={handlePatientChange}
               style={styles.input}
             />
 
@@ -119,8 +193,8 @@ export default function ReceptionDashboard({
               type="number"
               name="sessions_taken"
               placeholder="Sessions Taken"
-              value={formData.sessions_taken}
-              onChange={handleChange}
+              value={patientForm.sessions_taken}
+              onChange={handlePatientChange}
               style={styles.input}
             />
 
@@ -128,16 +202,16 @@ export default function ReceptionDashboard({
               type="text"
               name="taken_with"
               placeholder="Taken With"
-              value={formData.taken_with}
-              onChange={handleChange}
+              value={patientForm.taken_with}
+              onChange={handlePatientChange}
               style={styles.input}
             />
 
             <textarea
               name="current_future_appointments"
               placeholder="Current / Future Appointments"
-              value={formData.current_future_appointments}
-              onChange={handleChange}
+              value={patientForm.current_future_appointments}
+              onChange={handlePatientChange}
               style={styles.textarea}
             />
 
@@ -148,6 +222,96 @@ export default function ReceptionDashboard({
 
           {message && <p style={styles.success}>{message}</p>}
           {error && <p style={styles.error}>{error}</p>}
+        </div>
+
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>Assign Patient to Therapist</h2>
+
+          <form onSubmit={handleCreateAssignment} style={styles.form}>
+            <select
+              name="patient_id"
+              value={assignmentForm.patient_id}
+              onChange={handleAssignmentChange}
+              style={styles.input}
+              required
+            >
+              <option value="">Select Patient</option>
+              {patients.map((patient) => (
+                <option key={patient.id} value={patient.id}>
+                  {patient.name} - {patient.patient_id}
+                </option>
+              ))}
+            </select>
+
+            <select
+              name="therapist_id"
+              value={assignmentForm.therapist_id}
+              onChange={handleAssignmentChange}
+              style={styles.input}
+              required
+            >
+              <option value="">Select Therapist</option>
+              {therapists.map((therapist) => (
+                <option key={therapist.id} value={therapist.id}>
+                  {therapist.username}
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="date"
+              name="assignment_date"
+              value={assignmentForm.assignment_date}
+              onChange={handleAssignmentChange}
+              style={styles.input}
+              required
+            />
+
+            <textarea
+              name="notes"
+              placeholder="Notes"
+              value={assignmentForm.notes}
+              onChange={handleAssignmentChange}
+              style={styles.textarea}
+            />
+
+            <button type="submit" style={styles.primaryButton}>
+              Assign Patient
+            </button>
+          </form>
+        </div>
+
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>Today&apos;s Assignments</h2>
+
+          {assignments.length ? (
+            <div style={styles.assignmentList}>
+              {assignments.map((item) => (
+                <div key={item.id} style={styles.assignmentCard}>
+                  <div style={styles.assignmentMain}>
+                    <div style={styles.assignmentPatient}>{item.patient_name}</div>
+                    <div style={styles.assignmentMeta}>
+                      Patient ID: {item.patient_file_id}
+                    </div>
+                  </div>
+
+                  <div style={styles.assignmentSide}>
+                    <div style={styles.assignmentTherapist}>
+                      Therapist: {item.therapist_name}
+                    </div>
+                    <div style={styles.assignmentMeta}>
+                      Date: {item.assignment_date}
+                    </div>
+                    {item.notes ? (
+                      <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={styles.emptyState}>No assignments for today.</div>
+          )}
         </div>
 
         <PatientSearch />
@@ -264,5 +428,47 @@ const styles = {
     color: "#dc2626",
     marginTop: "14px",
     fontWeight: "600",
+  },
+  assignmentList: {
+    display: "grid",
+    gap: "12px",
+  },
+  assignmentCard: {
+    border: "1px solid #e2e8f0",
+    borderRadius: "14px",
+    padding: "16px",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
+    flexWrap: "wrap",
+  },
+  assignmentMain: {
+    minWidth: "220px",
+  },
+  assignmentSide: {
+    minWidth: "220px",
+  },
+  assignmentPatient: {
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: "6px",
+    fontSize: "18px",
+  },
+  assignmentTherapist: {
+    fontWeight: "700",
+    color: "#1d4ed8",
+    marginBottom: "6px",
+  },
+  assignmentMeta: {
+    color: "#64748b",
+    fontSize: "14px",
+    marginBottom: "4px",
+  },
+  emptyState: {
+    padding: "18px",
+    borderRadius: "12px",
+    background: "#f8fafc",
+    color: "#64748b",
+    border: "1px dashed #cbd5e1",
   },
 };
