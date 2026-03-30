@@ -18,6 +18,7 @@ import CallCenterSupervisorDashboard from "./pages/CallCenterSupervisorDashboard
 import VisitorsDashboard from "./pages/VisitorsDashboard";
 import VisitorCeoDashboard from "./pages/VisitorCeoDashboard";
 import ApprovalsDashboard from "./pages/ApprovalsDashboard";
+import PatientDetails from "./pages/PatientDetails";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -70,7 +71,6 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
-
         <Route path="/login" element={<Login onLogin={handleLogin} />} />
 
         <Route
@@ -239,6 +239,22 @@ function App() {
           element={
             currentUser && (currentUser.role === "visitor_ceo" || isAdmin) ? (
               <VisitorCeoDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route
+          path="/patients/:id"
+          element={
+            currentUser ? (
+              <PatientDetails
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}

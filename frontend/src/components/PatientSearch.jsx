@@ -1,7 +1,10 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 
 export default function PatientSearch() {
+  const navigate = useNavigate();
+
   const [search, setSearch] = useState("");
   const [patients, setPatients] = useState([]);
   const [error, setError] = useState("");
@@ -52,7 +55,11 @@ export default function PatientSearch() {
       {patients.length ? (
         <div style={styles.patientList}>
           {patients.map((patient) => (
-            <div key={patient.id} style={styles.patientCard}>
+            <div
+              key={patient.id}
+              style={styles.patientCard}
+              onClick={() => navigate(`/patients/${patient.id}`)}
+            >
               <div style={styles.patientName}>{patient.name}</div>
               <div style={styles.patientMeta}>Patient ID: {patient.patient_id}</div>
               <div style={styles.patientMeta}>
@@ -136,6 +143,7 @@ const styles = {
     border: "1px solid #e2e8f0",
     borderRadius: "12px",
     padding: "16px",
+    cursor: "pointer",
   },
   patientName: {
     fontWeight: "700",
