@@ -22,7 +22,7 @@ def login_api(request):
     if not username or not password:
         return JsonResponse(
             {"error": "Username and password are required"},
-            status=400
+            status=400,
         )
 
     user = authenticate(request, username=username, password=password)
@@ -38,6 +38,7 @@ def login_api(request):
         "username": user.username,
         "role": getattr(user, "role", ""),
         "is_superuser": user.is_superuser,
+        "is_staff": user.is_staff,
     })
 
 
@@ -59,6 +60,7 @@ def current_user_api(request):
         "username": request.user.username,
         "role": getattr(request.user, "role", ""),
         "is_superuser": request.user.is_superuser,
+        "is_staff": request.user.is_staff,
     })
 
 
@@ -119,6 +121,7 @@ def create_user_api(request):
         "message": f"User '{username}' created successfully",
     })
 
+
 def list_users_api(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authenticated"}, status=401)
@@ -131,3 +134,79 @@ def list_users_api(request):
     )
 
     return JsonResponse({"users": users})
+
+
+@csrf_exempt
+def update_user_api(request, user_id):
+    if request.method != "PUT":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    if not (request.user.is_superuser or getattr(request.user, "role", "") == "admin"):
+        return JsonResponse({"error": "Only admin can update users"}, status=403)
+
+    try:
+        target_user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return JsonResponse({"error": "User not found"}, status=404)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    allowed_roles = [
+        "admin",
+        "physio",
+        "reception",
+        "visitor",
+        "doctor",
+        "rcm",
+        "callcenter",
+    ]
+
+    new_role = data.get("role", target_user.role)
+    new_is_superuser = data.get("is_superuser", target_user.is_superuser)
+
+    if new_role not in allowed_roles:
+        return JsonResponse({"error": "Invalid role"}, status=400)
+
+    target_user.role = new_role
+    target_user.is_superuser = bool(new_is_superuser)
+    target_user.is_staff = target_user.is_superuser or target_user.role == "admin"
+    target_user.save()
+
+    return JsonResponse({
+        "success": True,
+        "message": f"User '{target_user.username}' updated successfully",
+    })
+
+
+@csrf_exempt
+def delete_user_api(request, user_id):
+    if request.method != "DELETE":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    if not (request.user.is_superuser or getattr(request.user, "role", "") == "admin"):
+        return JsonResponse({"error": "Only admin can delete users"}, status=403)
+
+    try:
+        target_user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return JsonResponse({"error": "User not found"}, status=404)
+
+    if target_user.id == request.user.id:
+        return JsonResponse({"error": "You cannot delete your own account"}, status=400)
+
+    username = target_user.username
+    target_user.delete()
+
+    return JsonResponse({
+        "success": True,
+        "message": f"User '{username}' deleted successfully",
+    })

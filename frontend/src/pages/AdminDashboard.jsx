@@ -97,8 +97,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     "no_role",
   ];
 
-  const visibleUsers =
-    groupedUsers[activeCategory] ?? groupedUsers.admin ?? [];
+  const visibleUsers = groupedUsers[activeCategory] ?? groupedUsers.admin ?? [];
 
   const handleCategoryChange = (category) => {
     setActiveCategory(category);
@@ -121,17 +120,19 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     try {
       const res = await api.post("users/create-user/", formData);
       setMessage(res.data.message || "User created successfully");
+      setError("");
       setFormData({
         username: "",
         password: "",
         role: "admin",
         is_superuser: false,
       });
-      fetchUsers();
+      await fetchUsers();
       localStorage.setItem("activeCategory", formData.role);
       setActiveCategory(formData.role);
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to create user");
+      setMessage("");
     }
   };
 
@@ -143,9 +144,39 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     navigate(route);
   };
 
+  const handleRoleUpdate = async (userId, newRole, newIsSuperuser) => {
+    try {
+      const res = await api.put(`users/update-user/${userId}/`, {
+        role: newRole,
+        is_superuser: newIsSuperuser,
+      });
+      setMessage(res.data.message || "User updated successfully");
+      setError("");
+      await fetchUsers();
+    } catch (err) {
+      setError(err?.response?.data?.error || "Failed to update user");
+      setMessage("");
+    }
+  };
+
+  const handleDeleteUser = async (userId, username) => {
+    const confirmed = window.confirm(`Delete user "${username}"?`);
+    if (!confirmed) return;
+
+    try {
+      const res = await api.delete(`users/delete-user/${userId}/`);
+      setMessage(res.data.message || "User deleted successfully");
+      setError("");
+      await fetchUsers();
+    } catch (err) {
+      setError(err?.response?.data?.error || "Failed to delete user");
+      setMessage("");
+    }
+  };
+
   const renderUserCard = (item) => (
     <div key={item.id} style={styles.userCard}>
-      <div>
+      <div style={styles.userInfo}>
         <div style={styles.userName}>{item.username}</div>
         <div style={styles.userMeta}>
           Role: {item.role || "No role"}
@@ -153,9 +184,44 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         </div>
       </div>
 
-      <button style={styles.viewButton} onClick={() => handleActAsUser(item)}>
-        Open as User
-      </button>
+      <div style={styles.actionsWrap}>
+        <select
+          value={item.role || ""}
+          onChange={(e) =>
+            handleRoleUpdate(item.id, e.target.value, item.is_superuser)
+          }
+          style={styles.smallSelect}
+        >
+          {roles.map((role) => (
+            <option key={role} value={role}>
+              {roleLabels[role]}
+            </option>
+          ))}
+        </select>
+
+        <label style={styles.smallCheckboxRow}>
+          <input
+            type="checkbox"
+            checked={!!item.is_superuser}
+            onChange={(e) =>
+              handleRoleUpdate(item.id, item.role, e.target.checked)
+            }
+          />
+          Superuser
+        </label>
+
+        <button style={styles.viewButton} onClick={() => handleActAsUser(item)}>
+          Open as User
+        </button>
+
+        <button
+          style={styles.deleteButton}
+          onClick={() => handleDeleteUser(item.id, item.username)}
+          disabled={item.username === user?.username}
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 
@@ -270,7 +336,7 @@ const styles = {
     fontFamily: "Arial, sans-serif",
   },
   container: {
-    maxWidth: "1000px",
+    maxWidth: "1100px",
     margin: "0 auto",
   },
   topBar: {
@@ -390,6 +456,10 @@ const styles = {
     border: "1px solid #e2e8f0",
     borderRadius: "12px",
     padding: "16px",
+    flexWrap: "wrap",
+  },
+  userInfo: {
+    minWidth: "180px",
   },
   userName: {
     fontWeight: "700",
@@ -400,8 +470,36 @@ const styles = {
     color: "#64748b",
     fontSize: "14px",
   },
+  actionsWrap: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  smallSelect: {
+    padding: "8px 10px",
+    borderRadius: "8px",
+    border: "1px solid #cbd5e1",
+    fontSize: "14px",
+  },
+  smallCheckboxRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    fontSize: "14px",
+    color: "#334155",
+  },
   viewButton: {
     background: "#1d4ed8",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "10px 14px",
+    fontWeight: "600",
+    cursor: "pointer",
+  },
+  deleteButton: {
+    background: "#ef4444",
     color: "#fff",
     border: "none",
     borderRadius: "10px",
