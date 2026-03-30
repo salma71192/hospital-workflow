@@ -7,17 +7,21 @@ import {
 } from "react-router-dom";
 import api from "./api/api";
 import Login from "./pages/Login";
-import ReceptionDashboard from "./pages/ReceptionDashboard";
-import PhysioDashboard from "./pages/PhysioDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import ReceptionDashboard from "./pages/ReceptionDashboard";
+import ReceptionSupervisorDashboard from "./pages/ReceptionSupervisorDashboard";
+import PhysioDashboard from "./pages/PhysioDashboard";
 import DoctorDashboard from "./pages/DoctorDashboard";
 import RcmDashboard from "./pages/RcmDashboard";
 import CallCenterDashboard from "./pages/CallCenterDashboard";
+import CallCenterSupervisorDashboard from "./pages/CallCenterSupervisorDashboard";
 import VisitorsDashboard from "./pages/VisitorsDashboard";
+import VisitorCeoDashboard from "./pages/VisitorCeoDashboard";
+import ApprovalsDashboard from "./pages/ApprovalsDashboard";
 
 function App() {
-  const [user, setUser] = useState(null); // real logged-in user
-  const [actingAs, setActingAs] = useState(null); // selected user from admin
+  const [user, setUser] = useState(null);
+  const [actingAs, setActingAs] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,6 +40,7 @@ function App() {
 
   const handleLogin = (userData) => {
     setUser(userData);
+    setActingAs(null);
   };
 
   const handleLogout = async () => {
@@ -65,6 +70,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
+
         <Route path="/login" element={<Login onLogin={handleLogin} />} />
 
         <Route
@@ -83,10 +89,43 @@ function App() {
         />
 
         <Route
+          path="/approvals"
+          element={
+            currentUser && (currentUser.role === "approvals" || isAdmin) ? (
+              <ApprovalsDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route
           path="/reception"
           element={
             currentUser && (currentUser.role === "reception" || isAdmin) ? (
               <ReceptionDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route
+          path="/reception-supervisor"
+          element={
+            currentUser &&
+            (currentUser.role === "reception_supervisor" || isAdmin) ? (
+              <ReceptionSupervisorDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
@@ -163,10 +202,43 @@ function App() {
         />
 
         <Route
+          path="/callcenter-supervisor"
+          element={
+            currentUser &&
+            (currentUser.role === "callcenter_supervisor" || isAdmin) ? (
+              <CallCenterSupervisorDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route
           path="/visitors"
           element={
             currentUser && (currentUser.role === "visitor" || isAdmin) ? (
               <VisitorsDashboard
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={stopImpersonation}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+
+        <Route
+          path="/visitor-ceo"
+          element={
+            currentUser && (currentUser.role === "visitor_ceo" || isAdmin) ? (
+              <VisitorCeoDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}

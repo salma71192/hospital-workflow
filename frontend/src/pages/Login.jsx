@@ -17,17 +17,23 @@ export default function Login({ onLogin }) {
 
       if (res.data.success) {
         const userData = {
+          id: res.data.id,
           username: res.data.username,
           role: res.data.role,
           is_superuser: res.data.is_superuser,
+          is_staff: res.data.is_staff,
         };
 
         onLogin(userData);
 
         if (res.data.is_superuser || res.data.role === "admin") {
           navigate("/admin");
+        } else if (res.data.role === "approvals") {
+          navigate("/approvals");
         } else if (res.data.role === "reception") {
           navigate("/reception");
+        } else if (res.data.role === "reception_supervisor") {
+          navigate("/reception-supervisor");
         } else if (res.data.role === "physio") {
           navigate("/physio");
         } else if (res.data.role === "doctor") {
@@ -36,8 +42,12 @@ export default function Login({ onLogin }) {
           navigate("/rcm");
         } else if (res.data.role === "callcenter") {
           navigate("/callcenter");
+        } else if (res.data.role === "callcenter_supervisor") {
+          navigate("/callcenter-supervisor");
         } else if (res.data.role === "visitor") {
           navigate("/visitors");
+        } else if (res.data.role === "visitor_ceo") {
+          navigate("/visitor-ceo");
         } else {
           navigate("/login");
         }
@@ -45,7 +55,7 @@ export default function Login({ onLogin }) {
         setError("Wrong credentials");
       }
     } catch (err) {
-      setError("Wrong credentials");
+      setError(err?.response?.data?.error || "Wrong credentials");
     }
   };
 

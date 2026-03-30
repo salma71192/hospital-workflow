@@ -159,12 +159,16 @@ def update_user_api(request, user_id):
 
     allowed_roles = [
         "admin",
+        "approvals",
         "physio",
         "reception",
+        "reception_supervisor",
         "visitor",
+        "visitor_ceo",
         "doctor",
         "rcm",
         "callcenter",
+        "callcenter_supervisor",
     ]
 
     new_role = data.get("role", target_user.role)

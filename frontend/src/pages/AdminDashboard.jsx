@@ -21,33 +21,46 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
 
   const roles = [
     "admin",
+    "approvals",
     "physio",
     "reception",
+    "reception_supervisor",
     "visitor",
+    "visitor_ceo",
     "doctor",
     "rcm",
     "callcenter",
+    "callcenter_supervisor",
   ];
 
   const roleLabels = {
     admin: "Admin",
+    approvals: "Approvals",
     physio: "Physio",
     reception: "Reception",
+    reception_supervisor: "Reception Supervisor",
     visitor: "Visitors",
+    visitor_ceo: "Visitor CEO",
     doctor: "Doctor",
     rcm: "RCM",
     callcenter: "Call Center",
+    callcenter_supervisor: "Call Center Supervisor",
     no_role: "No Role",
   };
 
-  const roleRoutes = {
-    admin: "/admin",
-    physio: "/physio",
-    reception: "/reception",
-    visitor: "/visitors",
-    doctor: "/doctor",
-    rcm: "/rcm",
-    callcenter: "/callcenter",
+  const roleLabels = {
+  admin: "Admin",
+  approvals: "Approvals",
+    physio: "Physio",
+    reception: "Reception",
+    reception_supervisor: "Reception Supervisor",
+    visitor: "Visitors",
+    visitor_ceo: "Visitor CEO",
+    doctor: "Doctor",
+    rcm: "RCM",
+    callcenter: "Call Center",
+    callcenter_supervisor: "Call Center Supervisor",
+    no_role: "No Role",
   };
 
   const fetchUsers = async () => {
@@ -66,12 +79,16 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const groupedUsers = useMemo(() => {
     const groups = {
       admin: [],
+      approvals: [],
       reception: [],
+      reception_supervisor: [],
       physio: [],
       doctor: [],
       rcm: [],
       callcenter: [],
+      callcenter_supervisor: [],
       visitor: [],
+      visitor_ceo: [],
       no_role: [],
     };
 
@@ -88,12 +105,16 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
 
   const categoryOrder = [
     "admin",
+    "approvals",
     "reception",
+    "reception_supervisor",
     "physio",
     "doctor",
     "rcm",
     "callcenter",
+    "callcenter_supervisor",
     "visitor",
+    "visitor_ceo",
     "no_role",
   ];
 
