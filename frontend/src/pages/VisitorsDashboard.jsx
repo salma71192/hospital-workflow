@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import PatientSearch from "../components/PatientSearch";
 
 export default function VisitorsDashboard({
   user,
@@ -39,40 +40,14 @@ export default function VisitorsDashboard({
           </button>
         </div>
 
-        <div style={styles.grid}>
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Today&apos;s Visitors</h2>
-            <div style={styles.listItem}>Registered Visitors — 12</div>
-            <div style={styles.listItem}>Checked In — 9</div>
-            <div style={styles.listItem}>Pending Approval — 3</div>
-          </div>
-
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Access Summary</h2>
-            <div style={styles.statsWrap}>
-              <div style={styles.statBox}>
-                <span style={styles.statNumber}>5</span>
-                <span style={styles.statLabel}>VIP Visitors</span>
-              </div>
-              <div style={styles.statBox}>
-                <span style={styles.statNumber}>2</span>
-                <span style={styles.statLabel}>Escorts Needed</span>
-              </div>
-              <div style={styles.statBox}>
-                <span style={styles.statNumber}>1</span>
-                <span style={styles.statLabel}>Denied</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Notes</h2>
-          <p style={styles.cardText}>
-            This starter visitors dashboard can later connect to visitor
-            registration, approval, and check-in APIs.
-          </p>
+          <h2 style={styles.cardTitle}>Today&apos;s Visitors</h2>
+          <div style={styles.listItem}>Registered Visitors — 12</div>
+          <div style={styles.listItem}>Checked In — 9</div>
+          <div style={styles.listItem}>Pending Approval — 3</div>
         </div>
+
+        <PatientSearch />
       </div>
     </div>
   );
@@ -124,20 +99,14 @@ const styles = {
     cursor: "pointer",
     fontWeight: "600",
   },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "20px",
-    marginBottom: "24px",
-  },
   card: {
     background: "#fff",
     borderRadius: "18px",
     padding: "24px",
     boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+    marginBottom: "20px",
   },
   cardTitle: { margin: "0 0 12px 0", fontSize: "22px", color: "#0f172a" },
-  cardText: { margin: 0, color: "#64748b", lineHeight: 1.6 },
   listItem: {
     padding: "12px 14px",
     border: "1px solid #e5e7eb",
@@ -147,23 +116,4 @@ const styles = {
     color: "#374151",
     fontWeight: "500",
   },
-  statsWrap: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "12px",
-  },
-  statBox: {
-    background: "#f9fafb",
-    borderRadius: "14px",
-    padding: "18px 12px",
-    textAlign: "center",
-  },
-  statNumber: {
-    display: "block",
-    fontSize: "28px",
-    fontWeight: "700",
-    color: "#4b5563",
-    marginBottom: "6px",
-  },
-  statLabel: { fontSize: "13px", color: "#475569" },
 };

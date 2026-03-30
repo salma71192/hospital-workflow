@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import PatientSearch from "../components/PatientSearch";
 
 export default function RcmDashboard({
   user,
@@ -37,40 +38,14 @@ export default function RcmDashboard({
           </button>
         </div>
 
-        <div style={styles.grid}>
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Claims Overview</h2>
-            <div style={styles.listItem}>Pending Claims — 21</div>
-            <div style={styles.listItem}>Approved Today — 13</div>
-            <div style={styles.listItem}>Rejected Claims — 3</div>
-          </div>
-
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Revenue Status</h2>
-            <div style={styles.statsWrap}>
-              <div style={styles.statBox}>
-                <span style={styles.statNumber}>85%</span>
-                <span style={styles.statLabel}>Collection Rate</span>
-              </div>
-              <div style={styles.statBox}>
-                <span style={styles.statNumber}>9</span>
-                <span style={styles.statLabel}>Follow-ups</span>
-              </div>
-              <div style={styles.statBox}>
-                <span style={styles.statNumber}>4</span>
-                <span style={styles.statLabel}>Escalations</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Notes</h2>
-          <p style={styles.cardText}>
-            This starter RCM dashboard can later connect to billing, insurance,
-            and claims APIs.
-          </p>
+          <h2 style={styles.cardTitle}>Claims Overview</h2>
+          <div style={styles.listItem}>Pending Claims — 21</div>
+          <div style={styles.listItem}>Approved Today — 13</div>
+          <div style={styles.listItem}>Rejected Claims — 3</div>
         </div>
+
+        <PatientSearch />
       </div>
     </div>
   );
@@ -122,20 +97,14 @@ const styles = {
     cursor: "pointer",
     fontWeight: "600",
   },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "20px",
-    marginBottom: "24px",
-  },
   card: {
     background: "#fff",
     borderRadius: "18px",
     padding: "24px",
     boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+    marginBottom: "20px",
   },
   cardTitle: { margin: "0 0 12px 0", fontSize: "22px", color: "#0f172a" },
-  cardText: { margin: 0, color: "#64748b", lineHeight: 1.6 },
   listItem: {
     padding: "12px 14px",
     border: "1px solid #fed7aa",
@@ -145,23 +114,4 @@ const styles = {
     color: "#9a3412",
     fontWeight: "500",
   },
-  statsWrap: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "12px",
-  },
-  statBox: {
-    background: "#fff7ed",
-    borderRadius: "14px",
-    padding: "18px 12px",
-    textAlign: "center",
-  },
-  statNumber: {
-    display: "block",
-    fontSize: "28px",
-    fontWeight: "700",
-    color: "#ea580c",
-    marginBottom: "6px",
-  },
-  statLabel: { fontSize: "13px", color: "#475569" },
 };

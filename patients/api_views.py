@@ -7,13 +7,33 @@ from .models import Patient
 
 @csrf_exempt
 def patients_api(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
     if request.method == "GET":
-        patients = list(Patient.objects.values("id", "name", "patient_id"))
+        search = request.GET.get("search", "").strip()
+
+        patients_qs = Patient.objects.all().order_by("name")
+
+        if search:
+            patients_qs = patients_qs.filter(name__icontains=search) | Patient.objects.filter(
+                patient_id__icontains=search
+            )
+
+        patients = list(
+            patients_qs.values("id", "name", "patient_id")
+        )
         return JsonResponse({"patients": patients})
 
     if request.method == "POST":
-        if not request.user.is_authenticated:
-            return JsonResponse({"error": "Not authenticated"}, status=401)
+        if not (
+            request.user.is_superuser
+            or getattr(request.user, "role", "") in ["admin", "reception"]
+        ):
+            return JsonResponse(
+                {"error": "Only admin or reception can register patients"},
+                status=403,
+            )
 
         try:
             data = json.loads(request.body)

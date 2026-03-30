@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import PatientSearch from "../components/PatientSearch";
 
 export default function CallCenterDashboard({
   user,
@@ -39,40 +40,14 @@ export default function CallCenterDashboard({
           </button>
         </div>
 
-        <div style={styles.grid}>
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Live Calls</h2>
-            <div style={styles.listItem}>Queue Waiting — 6</div>
-            <div style={styles.listItem}>Resolved Today — 18</div>
-            <div style={styles.listItem}>Missed Calls — 2</div>
-          </div>
-
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Performance</h2>
-            <div style={styles.statsWrap}>
-              <div style={styles.statBox}>
-                <span style={styles.statNumber}>92%</span>
-                <span style={styles.statLabel}>Answer Rate</span>
-              </div>
-              <div style={styles.statBox}>
-                <span style={styles.statNumber}>4m</span>
-                <span style={styles.statLabel}>Avg Call Time</span>
-              </div>
-              <div style={styles.statBox}>
-                <span style={styles.statNumber}>7</span>
-                <span style={styles.statLabel}>Follow-ups</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Notes</h2>
-          <p style={styles.cardText}>
-            This starter call center dashboard can be connected later to live
-            call logs and appointment booking APIs.
-          </p>
+          <h2 style={styles.cardTitle}>Live Calls</h2>
+          <div style={styles.listItem}>Queue Waiting — 6</div>
+          <div style={styles.listItem}>Resolved Today — 18</div>
+          <div style={styles.listItem}>Missed Calls — 2</div>
         </div>
+
+        <PatientSearch />
       </div>
     </div>
   );
@@ -124,20 +99,14 @@ const styles = {
     cursor: "pointer",
     fontWeight: "600",
   },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "20px",
-    marginBottom: "24px",
-  },
   card: {
     background: "#fff",
     borderRadius: "18px",
     padding: "24px",
     boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+    marginBottom: "20px",
   },
   cardTitle: { margin: "0 0 12px 0", fontSize: "22px", color: "#0f172a" },
-  cardText: { margin: 0, color: "#64748b", lineHeight: 1.6 },
   listItem: {
     padding: "12px 14px",
     border: "1px solid #fbcfe8",
@@ -147,23 +116,4 @@ const styles = {
     color: "#9d174d",
     fontWeight: "500",
   },
-  statsWrap: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "12px",
-  },
-  statBox: {
-    background: "#fdf2f8",
-    borderRadius: "14px",
-    padding: "18px 12px",
-    textAlign: "center",
-  },
-  statNumber: {
-    display: "block",
-    fontSize: "28px",
-    fontWeight: "700",
-    color: "#db2777",
-    marginBottom: "6px",
-  },
-  statLabel: { fontSize: "13px", color: "#475569" },
 };

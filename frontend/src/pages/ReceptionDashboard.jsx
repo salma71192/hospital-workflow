@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
+import PatientSearch from "../components/PatientSearch";
 
 export default function ReceptionDashboard({
   user,
@@ -15,22 +16,8 @@ export default function ReceptionDashboard({
     patient_id: "",
   });
 
-  const [patients, setPatients] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-
-  const fetchPatients = async () => {
-    try {
-      const res = await api.get("patients/");
-      setPatients(res.data.patients || []);
-    } catch (err) {
-      console.error("Failed to load patients", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchPatients();
-  }, []);
 
   const handleBackToAdmin = () => {
     onStopImpersonation();
@@ -57,7 +44,6 @@ export default function ReceptionDashboard({
         name: "",
         patient_id: "",
       });
-      fetchPatients();
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to register patient");
     }
@@ -121,26 +107,7 @@ export default function ReceptionDashboard({
           {error && <p style={styles.error}>{error}</p>}
         </div>
 
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Registered Patients</h2>
-
-          {patients.length ? (
-            <div style={styles.patientList}>
-              {patients.map((patient) => (
-                <div key={patient.id} style={styles.patientCard}>
-                  <div>
-                    <div style={styles.patientName}>{patient.name}</div>
-                    <div style={styles.patientMeta}>
-                      Patient ID: {patient.patient_id}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={styles.emptyState}>No patients registered yet.</div>
-          )}
-        </div>
+        <PatientSearch />
       </div>
     </div>
   );
@@ -246,30 +213,5 @@ const styles = {
     color: "#dc2626",
     marginTop: "14px",
     fontWeight: "600",
-  },
-  patientList: {
-    display: "grid",
-    gap: "12px",
-  },
-  patientCard: {
-    border: "1px solid #e2e8f0",
-    borderRadius: "12px",
-    padding: "16px",
-  },
-  patientName: {
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: "6px",
-  },
-  patientMeta: {
-    color: "#64748b",
-    fontSize: "14px",
-  },
-  emptyState: {
-    padding: "18px",
-    borderRadius: "12px",
-    background: "#f8fafc",
-    color: "#64748b",
-    border: "1px dashed #cbd5e1",
   },
 };
