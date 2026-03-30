@@ -6,6 +6,21 @@ import json
 from .models import User
 
 
+ALLOWED_ROLES = [
+    "admin",
+    "approvals",
+    "physio",
+    "reception",
+    "reception_supervisor",
+    "visitor",
+    "visitor_ceo",
+    "doctor",
+    "rcm",
+    "callcenter",
+    "callcenter_supervisor",
+]
+
+
 @csrf_exempt
 def login_api(request):
     if request.method != "POST":
@@ -85,20 +100,10 @@ def create_user_api(request):
     role = data.get("role")
     is_superuser = data.get("is_superuser", False)
 
-    allowed_roles = [
-        "admin",
-        "physio",
-        "reception",
-        "visitor",
-        "doctor",
-        "rcm",
-        "callcenter",
-    ]
-
     if not username or not password:
         return JsonResponse({"error": "Username and password are required"}, status=400)
 
-    if role not in allowed_roles:
+    if role not in ALLOWED_ROLES:
         return JsonResponse({"error": "Invalid role"}, status=400)
 
     if User.objects.filter(username=username).exists():
@@ -157,24 +162,10 @@ def update_user_api(request, user_id):
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    allowed_roles = [
-        "admin",
-        "approvals",
-        "physio",
-        "reception",
-        "reception_supervisor",
-        "visitor",
-        "visitor_ceo",
-        "doctor",
-        "rcm",
-        "callcenter",
-        "callcenter_supervisor",
-    ]
-
     new_role = data.get("role", target_user.role)
     new_is_superuser = data.get("is_superuser", target_user.is_superuser)
 
-    if new_role not in allowed_roles:
+    if new_role not in ALLOWED_ROLES:
         return JsonResponse({"error": "Invalid role"}, status=400)
 
     target_user.role = new_role

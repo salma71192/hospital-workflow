@@ -48,19 +48,18 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     no_role: "No Role",
   };
 
-  const roleLabels = {
-  admin: "Admin",
-  approvals: "Approvals",
-    physio: "Physio",
-    reception: "Reception",
-    reception_supervisor: "Reception Supervisor",
-    visitor: "Visitors",
-    visitor_ceo: "Visitor CEO",
-    doctor: "Doctor",
-    rcm: "RCM",
-    callcenter: "Call Center",
-    callcenter_supervisor: "Call Center Supervisor",
-    no_role: "No Role",
+  const roleRoutes = {
+    admin: "/admin",
+    approvals: "/approvals",
+    physio: "/physio",
+    reception: "/reception",
+    reception_supervisor: "/reception-supervisor",
+    visitor: "/visitors",
+    visitor_ceo: "/visitor-ceo",
+    doctor: "/doctor",
+    rcm: "/rcm",
+    callcenter: "/callcenter",
+    callcenter_supervisor: "/callcenter-supervisor",
   };
 
   const fetchUsers = async () => {

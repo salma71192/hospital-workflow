@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 import PatientSearch from "../components/PatientSearch";
@@ -14,6 +14,10 @@ export default function ReceptionDashboard({
   const [formData, setFormData] = useState({
     name: "",
     patient_id: "",
+    current_approval_number: "",
+    sessions_taken: "",
+    taken_with: "",
+    current_future_appointments: "",
   });
 
   const [message, setMessage] = useState("");
@@ -32,20 +36,24 @@ export default function ReceptionDashboard({
     }));
   };
 
-  const handleRegisterPatient = async (e) => {
+  const handleCreatePatientFile = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
 
     try {
       const res = await api.post("patients/", formData);
-      setMessage(res.data.message || "Patient registered successfully");
+      setMessage(res.data.message || "Patient file created successfully");
       setFormData({
         name: "",
         patient_id: "",
+        current_approval_number: "",
+        sessions_taken: "",
+        taken_with: "",
+        current_future_appointments: "",
       });
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to register patient");
+      setError(err?.response?.data?.error || "Failed to create patient file");
     }
   };
 
@@ -75,9 +83,9 @@ export default function ReceptionDashboard({
         </div>
 
         <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Register Patient</h2>
+          <h2 style={styles.cardTitle}>Create Patient File</h2>
 
-          <form onSubmit={handleRegisterPatient} style={styles.form}>
+          <form onSubmit={handleCreatePatientFile} style={styles.form}>
             <input
               type="text"
               name="name"
@@ -98,8 +106,43 @@ export default function ReceptionDashboard({
               required
             />
 
+            <input
+              type="text"
+              name="current_approval_number"
+              placeholder="Current Approval Number"
+              value={formData.current_approval_number}
+              onChange={handleChange}
+              style={styles.input}
+            />
+
+            <input
+              type="number"
+              name="sessions_taken"
+              placeholder="Sessions Taken"
+              value={formData.sessions_taken}
+              onChange={handleChange}
+              style={styles.input}
+            />
+
+            <input
+              type="text"
+              name="taken_with"
+              placeholder="Taken With"
+              value={formData.taken_with}
+              onChange={handleChange}
+              style={styles.input}
+            />
+
+            <textarea
+              name="current_future_appointments"
+              placeholder="Current / Future Appointments"
+              value={formData.current_future_appointments}
+              onChange={handleChange}
+              style={styles.textarea}
+            />
+
             <button type="submit" style={styles.primaryButton}>
-              Register Patient
+              Create Patient File
             </button>
           </form>
 
@@ -193,6 +236,14 @@ const styles = {
     borderRadius: "10px",
     border: "1px solid #cbd5e1",
     fontSize: "15px",
+  },
+  textarea: {
+    minHeight: "90px",
+    padding: "12px 14px",
+    borderRadius: "10px",
+    border: "1px solid #cbd5e1",
+    fontSize: "15px",
+    resize: "vertical",
   },
   primaryButton: {
     background: "#2563eb",

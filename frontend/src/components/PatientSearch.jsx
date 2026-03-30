@@ -21,21 +21,15 @@ export default function PatientSearch() {
     }
   };
 
-  const handleClear = async () => {
+  const handleClear = () => {
     setSearch("");
+    setPatients([]);
     setError("");
-
-    try {
-      const res = await api.get("patients/");
-      setPatients(res.data.patients || []);
-    } catch (err) {
-      setError("Failed to load patients");
-    }
   };
 
   return (
     <div style={styles.card}>
-      <h2 style={styles.cardTitle}>Search Patients</h2>
+      <h2 style={styles.cardTitle}>Search Patient Files</h2>
 
       <form onSubmit={handleSearch} style={styles.searchForm}>
         <input
@@ -61,11 +55,23 @@ export default function PatientSearch() {
             <div key={patient.id} style={styles.patientCard}>
               <div style={styles.patientName}>{patient.name}</div>
               <div style={styles.patientMeta}>Patient ID: {patient.patient_id}</div>
+              <div style={styles.patientMeta}>
+                Current Approval Number: {patient.current_approval_number || "-"}
+              </div>
+              <div style={styles.patientMeta}>
+                Sessions Taken: {patient.sessions_taken ?? 0}
+              </div>
+              <div style={styles.patientMeta}>
+                Taken With: {patient.taken_with || "-"}
+              </div>
+              <div style={styles.patientMeta}>
+                Current / Future Appointments: {patient.current_future_appointments || "-"}
+              </div>
             </div>
           ))}
         </div>
       ) : (
-        <div style={styles.emptyState}>Search to view patients.</div>
+        <div style={styles.emptyState}>Search to view patient files.</div>
       )}
     </div>
   );
@@ -134,11 +140,13 @@ const styles = {
   patientName: {
     fontWeight: "700",
     color: "#0f172a",
-    marginBottom: "6px",
+    marginBottom: "8px",
+    fontSize: "18px",
   },
   patientMeta: {
     color: "#64748b",
     fontSize: "14px",
+    marginBottom: "6px",
   },
   emptyState: {
     padding: "18px",
