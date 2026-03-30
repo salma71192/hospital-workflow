@@ -1,32 +1,53 @@
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+
 from .models import Patient
-from users.models import User  # To assign physio
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def create_patient_api(request):
-    data = request.data
-    full_name = data.get('full_name')
-    file_number = data.get('file_number')
-    therapist_id = data.get('therapist')  # optional
 
-    if not full_name or not file_number:
-        return Response({'success': False, 'error': 'Missing fields'}, status=400)
+@csrf_exempt
+def patients_api(request):
+    if request.method == "GET":
+        patients = list(Patient.objects.values("id", "name", "patient_id"))
+        return JsonResponse({"patients": patients})
 
-    patient = Patient.objects.create(
-        full_name=full_name,
-        file_number=file_number,
-    )
+    if request.method == "POST":
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Not authenticated"}, status=401)
 
-    # Assign physiotherapist if given
-    if therapist_id:
         try:
-            physio = User.objects.get(id=therapist_id, role='physiotherapist')
-            patient.assigned_physio = physio
-            patient.save()
-        except User.DoesNotExist:
-            return Response({'success': False, 'error': 'Invalid physiotherapist'}, status=400)
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    return Response({'success': True, 'patient_id': patient.id})
+        name = data.get("name")
+        patient_id = data.get("patient_id")
+
+        if not name or not patient_id:
+            return JsonResponse(
+                {"error": "Name and patient ID are required"},
+                status=400,
+            )
+
+        if Patient.objects.filter(patient_id=patient_id).exists():
+            return JsonResponse(
+                {"error": "Patient ID already exists"},
+                status=400,
+            )
+
+        patient = Patient.objects.create(
+            name=name,
+            patient_id=patient_id,
+        )
+
+        return JsonResponse({
+            "success": True,
+            "message": "Patient registered successfully",
+            "patient": {
+                "id": patient.id,
+                "name": patient.name,
+                "patient_id": patient.patient_id,
+            },
+        })
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
