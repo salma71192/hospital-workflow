@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 
@@ -9,9 +9,11 @@ export default function ReceptionDashboard({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
-  const today = new Date().toISOString().split("T")[0];
 
-  const [openSection, setOpenSection] = useState("search");
+  const today = new Date().toISOString().split("T")[0];
+  const currentMonth = new Date().toISOString().slice(0, 7);
+
+  const [activeSection, setActiveSection] = useState("search");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -33,6 +35,9 @@ export default function ReceptionDashboard({
     notes: "",
   });
 
+  const [historyDate, setHistoryDate] = useState(today);
+  const [historyMonth, setHistoryMonth] = useState(currentMonth);
+
   const [therapists, setTherapists] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [message, setMessage] = useState("");
@@ -41,10 +46,6 @@ export default function ReceptionDashboard({
   const handleBackToAdmin = () => {
     onStopImpersonation();
     navigate("/admin");
-  };
-
-  const toggleSection = (sectionName) => {
-    setOpenSection((prev) => (prev === sectionName ? "" : sectionName));
   };
 
   const loadTherapists = async () => {
@@ -88,7 +89,6 @@ export default function ReceptionDashboard({
         setMessage("Patient found. You can open file or assign to therapist.");
       } else {
         setMessage("Patient not found. Please register new patient.");
-        setOpenSection("register");
       }
     } catch (err) {
       setError("Failed to search patient");
@@ -101,7 +101,7 @@ export default function ReceptionDashboard({
       ...prev,
       patient_id: patient.id,
     }));
-    setOpenSection("assign");
+    setActiveSection("assign");
     setMessage(`Selected ${patient.name} for assignment.`);
     setError("");
   };
@@ -149,7 +149,7 @@ export default function ReceptionDashboard({
           ...prev,
           patient_id: createdPatient.id,
         }));
-        setOpenSection("assign");
+        setActiveSection("assign");
       }
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to create patient file");
@@ -177,13 +177,33 @@ export default function ReceptionDashboard({
       setSelectedPatient(null);
       setSearchResults([]);
       setSearchTerm("");
-      loadAssignments(today);
-      setOpenSection("today");
+
+      await loadAssignments(today);
+      setActiveSection("today");
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to assign patient");
       setMessage("");
     }
   };
+
+  const dailyHistoryAssignments = useMemo(() => {
+    return assignments.filter((item) => item.assignment_date === historyDate);
+  }, [assignments, historyDate]);
+
+  const monthlyHistoryAssignments = useMemo(() => {
+    return assignments.filter((item) =>
+      String(item.assignment_date || "").startsWith(historyMonth)
+    );
+  }, [assignments, historyMonth]);
+
+  const sidebarItems = [
+    { key: "search", label: "Search Patient" },
+    { key: "register", label: "Register New Patient" },
+    { key: "assign", label: "Assign Patient" },
+    { key: "today", label: "Today's Assignments" },
+    { key: "daily_history", label: "Daily History" },
+    { key: "monthly_history", label: "Monthly History" },
+  ];
 
   return (
     <div style={styles.page}>
@@ -213,247 +233,345 @@ export default function ReceptionDashboard({
         {message && <div style={styles.successBox}>{message}</div>}
         {error && <div style={styles.errorBox}>{error}</div>}
 
-        <SectionCard
-          title="1. Search Patient"
-          isOpen={openSection === "search"}
-          onToggle={() => toggleSection("search")}
-        >
-          <form onSubmit={handleSearchPatient} style={styles.formRow}>
-            <input
-              type="text"
-              placeholder="Search by patient name or ID"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={styles.input}
-              required
-            />
-            <button type="submit" style={styles.primaryButton}>
-              Search
-            </button>
-          </form>
+        <div style={styles.layout}>
+          <aside style={styles.sidebar}>
+            <div style={styles.sidebarTitle}>Workflow</div>
 
-          {searchResults.length > 0 ? (
-            <div style={styles.resultsList}>
-              {searchResults.map((patient) => (
-                <div key={patient.id} style={styles.resultCard}>
-                  <div>
-                    <div style={styles.resultName}>{patient.name}</div>
-                    <div style={styles.resultMeta}>
-                      ID: {patient.patient_id}
-                    </div>
-                    <div style={styles.resultMeta}>
-                      Approval: {patient.current_approval_number || "-"}
-                    </div>
-                    <div style={styles.resultMeta}>
-                      Sessions: {patient.sessions_taken ?? 0}
-                    </div>
-                    <div style={styles.resultMeta}>
-                      Taken With: {patient.taken_with || "-"}
-                    </div>
-                    <div style={styles.resultMeta}>
-                      Appointments: {patient.current_future_appointments || "-"}
-                    </div>
+            {sidebarItems.map((item) => (
+              <button
+                key={item.key}
+                style={{
+                  ...styles.sidebarButton,
+                  ...(activeSection === item.key ? styles.sidebarButtonActive : {}),
+                }}
+                onClick={() => setActiveSection(item.key)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </aside>
+
+          <main style={styles.content}>
+            {activeSection === "search" && (
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Search Patient</h2>
+
+                <form onSubmit={handleSearchPatient} style={styles.formRow}>
+                  <input
+                    type="text"
+                    placeholder="Search by patient name or ID"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={styles.input}
+                    required
+                  />
+                  <button type="submit" style={styles.primaryButton}>
+                    Search
+                  </button>
+                </form>
+
+                {searchResults.length > 0 ? (
+                  <div style={styles.resultsList}>
+                    {searchResults.map((patient) => (
+                      <div key={patient.id} style={styles.resultCard}>
+                        <div>
+                          <div style={styles.resultName}>{patient.name}</div>
+                          <div style={styles.resultMeta}>ID: {patient.patient_id}</div>
+                          <div style={styles.resultMeta}>
+                            Approval: {patient.current_approval_number || "-"}
+                          </div>
+                          <div style={styles.resultMeta}>
+                            Sessions: {patient.sessions_taken ?? 0}
+                          </div>
+                          <div style={styles.resultMeta}>
+                            Taken With: {patient.taken_with || "-"}
+                          </div>
+                          <div style={styles.resultMeta}>
+                            Appointments: {patient.current_future_appointments || "-"}
+                          </div>
+                        </div>
+
+                        <div style={styles.actionButtons}>
+                          <button
+                            style={styles.openButton}
+                            onClick={() => navigate(`/patients/${patient.id}`)}
+                          >
+                            Open File
+                          </button>
+
+                          <button
+                            style={styles.selectButton}
+                            onClick={() => handleSelectPatient(patient)}
+                          >
+                            Assign
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-
-                  <div style={styles.actionButtons}>
-                    <button
-                      style={styles.openButton}
-                      onClick={() => navigate(`/patients/${patient.id}`)}
-                    >
-                      Open File
-                    </button>
-
-                    <button
-                      style={styles.selectButton}
-                      onClick={() => handleSelectPatient(patient)}
-                    >
-                      Assign
-                    </button>
+                ) : (
+                  <div style={styles.helperText}>
+                    Search first. If patient is not found, move to Register New Patient.
                   </div>
+                )}
+              </div>
+            )}
+
+            {activeSection === "register" && (
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Register New Patient</h2>
+
+                <form onSubmit={handleCreatePatientFile} style={styles.form}>
+                  <input
+                    type="text"
+                    name="name"
+                    placeholder="Patient Name"
+                    value={patientForm.name}
+                    onChange={handlePatientChange}
+                    style={styles.input}
+                    required
+                  />
+
+                  <input
+                    type="text"
+                    name="patient_id"
+                    placeholder="Patient ID"
+                    value={patientForm.patient_id}
+                    onChange={handlePatientChange}
+                    style={styles.input}
+                    required
+                  />
+
+                  <input
+                    type="text"
+                    name="current_approval_number"
+                    placeholder="Current Approval Number"
+                    value={patientForm.current_approval_number}
+                    onChange={handlePatientChange}
+                    style={styles.input}
+                  />
+
+                  <input
+                    type="number"
+                    name="sessions_taken"
+                    placeholder="Sessions Taken"
+                    value={patientForm.sessions_taken}
+                    onChange={handlePatientChange}
+                    style={styles.input}
+                  />
+
+                  <input
+                    type="text"
+                    name="taken_with"
+                    placeholder="Taken With"
+                    value={patientForm.taken_with}
+                    onChange={handlePatientChange}
+                    style={styles.input}
+                  />
+
+                  <textarea
+                    name="current_future_appointments"
+                    placeholder="Current / Future Appointments"
+                    value={patientForm.current_future_appointments}
+                    onChange={handlePatientChange}
+                    style={styles.textarea}
+                  />
+
+                  <button type="submit" style={styles.primaryButton}>
+                    Register Patient
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {activeSection === "assign" && (
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Assign Patient to Therapist</h2>
+
+                {selectedPatient ? (
+                  <div style={styles.selectedPatientBox}>
+                    <strong>Selected Patient:</strong> {selectedPatient.name} (
+                    {selectedPatient.patient_id})
+                  </div>
+                ) : (
+                  <div style={styles.helperText}>
+                    Search and select a patient first, or register a new one.
+                  </div>
+                )}
+
+                <form onSubmit={handleCreateAssignment} style={styles.form}>
+                  <select
+                    name="therapist_id"
+                    value={assignmentForm.therapist_id}
+                    onChange={handleAssignmentChange}
+                    style={styles.input}
+                    required
+                  >
+                    <option value="">Select Therapist</option>
+                    {therapists.map((therapist) => (
+                      <option key={therapist.id} value={therapist.id}>
+                        {therapist.username}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="date"
+                    name="assignment_date"
+                    value={assignmentForm.assignment_date}
+                    onChange={handleAssignmentChange}
+                    style={styles.input}
+                    required
+                  />
+
+                  <textarea
+                    name="notes"
+                    placeholder="Notes"
+                    value={assignmentForm.notes}
+                    onChange={handleAssignmentChange}
+                    style={styles.textarea}
+                  />
+
+                  <button
+                    type="submit"
+                    style={styles.primaryButton}
+                    disabled={!assignmentForm.patient_id}
+                  >
+                    Assign Patient
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {activeSection === "today" && (
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Today's Assignments</h2>
+
+                {assignments.length > 0 ? (
+                  <div style={styles.assignmentList}>
+                    {assignments.map((item) => (
+                      <div key={item.id} style={styles.assignmentCard}>
+                        <div>
+                          <div style={styles.assignmentPatient}>{item.patient_name}</div>
+                          <div style={styles.assignmentMeta}>
+                            Patient ID: {item.patient_file_id}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={styles.assignmentTherapist}>
+                            Therapist: {item.therapist_name}
+                          </div>
+                          <div style={styles.assignmentMeta}>
+                            Date: {item.assignment_date}
+                          </div>
+                          {item.notes ? (
+                            <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={styles.emptyState}>No assignments for today.</div>
+                )}
+              </div>
+            )}
+
+            {activeSection === "daily_history" && (
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Daily Assignment History</h2>
+
+                <div style={styles.filterRow}>
+                  <input
+                    type="date"
+                    value={historyDate}
+                    onChange={(e) => setHistoryDate(e.target.value)}
+                    style={styles.input}
+                  />
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div style={styles.helperText}>
-              Search first. If no patient is found, open the registration section.
-            </div>
-          )}
-        </SectionCard>
 
-        <SectionCard
-          title="2. Register New Patient"
-          isOpen={openSection === "register"}
-          onToggle={() => toggleSection("register")}
-        >
-          <form onSubmit={handleCreatePatientFile} style={styles.form}>
-            <input
-              type="text"
-              name="name"
-              placeholder="Patient Name"
-              value={patientForm.name}
-              onChange={handlePatientChange}
-              style={styles.input}
-              required
-            />
+                {dailyHistoryAssignments.length > 0 ? (
+                  <div style={styles.assignmentList}>
+                    {dailyHistoryAssignments.map((item) => (
+                      <div key={item.id} style={styles.assignmentCard}>
+                        <div>
+                          <div style={styles.assignmentPatient}>{item.patient_name}</div>
+                          <div style={styles.assignmentMeta}>
+                            Patient ID: {item.patient_file_id}
+                          </div>
+                        </div>
 
-            <input
-              type="text"
-              name="patient_id"
-              placeholder="Patient ID"
-              value={patientForm.patient_id}
-              onChange={handlePatientChange}
-              style={styles.input}
-              required
-            />
-
-            <input
-              type="text"
-              name="current_approval_number"
-              placeholder="Current Approval Number"
-              value={patientForm.current_approval_number}
-              onChange={handlePatientChange}
-              style={styles.input}
-            />
-
-            <input
-              type="number"
-              name="sessions_taken"
-              placeholder="Sessions Taken"
-              value={patientForm.sessions_taken}
-              onChange={handlePatientChange}
-              style={styles.input}
-            />
-
-            <input
-              type="text"
-              name="taken_with"
-              placeholder="Taken With"
-              value={patientForm.taken_with}
-              onChange={handlePatientChange}
-              style={styles.input}
-            />
-
-            <textarea
-              name="current_future_appointments"
-              placeholder="Current / Future Appointments"
-              value={patientForm.current_future_appointments}
-              onChange={handlePatientChange}
-              style={styles.textarea}
-            />
-
-            <button type="submit" style={styles.primaryButton}>
-              Register Patient
-            </button>
-          </form>
-        </SectionCard>
-
-        <SectionCard
-          title="3. Assign Patient to Therapist"
-          isOpen={openSection === "assign"}
-          onToggle={() => toggleSection("assign")}
-        >
-          {selectedPatient ? (
-            <div style={styles.selectedPatientBox}>
-              <strong>Selected Patient:</strong> {selectedPatient.name} (
-              {selectedPatient.patient_id})
-            </div>
-          ) : (
-            <div style={styles.helperText}>
-              Select a patient from search results first, or register a new one.
-            </div>
-          )}
-
-          <form onSubmit={handleCreateAssignment} style={styles.form}>
-            <select
-              name="therapist_id"
-              value={assignmentForm.therapist_id}
-              onChange={handleAssignmentChange}
-              style={styles.input}
-              required
-            >
-              <option value="">Select Therapist</option>
-              {therapists.map((therapist) => (
-                <option key={therapist.id} value={therapist.id}>
-                  {therapist.username}
-                </option>
-              ))}
-            </select>
-
-            <input
-              type="date"
-              name="assignment_date"
-              value={assignmentForm.assignment_date}
-              onChange={handleAssignmentChange}
-              style={styles.input}
-              required
-            />
-
-            <textarea
-              name="notes"
-              placeholder="Notes"
-              value={assignmentForm.notes}
-              onChange={handleAssignmentChange}
-              style={styles.textarea}
-            />
-
-            <button
-              type="submit"
-              style={styles.primaryButton}
-              disabled={!assignmentForm.patient_id}
-            >
-              Assign Patient
-            </button>
-          </form>
-        </SectionCard>
-
-        <SectionCard
-          title="4. Today's Assignments"
-          isOpen={openSection === "today"}
-          onToggle={() => toggleSection("today")}
-        >
-          {assignments.length > 0 ? (
-            <div style={styles.assignmentList}>
-              {assignments.map((item) => (
-                <div key={item.id} style={styles.assignmentCard}>
-                  <div>
-                    <div style={styles.assignmentPatient}>{item.patient_name}</div>
-                    <div style={styles.assignmentMeta}>
-                      Patient ID: {item.patient_file_id}
-                    </div>
+                        <div>
+                          <div style={styles.assignmentTherapist}>
+                            Therapist: {item.therapist_name}
+                          </div>
+                          <div style={styles.assignmentMeta}>
+                            Date: {item.assignment_date}
+                          </div>
+                          {item.notes ? (
+                            <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-
-                  <div>
-                    <div style={styles.assignmentTherapist}>
-                      Therapist: {item.therapist_name}
-                    </div>
-                    <div style={styles.assignmentMeta}>
-                      Date: {item.assignment_date}
-                    </div>
-                    {item.notes ? (
-                      <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
-                    ) : null}
+                ) : (
+                  <div style={styles.emptyState}>
+                    No assignments found for the selected day.
                   </div>
+                )}
+              </div>
+            )}
+
+            {activeSection === "monthly_history" && (
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Monthly Assignment History</h2>
+
+                <div style={styles.filterRow}>
+                  <input
+                    type="month"
+                    value={historyMonth}
+                    onChange={(e) => setHistoryMonth(e.target.value)}
+                    style={styles.input}
+                  />
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div style={styles.emptyState}>No assignments for today.</div>
-          )}
-        </SectionCard>
+
+                {monthlyHistoryAssignments.length > 0 ? (
+                  <div style={styles.assignmentList}>
+                    {monthlyHistoryAssignments.map((item) => (
+                      <div key={item.id} style={styles.assignmentCard}>
+                        <div>
+                          <div style={styles.assignmentPatient}>{item.patient_name}</div>
+                          <div style={styles.assignmentMeta}>
+                            Patient ID: {item.patient_file_id}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={styles.assignmentTherapist}>
+                            Therapist: {item.therapist_name}
+                          </div>
+                          <div style={styles.assignmentMeta}>
+                            Date: {item.assignment_date}
+                          </div>
+                          {item.notes ? (
+                            <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={styles.emptyState}>
+                    No assignments found for the selected month.
+                  </div>
+                )}
+              </div>
+            )}
+          </main>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function SectionCard({ title, isOpen, onToggle, children }) {
-  return (
-    <div style={styles.card}>
-      <button style={styles.sectionHeader} onClick={onToggle}>
-        <span>{title}</span>
-        <span style={styles.chevron}>{isOpen ? "−" : "+"}</span>
-      </button>
-
-      {isOpen && <div style={styles.sectionBody}>{children}</div>}
     </div>
   );
 }
@@ -466,7 +584,7 @@ const styles = {
     fontFamily: "Arial, sans-serif",
   },
   container: {
-    maxWidth: "1100px",
+    maxWidth: "1250px",
     margin: "0 auto",
   },
   banner: {
@@ -536,35 +654,63 @@ const styles = {
     marginBottom: "16px",
     fontWeight: "700",
   },
+  layout: {
+    display: "grid",
+    gridTemplateColumns: "280px 1fr",
+    gap: "22px",
+    alignItems: "start",
+  },
+  sidebar: {
+    background: "#ffffff",
+    borderRadius: "22px",
+    padding: "18px",
+    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
+    border: "1px solid #e8eef7",
+    position: "sticky",
+    top: "20px",
+  },
+  sidebarTitle: {
+    fontSize: "14px",
+    fontWeight: "800",
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    marginBottom: "14px",
+    padding: "4px 8px",
+  },
+  sidebarButton: {
+    width: "100%",
+    textAlign: "left",
+    border: "none",
+    background: "#f8fbff",
+    color: "#0f172a",
+    padding: "14px 14px",
+    borderRadius: "14px",
+    marginBottom: "10px",
+    fontSize: "15px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+  sidebarButtonActive: {
+    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+    color: "#fff",
+    boxShadow: "0 10px 24px rgba(37, 99, 235, 0.22)",
+  },
+  content: {
+    minWidth: 0,
+  },
   card: {
     background: "#fff",
-    borderRadius: "20px",
+    borderRadius: "22px",
     boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
-    marginBottom: "18px",
-    overflow: "hidden",
     border: "1px solid #e8eef7",
+    padding: "24px",
   },
-  sectionHeader: {
-    width: "100%",
-    background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-    border: "none",
-    padding: "20px 22px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: "20px",
+  cardTitle: {
+    margin: "0 0 18px 0",
+    fontSize: "28px",
     fontWeight: "800",
     color: "#0f172a",
-    cursor: "pointer",
-    textAlign: "left",
-  },
-  chevron: {
-    fontSize: "28px",
-    lineHeight: 1,
-    color: "#2563eb",
-  },
-  sectionBody: {
-    padding: "0 22px 22px 22px",
   },
   form: {
     display: "grid",
@@ -576,12 +722,18 @@ const styles = {
     gap: "12px",
     alignItems: "center",
   },
+  filterRow: {
+    marginBottom: "18px",
+    maxWidth: "280px",
+  },
   input: {
     padding: "13px 14px",
     borderRadius: "12px",
     border: "1px solid #cbd5e1",
     fontSize: "15px",
     background: "#fff",
+    width: "100%",
+    boxSizing: "border-box",
   },
   textarea: {
     minHeight: "90px",
