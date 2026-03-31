@@ -15,8 +15,8 @@ export default function AssignmentHistory({
   const [endDate, setEndDate] = useState(today);
   const [monthlyTarget, setMonthlyTarget] = useState(100);
 
-  const [createdById, setCreatedById] = useState("");
-  const [therapistId, setTherapistId] = useState("");
+  const [selectedUserType, setSelectedUserType] = useState("reception");
+  const [selectedUserId, setSelectedUserId] = useState("");
 
   const [receptionists, setReceptionists] = useState([]);
   const [therapists, setTherapists] = useState([]);
@@ -41,8 +41,18 @@ export default function AssignmentHistory({
     loadFilters();
   }, [isAdmin]);
 
-  const loadHistory = async () => {
+  const totalAssignments = useMemo(() => assignments.length, [assignments]);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
     setError("");
+
+    if (isAdmin && !selectedUserId) {
+      setAssignments([]);
+      setHasSearched(true);
+      setError("Please select one user first.");
+      return;
+    }
 
     try {
       const params = new URLSearchParams({
@@ -50,12 +60,12 @@ export default function AssignmentHistory({
         end_date: endDate,
       });
 
-      if (isAdmin && createdById) {
-        params.append("created_by_id", createdById);
-      }
-
-      if (isAdmin && therapistId) {
-        params.append("therapist_id", therapistId);
+      if (isAdmin && selectedUserId) {
+        if (selectedUserType === "reception") {
+          params.append("created_by_id", selectedUserId);
+        } else {
+          params.append("therapist_id", selectedUserId);
+        }
       }
 
       const res = await api.get(`reception/assignments/?${params.toString()}`);
@@ -68,12 +78,8 @@ export default function AssignmentHistory({
     }
   };
 
-  const totalAssignments = useMemo(() => assignments.length, [assignments]);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    loadHistory();
-  };
+  const currentOptions =
+    selectedUserType === "reception" ? receptionists : therapists;
 
   return (
     <div style={styles.card}>
@@ -107,27 +113,26 @@ export default function AssignmentHistory({
 
         {isAdmin && (
           <select
-            value={createdById}
-            onChange={(e) => setCreatedById(e.target.value)}
+            value={selectedUserType}
+            onChange={(e) => {
+              setSelectedUserType(e.target.value);
+              setSelectedUserId("");
+            }}
             style={styles.input}
           >
-            <option value="">All Reception</option>
-            {receptionists.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.username} ({item.role})
-              </option>
-            ))}
+            <option value="reception">Reception</option>
+            <option value="physio">Physio</option>
           </select>
         )}
 
         {isAdmin && (
           <select
-            value={therapistId}
-            onChange={(e) => setTherapistId(e.target.value)}
+            value={selectedUserId}
+            onChange={(e) => setSelectedUserId(e.target.value)}
             style={styles.input}
           >
-            <option value="">All Therapists</option>
-            {therapists.map((item) => (
+            <option value="">Select one user</option>
+            {currentOptions.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.username}
               </option>
@@ -153,7 +158,7 @@ export default function AssignmentHistory({
 
       {!hasSearched ? (
         <div style={styles.emptyState}>
-          Select dates and filters, then click Show History.
+          Select dates and one user, then click Show History.
         </div>
       ) : assignments.length > 0 ? (
         <div style={styles.assignmentList}>
