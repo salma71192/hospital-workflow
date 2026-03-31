@@ -77,13 +77,10 @@ def assignments_api(request):
         role = getattr(request.user, "role", "")
 
         if request.user.is_superuser or role == "admin":
-            # Admin must pick ONE filter, otherwise return empty list
             if created_by_id:
                 assignments_qs = assignments_qs.filter(created_by_id=created_by_id)
-            elif therapist_id:
+            if therapist_id:
                 assignments_qs = assignments_qs.filter(therapist_id=therapist_id)
-            else:
-                assignments_qs = assignments_qs.none()
 
         elif role == "physio":
             assignments_qs = assignments_qs.filter(therapist=request.user)

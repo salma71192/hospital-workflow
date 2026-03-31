@@ -47,13 +47,6 @@ export default function AssignmentHistory({
     e.preventDefault();
     setError("");
 
-    if (isAdmin && !selectedUserId) {
-      setAssignments([]);
-      setHasSearched(true);
-      setError("Please select one user first.");
-      return;
-    }
-
     try {
       const params = new URLSearchParams({
         start_date: startDate,
@@ -63,7 +56,7 @@ export default function AssignmentHistory({
       if (isAdmin && selectedUserId) {
         if (selectedUserType === "reception") {
           params.append("created_by_id", selectedUserId);
-        } else {
+        } else if (selectedUserType === "physio") {
           params.append("therapist_id", selectedUserId);
         }
       }
@@ -131,7 +124,7 @@ export default function AssignmentHistory({
             onChange={(e) => setSelectedUserId(e.target.value)}
             style={styles.input}
           >
-            <option value="">Select one user</option>
+            <option value="">All {selectedUserType === "reception" ? "Reception" : "Physio"}</option>
             {currentOptions.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.username}
@@ -158,7 +151,7 @@ export default function AssignmentHistory({
 
       {!hasSearched ? (
         <div style={styles.emptyState}>
-          Select dates and one user, then click Show History.
+          Select dates and optional user filter, then click Show History.
         </div>
       ) : assignments.length > 0 ? (
         <div style={styles.assignmentList}>
@@ -190,7 +183,7 @@ export default function AssignmentHistory({
         </div>
       ) : (
         <div style={styles.emptyState}>
-          No assignments found for the selected user/date filters.
+          No assignments found for the selected filters.
         </div>
       )}
     </div>
