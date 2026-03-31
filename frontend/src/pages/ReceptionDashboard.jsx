@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
+import AssignmentHistory from "../components/AssignmentHistory";
 
 export default function ReceptionDashboard({
   user,
@@ -9,9 +10,7 @@ export default function ReceptionDashboard({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
-
   const today = new Date().toISOString().split("T")[0];
-  const currentMonth = new Date().toISOString().slice(0, 7);
 
   const [activeSection, setActiveSection] = useState("search");
 
@@ -35,11 +34,7 @@ export default function ReceptionDashboard({
     notes: "",
   });
 
-  const [historyDate, setHistoryDate] = useState(today);
-  const [historyMonth, setHistoryMonth] = useState(currentMonth);
-
   const [therapists, setTherapists] = useState([]);
-  const [assignments, setAssignments] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -57,18 +52,8 @@ export default function ReceptionDashboard({
     }
   };
 
-  const loadAssignments = async (dateValue = today) => {
-    try {
-      const res = await api.get(`reception/assignments/?date=${dateValue}`);
-      setAssignments(res.data.assignments || []);
-    } catch (err) {
-      console.error("Failed to load assignments", err);
-    }
-  };
-
   useEffect(() => {
     loadTherapists();
-    loadAssignments(today);
   }, []);
 
   const handleSearchPatient = async (e) => {
@@ -177,32 +162,18 @@ export default function ReceptionDashboard({
       setSelectedPatient(null);
       setSearchResults([]);
       setSearchTerm("");
-
-      await loadAssignments(today);
-      setActiveSection("today");
+      setActiveSection("history");
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to assign patient");
       setMessage("");
     }
   };
 
-  const dailyHistoryAssignments = useMemo(() => {
-    return assignments.filter((item) => item.assignment_date === historyDate);
-  }, [assignments, historyDate]);
-
-  const monthlyHistoryAssignments = useMemo(() => {
-    return assignments.filter((item) =>
-      String(item.assignment_date || "").startsWith(historyMonth)
-    );
-  }, [assignments, historyMonth]);
-
   const sidebarItems = [
     { key: "search", label: "Search Patient" },
     { key: "register", label: "Register New Patient" },
     { key: "assign", label: "Assign Patient" },
-    { key: "today", label: "Today's Assignments" },
-    { key: "daily_history", label: "Daily History" },
-    { key: "monthly_history", label: "Monthly History" },
+    { key: "history", label: "Assignment History" },
   ];
 
   return (
@@ -443,131 +414,8 @@ export default function ReceptionDashboard({
               </div>
             )}
 
-            {activeSection === "today" && (
-              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Today's Assignments</h2>
-
-                {assignments.length > 0 ? (
-                  <div style={styles.assignmentList}>
-                    {assignments.map((item) => (
-                      <div key={item.id} style={styles.assignmentCard}>
-                        <div>
-                          <div style={styles.assignmentPatient}>{item.patient_name}</div>
-                          <div style={styles.assignmentMeta}>
-                            Patient ID: {item.patient_file_id}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div style={styles.assignmentTherapist}>
-                            Therapist: {item.therapist_name}
-                          </div>
-                          <div style={styles.assignmentMeta}>
-                            Date: {item.assignment_date}
-                          </div>
-                          {item.notes ? (
-                            <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={styles.emptyState}>No assignments for today.</div>
-                )}
-              </div>
-            )}
-
-            {activeSection === "daily_history" && (
-              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Daily Assignment History</h2>
-
-                <div style={styles.filterRow}>
-                  <input
-                    type="date"
-                    value={historyDate}
-                    onChange={(e) => setHistoryDate(e.target.value)}
-                    style={styles.input}
-                  />
-                </div>
-
-                {dailyHistoryAssignments.length > 0 ? (
-                  <div style={styles.assignmentList}>
-                    {dailyHistoryAssignments.map((item) => (
-                      <div key={item.id} style={styles.assignmentCard}>
-                        <div>
-                          <div style={styles.assignmentPatient}>{item.patient_name}</div>
-                          <div style={styles.assignmentMeta}>
-                            Patient ID: {item.patient_file_id}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div style={styles.assignmentTherapist}>
-                            Therapist: {item.therapist_name}
-                          </div>
-                          <div style={styles.assignmentMeta}>
-                            Date: {item.assignment_date}
-                          </div>
-                          {item.notes ? (
-                            <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={styles.emptyState}>
-                    No assignments found for the selected day.
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeSection === "monthly_history" && (
-              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Monthly Assignment History</h2>
-
-                <div style={styles.filterRow}>
-                  <input
-                    type="month"
-                    value={historyMonth}
-                    onChange={(e) => setHistoryMonth(e.target.value)}
-                    style={styles.input}
-                  />
-                </div>
-
-                {monthlyHistoryAssignments.length > 0 ? (
-                  <div style={styles.assignmentList}>
-                    {monthlyHistoryAssignments.map((item) => (
-                      <div key={item.id} style={styles.assignmentCard}>
-                        <div>
-                          <div style={styles.assignmentPatient}>{item.patient_name}</div>
-                          <div style={styles.assignmentMeta}>
-                            Patient ID: {item.patient_file_id}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div style={styles.assignmentTherapist}>
-                            Therapist: {item.therapist_name}
-                          </div>
-                          <div style={styles.assignmentMeta}>
-                            Date: {item.assignment_date}
-                          </div>
-                          {item.notes ? (
-                            <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={styles.emptyState}>
-                    No assignments found for the selected month.
-                  </div>
-                )}
-              </div>
+            {activeSection === "history" && (
+              <AssignmentHistory title="Assignment History" />
             )}
           </main>
         </div>
@@ -722,10 +570,6 @@ const styles = {
     gap: "12px",
     alignItems: "center",
   },
-  filterRow: {
-    marginBottom: "18px",
-    maxWidth: "280px",
-  },
   input: {
     padding: "13px 14px",
     borderRadius: "12px",
@@ -819,42 +663,5 @@ const styles = {
     padding: "10px 14px",
     fontWeight: "700",
     cursor: "pointer",
-  },
-  assignmentList: {
-    display: "grid",
-    gap: "12px",
-  },
-  assignmentCard: {
-    border: "1px solid #e2e8f0",
-    borderRadius: "14px",
-    padding: "16px",
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "16px",
-    flexWrap: "wrap",
-  },
-  assignmentPatient: {
-    fontWeight: "800",
-    color: "#0f172a",
-    marginBottom: "6px",
-    fontSize: "17px",
-  },
-  assignmentTherapist: {
-    fontWeight: "800",
-    color: "#1d4ed8",
-    marginBottom: "6px",
-  },
-  assignmentMeta: {
-    color: "#64748b",
-    fontSize: "14px",
-    marginBottom: "4px",
-  },
-  emptyState: {
-    padding: "18px",
-    borderRadius: "12px",
-    background: "#f8fafc",
-    color: "#64748b",
-    border: "1px dashed #cbd5e1",
-    fontWeight: "600",
   },
 };
