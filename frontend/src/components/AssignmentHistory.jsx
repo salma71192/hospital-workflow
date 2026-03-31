@@ -1,14 +1,14 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import api from "../api/api";
+import AssignmentProgressCard from "./AssignmentProgressCard";
 
 export default function AssignmentHistory({ title = "Assignment History" }) {
   const today = new Date().toISOString().split("T")[0];
-  const sevenDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split("T")[0];
+  const firstDayOfMonth = `${today.slice(0, 7)}-01`;
 
-  const [startDate, setStartDate] = useState(sevenDaysAgo);
+  const [startDate, setStartDate] = useState(firstDayOfMonth);
   const [endDate, setEndDate] = useState(today);
+  const [monthlyTarget, setMonthlyTarget] = useState(100);
   const [assignments, setAssignments] = useState([]);
   const [error, setError] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
@@ -28,6 +28,8 @@ export default function AssignmentHistory({ title = "Assignment History" }) {
     }
   };
 
+  const totalAssignments = useMemo(() => assignments.length, [assignments]);
+
   const handleSearch = (e) => {
     e.preventDefault();
     loadHistory();
@@ -37,7 +39,7 @@ export default function AssignmentHistory({ title = "Assignment History" }) {
     <div style={styles.card}>
       <h2 style={styles.cardTitle}>{title}</h2>
 
-      <form onSubmit={handleSearch} style={styles.filterRow}>
+      <form onSubmit={handleSearch} style={styles.filterGrid}>
         <input
           type="date"
           value={startDate}
@@ -54,16 +56,34 @@ export default function AssignmentHistory({ title = "Assignment History" }) {
           required
         />
 
+        <input
+          type="number"
+          min="1"
+          value={monthlyTarget}
+          onChange={(e) => setMonthlyTarget(e.target.value)}
+          style={styles.input}
+          placeholder="Monthly target"
+        />
+
         <button type="submit" style={styles.primaryButton}>
           Show History
         </button>
       </form>
 
+      <div style={styles.summaryWrap}>
+        <AssignmentProgressCard
+          title="Selected Range Progress"
+          count={totalAssignments}
+          target={monthlyTarget}
+          subtitle={`${startDate} to ${endDate}`}
+        />
+      </div>
+
       {error && <div style={styles.errorBox}>{error}</div>}
 
       {!hasSearched ? (
         <div style={styles.emptyState}>
-          Select a start and end date, then click Show History.
+          Select start date, end date, and target, then click Show History.
         </div>
       ) : assignments.length > 0 ? (
         <div style={styles.assignmentList}>
@@ -116,9 +136,9 @@ const styles = {
     fontWeight: "800",
     color: "#0f172a",
   },
-  filterRow: {
+  filterGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr auto",
+    gridTemplateColumns: "1fr 1fr 1fr auto",
     gap: "12px",
     alignItems: "center",
     marginBottom: "18px",
@@ -141,6 +161,9 @@ const styles = {
     fontSize: "15px",
     fontWeight: "700",
     cursor: "pointer",
+  },
+  summaryWrap: {
+    marginBottom: "18px",
   },
   errorBox: {
     background: "#fef2f2",
