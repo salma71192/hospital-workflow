@@ -1,8 +1,8 @@
 import json
+from datetime import datetime
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import get_user_model
-from datetime import datetime
 
 from patients.models import Patient
 from .models import PatientAssignment
@@ -22,6 +22,30 @@ def therapists_api(request):
 
 
 @csrf_exempt
+def staff_filters_api(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    if not (request.user.is_superuser or getattr(request.user, "role", "") == "admin"):
+        return JsonResponse({"error": "Only admin can view staff filters"}, status=403)
+
+    receptionists = list(
+        User.objects.filter(role__in=["reception", "reception_supervisor"])
+        .values("id", "username", "role")
+    )
+
+    therapists = list(
+        User.objects.filter(role="physio")
+        .values("id", "username", "role")
+    )
+
+    return JsonResponse({
+        "receptionists": receptionists,
+        "therapists": therapists,
+    })
+
+
+@csrf_exempt
 def assignments_api(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authenticated"}, status=401)
@@ -29,13 +53,13 @@ def assignments_api(request):
     if request.method == "GET":
         start_date = request.GET.get("start_date")
         end_date = request.GET.get("end_date")
-        role = getattr(request.user, "role", "")
+        created_by_id = request.GET.get("created_by_id")
+        therapist_id = request.GET.get("therapist_id")
 
         assignments_qs = PatientAssignment.objects.select_related(
             "patient", "therapist", "created_by"
         )
 
-        # date range filtering
         if start_date:
             try:
                 datetime.strptime(start_date, "%Y-%m-%d")
@@ -50,14 +74,20 @@ def assignments_api(request):
             except ValueError:
                 return JsonResponse({"error": "Invalid end_date format"}, status=400)
 
-        # user-related filtering
-        if role == "physio":
+        role = getattr(request.user, "role", "")
+
+        if request.user.is_superuser or role == "admin":
+            if created_by_id:
+                assignments_qs = assignments_qs.filter(created_by_id=created_by_id)
+            if therapist_id:
+                assignments_qs = assignments_qs.filter(therapist_id=therapist_id)
+
+        elif role == "physio":
             assignments_qs = assignments_qs.filter(therapist=request.user)
 
         elif role == "reception":
             assignments_qs = assignments_qs.filter(created_by=request.user)
 
-        # reception_supervisor/admin can see all
         assignments_qs = assignments_qs.order_by("-assignment_date", "-created_at")
 
         assignments = [

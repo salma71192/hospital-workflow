@@ -1,24 +1,64 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import api from "../api/api";
 import AssignmentProgressCard from "./AssignmentProgressCard";
 
-export default function AssignmentHistory({ title = "Assignment History" }) {
+export default function AssignmentHistory({
+  title = "Assignment History",
+  currentUser,
+}) {
   const today = new Date().toISOString().split("T")[0];
   const firstDayOfMonth = `${today.slice(0, 7)}-01`;
+  const isAdmin =
+    currentUser?.is_superuser || currentUser?.role === "admin";
 
   const [startDate, setStartDate] = useState(firstDayOfMonth);
   const [endDate, setEndDate] = useState(today);
   const [monthlyTarget, setMonthlyTarget] = useState(100);
+
+  const [createdById, setCreatedById] = useState("");
+  const [therapistId, setTherapistId] = useState("");
+
+  const [receptionists, setReceptionists] = useState([]);
+  const [therapists, setTherapists] = useState([]);
+
   const [assignments, setAssignments] = useState([]);
   const [error, setError] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
 
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const loadFilters = async () => {
+      try {
+        const res = await api.get("reception/staff-filters/");
+        setReceptionists(res.data.receptionists || []);
+        setTherapists(res.data.therapists || []);
+      } catch (err) {
+        console.error("Failed to load staff filters", err);
+      }
+    };
+
+    loadFilters();
+  }, [isAdmin]);
+
   const loadHistory = async () => {
     setError("");
+
     try {
-      const res = await api.get(
-        `reception/assignments/?start_date=${startDate}&end_date=${endDate}`
-      );
+      const params = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+      });
+
+      if (isAdmin && createdById) {
+        params.append("created_by_id", createdById);
+      }
+
+      if (isAdmin && therapistId) {
+        params.append("therapist_id", therapistId);
+      }
+
+      const res = await api.get(`reception/assignments/?${params.toString()}`);
       setAssignments(res.data.assignments || []);
       setHasSearched(true);
     } catch (err) {
@@ -62,8 +102,38 @@ export default function AssignmentHistory({ title = "Assignment History" }) {
           value={monthlyTarget}
           onChange={(e) => setMonthlyTarget(e.target.value)}
           style={styles.input}
-          placeholder="Monthly target"
+          placeholder="Target"
         />
+
+        {isAdmin && (
+          <select
+            value={createdById}
+            onChange={(e) => setCreatedById(e.target.value)}
+            style={styles.input}
+          >
+            <option value="">All Reception</option>
+            {receptionists.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.username} ({item.role})
+              </option>
+            ))}
+          </select>
+        )}
+
+        {isAdmin && (
+          <select
+            value={therapistId}
+            onChange={(e) => setTherapistId(e.target.value)}
+            style={styles.input}
+          >
+            <option value="">All Therapists</option>
+            {therapists.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.username}
+              </option>
+            ))}
+          </select>
+        )}
 
         <button type="submit" style={styles.primaryButton}>
           Show History
@@ -72,7 +142,7 @@ export default function AssignmentHistory({ title = "Assignment History" }) {
 
       <div style={styles.summaryWrap}>
         <AssignmentProgressCard
-          title="Selected Range Progress"
+          title="Selected User Statistics"
           count={totalAssignments}
           target={monthlyTarget}
           subtitle={`${startDate} to ${endDate}`}
@@ -83,7 +153,7 @@ export default function AssignmentHistory({ title = "Assignment History" }) {
 
       {!hasSearched ? (
         <div style={styles.emptyState}>
-          Select start date, end date, and target, then click Show History.
+          Select dates and filters, then click Show History.
         </div>
       ) : assignments.length > 0 ? (
         <div style={styles.assignmentList}>
@@ -115,7 +185,7 @@ export default function AssignmentHistory({ title = "Assignment History" }) {
         </div>
       ) : (
         <div style={styles.emptyState}>
-          No assignments found in this date range.
+          No assignments found for the selected user/date filters.
         </div>
       )}
     </div>
@@ -138,7 +208,7 @@ const styles = {
   },
   filterGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr 1fr auto",
+    gridTemplateColumns: "repeat(3, 1fr)",
     gap: "12px",
     alignItems: "center",
     marginBottom: "18px",
