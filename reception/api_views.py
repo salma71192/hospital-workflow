@@ -2,6 +2,7 @@ import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import get_user_model
+from datetime import datetime
 
 from patients.models import Patient
 from .models import PatientAssignment
@@ -26,16 +27,38 @@ def assignments_api(request):
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
     if request.method == "GET":
-        date_value = request.GET.get("date")
+        start_date = request.GET.get("start_date")
+        end_date = request.GET.get("end_date")
         role = getattr(request.user, "role", "")
 
-        assignments_qs = PatientAssignment.objects.select_related("patient", "therapist")
+        assignments_qs = PatientAssignment.objects.select_related(
+            "patient", "therapist", "created_by"
+        )
 
-        if date_value:
-            assignments_qs = assignments_qs.filter(assignment_date=date_value)
+        # date range filtering
+        if start_date:
+            try:
+                datetime.strptime(start_date, "%Y-%m-%d")
+                assignments_qs = assignments_qs.filter(assignment_date__gte=start_date)
+            except ValueError:
+                return JsonResponse({"error": "Invalid start_date format"}, status=400)
 
+        if end_date:
+            try:
+                datetime.strptime(end_date, "%Y-%m-%d")
+                assignments_qs = assignments_qs.filter(assignment_date__lte=end_date)
+            except ValueError:
+                return JsonResponse({"error": "Invalid end_date format"}, status=400)
+
+        # user-related filtering
         if role == "physio":
             assignments_qs = assignments_qs.filter(therapist=request.user)
+
+        elif role == "reception":
+            assignments_qs = assignments_qs.filter(created_by=request.user)
+
+        # reception_supervisor/admin can see all
+        assignments_qs = assignments_qs.order_by("-assignment_date", "-created_at")
 
         assignments = [
             {
@@ -45,6 +68,8 @@ def assignments_api(request):
                 "patient_file_id": item.patient.patient_id,
                 "therapist_id": item.therapist.id,
                 "therapist_name": item.therapist.username,
+                "created_by_id": item.created_by.id if item.created_by else None,
+                "created_by_name": item.created_by.username if item.created_by else "-",
                 "assignment_date": str(item.assignment_date),
                 "notes": item.notes or "",
             }
@@ -80,6 +105,11 @@ def assignments_api(request):
             )
 
         try:
+            datetime.strptime(assignment_date, "%Y-%m-%d")
+        except ValueError:
+            return JsonResponse({"error": "Invalid assignment date format"}, status=400)
+
+        try:
             patient = Patient.objects.get(id=patient_id)
         except Patient.DoesNotExist:
             return JsonResponse({"error": "Patient not found"}, status=404)
@@ -92,6 +122,7 @@ def assignments_api(request):
         assignment = PatientAssignment.objects.create(
             patient=patient,
             therapist=therapist,
+            created_by=request.user,
             assignment_date=assignment_date,
             notes=notes or None,
         )
@@ -103,6 +134,7 @@ def assignments_api(request):
                 "id": assignment.id,
                 "patient_name": assignment.patient.name,
                 "therapist_name": assignment.therapist.username,
+                "created_by_name": assignment.created_by.username if assignment.created_by else "-",
                 "assignment_date": str(assignment.assignment_date),
             },
         })

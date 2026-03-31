@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import api from "../api/api";
 
 export default function AssignmentHistory({ title = "Assignment History" }) {
@@ -11,26 +11,26 @@ export default function AssignmentHistory({ title = "Assignment History" }) {
   const [endDate, setEndDate] = useState(today);
   const [assignments, setAssignments] = useState([]);
   const [error, setError] = useState("");
+  const [hasSearched, setHasSearched] = useState(false);
 
-  const loadHistory = async (start = startDate, end = endDate) => {
+  const loadHistory = async () => {
     setError("");
     try {
       const res = await api.get(
-        `reception/assignments/?start_date=${start}&end_date=${end}`
+        `reception/assignments/?start_date=${startDate}&end_date=${endDate}`
       );
       setAssignments(res.data.assignments || []);
+      setHasSearched(true);
     } catch (err) {
-      setError("Failed to load assignment history");
+      setError(err?.response?.data?.error || "Failed to load assignment history");
+      setAssignments([]);
+      setHasSearched(true);
     }
   };
 
-  useEffect(() => {
-    loadHistory(sevenDaysAgo, today);
-  }, []);
-
   const handleSearch = (e) => {
     e.preventDefault();
-    loadHistory(startDate, endDate);
+    loadHistory();
   };
 
   return (
@@ -61,7 +61,11 @@ export default function AssignmentHistory({ title = "Assignment History" }) {
 
       {error && <div style={styles.errorBox}>{error}</div>}
 
-      {assignments.length > 0 ? (
+      {!hasSearched ? (
+        <div style={styles.emptyState}>
+          Select a start and end date, then click Show History.
+        </div>
+      ) : assignments.length > 0 ? (
         <div style={styles.assignmentList}>
           {assignments.map((item) => (
             <div key={item.id} style={styles.assignmentCard}>
