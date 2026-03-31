@@ -25,7 +25,10 @@ def patients_api(request):
                 "name",
                 "patient_id",
                 "current_approval_number",
-                "sessions_taken",
+                "approved_sessions",
+                "utilized_sessions",
+                "number_of_evaluations",
+                "booking",
                 "taken_with",
                 "current_future_appointments",
                 "created_at",
@@ -51,7 +54,10 @@ def patients_api(request):
         name = data.get("name")
         patient_id = data.get("patient_id")
         current_approval_number = data.get("current_approval_number")
-        sessions_taken = data.get("sessions_taken", 0)
+        approved_sessions = data.get("approved_sessions", 0)
+        utilized_sessions = data.get("utilized_sessions", 0)
+        number_of_evaluations = data.get("number_of_evaluations", 0)
+        booking = data.get("booking")
         taken_with = data.get("taken_with")
         current_future_appointments = data.get("current_future_appointments")
 
@@ -71,7 +77,10 @@ def patients_api(request):
             name=name,
             patient_id=patient_id,
             current_approval_number=current_approval_number or None,
-            sessions_taken=sessions_taken or 0,
+            approved_sessions=approved_sessions or 0,
+            utilized_sessions=utilized_sessions or 0,
+            number_of_evaluations=number_of_evaluations or 0,
+            booking=booking or None,
             taken_with=taken_with or None,
             current_future_appointments=current_future_appointments or None,
         )
@@ -84,7 +93,10 @@ def patients_api(request):
                 "name": patient.name,
                 "patient_id": patient.patient_id,
                 "current_approval_number": patient.current_approval_number,
-                "sessions_taken": patient.sessions_taken,
+                "approved_sessions": patient.approved_sessions,
+                "utilized_sessions": patient.utilized_sessions,
+                "number_of_evaluations": patient.number_of_evaluations,
+                "booking": patient.booking,
                 "taken_with": patient.taken_with,
                 "current_future_appointments": patient.current_future_appointments,
             },
