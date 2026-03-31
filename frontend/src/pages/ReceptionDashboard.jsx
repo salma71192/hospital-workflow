@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
-import PatientSearch from "../components/PatientSearch";
 
 export default function ReceptionDashboard({
   user,
@@ -10,8 +9,13 @@ export default function ReceptionDashboard({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
-
   const today = new Date().toISOString().split("T")[0];
+
+  const [openSection, setOpenSection] = useState("search");
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedPatient, setSelectedPatient] = useState(null);
 
   const [patientForm, setPatientForm] = useState({
     name: "",
@@ -29,7 +33,6 @@ export default function ReceptionDashboard({
     notes: "",
   });
 
-  const [patients, setPatients] = useState([]);
   const [therapists, setTherapists] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [message, setMessage] = useState("");
@@ -40,13 +43,8 @@ export default function ReceptionDashboard({
     navigate("/admin");
   };
 
-  const loadPatients = async () => {
-    try {
-      const res = await api.get("patients/");
-      setPatients(res.data.patients || []);
-    } catch (err) {
-      console.error("Failed to load patients", err);
-    }
+  const toggleSection = (sectionName) => {
+    setOpenSection((prev) => (prev === sectionName ? "" : sectionName));
   };
 
   const loadTherapists = async () => {
@@ -68,10 +66,45 @@ export default function ReceptionDashboard({
   };
 
   useEffect(() => {
-    loadPatients();
     loadTherapists();
     loadAssignments(today);
   }, []);
+
+  const handleSearchPatient = async (e) => {
+    e.preventDefault();
+    setMessage("");
+    setError("");
+    setSelectedPatient(null);
+
+    try {
+      const url = searchTerm
+        ? `patients/?search=${encodeURIComponent(searchTerm)}`
+        : "patients/";
+      const res = await api.get(url);
+      const patients = res.data.patients || [];
+      setSearchResults(patients);
+
+      if (patients.length > 0) {
+        setMessage("Patient found. You can open file or assign to therapist.");
+      } else {
+        setMessage("Patient not found. Please register new patient.");
+        setOpenSection("register");
+      }
+    } catch (err) {
+      setError("Failed to search patient");
+    }
+  };
+
+  const handleSelectPatient = (patient) => {
+    setSelectedPatient(patient);
+    setAssignmentForm((prev) => ({
+      ...prev,
+      patient_id: patient.id,
+    }));
+    setOpenSection("assign");
+    setMessage(`Selected ${patient.name} for assignment.`);
+    setError("");
+  };
 
   const handlePatientChange = (e) => {
     const { name, value } = e.target;
@@ -96,7 +129,11 @@ export default function ReceptionDashboard({
 
     try {
       const res = await api.post("patients/", patientForm);
+      const createdPatient = res.data.patient;
+
       setMessage(res.data.message || "Patient file created successfully");
+      setError("");
+
       setPatientForm({
         name: "",
         patient_id: "",
@@ -105,9 +142,18 @@ export default function ReceptionDashboard({
         taken_with: "",
         current_future_appointments: "",
       });
-      loadPatients();
+
+      if (createdPatient) {
+        setSelectedPatient(createdPatient);
+        setAssignmentForm((prev) => ({
+          ...prev,
+          patient_id: createdPatient.id,
+        }));
+        setOpenSection("assign");
+      }
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to create patient file");
+      setMessage("");
     }
   };
 
@@ -119,15 +165,23 @@ export default function ReceptionDashboard({
     try {
       const res = await api.post("reception/assignments/", assignmentForm);
       setMessage(res.data.message || "Patient assigned successfully");
+      setError("");
+
       setAssignmentForm({
         patient_id: "",
         therapist_id: "",
         assignment_date: today,
         notes: "",
       });
+
+      setSelectedPatient(null);
+      setSearchResults([]);
+      setSearchTerm("");
       loadAssignments(today);
+      setOpenSection("today");
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to assign patient");
+      setMessage("");
     }
   };
 
@@ -156,9 +210,81 @@ export default function ReceptionDashboard({
           </button>
         </div>
 
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Create Patient File</h2>
+        {message && <div style={styles.successBox}>{message}</div>}
+        {error && <div style={styles.errorBox}>{error}</div>}
 
+        <SectionCard
+          title="1. Search Patient"
+          isOpen={openSection === "search"}
+          onToggle={() => toggleSection("search")}
+        >
+          <form onSubmit={handleSearchPatient} style={styles.formRow}>
+            <input
+              type="text"
+              placeholder="Search by patient name or ID"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={styles.input}
+              required
+            />
+            <button type="submit" style={styles.primaryButton}>
+              Search
+            </button>
+          </form>
+
+          {searchResults.length > 0 ? (
+            <div style={styles.resultsList}>
+              {searchResults.map((patient) => (
+                <div key={patient.id} style={styles.resultCard}>
+                  <div>
+                    <div style={styles.resultName}>{patient.name}</div>
+                    <div style={styles.resultMeta}>
+                      ID: {patient.patient_id}
+                    </div>
+                    <div style={styles.resultMeta}>
+                      Approval: {patient.current_approval_number || "-"}
+                    </div>
+                    <div style={styles.resultMeta}>
+                      Sessions: {patient.sessions_taken ?? 0}
+                    </div>
+                    <div style={styles.resultMeta}>
+                      Taken With: {patient.taken_with || "-"}
+                    </div>
+                    <div style={styles.resultMeta}>
+                      Appointments: {patient.current_future_appointments || "-"}
+                    </div>
+                  </div>
+
+                  <div style={styles.actionButtons}>
+                    <button
+                      style={styles.openButton}
+                      onClick={() => navigate(`/patients/${patient.id}`)}
+                    >
+                      Open File
+                    </button>
+
+                    <button
+                      style={styles.selectButton}
+                      onClick={() => handleSelectPatient(patient)}
+                    >
+                      Assign
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={styles.helperText}>
+              Search first. If no patient is found, open the registration section.
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          title="2. Register New Patient"
+          isOpen={openSection === "register"}
+          onToggle={() => toggleSection("register")}
+        >
           <form onSubmit={handleCreatePatientFile} style={styles.form}>
             <input
               type="text"
@@ -216,33 +342,28 @@ export default function ReceptionDashboard({
             />
 
             <button type="submit" style={styles.primaryButton}>
-              Create Patient File
+              Register Patient
             </button>
           </form>
+        </SectionCard>
 
-          {message && <p style={styles.success}>{message}</p>}
-          {error && <p style={styles.error}>{error}</p>}
-        </div>
-
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Assign Patient to Therapist</h2>
+        <SectionCard
+          title="3. Assign Patient to Therapist"
+          isOpen={openSection === "assign"}
+          onToggle={() => toggleSection("assign")}
+        >
+          {selectedPatient ? (
+            <div style={styles.selectedPatientBox}>
+              <strong>Selected Patient:</strong> {selectedPatient.name} (
+              {selectedPatient.patient_id})
+            </div>
+          ) : (
+            <div style={styles.helperText}>
+              Select a patient from search results first, or register a new one.
+            </div>
+          )}
 
           <form onSubmit={handleCreateAssignment} style={styles.form}>
-            <select
-              name="patient_id"
-              value={assignmentForm.patient_id}
-              onChange={handleAssignmentChange}
-              style={styles.input}
-              required
-            >
-              <option value="">Select Patient</option>
-              {patients.map((patient) => (
-                <option key={patient.id} value={patient.id}>
-                  {patient.name} - {patient.patient_id}
-                </option>
-              ))}
-            </select>
-
             <select
               name="therapist_id"
               value={assignmentForm.therapist_id}
@@ -275,27 +396,33 @@ export default function ReceptionDashboard({
               style={styles.textarea}
             />
 
-            <button type="submit" style={styles.primaryButton}>
+            <button
+              type="submit"
+              style={styles.primaryButton}
+              disabled={!assignmentForm.patient_id}
+            >
               Assign Patient
             </button>
           </form>
-        </div>
+        </SectionCard>
 
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Today&apos;s Assignments</h2>
-
-          {assignments.length ? (
+        <SectionCard
+          title="4. Today's Assignments"
+          isOpen={openSection === "today"}
+          onToggle={() => toggleSection("today")}
+        >
+          {assignments.length > 0 ? (
             <div style={styles.assignmentList}>
               {assignments.map((item) => (
                 <div key={item.id} style={styles.assignmentCard}>
-                  <div style={styles.assignmentMain}>
+                  <div>
                     <div style={styles.assignmentPatient}>{item.patient_name}</div>
                     <div style={styles.assignmentMeta}>
                       Patient ID: {item.patient_file_id}
                     </div>
                   </div>
 
-                  <div style={styles.assignmentSide}>
+                  <div>
                     <div style={styles.assignmentTherapist}>
                       Therapist: {item.therapist_name}
                     </div>
@@ -312,10 +439,21 @@ export default function ReceptionDashboard({
           ) : (
             <div style={styles.emptyState}>No assignments for today.</div>
           )}
-        </div>
-
-        <PatientSearch />
+        </SectionCard>
       </div>
+    </div>
+  );
+}
+
+function SectionCard({ title, isOpen, onToggle, children }) {
+  return (
+    <div style={styles.card}>
+      <button style={styles.sectionHeader} onClick={onToggle}>
+        <span>{title}</span>
+        <span style={styles.chevron}>{isOpen ? "−" : "+"}</span>
+      </button>
+
+      {isOpen && <div style={styles.sectionBody}>{children}</div>}
     </div>
   );
 }
@@ -336,7 +474,7 @@ const styles = {
     border: "1px solid #fcd34d",
     color: "#92400e",
     padding: "12px 16px",
-    borderRadius: "10px",
+    borderRadius: "12px",
     marginBottom: "18px",
     display: "flex",
     justifyContent: "space-between",
@@ -349,6 +487,7 @@ const styles = {
     borderRadius: "8px",
     padding: "8px 12px",
     cursor: "pointer",
+    fontWeight: "700",
   },
   topBar: {
     display: "flex",
@@ -356,78 +495,178 @@ const styles = {
     alignItems: "center",
     flexWrap: "wrap",
     gap: "16px",
-    marginBottom: "28px",
+    marginBottom: "24px",
   },
   title: {
     margin: 0,
-    fontSize: "32px",
-    fontWeight: "700",
+    fontSize: "34px",
+    fontWeight: "800",
     color: "#1e3a8a",
   },
   subtitle: {
     margin: "8px 0 0 0",
-    color: "#475569",
+    color: "#64748b",
     fontSize: "16px",
   },
   logoutButton: {
     background: "#ef4444",
     color: "#fff",
     border: "none",
-    borderRadius: "10px",
+    borderRadius: "12px",
     padding: "12px 18px",
     fontSize: "14px",
-    fontWeight: "600",
+    fontWeight: "700",
     cursor: "pointer",
   },
-  card: {
-    background: "#ffffff",
-    borderRadius: "18px",
-    padding: "24px",
-    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
-    marginBottom: "20px",
+  successBox: {
+    background: "#dcfce7",
+    color: "#166534",
+    border: "1px solid #86efac",
+    borderRadius: "12px",
+    padding: "14px 16px",
+    marginBottom: "16px",
+    fontWeight: "700",
   },
-  cardTitle: {
-    margin: "0 0 18px 0",
-    fontSize: "24px",
+  errorBox: {
+    background: "#fef2f2",
+    color: "#b91c1c",
+    border: "1px solid #fecaca",
+    borderRadius: "12px",
+    padding: "14px 16px",
+    marginBottom: "16px",
+    fontWeight: "700",
+  },
+  card: {
+    background: "#fff",
+    borderRadius: "20px",
+    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
+    marginBottom: "18px",
+    overflow: "hidden",
+    border: "1px solid #e8eef7",
+  },
+  sectionHeader: {
+    width: "100%",
+    background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+    border: "none",
+    padding: "20px 22px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: "20px",
+    fontWeight: "800",
     color: "#0f172a",
+    cursor: "pointer",
+    textAlign: "left",
+  },
+  chevron: {
+    fontSize: "28px",
+    lineHeight: 1,
+    color: "#2563eb",
+  },
+  sectionBody: {
+    padding: "0 22px 22px 22px",
   },
   form: {
     display: "grid",
     gap: "14px",
   },
+  formRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto",
+    gap: "12px",
+    alignItems: "center",
+  },
   input: {
-    padding: "12px 14px",
-    borderRadius: "10px",
+    padding: "13px 14px",
+    borderRadius: "12px",
     border: "1px solid #cbd5e1",
     fontSize: "15px",
+    background: "#fff",
   },
   textarea: {
     minHeight: "90px",
-    padding: "12px 14px",
-    borderRadius: "10px",
+    padding: "13px 14px",
+    borderRadius: "12px",
     border: "1px solid #cbd5e1",
     fontSize: "15px",
     resize: "vertical",
   },
   primaryButton: {
-    background: "#2563eb",
+    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "12px",
+    padding: "13px 18px",
+    fontSize: "15px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+  helperText: {
+    color: "#64748b",
+    fontSize: "14px",
+    fontWeight: "600",
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    borderRadius: "12px",
+    padding: "14px",
+  },
+  selectedPatientBox: {
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    border: "1px solid #bfdbfe",
+    borderRadius: "12px",
+    padding: "14px",
+    marginBottom: "14px",
+    fontWeight: "700",
+  },
+  resultsList: {
+    display: "grid",
+    gap: "12px",
+  },
+  resultCard: {
+    border: "1px solid #e2e8f0",
+    borderRadius: "14px",
+    padding: "16px",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
+  },
+  resultName: {
+    fontSize: "18px",
+    fontWeight: "800",
+    color: "#0f172a",
+    marginBottom: "6px",
+  },
+  resultMeta: {
+    color: "#64748b",
+    fontSize: "14px",
+    marginBottom: "4px",
+  },
+  actionButtons: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  openButton: {
+    background: "#0ea5e9",
     color: "#fff",
     border: "none",
     borderRadius: "10px",
-    padding: "12px 18px",
-    fontSize: "15px",
-    fontWeight: "600",
+    padding: "10px 14px",
+    fontWeight: "700",
     cursor: "pointer",
   },
-  success: {
-    color: "#166534",
-    marginTop: "14px",
-    fontWeight: "600",
-  },
-  error: {
-    color: "#dc2626",
-    marginTop: "14px",
-    fontWeight: "600",
+  selectButton: {
+    background: "#16a34a",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "10px 14px",
+    fontWeight: "700",
+    cursor: "pointer",
   },
   assignmentList: {
     display: "grid",
@@ -442,20 +681,14 @@ const styles = {
     gap: "16px",
     flexWrap: "wrap",
   },
-  assignmentMain: {
-    minWidth: "220px",
-  },
-  assignmentSide: {
-    minWidth: "220px",
-  },
   assignmentPatient: {
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#0f172a",
     marginBottom: "6px",
-    fontSize: "18px",
+    fontSize: "17px",
   },
   assignmentTherapist: {
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#1d4ed8",
     marginBottom: "6px",
   },
@@ -470,5 +703,6 @@ const styles = {
     background: "#f8fafc",
     color: "#64748b",
     border: "1px dashed #cbd5e1",
+    fontWeight: "600",
   },
 };
