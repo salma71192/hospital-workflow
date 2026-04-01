@@ -9,6 +9,7 @@ import PatientSearchBar from "../components/patients/PatientSearchBar";
 import DashboardNotice from "../components/common/DashboardNotice";
 import DashboardMetricInput from "../components/common/DashboardMetricInput";
 import DashboardStatsGrid from "../components/common/DashboardStatsGrid";
+import TodayAssignmentsList from "../components/assignments/TodayAssignmentsList";
 
 export default function PhysioDashboard({
   user,
@@ -121,30 +122,10 @@ export default function PhysioDashboard({
             subtitle={today}
           />
 
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Today's Assigned Patients</h2>
-
-            {assignments.length ? (
-              <div style={styles.assignmentList}>
-                {assignments.map((item) => (
-                  <div key={item.id} style={styles.assignmentCard}>
-                    <div style={styles.assignmentPatient}>{item.patient_name}</div>
-                    <div style={styles.assignmentMeta}>
-                      Patient ID: {item.patient_file_id}
-                    </div>
-                    <div style={styles.assignmentMeta}>
-                      Date: {item.assignment_date}
-                    </div>
-                    {item.notes ? (
-                      <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={styles.emptyState}>No assigned patients for today.</div>
-            )}
-          </div>
+          <TodayAssignmentsList
+            assignments={assignments}
+            title="Today's Assigned Patients"
+          />
         </>
       )}
 
@@ -197,33 +178,5 @@ const styles = {
     fontSize: "22px",
     color: "#0f172a",
     fontWeight: "800",
-  },
-  assignmentList: {
-    display: "grid",
-    gap: "12px",
-  },
-  assignmentCard: {
-    padding: "14px",
-    border: "1px solid #dcfce7",
-    background: "#f0fdf4",
-    borderRadius: "12px",
-  },
-  assignmentPatient: {
-    fontWeight: "700",
-    color: "#14532d",
-    marginBottom: "6px",
-    fontSize: "17px",
-  },
-  assignmentMeta: {
-    color: "#166534",
-    fontSize: "14px",
-    marginBottom: "4px",
-  },
-  emptyState: {
-    padding: "18px",
-    borderRadius: "12px",
-    background: "#f8fafc",
-    color: "#64748b",
-    border: "1px dashed #cbd5e1",
   },
 };
