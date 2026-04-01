@@ -39,6 +39,7 @@ export default function ReceptionDashboard({
     patient_id: "",
     therapist_id: "",
     assignment_date: today,
+    category: "appointment",
     notes: "",
   });
 
@@ -170,6 +171,7 @@ export default function ReceptionDashboard({
         patient_id: "",
         therapist_id: "",
         assignment_date: today,
+        category: "appointment",
         notes: "",
       });
 
