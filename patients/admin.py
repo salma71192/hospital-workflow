@@ -8,8 +8,18 @@ class PatientAdmin(admin.ModelAdmin):
         "name",
         "patient_id",
         "current_approval_number",
-        "sessions_taken",
+        "approved_sessions",
+        "utilized_sessions",
+        "number_of_evaluations",
+        "booking",
         "taken_with",
         "created_at",
     )
-    search_fields = ("name", "patient_id", "current_approval_number", "taken_with")
+    search_fields = (
+        "name",
+        "patient_id",
+        "current_approval_number",
+        "booking",
+        "taken_with",
+    )
+    list_filter = ("created_at",)

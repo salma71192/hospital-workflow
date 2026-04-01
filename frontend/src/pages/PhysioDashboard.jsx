@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 import PatientSearch from "../components/PatientSearch";
 import AssignmentHistory from "../components/AssignmentHistory";
+import AssignmentProgressCard from "../components/AssignmentProgressCard";
 
 export default function PhysioDashboard({
   user,
@@ -13,53 +14,35 @@ export default function PhysioDashboard({
   const navigate = useNavigate();
   const today = new Date().toISOString().split("T")[0];
 
-  const [activeSection, setActiveSection] = useState("search");
-  const [todayAssignments, setTodayAssignments] = useState([]);
-  const [patients, setPatients] = useState([]);
-  const [selectedMonth, setSelectedMonth] = useState(today.slice(0, 7));
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeSection, setActiveSection] = useState("today");
+  const [assignments, setAssignments] = useState([]);
+  const [dailyTarget, setDailyTarget] = useState(8);
 
   const handleBackToAdmin = () => {
     onStopImpersonation();
     navigate("/admin");
   };
 
-  const loadTodayAssignments = async () => {
+  const loadAssignments = async () => {
     try {
       const res = await api.get(
         `reception/assignments/?start_date=${today}&end_date=${today}`
       );
-      setTodayAssignments(res.data.assignments || []);
+      setAssignments(res.data.assignments || []);
     } catch (err) {
-      console.error("Failed to load today's assignments", err);
-    }
-  };
-
-  const loadPatients = async () => {
-    try {
-      const res = await api.get("patients/");
-      setPatients(res.data.patients || []);
-    } catch (err) {
-      console.error("Failed to load patients", err);
+      console.error("Failed to load assignments", err);
     }
   };
 
   useEffect(() => {
-    loadTodayAssignments();
-    loadPatients();
-  }, []);
-
-  const monthlyPatients = useMemo(() => {
-    return patients.filter((item) => {
-      if (!item.created_at) return true;
-      return String(item.created_at).startsWith(selectedMonth);
-    });
-  }, [patients, selectedMonth]);
+    loadAssignments();
+  }, [today]);
 
   const sidebarItems = [
-    { key: "search", label: "Search Patient" },
     { key: "today", label: "Today's Assignments" },
     { key: "history", label: "History" },
-    { key: "tracker", label: "Patient Tracker" },
+    { key: "patients", label: "Patient Tracker" },
   ];
 
   return (
@@ -82,52 +65,80 @@ export default function PhysioDashboard({
             </p>
           </div>
 
-          <button style={styles.logoutButton} onClick={onLogout}>
-            Logout
-          </button>
+          <div style={styles.topActions}>
+            <button
+              style={styles.sidebarToggle}
+              onClick={() => setSidebarOpen((prev) => !prev)}
+            >
+              {sidebarOpen ? "Hide Menu" : "Show Menu"}
+            </button>
+
+            <button style={styles.logoutButton} onClick={onLogout}>
+              Logout
+            </button>
+          </div>
         </div>
 
-        <div style={styles.layout}>
-          <aside style={styles.sidebar}>
-            <div style={styles.sidebarTitle}>Physio Menu</div>
+        <div
+          style={{
+            ...styles.layout,
+            gridTemplateColumns: sidebarOpen ? "280px 1fr" : "1fr",
+          }}
+        >
+          {sidebarOpen && (
+            <aside style={styles.sidebar}>
+              <div style={styles.sidebarTitle}>Physio Panel</div>
 
-            {sidebarItems.map((item) => (
-              <button
-                key={item.key}
-                style={{
-                  ...styles.sidebarButton,
-                  ...(activeSection === item.key ? styles.sidebarButtonActive : {}),
-                }}
-                onClick={() => setActiveSection(item.key)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </aside>
+              {sidebarItems.map((item) => (
+                <button
+                  key={item.key}
+                  style={{
+                    ...styles.sidebarButton,
+                    ...(activeSection === item.key
+                      ? styles.sidebarButtonActive
+                      : {}),
+                  }}
+                  onClick={() => setActiveSection(item.key)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </aside>
+          )}
 
           <main style={styles.content}>
-            {activeSection === "search" && <PatientSearch />}
-
             {activeSection === "today" && (
-              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Today's Assignments</h2>
+              <div style={styles.sectionStack}>
+                <div style={styles.targetRow}>
+                  <input
+                    type="number"
+                    min="1"
+                    value={dailyTarget}
+                    onChange={(e) => setDailyTarget(e.target.value)}
+                    style={styles.targetInput}
+                    placeholder="Daily target"
+                  />
+                </div>
 
-                {todayAssignments.length > 0 ? (
-                  <div style={styles.assignmentList}>
-                    {todayAssignments.map((item) => (
-                      <div key={item.id} style={styles.assignmentCard}>
-                        <div>
+                <AssignmentProgressCard
+                  title="Today's Assignments"
+                  count={assignments.length}
+                  target={dailyTarget}
+                  subtitle={today}
+                />
+
+                <div style={styles.card}>
+                  <h2 style={styles.cardTitle}>Today's Assigned Patients</h2>
+
+                  {assignments.length > 0 ? (
+                    <div style={styles.assignmentList}>
+                      {assignments.map((item) => (
+                        <div key={item.id} style={styles.assignmentCard}>
                           <div style={styles.assignmentPatient}>
                             {item.patient_name}
                           </div>
                           <div style={styles.assignmentMeta}>
                             Patient ID: {item.patient_file_id}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div style={styles.assignmentTherapist}>
-                            Therapist: {item.therapist_name}
                           </div>
                           <div style={styles.assignmentMeta}>
                             Date: {item.assignment_date}
@@ -138,14 +149,14 @@ export default function PhysioDashboard({
                             </div>
                           ) : null}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={styles.emptyState}>
-                    No assignments for today.
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={styles.emptyState}>
+                      No assigned patients for today.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -156,61 +167,7 @@ export default function PhysioDashboard({
               />
             )}
 
-            {activeSection === "tracker" && (
-              <div style={styles.card}>
-                <div style={styles.trackerHeader}>
-                  <h2 style={styles.cardTitle}>Patient Tracker</h2>
-
-                  <input
-                    type="month"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    style={styles.monthInput}
-                  />
-                </div>
-
-                <div style={styles.tableWrap}>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr>
-                        <th style={styles.th}>Patient Name</th>
-                        <th style={styles.th}>Patient ID</th>
-                        <th style={styles.th}>Approved Sessions</th>
-                        <th style={styles.th}>Utilized Sessions</th>
-                        <th style={styles.th}>Number of Evaluations</th>
-                        <th style={styles.th}>Booking</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {monthlyPatients.length > 0 ? (
-                        monthlyPatients.map((patient) => (
-                          <tr key={patient.id}>
-                            <td style={styles.td}>{patient.name}</td>
-                            <td style={styles.td}>{patient.patient_id}</td>
-                            <td style={styles.td}>
-                              {patient.approved_sessions ?? 0}
-                            </td>
-                            <td style={styles.td}>
-                              {patient.utilized_sessions ?? 0}
-                            </td>
-                            <td style={styles.td}>
-                              {patient.number_of_evaluations ?? 0}
-                            </td>
-                            <td style={styles.td}>{patient.booking || "-"}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td style={styles.emptyTable} colSpan="6">
-                            No patient tracker data for this month.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+            {activeSection === "patients" && <PatientSearch />}
           </main>
         </div>
       </div>
@@ -257,6 +214,12 @@ const styles = {
     gap: "16px",
     marginBottom: "24px",
   },
+  topActions: {
+    display: "flex",
+    gap: "12px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
   title: {
     margin: 0,
     fontSize: "34px",
@@ -267,6 +230,16 @@ const styles = {
     margin: "8px 0 0 0",
     color: "#64748b",
     fontSize: "16px",
+  },
+  sidebarToggle: {
+    background: "#0f766e",
+    color: "#fff",
+    border: "none",
+    borderRadius: "12px",
+    padding: "12px 18px",
+    fontSize: "14px",
+    fontWeight: "700",
+    cursor: "pointer",
   },
   logoutButton: {
     background: "#ef4444",
@@ -280,7 +253,6 @@ const styles = {
   },
   layout: {
     display: "grid",
-    gridTemplateColumns: "280px 1fr",
     gap: "22px",
     alignItems: "start",
   },
@@ -289,7 +261,7 @@ const styles = {
     borderRadius: "22px",
     padding: "18px",
     boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
-    border: "1px solid #e8eef7",
+    border: "1px solid #d9f1e5",
     position: "sticky",
     top: "20px",
   },
@@ -306,7 +278,7 @@ const styles = {
     width: "100%",
     textAlign: "left",
     border: "none",
-    background: "#f3faf6",
+    background: "#f3fcf8",
     color: "#0f172a",
     padding: "14px 14px",
     borderRadius: "14px",
@@ -323,43 +295,50 @@ const styles = {
   content: {
     minWidth: 0,
   },
-  card: {
+  sectionStack: {
+    display: "grid",
+    gap: "20px",
+  },
+  targetRow: {
+    maxWidth: "240px",
+  },
+  targetInput: {
+    padding: "13px 14px",
+    borderRadius: "12px",
+    border: "1px solid #cbd5e1",
+    fontSize: "15px",
     background: "#fff",
-    borderRadius: "22px",
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
-    border: "1px solid #e8eef7",
+    width: "100%",
+    boxSizing: "border-box",
+  },
+  card: {
+    background: "#ffffff",
+    borderRadius: "18px",
     padding: "24px",
+    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+    border: "1px solid #d9f1e5",
   },
   cardTitle: {
-    margin: "0 0 18px 0",
-    fontSize: "28px",
-    fontWeight: "800",
+    margin: "0 0 12px 0",
+    fontSize: "22px",
     color: "#0f172a",
+    fontWeight: "800",
   },
   assignmentList: {
     display: "grid",
     gap: "12px",
   },
   assignmentCard: {
+    padding: "14px",
     border: "1px solid #dcfce7",
     background: "#f0fdf4",
-    borderRadius: "14px",
-    padding: "16px",
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "16px",
-    flexWrap: "wrap",
+    borderRadius: "12px",
   },
   assignmentPatient: {
-    fontWeight: "800",
+    fontWeight: "700",
     color: "#14532d",
     marginBottom: "6px",
     fontSize: "17px",
-  },
-  assignmentTherapist: {
-    fontWeight: "800",
-    color: "#166534",
-    marginBottom: "6px",
   },
   assignmentMeta: {
     color: "#166534",
@@ -372,49 +351,5 @@ const styles = {
     background: "#f8fafc",
     color: "#64748b",
     border: "1px dashed #cbd5e1",
-    fontWeight: "600",
-  },
-  trackerHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "16px",
-    flexWrap: "wrap",
-    marginBottom: "18px",
-  },
-  monthInput: {
-    padding: "12px 14px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    fontSize: "15px",
-  },
-  tableWrap: {
-    overflowX: "auto",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    minWidth: "850px",
-  },
-  th: {
-    textAlign: "left",
-    background: "#f0fdf4",
-    color: "#166534",
-    fontWeight: "800",
-    fontSize: "14px",
-    padding: "14px",
-    borderBottom: "1px solid #d1fae5",
-  },
-  td: {
-    padding: "14px",
-    borderBottom: "1px solid #ecfdf5",
-    color: "#0f172a",
-    fontSize: "14px",
-  },
-  emptyTable: {
-    padding: "18px",
-    textAlign: "center",
-    color: "#64748b",
-    fontWeight: "600",
   },
 };

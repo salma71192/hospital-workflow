@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
+import AssignmentHistory from "../components/AssignmentHistory";
 
 export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const navigate = useNavigate();
+
+  const [activeSection, setActiveSection] = useState("create_user");
 
   const [formData, setFormData] = useState({
     username: "",
@@ -150,6 +153,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       await fetchUsers();
       localStorage.setItem("activeCategory", formData.role);
       setActiveCategory(formData.role);
+      setActiveSection("manage_users");
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to create user");
       setMessage("");
@@ -230,11 +234,16 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
           Superuser
         </label>
 
-        <button style={styles.viewButton} onClick={() => handleActAsUser(item)}>
+        <button
+          type="button"
+          style={styles.viewButton}
+          onClick={() => handleActAsUser(item)}
+        >
           Open as User
         </button>
 
         <button
+          type="button"
           style={styles.deleteButton}
           onClick={() => handleDeleteUser(item.id, item.username)}
           disabled={item.username === user?.username}
@@ -244,6 +253,12 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       </div>
     </div>
   );
+
+  const sidebarItems = [
+    { key: "create_user", label: "Create User" },
+    { key: "manage_users", label: "Manage Users" },
+    { key: "history", label: "Assignment History" },
+  ];
 
   return (
     <div style={styles.page}>
@@ -259,89 +274,127 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
           </button>
         </div>
 
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Create New User</h2>
+        {message && <div style={styles.successBox}>{message}</div>}
+        {error && <div style={styles.errorBox}>{error}</div>}
 
-          <form onSubmit={handleCreateUser} style={styles.form}>
-            <input
-              type="text"
-              name="username"
-              placeholder="Username"
-              value={formData.username}
-              onChange={handleChange}
-              style={styles.input}
-              required
-            />
+        <div style={styles.layout}>
+          <aside style={styles.sidebar}>
+            <div style={styles.sidebarTitle}>Admin Menu</div>
 
-            <input
-              type="password"
-              name="password"
-              placeholder="Password"
-              value={formData.password}
-              onChange={handleChange}
-              style={styles.input}
-              required
-            />
-
-            <select
-              name="role"
-              value={formData.role}
-              onChange={handleChange}
-              style={styles.input}
-            >
-              {roles.map((role) => (
-                <option key={role} value={role}>
-                  {roleLabels[role]}
-                </option>
-              ))}
-            </select>
-
-            <label style={styles.checkboxRow}>
-              <input
-                type="checkbox"
-                name="is_superuser"
-                checked={formData.is_superuser}
-                onChange={handleChange}
-              />
-              Make this user Django superuser
-            </label>
-
-            <button type="submit" style={styles.button}>
-              Create User
-            </button>
-          </form>
-
-          {message && <p style={styles.success}>{message}</p>}
-          {error && <p style={styles.error}>{error}</p>}
-        </div>
-
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Users by Category</h2>
-
-          <div style={styles.tabsWrap}>
-            {categoryOrder.map((category) => (
+            {sidebarItems.map((item) => (
               <button
-                key={category}
-                onClick={() => handleCategoryChange(category)}
+                key={item.key}
                 style={{
-                  ...styles.tabButton,
-                  ...(activeCategory === category ? styles.activeTabButton : {}),
+                  ...styles.sidebarButton,
+                  ...(activeSection === item.key ? styles.sidebarButtonActive : {}),
                 }}
+                onClick={() => setActiveSection(item.key)}
               >
-                {roleLabels[category]} ({groupedUsers[category]?.length || 0})
+                {item.label}
               </button>
             ))}
-          </div>
+          </aside>
 
-          <div style={styles.tabPanel}>
-            <h3 style={styles.sectionTitle}>{roleLabels[activeCategory]}</h3>
+          <main style={styles.content}>
+            {activeSection === "create_user" && (
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Create New User</h2>
 
-            {visibleUsers.length ? (
-              <div style={styles.userGrid}>{visibleUsers.map(renderUserCard)}</div>
-            ) : (
-              <div style={styles.emptyState}>No users in this category.</div>
+                <form onSubmit={handleCreateUser} style={styles.form}>
+                  <input
+                    type="text"
+                    name="username"
+                    placeholder="Username"
+                    value={formData.username}
+                    onChange={handleChange}
+                    style={styles.input}
+                    required
+                  />
+
+                  <input
+                    type="password"
+                    name="password"
+                    placeholder="Password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    style={styles.input}
+                    required
+                  />
+
+                  <select
+                    name="role"
+                    value={formData.role}
+                    onChange={handleChange}
+                    style={styles.input}
+                  >
+                    {roles.map((role) => (
+                      <option key={role} value={role}>
+                        {roleLabels[role]}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label style={styles.checkboxRow}>
+                    <input
+                      type="checkbox"
+                      name="is_superuser"
+                      checked={formData.is_superuser}
+                      onChange={handleChange}
+                    />
+                    Make this user Django superuser
+                  </label>
+
+                  <button type="submit" style={styles.button}>
+                    Create User
+                  </button>
+                </form>
+              </div>
             )}
-          </div>
+
+            {activeSection === "manage_users" && (
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Users by Category</h2>
+
+                <div style={styles.tabsWrap}>
+                  {categoryOrder.map((category) => (
+                    <button
+                      key={category}
+                      onClick={() => handleCategoryChange(category)}
+                      style={{
+                        ...styles.tabButton,
+                        ...(activeCategory === category
+                          ? styles.activeTabButton
+                          : {}),
+                      }}
+                    >
+                      {roleLabels[category]} ({groupedUsers[category]?.length || 0})
+                    </button>
+                  ))}
+                </div>
+
+                <div style={styles.tabPanel}>
+                  <h3 style={styles.sectionTitle}>{roleLabels[activeCategory]}</h3>
+
+                  {visibleUsers.length ? (
+                    <div style={styles.userGrid}>
+                      {visibleUsers.map(renderUserCard)}
+                    </div>
+                  ) : (
+                    <div style={styles.emptyState}>
+                      No users in this category.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeSection === "history" && (
+              <AssignmentHistory
+                title="Admin Assignment History"
+                currentUser={user}
+              />
+            )}
+          </main>
         </div>
       </div>
     </div>
@@ -356,7 +409,7 @@ const styles = {
     fontFamily: "Arial, sans-serif",
   },
   container: {
-    maxWidth: "1100px",
+    maxWidth: "1280px",
     margin: "0 auto",
   },
   topBar: {
@@ -365,12 +418,12 @@ const styles = {
     alignItems: "center",
     flexWrap: "wrap",
     gap: "16px",
-    marginBottom: "28px",
+    marginBottom: "24px",
   },
   title: {
     margin: 0,
-    fontSize: "32px",
-    fontWeight: "700",
+    fontSize: "34px",
+    fontWeight: "800",
     color: "#1e3a8a",
   },
   subtitle: {
@@ -382,59 +435,117 @@ const styles = {
     background: "#ef4444",
     color: "#fff",
     border: "none",
-    borderRadius: "10px",
+    borderRadius: "12px",
     padding: "12px 18px",
     fontSize: "14px",
-    fontWeight: "600",
+    fontWeight: "700",
     cursor: "pointer",
+  },
+  successBox: {
+    background: "#dcfce7",
+    color: "#166534",
+    border: "1px solid #86efac",
+    borderRadius: "12px",
+    padding: "14px 16px",
+    marginBottom: "16px",
+    fontWeight: "700",
+  },
+  errorBox: {
+    background: "#fef2f2",
+    color: "#b91c1c",
+    border: "1px solid #fecaca",
+    borderRadius: "12px",
+    padding: "14px 16px",
+    marginBottom: "16px",
+    fontWeight: "700",
+  },
+  layout: {
+    display: "grid",
+    gridTemplateColumns: "280px 1fr",
+    gap: "22px",
+    alignItems: "start",
+  },
+  sidebar: {
+    background: "#ffffff",
+    borderRadius: "22px",
+    padding: "18px",
+    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
+    border: "1px solid #e8eef7",
+    position: "sticky",
+    top: "20px",
+  },
+  sidebarTitle: {
+    fontSize: "14px",
+    fontWeight: "800",
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    marginBottom: "14px",
+    padding: "4px 8px",
+  },
+  sidebarButton: {
+    width: "100%",
+    textAlign: "left",
+    border: "none",
+    background: "#f8fbff",
+    color: "#0f172a",
+    padding: "14px 14px",
+    borderRadius: "14px",
+    marginBottom: "10px",
+    fontSize: "15px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+  sidebarButtonActive: {
+    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+    color: "#fff",
+    boxShadow: "0 10px 24px rgba(37, 99, 235, 0.22)",
+  },
+  content: {
+    minWidth: 0,
   },
   card: {
     background: "#ffffff",
-    borderRadius: "18px",
+    borderRadius: "22px",
     padding: "24px",
-    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
-    marginBottom: "20px",
+    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
+    border: "1px solid #e8eef7",
   },
   cardTitle: {
     margin: "0 0 18px 0",
-    fontSize: "24px",
+    fontSize: "28px",
     color: "#0f172a",
+    fontWeight: "800",
   },
   form: {
     display: "grid",
     gap: "14px",
   },
   input: {
-    padding: "12px 14px",
-    borderRadius: "10px",
+    padding: "13px 14px",
+    borderRadius: "12px",
     border: "1px solid #cbd5e1",
     fontSize: "15px",
+    background: "#fff",
+    width: "100%",
+    boxSizing: "border-box",
   },
   checkboxRow: {
     display: "flex",
     alignItems: "center",
     gap: "10px",
     color: "#334155",
+    fontWeight: "600",
   },
   button: {
-    background: "#2563eb",
+    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
     color: "#fff",
     border: "none",
-    borderRadius: "10px",
-    padding: "12px 18px",
+    borderRadius: "12px",
+    padding: "13px 18px",
     fontSize: "15px",
-    fontWeight: "600",
+    fontWeight: "700",
     cursor: "pointer",
-  },
-  success: {
-    color: "#166534",
-    marginTop: "14px",
-    fontWeight: "600",
-  },
-  error: {
-    color: "#dc2626",
-    marginTop: "14px",
-    fontWeight: "600",
   },
   tabsWrap: {
     display: "flex",
@@ -449,7 +560,7 @@ const styles = {
     borderRadius: "999px",
     padding: "10px 16px",
     fontSize: "14px",
-    fontWeight: "600",
+    fontWeight: "700",
     cursor: "pointer",
   },
   activeTabButton: {
@@ -463,6 +574,7 @@ const styles = {
     margin: "0 0 14px 0",
     fontSize: "20px",
     color: "#1e293b",
+    fontWeight: "800",
   },
   userGrid: {
     display: "grid",
@@ -474,7 +586,7 @@ const styles = {
     alignItems: "center",
     gap: "16px",
     border: "1px solid #e2e8f0",
-    borderRadius: "12px",
+    borderRadius: "14px",
     padding: "16px",
     flexWrap: "wrap",
   },
@@ -482,9 +594,10 @@ const styles = {
     minWidth: "180px",
   },
   userName: {
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#0f172a",
     marginBottom: "6px",
+    fontSize: "17px",
   },
   userMeta: {
     color: "#64748b",
@@ -497,8 +610,8 @@ const styles = {
     flexWrap: "wrap",
   },
   smallSelect: {
-    padding: "8px 10px",
-    borderRadius: "8px",
+    padding: "10px 12px",
+    borderRadius: "10px",
     border: "1px solid #cbd5e1",
     fontSize: "14px",
   },
@@ -508,6 +621,7 @@ const styles = {
     gap: "6px",
     fontSize: "14px",
     color: "#334155",
+    fontWeight: "600",
   },
   viewButton: {
     background: "#1d4ed8",
@@ -515,7 +629,7 @@ const styles = {
     border: "none",
     borderRadius: "10px",
     padding: "10px 14px",
-    fontWeight: "600",
+    fontWeight: "700",
     cursor: "pointer",
   },
   deleteButton: {
@@ -524,7 +638,7 @@ const styles = {
     border: "none",
     borderRadius: "10px",
     padding: "10px 14px",
-    fontWeight: "600",
+    fontWeight: "700",
     cursor: "pointer",
   },
   emptyState: {
@@ -533,5 +647,6 @@ const styles = {
     background: "#f8fafc",
     color: "#64748b",
     border: "1px dashed #cbd5e1",
+    fontWeight: "600",
   },
 };
