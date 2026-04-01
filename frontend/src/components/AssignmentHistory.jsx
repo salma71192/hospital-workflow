@@ -1,48 +1,23 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import api from "../api/api";
-import AssignmentProgressCard from "./AssignmentProgressCard";
+import DashboardNotice from "./common/DashboardNotice";
 
 export default function AssignmentHistory({
   title = "Assignment History",
   currentUser,
-  actingAs = null,
+  actingAs,
 }) {
   const today = new Date().toISOString().split("T")[0];
-  const firstDayOfMonth = `${today.slice(0, 7)}-01`;
-  const isAdmin =
-    currentUser?.is_superuser || currentUser?.role === "admin";
 
-  const [startDate, setStartDate] = useState(firstDayOfMonth);
+  const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
-  const [monthlyTarget, setMonthlyTarget] = useState(100);
-
-  const [createdById, setCreatedById] = useState("");
-  const [therapistId, setTherapistId] = useState("");
-
-  const [receptionists, setReceptionists] = useState([]);
-  const [therapists, setTherapists] = useState([]);
 
   const [assignments, setAssignments] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [hasSearched, setHasSearched] = useState(false);
-
-  useEffect(() => {
-    if (!isAdmin || actingAs) return;
-
-    const loadFilters = async () => {
-      try {
-        const res = await api.get("reception/staff-filters/");
-        setReceptionists(res.data.receptionists || []);
-        setTherapists(res.data.therapists || []);
-      } catch (err) {
-        console.error("Failed to load staff filters", err);
-      }
-    };
-
-    loadFilters();
-  }, [isAdmin, actingAs]);
 
   const loadHistory = async () => {
+    setLoading(true);
     setError("");
 
     try {
@@ -51,237 +26,214 @@ export default function AssignmentHistory({
         end_date: endDate,
       });
 
-      // Normal admin filters only when not acting as another user
-      if (isAdmin && !actingAs && createdById) {
-        params.append("created_by_id", createdById);
-      }
-
-      if (isAdmin && !actingAs && therapistId) {
-        params.append("therapist_id", therapistId);
-      }
-
-      // Admin "view as user" override
-      if (actingAs && isAdmin) {
+      // 👇 IMPORTANT: support admin viewing specific user
+      if (actingAs && (currentUser?.is_superuser || currentUser?.role === "admin")) {
         params.append("viewed_user_id", String(actingAs.id));
         params.append("viewed_user_role", String(actingAs.role || ""));
       }
 
       const res = await api.get(`reception/assignments/?${params.toString()}`);
       setAssignments(res.data.assignments || []);
-      setHasSearched(true);
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to load assignment history");
+      setError("Failed to load assignment history");
       setAssignments([]);
-      setHasSearched(true);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const totalAssignments = useMemo(() => assignments.length, [assignments]);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
+  useEffect(() => {
     loadHistory();
-  };
+  }, [startDate, endDate, actingAs, currentUser]);
 
   return (
-    <div style={styles.card}>
-      <h2 style={styles.cardTitle}>{title}</h2>
+    <div style={styles.wrapper}>
+      <h2 style={styles.title}>{title}</h2>
 
-      <form onSubmit={handleSearch} style={styles.filterGrid}>
-        <input
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          style={styles.input}
-          required
-        />
-
-        <input
-          type="date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-          style={styles.input}
-          required
-        />
-
-        <input
-          type="number"
-          min="1"
-          value={monthlyTarget}
-          onChange={(e) => setMonthlyTarget(e.target.value)}
-          style={styles.input}
-          placeholder="Target"
-        />
-
-        {isAdmin && !actingAs && (
-          <select
-            value={createdById}
-            onChange={(e) => setCreatedById(e.target.value)}
+      {/* Date filters */}
+      <div style={styles.filters}>
+        <div style={styles.field}>
+          <label style={styles.label}>Start Date</label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
             style={styles.input}
-          >
-            <option value="">All Reception</option>
-            {receptionists.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.username} ({item.role})
-              </option>
-            ))}
-          </select>
-        )}
+          />
+        </div>
 
-        {isAdmin && !actingAs && (
-          <select
-            value={therapistId}
-            onChange={(e) => setTherapistId(e.target.value)}
+        <div style={styles.field}>
+          <label style={styles.label}>End Date</label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
             style={styles.input}
-          >
-            <option value="">All Therapists</option>
-            {therapists.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.username}
-              </option>
-            ))}
-          </select>
-        )}
+          />
+        </div>
 
-        <button type="submit" style={styles.primaryButton}>
-          Show History
+        <button style={styles.button} onClick={loadHistory}>
+          Refresh
         </button>
-      </form>
-
-      <div style={styles.summaryWrap}>
-        <AssignmentProgressCard
-          title="Selected User Statistics"
-          count={totalAssignments}
-          target={monthlyTarget}
-          subtitle={`${startDate} to ${endDate}`}
-        />
       </div>
 
-      {error && <div style={styles.errorBox}>{error}</div>}
+      {/* Error */}
+      {error && <DashboardNotice type="error">{error}</DashboardNotice>}
 
-      {!hasSearched ? (
-        <div style={styles.emptyState}>
-          Select dates and filters, then click Show History.
-        </div>
-      ) : assignments.length > 0 ? (
-        <div style={styles.assignmentList}>
+      {/* Loading */}
+      {loading && <div style={styles.loading}>Loading...</div>}
+
+      {/* List */}
+      {!loading && assignments.length > 0 && (
+        <div style={styles.list}>
           {assignments.map((item) => (
-            <div key={item.id} style={styles.assignmentCard}>
-              <div>
-                <div style={styles.assignmentPatient}>{item.patient_name}</div>
-                <div style={styles.assignmentMeta}>
+            <div key={item.id} style={styles.card}>
+              <div style={styles.left}>
+                <div style={styles.patient}>{item.patient_name}</div>
+                <div style={styles.meta}>
                   Patient ID: {item.patient_file_id}
                 </div>
-                <div style={styles.assignmentMeta}>
-                  Therapist: {item.therapist_name}
+
+                {/* ✅ CATEGORY */}
+                <div style={styles.categoryBadge}>
+                  {item.category_label || item.category || "-"}
                 </div>
               </div>
 
-              <div>
-                <div style={styles.assignmentMeta}>
+              <div style={styles.right}>
+                <div style={styles.meta}>
+                  Therapist: {item.therapist_name}
+                </div>
+
+                <div style={styles.meta}>
                   Date: {item.assignment_date}
                 </div>
-                <div style={styles.assignmentMeta}>
+
+                <div style={styles.meta}>
                   Created By: {item.created_by_name || "-"}
                 </div>
-                {item.notes ? (
-                  <div style={styles.assignmentMeta}>Notes: {item.notes}</div>
-                ) : null}
+
+                {item.notes && (
+                  <div style={styles.meta}>Notes: {item.notes}</div>
+                )}
               </div>
             </div>
           ))}
         </div>
-      ) : (
-        <div style={styles.emptyState}>
-          No assignments found for the selected user/date filters.
-        </div>
+      )}
+
+      {!loading && assignments.length === 0 && !error && (
+        <div style={styles.empty}>No assignments found for selected range.</div>
       )}
     </div>
   );
 }
 
 const styles = {
-  card: {
+  wrapper: {
     background: "#fff",
-    borderRadius: "22px",
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
-    border: "1px solid #e8eef7",
+    borderRadius: "18px",
     padding: "24px",
+    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
   },
-  cardTitle: {
-    margin: "0 0 18px 0",
-    fontSize: "28px",
+
+  title: {
+    fontSize: "22px",
     fontWeight: "800",
-    color: "#0f172a",
-  },
-  filterGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "12px",
-    alignItems: "center",
     marginBottom: "18px",
   },
-  input: {
-    padding: "13px 14px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    fontSize: "15px",
-    background: "#fff",
-    width: "100%",
-    boxSizing: "border-box",
+
+  filters: {
+    display: "flex",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginBottom: "18px",
+    alignItems: "end",
   },
-  primaryButton: {
-    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+
+  field: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+
+  label: {
+    fontSize: "12px",
+    fontWeight: "700",
+    color: "#64748b",
+  },
+
+  input: {
+    padding: "10px 12px",
+    borderRadius: "10px",
+    border: "1px solid #cbd5e1",
+  },
+
+  button: {
+    background: "#1d4ed8",
     color: "#fff",
     border: "none",
-    borderRadius: "12px",
-    padding: "13px 18px",
-    fontSize: "15px",
+    borderRadius: "10px",
+    padding: "10px 16px",
     fontWeight: "700",
     cursor: "pointer",
   },
-  summaryWrap: {
-    marginBottom: "18px",
-  },
-  errorBox: {
-    background: "#fef2f2",
-    color: "#b91c1c",
-    border: "1px solid #fecaca",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    marginBottom: "16px",
-    fontWeight: "700",
-  },
-  assignmentList: {
+
+  list: {
     display: "grid",
     gap: "12px",
   },
-  assignmentCard: {
+
+  card: {
     border: "1px solid #e2e8f0",
-    borderRadius: "14px",
+    borderRadius: "12px",
     padding: "16px",
     display: "flex",
     justifyContent: "space-between",
     gap: "16px",
     flexWrap: "wrap",
   },
-  assignmentPatient: {
-    fontWeight: "800",
-    color: "#0f172a",
-    marginBottom: "6px",
-    fontSize: "17px",
+
+  left: {
+    minWidth: "200px",
   },
-  assignmentMeta: {
-    color: "#64748b",
+
+  right: {
+    minWidth: "200px",
+  },
+
+  patient: {
+    fontWeight: "800",
+    fontSize: "16px",
+    marginBottom: "6px",
+  },
+
+  meta: {
     fontSize: "14px",
+    color: "#64748b",
     marginBottom: "4px",
   },
-  emptyState: {
-    padding: "18px",
-    borderRadius: "12px",
+
+  categoryBadge: {
+    marginTop: "8px",
+    display: "inline-block",
+    padding: "6px 10px",
+    borderRadius: "999px",
+    background: "#e0f2fe",
+    color: "#0369a1",
+    fontSize: "12px",
+    fontWeight: "800",
+  },
+
+  empty: {
+    padding: "16px",
     background: "#f8fafc",
+    borderRadius: "10px",
     color: "#64748b",
-    border: "1px dashed #cbd5e1",
+  },
+
+  loading: {
+    color: "#64748b",
     fontWeight: "600",
   },
 };
