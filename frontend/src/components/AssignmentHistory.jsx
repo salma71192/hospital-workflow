@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import api from "../api/api";
 import DashboardNotice from "./common/DashboardNotice";
+import DashboardStatsGrid from "./common/DashboardStatsGrid";
 
 export default function AssignmentHistory({
   title = "Assignment History",
@@ -11,6 +13,7 @@ export default function AssignmentHistory({
 
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -26,8 +29,10 @@ export default function AssignmentHistory({
         end_date: endDate,
       });
 
-      // 👇 IMPORTANT: support admin viewing specific user
-      if (actingAs && (currentUser?.is_superuser || currentUser?.role === "admin")) {
+      if (
+        actingAs &&
+        (currentUser?.is_superuser || currentUser?.role === "admin")
+      ) {
         params.append("viewed_user_id", String(actingAs.id));
         params.append("viewed_user_role", String(actingAs.role || ""));
       }
@@ -46,11 +51,58 @@ export default function AssignmentHistory({
     loadHistory();
   }, [startDate, endDate, actingAs, currentUser]);
 
+  const filteredAssignments = useMemo(() => {
+    if (categoryFilter === "all") return assignments;
+    return assignments.filter((item) => item.category === categoryFilter);
+  }, [assignments, categoryFilter]);
+
+  const stats = useMemo(() => {
+    const total = filteredAssignments.length;
+    const appointment = filteredAssignments.filter(
+      (item) => item.category === "appointment"
+    ).length;
+    const walkIn = filteredAssignments.filter(
+      (item) => item.category === "walk_in"
+    ).length;
+    const initialEvaluation = filteredAssignments.filter(
+      (item) => item.category === "initial_evaluation"
+    ).length;
+    const noEligibility = filteredAssignments.filter(
+      (item) => item.category === "task_without_eligibility"
+    ).length;
+
+    return [
+      { label: "Total", value: total },
+      { label: "Appointment", value: appointment },
+      { label: "Walk In", value: walkIn },
+      { label: "Initial Eval", value: initialEvaluation },
+      { label: "No Eligibility", value: noEligibility },
+    ];
+  }, [filteredAssignments]);
+
+  const handleExportExcel = () => {
+    const rows = filteredAssignments.map((item) => ({
+      Patient: item.patient_name,
+      Patient_ID: item.patient_file_id,
+      Therapist: item.therapist_name,
+      Date: item.assignment_date,
+      Category: item.category_label || item.category || "-",
+      Created_By: item.created_by_name || "-",
+      Notes: item.notes || "",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Assignments");
+
+    const filename = `assignment_history_${startDate}_to_${endDate}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+  };
+
   return (
     <div style={styles.wrapper}>
       <h2 style={styles.title}>{title}</h2>
 
-      {/* Date filters */}
       <div style={styles.filters}>
         <div style={styles.field}>
           <label style={styles.label}>Start Date</label>
@@ -72,21 +124,41 @@ export default function AssignmentHistory({
           />
         </div>
 
+        <div style={styles.field}>
+          <label style={styles.label}>Category</label>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            style={styles.input}
+          >
+            <option value="all">All</option>
+            <option value="appointment">Has Appointment</option>
+            <option value="walk_in">Walk In</option>
+            <option value="initial_evaluation">Initial Evaluation</option>
+            <option value="task_without_eligibility">
+              Task Without Eligibility
+            </option>
+          </select>
+        </div>
+
         <button style={styles.button} onClick={loadHistory}>
           Refresh
         </button>
+
+        <button style={styles.exportButton} onClick={handleExportExcel}>
+          Export Excel
+        </button>
       </div>
 
-      {/* Error */}
       {error && <DashboardNotice type="error">{error}</DashboardNotice>}
 
-      {/* Loading */}
+      <DashboardStatsGrid stats={stats} />
+
       {loading && <div style={styles.loading}>Loading...</div>}
 
-      {/* List */}
-      {!loading && assignments.length > 0 && (
+      {!loading && filteredAssignments.length > 0 && (
         <div style={styles.list}>
-          {assignments.map((item) => (
+          {filteredAssignments.map((item) => (
             <div key={item.id} style={styles.card}>
               <div style={styles.left}>
                 <div style={styles.patient}>{item.patient_name}</div>
@@ -94,7 +166,6 @@ export default function AssignmentHistory({
                   Patient ID: {item.patient_file_id}
                 </div>
 
-                {/* ✅ CATEGORY */}
                 <div style={styles.categoryBadge}>
                   {item.category_label || item.category || "-"}
                 </div>
@@ -105,9 +176,7 @@ export default function AssignmentHistory({
                   Therapist: {item.therapist_name}
                 </div>
 
-                <div style={styles.meta}>
-                  Date: {item.assignment_date}
-                </div>
+                <div style={styles.meta}>Date: {item.assignment_date}</div>
 
                 <div style={styles.meta}>
                   Created By: {item.created_by_name || "-"}
@@ -122,7 +191,7 @@ export default function AssignmentHistory({
         </div>
       )}
 
-      {!loading && assignments.length === 0 && !error && (
+      {!loading && filteredAssignments.length === 0 && !error && (
         <div style={styles.empty}>No assignments found for selected range.</div>
       )}
     </div>
@@ -135,19 +204,20 @@ const styles = {
     borderRadius: "18px",
     padding: "24px",
     boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+    display: "grid",
+    gap: "18px",
   },
 
   title: {
     fontSize: "22px",
     fontWeight: "800",
-    marginBottom: "18px",
+    margin: 0,
   },
 
   filters: {
     display: "flex",
     gap: "12px",
     flexWrap: "wrap",
-    marginBottom: "18px",
     alignItems: "end",
   },
 
@@ -155,6 +225,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: "4px",
+    minWidth: "180px",
   },
 
   label: {
@@ -167,6 +238,7 @@ const styles = {
     padding: "10px 12px",
     borderRadius: "10px",
     border: "1px solid #cbd5e1",
+    background: "#fff",
   },
 
   button: {
@@ -177,6 +249,18 @@ const styles = {
     padding: "10px 16px",
     fontWeight: "700",
     cursor: "pointer",
+    height: "42px",
+  },
+
+  exportButton: {
+    background: "#166534",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "10px 16px",
+    fontWeight: "700",
+    cursor: "pointer",
+    height: "42px",
   },
 
   list: {
