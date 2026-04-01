@@ -22,6 +22,8 @@ export default function ReceptionDashboard({
   const today = new Date().toISOString().split("T")[0];
 
   const [activeSection, setActiveSection] = useState("search");
+  const [editingAssignmentId, setEditingAssignmentId] = useState(null);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -52,6 +54,18 @@ export default function ReceptionDashboard({
   const handleBackToAdmin = () => {
     onStopImpersonation();
     navigate("/admin");
+  };
+
+  const resetAssignmentForm = () => {
+    setAssignmentForm({
+      patient_id: "",
+      therapist_id: "",
+      assignment_date: today,
+      category: "appointment",
+      notes: "",
+    });
+    setSelectedPatient(null);
+    setEditingAssignmentId(null);
   };
 
   const loadTherapists = async () => {
@@ -117,6 +131,7 @@ export default function ReceptionDashboard({
       ...prev,
       patient_id: patient.id,
     }));
+    setEditingAssignmentId(null);
     setActiveSection("assign");
     setMessage(`Selected ${patient.name} for assignment.`);
     setError("");
@@ -149,6 +164,7 @@ export default function ReceptionDashboard({
           ...prev,
           patient_id: createdPatient.id,
         }));
+        setEditingAssignmentId(null);
         setActiveSection("assign");
       }
     } catch (err) {
@@ -157,32 +173,72 @@ export default function ReceptionDashboard({
     }
   };
 
-  const handleCreateAssignment = async (e) => {
+  const handleCreateOrUpdateAssignment = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
 
     try {
-      const res = await api.post("reception/assignments/", assignmentForm);
-      setMessage(res.data.message || "Patient assigned successfully");
+      if (editingAssignmentId) {
+        const res = await api.put(
+          `reception/assignments/${editingAssignmentId}/`,
+          {
+            therapist_id: assignmentForm.therapist_id,
+            assignment_date: assignmentForm.assignment_date,
+            category: assignmentForm.category,
+            notes: assignmentForm.notes,
+          }
+        );
+        setMessage(res.data.message || "Assignment updated successfully");
+      } else {
+        const res = await api.post("reception/assignments/", assignmentForm);
+        setMessage(res.data.message || "Patient assigned successfully");
+      }
+
       setError("");
-
-      setAssignmentForm({
-        patient_id: "",
-        therapist_id: "",
-        assignment_date: today,
-        category: "appointment",
-        notes: "",
-      });
-
-      setSelectedPatient(null);
+      resetAssignmentForm();
       setSearchResults([]);
       setSearchTerm("");
-
       await loadTodayAssignments();
       setActiveSection("today");
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to assign patient");
+      setError(err?.response?.data?.error || "Failed to save assignment");
+      setMessage("");
+    }
+  };
+
+  const handleEditAssignment = (assignment) => {
+    setEditingAssignmentId(assignment.id);
+    setSelectedPatient({
+      id: assignment.patient_id,
+      name: assignment.patient_name,
+      patient_id: assignment.patient_file_id,
+    });
+    setAssignmentForm({
+      patient_id: assignment.patient_id,
+      therapist_id: assignment.therapist_id,
+      assignment_date: assignment.assignment_date,
+      category: assignment.category || "appointment",
+      notes: assignment.notes || "",
+    });
+    setActiveSection("assign");
+    setMessage(`Editing assignment for ${assignment.patient_name}`);
+    setError("");
+  };
+
+  const handleCancelAssignment = async (assignment) => {
+    const confirmed = window.confirm(
+      `Cancel today's assignment for ${assignment.patient_name}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await api.delete(`reception/assignments/${assignment.id}/`);
+      setMessage(res.data.message || "Assignment cancelled successfully");
+      setError("");
+      await loadTodayAssignments();
+    } catch (err) {
+      setError(err?.response?.data?.error || "Failed to cancel assignment");
       setMessage("");
     }
   };
@@ -196,7 +252,7 @@ export default function ReceptionDashboard({
       sidebarItems={[
         { key: "search", label: "Search Patient" },
         { key: "register", label: "Register New Patient" },
-        { key: "assign", label: "Assign Patient" },
+        { key: "assign", label: editingAssignmentId ? "Edit Assignment" : "Assign Patient" },
         { key: "today", label: "Today's Assignments" },
         { key: "history", label: "History" },
       ]}
@@ -234,7 +290,7 @@ export default function ReceptionDashboard({
           assignmentForm={assignmentForm}
           setAssignmentForm={setAssignmentForm}
           therapists={therapists}
-          onSubmit={handleCreateAssignment}
+          onSubmit={handleCreateOrUpdateAssignment}
         />
       )}
 
@@ -271,7 +327,11 @@ export default function ReceptionDashboard({
             subtitle={today}
           />
 
-          <TodayAssignmentsList assignments={todayAssignments} />
+          <TodayAssignmentsList
+            assignments={todayAssignments}
+            onEditAssignment={handleEditAssignment}
+            onCancelAssignment={handleCancelAssignment}
+          />
         </>
       )}
 
