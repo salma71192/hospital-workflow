@@ -5,6 +5,7 @@ import AssignmentHistory from "../components/AssignmentHistory";
 import AssignmentProgressCard from "../components/AssignmentProgressCard";
 import DashboardLayout from "../components/DashboardLayout";
 import PatientTrackerTable from "../components/patients/PatientTrackerTable";
+import PatientSearchBar from "../components/patients/PatientSearchBar";
 
 export default function PhysioDashboard({
   user,
@@ -143,34 +144,18 @@ export default function PhysioDashboard({
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Patient Tracker</h2>
 
-          <form
+          <PatientSearchBar
+            value={patientSearch}
+            onChange={setPatientSearch}
             onSubmit={(e) => {
               e.preventDefault();
               loadPatients(patientSearch);
             }}
-            style={styles.searchRow}
-          >
-            <input
-              type="text"
-              placeholder="Search by patient name or ID"
-              value={patientSearch}
-              onChange={(e) => setPatientSearch(e.target.value)}
-              style={styles.input}
-            />
-            <button type="submit" style={styles.primaryButton}>
-              Search
-            </button>
-            <button
-              type="button"
-              style={styles.secondaryButton}
-              onClick={() => {
-                setPatientSearch("");
-                loadPatients("");
-              }}
-            >
-              Clear
-            </button>
-          </form>
+            onClear={() => {
+              setPatientSearch("");
+              loadPatients("");
+            }}
+          />
 
           {patientError ? (
             <div style={styles.errorBox}>{patientError}</div>
@@ -208,42 +193,6 @@ const styles = {
     fontSize: "22px",
     color: "#0f172a",
     fontWeight: "800",
-  },
-  searchRow: {
-    display: "grid",
-    gridTemplateColumns: "1fr auto auto",
-    gap: "12px",
-    alignItems: "center",
-    marginBottom: "18px",
-  },
-  input: {
-    padding: "13px 14px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    fontSize: "15px",
-    background: "#fff",
-    width: "100%",
-    boxSizing: "border-box",
-  },
-  primaryButton: {
-    background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
-    color: "#fff",
-    border: "none",
-    borderRadius: "12px",
-    padding: "13px 18px",
-    fontSize: "15px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  secondaryButton: {
-    background: "#eef2f7",
-    color: "#0f172a",
-    border: "1px solid #d7e0ec",
-    borderRadius: "12px",
-    padding: "13px 18px",
-    fontSize: "15px",
-    fontWeight: "700",
-    cursor: "pointer",
   },
   errorBox: {
     background: "#fef2f2",
