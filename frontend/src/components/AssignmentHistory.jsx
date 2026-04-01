@@ -5,6 +5,7 @@ import AssignmentProgressCard from "./AssignmentProgressCard";
 export default function AssignmentHistory({
   title = "Assignment History",
   currentUser,
+  actingAs = null,
 }) {
   const today = new Date().toISOString().split("T")[0];
   const firstDayOfMonth = `${today.slice(0, 7)}-01`;
@@ -15,8 +16,8 @@ export default function AssignmentHistory({
   const [endDate, setEndDate] = useState(today);
   const [monthlyTarget, setMonthlyTarget] = useState(100);
 
-  const [selectedUserType, setSelectedUserType] = useState("reception");
-  const [selectedUserId, setSelectedUserId] = useState("");
+  const [createdById, setCreatedById] = useState("");
+  const [therapistId, setTherapistId] = useState("");
 
   const [receptionists, setReceptionists] = useState([]);
   const [therapists, setTherapists] = useState([]);
@@ -26,7 +27,7 @@ export default function AssignmentHistory({
   const [hasSearched, setHasSearched] = useState(false);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || actingAs) return;
 
     const loadFilters = async () => {
       try {
@@ -39,12 +40,9 @@ export default function AssignmentHistory({
     };
 
     loadFilters();
-  }, [isAdmin]);
+  }, [isAdmin, actingAs]);
 
-  const totalAssignments = useMemo(() => assignments.length, [assignments]);
-
-  const handleSearch = async (e) => {
-    e.preventDefault();
+  const loadHistory = async () => {
     setError("");
 
     try {
@@ -53,12 +51,19 @@ export default function AssignmentHistory({
         end_date: endDate,
       });
 
-      if (isAdmin && selectedUserId) {
-        if (selectedUserType === "reception") {
-          params.append("created_by_id", selectedUserId);
-        } else if (selectedUserType === "physio") {
-          params.append("therapist_id", selectedUserId);
-        }
+      // Normal admin filters only when not acting as another user
+      if (isAdmin && !actingAs && createdById) {
+        params.append("created_by_id", createdById);
+      }
+
+      if (isAdmin && !actingAs && therapistId) {
+        params.append("therapist_id", therapistId);
+      }
+
+      // Admin "view as user" override
+      if (actingAs && isAdmin) {
+        params.append("viewed_user_id", String(actingAs.id));
+        params.append("viewed_user_role", String(actingAs.role || ""));
       }
 
       const res = await api.get(`reception/assignments/?${params.toString()}`);
@@ -71,8 +76,12 @@ export default function AssignmentHistory({
     }
   };
 
-  const currentOptions =
-    selectedUserType === "reception" ? receptionists : therapists;
+  const totalAssignments = useMemo(() => assignments.length, [assignments]);
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    loadHistory();
+  };
 
   return (
     <div style={styles.card}>
@@ -104,28 +113,29 @@ export default function AssignmentHistory({
           placeholder="Target"
         />
 
-        {isAdmin && (
+        {isAdmin && !actingAs && (
           <select
-            value={selectedUserType}
-            onChange={(e) => {
-              setSelectedUserType(e.target.value);
-              setSelectedUserId("");
-            }}
+            value={createdById}
+            onChange={(e) => setCreatedById(e.target.value)}
             style={styles.input}
           >
-            <option value="reception">Reception</option>
-            <option value="physio">Physio</option>
+            <option value="">All Reception</option>
+            {receptionists.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.username} ({item.role})
+              </option>
+            ))}
           </select>
         )}
 
-        {isAdmin && (
+        {isAdmin && !actingAs && (
           <select
-            value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
+            value={therapistId}
+            onChange={(e) => setTherapistId(e.target.value)}
             style={styles.input}
           >
-            <option value="">All {selectedUserType === "reception" ? "Reception" : "Physio"}</option>
-            {currentOptions.map((item) => (
+            <option value="">All Therapists</option>
+            {therapists.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.username}
               </option>
@@ -151,7 +161,7 @@ export default function AssignmentHistory({
 
       {!hasSearched ? (
         <div style={styles.emptyState}>
-          Select dates and optional user filter, then click Show History.
+          Select dates and filters, then click Show History.
         </div>
       ) : assignments.length > 0 ? (
         <div style={styles.assignmentList}>
@@ -183,7 +193,7 @@ export default function AssignmentHistory({
         </div>
       ) : (
         <div style={styles.emptyState}>
-          No assignments found for the selected filters.
+          No assignments found for the selected user/date filters.
         </div>
       )}
     </div>

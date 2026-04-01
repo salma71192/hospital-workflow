@@ -56,37 +56,60 @@ def assignments_api(request):
         created_by_id = request.GET.get("created_by_id")
         therapist_id = request.GET.get("therapist_id")
 
+        # admin "view as user" override
+        viewed_user_id = request.GET.get("viewed_user_id")
+        viewed_user_role = (request.GET.get("viewed_user_role") or "").strip().lower()
+
         assignments_qs = PatientAssignment.objects.select_related(
             "patient", "therapist", "created_by"
         )
 
         if start_date:
-            try:
-                datetime.strptime(start_date, "%Y-%m-%d")
-                assignments_qs = assignments_qs.filter(assignment_date__gte=start_date)
-            except ValueError:
-                return JsonResponse({"error": "Invalid start_date format"}, status=400)
+          try:
+              datetime.strptime(start_date, "%Y-%m-%d")
+              assignments_qs = assignments_qs.filter(assignment_date__gte=start_date)
+          except ValueError:
+              return JsonResponse({"error": "Invalid start_date format"}, status=400)
 
         if end_date:
-            try:
-                datetime.strptime(end_date, "%Y-%m-%d")
-                assignments_qs = assignments_qs.filter(assignment_date__lte=end_date)
-            except ValueError:
-                return JsonResponse({"error": "Invalid end_date format"}, status=400)
+          try:
+              datetime.strptime(end_date, "%Y-%m-%d")
+              assignments_qs = assignments_qs.filter(assignment_date__lte=end_date)
+          except ValueError:
+              return JsonResponse({"error": "Invalid end_date format"}, status=400)
 
-        role = getattr(request.user, "role", "")
+        role = (getattr(request.user, "role", "") or "").strip().lower()
+        is_admin = request.user.is_superuser or role == "admin"
 
-        if request.user.is_superuser or role == "admin":
+        if is_admin:
+            # Normal admin filters from history screen
             if created_by_id:
                 assignments_qs = assignments_qs.filter(created_by_id=created_by_id)
             if therapist_id:
                 assignments_qs = assignments_qs.filter(therapist_id=therapist_id)
 
+            # If admin is acting as a specific user, filter like that user
+            if viewed_user_id and viewed_user_role == "physio":
+                assignments_qs = assignments_qs.filter(therapist_id=viewed_user_id)
+            elif viewed_user_id and viewed_user_role == "reception":
+                assignments_qs = assignments_qs.filter(created_by_id=viewed_user_id)
+            elif viewed_user_id and viewed_user_role == "reception_supervisor":
+                pass
+
         elif role == "physio":
-            assignments_qs = assignments_qs.filter(therapist=request.user)
+            assignments_qs = assignments_qs.filter(therapist_id=request.user.id)
 
         elif role == "reception":
-            assignments_qs = assignments_qs.filter(created_by=request.user)
+            assignments_qs = assignments_qs.filter(created_by_id=request.user.id)
+
+        elif role == "reception_supervisor":
+            pass
+
+        else:
+            return JsonResponse(
+                {"error": f"Unauthorized role for assignments: {role}"},
+                status=403,
+            )
 
         assignments_qs = assignments_qs.order_by("-assignment_date", "-created_at")
 

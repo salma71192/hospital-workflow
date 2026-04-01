@@ -30,9 +30,17 @@ export default function PhysioDashboard({
 
   const loadAssignments = async () => {
     try {
-      const res = await api.get(
-        `reception/assignments/?start_date=${today}&end_date=${today}`
-      );
+      const params = new URLSearchParams({
+        start_date: today,
+        end_date: today,
+      });
+
+      if (actingAs && (user?.is_superuser || user?.role === "admin")) {
+        params.append("viewed_user_id", String(actingAs.id));
+        params.append("viewed_user_role", String(actingAs.role || ""));
+      }
+
+      const res = await api.get(`reception/assignments/?${params.toString()}`);
       setAssignments(res.data.assignments || []);
     } catch (err) {
       console.error("Failed to load assignments", err);
@@ -56,7 +64,7 @@ export default function PhysioDashboard({
   useEffect(() => {
     loadAssignments();
     loadPatients();
-  }, [today]);
+  }, [today, actingAs, user]);
 
   const handlePatientSearch = async (e) => {
     e.preventDefault();
@@ -92,7 +100,7 @@ export default function PhysioDashboard({
       <div style={styles.container}>
         {actingAs && (
           <div style={styles.banner}>
-            <span>Viewing as: {user?.username}</span>
+            <span>Viewing as: {actingAs?.username}</span>
             <button style={styles.bannerButton} onClick={handleBackToAdmin}>
               Back to Admin
             </button>
@@ -103,7 +111,7 @@ export default function PhysioDashboard({
           <div>
             <h1 style={styles.title}>Physio Dashboard</h1>
             <p style={styles.subtitle}>
-              Welcome, {user?.username || "Physio User"}
+              Welcome, {actingAs?.username || user?.username || "Physio User"}
             </p>
           </div>
 
@@ -206,6 +214,7 @@ export default function PhysioDashboard({
               <AssignmentHistory
                 title="Physio Assignment History"
                 currentUser={user}
+                actingAs={actingAs}
               />
             )}
 

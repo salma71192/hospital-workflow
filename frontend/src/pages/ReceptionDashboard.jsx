@@ -498,7 +498,11 @@ export default function ReceptionDashboard({
             )}
 
             {activeSection === "history" && (
-              <AssignmentHistory title="Monthly / Range History" currentUser={user} />
+              <AssignmentHistory
+                title="Monthly / Range History"
+                currentUser={user}
+                actingAs={actingAs}
+              />
             )}
           </main>
         </div>
