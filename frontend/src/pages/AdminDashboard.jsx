@@ -5,6 +5,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import AssignmentHistory from "../components/AssignmentHistory";
 import CreateUserForm from "../components/users/CreateUserForm";
 import ManageUsersPanel from "../components/users/ManageUsersPanel";
+import DashboardNotice from "../components/common/DashboardNotice";
 
 export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const navigate = useNavigate();
@@ -203,8 +204,8 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setActiveSection={setActiveSection}
       onLogout={onLogout}
     >
-      {message && <div style={styles.successBox}>{message}</div>}
-      {error && <div style={styles.errorBox}>{error}</div>}
+      {message && <DashboardNotice type="success">{message}</DashboardNotice>}
+      {error && <DashboardNotice type="error">{error}</DashboardNotice>}
 
       {activeSection === "create" && (
         <CreateUserForm
@@ -241,22 +242,3 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     </DashboardLayout>
   );
 }
-
-const styles = {
-  successBox: {
-    background: "#dcfce7",
-    color: "#166534",
-    border: "1px solid #86efac",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    fontWeight: "700",
-  },
-  errorBox: {
-    background: "#fef2f2",
-    color: "#b91c1c",
-    border: "1px solid #fecaca",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    fontWeight: "700",
-  },
-};
