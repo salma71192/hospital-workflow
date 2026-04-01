@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
-import PatientSearch from "../components/PatientSearch";
 import AssignmentHistory from "../components/AssignmentHistory";
 import AssignmentProgressCard from "../components/AssignmentProgressCard";
 
@@ -16,8 +15,13 @@ export default function PhysioDashboard({
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeSection, setActiveSection] = useState("today");
+
   const [assignments, setAssignments] = useState([]);
   const [dailyTarget, setDailyTarget] = useState(8);
+
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patients, setPatients] = useState([]);
+  const [patientError, setPatientError] = useState("");
 
   const handleBackToAdmin = () => {
     onStopImpersonation();
@@ -35,14 +39,52 @@ export default function PhysioDashboard({
     }
   };
 
+  const loadPatients = async (searchValue = "") => {
+    try {
+      setPatientError("");
+      const url = searchValue
+        ? `patients/?search=${encodeURIComponent(searchValue)}`
+        : "patients/";
+      const res = await api.get(url);
+      setPatients(res.data.patients || []);
+    } catch (err) {
+      setPatientError("Failed to load patients");
+      setPatients([]);
+    }
+  };
+
   useEffect(() => {
     loadAssignments();
+    loadPatients();
   }, [today]);
+
+  const handlePatientSearch = async (e) => {
+    e.preventDefault();
+    loadPatients(patientSearch);
+  };
+
+  const handleClearPatientSearch = async () => {
+    setPatientSearch("");
+    loadPatients("");
+  };
+
+  const trackerRows = useMemo(() => {
+    return patients.map((patient) => {
+      const approved = Number(patient.current_approval_number) || 0;
+      const utilized = Number(patient.sessions_taken) || 0;
+
+      return {
+        ...patient,
+        approvedSessions: approved,
+        utilizedSessions: utilized,
+      };
+    });
+  }, [patients]);
 
   const sidebarItems = [
     { key: "today", label: "Today's Assignments" },
     { key: "history", label: "History" },
-    { key: "patients", label: "Patient Tracker" },
+    { key: "tracker", label: "Patient Tracker" },
   ];
 
   return (
@@ -167,7 +209,66 @@ export default function PhysioDashboard({
               />
             )}
 
-            {activeSection === "patients" && <PatientSearch />}
+            {activeSection === "tracker" && (
+              <div style={styles.sectionStack}>
+                <div style={styles.card}>
+                  <h2 style={styles.cardTitle}>Patient Tracker</h2>
+
+                  <form onSubmit={handlePatientSearch} style={styles.searchRow}>
+                    <input
+                      type="text"
+                      placeholder="Search by patient name or ID"
+                      value={patientSearch}
+                      onChange={(e) => setPatientSearch(e.target.value)}
+                      style={styles.input}
+                    />
+                    <button type="submit" style={styles.primaryButton}>
+                      Search
+                    </button>
+                    <button
+                      type="button"
+                      style={styles.secondaryButton}
+                      onClick={handleClearPatientSearch}
+                    >
+                      Clear
+                    </button>
+                  </form>
+
+                  {patientError ? (
+                    <div style={styles.errorBox}>{patientError}</div>
+                  ) : trackerRows.length > 0 ? (
+                    <div style={styles.tableWrap}>
+                      <table style={styles.table}>
+                        <thead>
+                          <tr>
+                            <th style={styles.th}>Patient ID</th>
+                            <th style={styles.th}>Patient Name</th>
+                            <th style={styles.th}>Approved Sessions</th>
+                            <th style={styles.th}>Utilized Sessions</th>
+                            <th style={styles.th}>Appointments</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {trackerRows.map((row) => (
+                            <tr key={row.id}>
+                              <td style={styles.td}>{row.patient_id}</td>
+                              <td style={styles.tdBold}>{row.name}</td>
+                              <td style={styles.td}>{row.approvedSessions}</td>
+                              <td style={styles.td}>{row.utilizedSessions}</td>
+                              <td style={styles.td}>
+                                {row.current_future_appointments || "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={styles.emptyState}>No patients found.</div>
+                  )}
+                </div>
+              </div>
+            )}
           </main>
         </div>
       </div>
@@ -319,10 +420,55 @@ const styles = {
     border: "1px solid #d9f1e5",
   },
   cardTitle: {
-    margin: "0 0 12px 0",
+    margin: "0 0 18px 0",
     fontSize: "22px",
     color: "#0f172a",
     fontWeight: "800",
+  },
+  searchRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto auto",
+    gap: "12px",
+    alignItems: "center",
+    marginBottom: "18px",
+  },
+  input: {
+    padding: "13px 14px",
+    borderRadius: "12px",
+    border: "1px solid #cbd5e1",
+    fontSize: "15px",
+    background: "#fff",
+    width: "100%",
+    boxSizing: "border-box",
+  },
+  primaryButton: {
+    background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "12px",
+    padding: "13px 18px",
+    fontSize: "15px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+  secondaryButton: {
+    background: "#eef2f7",
+    color: "#0f172a",
+    border: "1px solid #d7e0ec",
+    borderRadius: "12px",
+    padding: "13px 18px",
+    fontSize: "15px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+  errorBox: {
+    background: "#fef2f2",
+    color: "#b91c1c",
+    border: "1px solid #fecaca",
+    borderRadius: "12px",
+    padding: "14px 16px",
+    marginBottom: "16px",
+    fontWeight: "700",
   },
   assignmentList: {
     display: "grid",
@@ -344,6 +490,42 @@ const styles = {
     color: "#166534",
     fontSize: "14px",
     marginBottom: "4px",
+  },
+  tableWrap: {
+    width: "100%",
+    overflowX: "auto",
+    border: "1px solid #e2e8f0",
+    borderRadius: "14px",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: "760px",
+    background: "#fff",
+  },
+  th: {
+    textAlign: "left",
+    padding: "14px 16px",
+    background: "#f0fdf4",
+    color: "#166534",
+    fontSize: "14px",
+    fontWeight: "800",
+    borderBottom: "1px solid #d1fae5",
+  },
+  td: {
+    padding: "14px 16px",
+    color: "#475569",
+    fontSize: "14px",
+    borderBottom: "1px solid #eef2f7",
+    verticalAlign: "top",
+  },
+  tdBold: {
+    padding: "14px 16px",
+    color: "#0f172a",
+    fontSize: "14px",
+    fontWeight: "700",
+    borderBottom: "1px solid #eef2f7",
+    verticalAlign: "top",
   },
   emptyState: {
     padding: "18px",
