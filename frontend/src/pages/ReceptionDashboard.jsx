@@ -10,6 +10,7 @@ import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 import PatientAssignmentForm from "../components/patients/PatientAssignmentForm";
 import DashboardNotice from "../components/common/DashboardNotice";
 import DashboardMetricInput from "../components/common/DashboardMetricInput";
+import DashboardStatsGrid from "../components/common/DashboardStatsGrid";
 
 export default function ReceptionDashboard({
   user,
@@ -242,6 +243,23 @@ export default function ReceptionDashboard({
             value={dailyTarget}
             onChange={setDailyTarget}
             placeholder="Daily target"
+          />
+
+          <DashboardStatsGrid
+            stats={[
+              {
+                label: "Today's Assignments",
+                value: todayAssignments.length,
+              },
+              {
+                label: "Daily Target",
+                value: dailyTarget,
+              },
+              {
+                label: "Remaining",
+                value: Math.max(Number(dailyTarget) - todayAssignments.length, 0),
+              },
+            ]}
           />
 
           <AssignmentProgressCard

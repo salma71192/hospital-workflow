@@ -8,6 +8,7 @@ import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 import PatientSearchBar from "../components/patients/PatientSearchBar";
 import DashboardNotice from "../components/common/DashboardNotice";
 import DashboardMetricInput from "../components/common/DashboardMetricInput";
+import DashboardStatsGrid from "../components/common/DashboardStatsGrid";
 
 export default function PhysioDashboard({
   user,
@@ -94,6 +95,23 @@ export default function PhysioDashboard({
             value={dailyTarget}
             onChange={setDailyTarget}
             placeholder="Daily target"
+          />
+
+          <DashboardStatsGrid
+            stats={[
+              {
+                label: "Today's Assignments",
+                value: assignments.length,
+              },
+              {
+                label: "Daily Target",
+                value: dailyTarget,
+              },
+              {
+                label: "Remaining",
+                value: Math.max(Number(dailyTarget) - assignments.length, 0),
+              },
+            ]}
           />
 
           <AssignmentProgressCard
