@@ -8,6 +8,8 @@ import TodayAssignmentsList from "../components/assignments/TodayAssignmentsList
 import PatientSearchPanel from "../components/patients/PatientSearchPanel";
 import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 import PatientAssignmentForm from "../components/patients/PatientAssignmentForm";
+import DashboardNotice from "../components/common/DashboardNotice";
+import DashboardMetricInput from "../components/common/DashboardMetricInput";
 
 export default function ReceptionDashboard({
   user,
@@ -19,7 +21,6 @@ export default function ReceptionDashboard({
   const today = new Date().toISOString().split("T")[0];
 
   const [activeSection, setActiveSection] = useState("search");
-
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -203,8 +204,8 @@ export default function ReceptionDashboard({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message && <div style={styles.successBox}>{message}</div>}
-      {error && <div style={styles.errorBox}>{error}</div>}
+      {message && <DashboardNotice type="success">{message}</DashboardNotice>}
+      {error && <DashboardNotice type="error">{error}</DashboardNotice>}
 
       {activeSection === "search" && (
         <PatientSearchPanel
@@ -236,16 +237,12 @@ export default function ReceptionDashboard({
 
       {activeSection === "today" && (
         <>
-          <div style={styles.targetRow}>
-            <input
-              type="number"
-              min="1"
-              value={dailyTarget}
-              onChange={(e) => setDailyTarget(e.target.value)}
-              style={styles.targetInput}
-              placeholder="Daily target"
-            />
-          </div>
+          <DashboardMetricInput
+            label="Daily Target"
+            value={dailyTarget}
+            onChange={setDailyTarget}
+            placeholder="Daily target"
+          />
 
           <AssignmentProgressCard
             title="Today's Assignments"
@@ -268,34 +265,3 @@ export default function ReceptionDashboard({
     </DashboardLayout>
   );
 }
-
-const styles = {
-  successBox: {
-    background: "#dcfce7",
-    color: "#166534",
-    border: "1px solid #86efac",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    fontWeight: "700",
-  },
-  errorBox: {
-    background: "#fef2f2",
-    color: "#b91c1c",
-    border: "1px solid #fecaca",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    fontWeight: "700",
-  },
-  targetRow: {
-    maxWidth: "240px",
-  },
-  targetInput: {
-    padding: "13px 14px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    fontSize: "15px",
-    background: "#fff",
-    width: "100%",
-    boxSizing: "border-box",
-  },
-};

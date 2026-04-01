@@ -6,6 +6,8 @@ import AssignmentProgressCard from "../components/AssignmentProgressCard";
 import DashboardLayout from "../components/DashboardLayout";
 import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 import PatientSearchBar from "../components/patients/PatientSearchBar";
+import DashboardNotice from "../components/common/DashboardNotice";
+import DashboardMetricInput from "../components/common/DashboardMetricInput";
 
 export default function PhysioDashboard({
   user,
@@ -87,16 +89,12 @@ export default function PhysioDashboard({
     >
       {activeSection === "today" && (
         <>
-          <div style={styles.targetRow}>
-            <input
-              type="number"
-              min="1"
-              value={dailyTarget}
-              onChange={(e) => setDailyTarget(e.target.value)}
-              style={styles.targetInput}
-              placeholder="Daily target"
-            />
-          </div>
+          <DashboardMetricInput
+            label="Daily Target"
+            value={dailyTarget}
+            onChange={setDailyTarget}
+            placeholder="Daily target"
+          />
 
           <AssignmentProgressCard
             title="Today's Assignments"
@@ -158,7 +156,7 @@ export default function PhysioDashboard({
           />
 
           {patientError ? (
-            <div style={styles.errorBox}>{patientError}</div>
+            <DashboardNotice type="error">{patientError}</DashboardNotice>
           ) : (
             <PatientTrackerTable patients={patients} title="Patient Tracker" />
           )}
@@ -169,18 +167,6 @@ export default function PhysioDashboard({
 }
 
 const styles = {
-  targetRow: {
-    maxWidth: "240px",
-  },
-  targetInput: {
-    padding: "13px 14px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    fontSize: "15px",
-    background: "#fff",
-    width: "100%",
-    boxSizing: "border-box",
-  },
   card: {
     background: "#fff",
     borderRadius: "18px",
@@ -193,15 +179,6 @@ const styles = {
     fontSize: "22px",
     color: "#0f172a",
     fontWeight: "800",
-  },
-  errorBox: {
-    background: "#fef2f2",
-    color: "#b91c1c",
-    border: "1px solid #fecaca",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    marginBottom: "16px",
-    fontWeight: "700",
   },
   assignmentList: {
     display: "grid",
