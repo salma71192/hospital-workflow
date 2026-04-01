@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 import AssignmentHistory from "../components/AssignmentHistory";
 import AssignmentProgressCard from "../components/AssignmentProgressCard";
+import TodayAssignmentsList from "../components/assignments/TodayAssignmentsList";
 
 export default function ReceptionDashboard({
   user,
@@ -453,47 +454,7 @@ export default function ReceptionDashboard({
                   subtitle={today}
                 />
 
-                <div style={styles.card}>
-                  <h2 style={styles.cardTitle}>Today's Assignment List</h2>
-
-                  {todayAssignments.length > 0 ? (
-                    <div style={styles.assignmentList}>
-                      {todayAssignments.map((item) => (
-                        <div key={item.id} style={styles.assignmentCard}>
-                          <div>
-                            <div style={styles.assignmentPatient}>
-                              {item.patient_name}
-                            </div>
-                            <div style={styles.assignmentMeta}>
-                              Patient ID: {item.patient_file_id}
-                            </div>
-                          </div>
-
-                          <div>
-                            <div style={styles.assignmentTherapist}>
-                              Therapist: {item.therapist_name}
-                            </div>
-                            <div style={styles.assignmentMeta}>
-                              Date: {item.assignment_date}
-                            </div>
-                            <div style={styles.assignmentMeta}>
-                              Created By: {item.created_by_name || "-"}
-                            </div>
-                            {item.notes ? (
-                              <div style={styles.assignmentMeta}>
-                                Notes: {item.notes}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={styles.emptyState}>
-                      No assignments for today.
-                    </div>
-                  )}
-                </div>
+                <TodayAssignmentsList assignments={todayAssignments} />
               </div>
             )}
 
