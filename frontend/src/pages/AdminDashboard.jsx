@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
+import DashboardLayout from "../components/DashboardLayout";
 import AssignmentHistory from "../components/AssignmentHistory";
 
 export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const navigate = useNavigate();
-
-  const [activeSection, setActiveSection] = useState("create_user");
 
   const [formData, setFormData] = useState({
     username: "",
@@ -18,6 +17,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const [users, setUsers] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [activeSection, setActiveSection] = useState("manage");
   const [activeCategory, setActiveCategory] = useState(
     localStorage.getItem("activeCategory") || "admin"
   );
@@ -95,11 +95,8 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     };
 
     users.forEach((item) => {
-      if (groups[item.role]) {
-        groups[item.role].push(item);
-      } else {
-        groups.no_role.push(item);
-      }
+      if (groups[item.role]) groups[item.role].push(item);
+      else groups.no_role.push(item);
     });
 
     return groups;
@@ -120,7 +117,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     "no_role",
   ];
 
-  const visibleUsers = groupedUsers[activeCategory] ?? groupedUsers.admin ?? [];
+  const visibleUsers = groupedUsers[activeCategory] ?? [];
 
   const handleCategoryChange = (category) => {
     setActiveCategory(category);
@@ -151,9 +148,9 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         is_superuser: false,
       });
       await fetchUsers();
-      localStorage.setItem("activeCategory", formData.role);
+      setActiveSection("manage");
       setActiveCategory(formData.role);
-      setActiveSection("manage_users");
+      localStorage.setItem("activeCategory", formData.role);
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to create user");
       setMessage("");
@@ -162,10 +159,11 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
 
   const handleActAsUser = (selectedUser) => {
     onActAsUser(selectedUser);
-    const route = selectedUser.is_superuser
-      ? "/admin"
-      : roleRoutes[selectedUser.role] || "/admin";
-    navigate(route);
+    navigate(
+      selectedUser.is_superuser
+        ? "/admin"
+        : roleRoutes[selectedUser.role] || "/admin"
+    );
   };
 
   const handleRoleUpdate = async (userId, newRole, newIsSuperuser) => {
@@ -198,256 +196,177 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     }
   };
 
-  const renderUserCard = (item) => (
-    <div key={item.id} style={styles.userCard}>
-      <div style={styles.userInfo}>
-        <div style={styles.userName}>{item.username}</div>
-        <div style={styles.userMeta}>
-          Role: {item.role || "No role"}
-          {item.is_superuser ? " • Superuser" : ""}
-        </div>
-      </div>
-
-      <div style={styles.actionsWrap}>
-        <select
-          value={item.role || ""}
-          onChange={(e) =>
-            handleRoleUpdate(item.id, e.target.value, item.is_superuser)
-          }
-          style={styles.smallSelect}
-        >
-          {roles.map((role) => (
-            <option key={role} value={role}>
-              {roleLabels[role]}
-            </option>
-          ))}
-        </select>
-
-        <label style={styles.smallCheckboxRow}>
-          <input
-            type="checkbox"
-            checked={!!item.is_superuser}
-            onChange={(e) =>
-              handleRoleUpdate(item.id, item.role, e.target.checked)
-            }
-          />
-          Superuser
-        </label>
-
-        <button
-          type="button"
-          style={styles.viewButton}
-          onClick={() => handleActAsUser(item)}
-        >
-          Open as User
-        </button>
-
-        <button
-          type="button"
-          style={styles.deleteButton}
-          onClick={() => handleDeleteUser(item.id, item.username)}
-          disabled={item.username === user?.username}
-        >
-          Delete
-        </button>
-      </div>
-    </div>
-  );
-
-  const sidebarItems = [
-    { key: "create_user", label: "Create User" },
-    { key: "manage_users", label: "Manage Users" },
-    { key: "history", label: "Assignment History" },
-  ];
-
   return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <div style={styles.topBar}>
-          <div>
-            <h1 style={styles.title}>Admin Dashboard</h1>
-            <p style={styles.subtitle}>Welcome, {user?.username}</p>
-          </div>
+    <DashboardLayout
+      title="Admin Dashboard"
+      subtitle={`Welcome, ${user?.username}`}
+      accent="#1e3a8a"
+      sidebarTitle="Admin Panel"
+      sidebarItems={[
+        { key: "create", label: "Create New User" },
+        { key: "manage", label: "Manage Users" },
+        { key: "history", label: "History" },
+      ]}
+      activeSection={activeSection}
+      setActiveSection={setActiveSection}
+      onLogout={onLogout}
+    >
+      {message && <div style={styles.successBox}>{message}</div>}
+      {error && <div style={styles.errorBox}>{error}</div>}
 
-          <button style={styles.logoutButton} onClick={onLogout}>
-            Logout
-          </button>
+      {activeSection === "create" && (
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>Create New User</h2>
+
+          <form onSubmit={handleCreateUser} style={styles.form}>
+            <input
+              type="text"
+              name="username"
+              placeholder="Username"
+              value={formData.username}
+              onChange={handleChange}
+              style={styles.input}
+              required
+            />
+
+            <input
+              type="password"
+              name="password"
+              placeholder="Password"
+              value={formData.password}
+              onChange={handleChange}
+              style={styles.input}
+              required
+            />
+
+            <select
+              name="role"
+              value={formData.role}
+              onChange={handleChange}
+              style={styles.input}
+            >
+              {roles.map((role) => (
+                <option key={role} value={role}>
+                  {roleLabels[role]}
+                </option>
+              ))}
+            </select>
+
+            <label style={styles.checkboxRow}>
+              <input
+                type="checkbox"
+                name="is_superuser"
+                checked={formData.is_superuser}
+                onChange={handleChange}
+              />
+              Make this user Django superuser
+            </label>
+
+            <button type="submit" style={styles.button}>
+              Create User
+            </button>
+          </form>
         </div>
+      )}
 
-        {message && <div style={styles.successBox}>{message}</div>}
-        {error && <div style={styles.errorBox}>{error}</div>}
+      {activeSection === "manage" && (
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>Manage Users</h2>
 
-        <div style={styles.layout}>
-          <aside style={styles.sidebar}>
-            <div style={styles.sidebarTitle}>Admin Menu</div>
-
-            {sidebarItems.map((item) => (
+          <div style={styles.tabsWrap}>
+            {categoryOrder.map((category) => (
               <button
-                key={item.key}
+                key={category}
+                onClick={() => handleCategoryChange(category)}
                 style={{
-                  ...styles.sidebarButton,
-                  ...(activeSection === item.key ? styles.sidebarButtonActive : {}),
+                  ...styles.tabButton,
+                  ...(activeCategory === category ? styles.activeTabButton : {}),
                 }}
-                onClick={() => setActiveSection(item.key)}
               >
-                {item.label}
+                {roleLabels[category]} ({groupedUsers[category]?.length || 0})
               </button>
             ))}
-          </aside>
+          </div>
 
-          <main style={styles.content}>
-            {activeSection === "create_user" && (
-              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Create New User</h2>
+          {visibleUsers.length ? (
+            <div style={styles.userGrid}>
+              {visibleUsers.map((item) => (
+                <div key={item.id} style={styles.userCard}>
+                  <div style={styles.userInfo}>
+                    <div style={styles.userName}>{item.username}</div>
+                    <div style={styles.userMeta}>
+                      Role: {item.role || "No role"}
+                      {item.is_superuser ? " • Superuser" : ""}
+                    </div>
+                  </div>
 
-                <form onSubmit={handleCreateUser} style={styles.form}>
-                  <input
-                    type="text"
-                    name="username"
-                    placeholder="Username"
-                    value={formData.username}
-                    onChange={handleChange}
-                    style={styles.input}
-                    required
-                  />
-
-                  <input
-                    type="password"
-                    name="password"
-                    placeholder="Password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    style={styles.input}
-                    required
-                  />
-
-                  <select
-                    name="role"
-                    value={formData.role}
-                    onChange={handleChange}
-                    style={styles.input}
-                  >
-                    {roles.map((role) => (
-                      <option key={role} value={role}>
-                        {roleLabels[role]}
-                      </option>
-                    ))}
-                  </select>
-
-                  <label style={styles.checkboxRow}>
-                    <input
-                      type="checkbox"
-                      name="is_superuser"
-                      checked={formData.is_superuser}
-                      onChange={handleChange}
-                    />
-                    Make this user Django superuser
-                  </label>
-
-                  <button type="submit" style={styles.button}>
-                    Create User
-                  </button>
-                </form>
-              </div>
-            )}
-
-            {activeSection === "manage_users" && (
-              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Users by Category</h2>
-
-                <div style={styles.tabsWrap}>
-                  {categoryOrder.map((category) => (
-                    <button
-                      key={category}
-                      onClick={() => handleCategoryChange(category)}
-                      style={{
-                        ...styles.tabButton,
-                        ...(activeCategory === category
-                          ? styles.activeTabButton
-                          : {}),
-                      }}
+                  <div style={styles.actionsWrap}>
+                    <select
+                      value={item.role || ""}
+                      onChange={(e) =>
+                        handleRoleUpdate(item.id, e.target.value, item.is_superuser)
+                      }
+                      style={styles.smallSelect}
                     >
-                      {roleLabels[category]} ({groupedUsers[category]?.length || 0})
+                      {roles.map((role) => (
+                        <option key={role} value={role}>
+                          {roleLabels[role]}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label style={styles.smallCheckboxRow}>
+                      <input
+                        type="checkbox"
+                        checked={!!item.is_superuser}
+                        onChange={(e) =>
+                          handleRoleUpdate(item.id, item.role, e.target.checked)
+                        }
+                      />
+                      Superuser
+                    </label>
+
+                    <button
+                      style={styles.viewButton}
+                      onClick={() => handleActAsUser(item)}
+                    >
+                      Open as User
                     </button>
-                  ))}
+
+                    <button
+                      style={styles.deleteButton}
+                      onClick={() => handleDeleteUser(item.id, item.username)}
+                      disabled={item.username === user?.username}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-
-                <div style={styles.tabPanel}>
-                  <h3 style={styles.sectionTitle}>{roleLabels[activeCategory]}</h3>
-
-                  {visibleUsers.length ? (
-                    <div style={styles.userGrid}>
-                      {visibleUsers.map(renderUserCard)}
-                    </div>
-                  ) : (
-                    <div style={styles.emptyState}>
-                      No users in this category.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {activeSection === "history" && (
-              <AssignmentHistory
-                title="Admin Assignment History"
-                currentUser={user}
-              />
-            )}
-          </main>
+              ))}
+            </div>
+          ) : (
+            <div style={styles.emptyState}>No users in this category.</div>
+          )}
         </div>
-      </div>
-    </div>
+      )}
+
+      {activeSection === "history" && (
+        <AssignmentHistory
+          title="Admin Assignment History"
+          currentUser={user}
+        />
+      )}
+    </DashboardLayout>
   );
 }
 
 const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "linear-gradient(135deg, #f3f6ff 0%, #f9fbff 100%)",
-    padding: "32px 20px",
-    fontFamily: "Arial, sans-serif",
-  },
-  container: {
-    maxWidth: "1280px",
-    margin: "0 auto",
-  },
-  topBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "16px",
-    marginBottom: "24px",
-  },
-  title: {
-    margin: 0,
-    fontSize: "34px",
-    fontWeight: "800",
-    color: "#1e3a8a",
-  },
-  subtitle: {
-    margin: "8px 0 0 0",
-    color: "#475569",
-    fontSize: "16px",
-  },
-  logoutButton: {
-    background: "#ef4444",
-    color: "#fff",
-    border: "none",
-    borderRadius: "12px",
-    padding: "12px 18px",
-    fontSize: "14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
   successBox: {
     background: "#dcfce7",
     color: "#166534",
     border: "1px solid #86efac",
     borderRadius: "12px",
     padding: "14px 16px",
-    marginBottom: "16px",
     fontWeight: "700",
   },
   errorBox: {
@@ -456,64 +375,18 @@ const styles = {
     border: "1px solid #fecaca",
     borderRadius: "12px",
     padding: "14px 16px",
-    marginBottom: "16px",
     fontWeight: "700",
-  },
-  layout: {
-    display: "grid",
-    gridTemplateColumns: "280px 1fr",
-    gap: "22px",
-    alignItems: "start",
-  },
-  sidebar: {
-    background: "#ffffff",
-    borderRadius: "22px",
-    padding: "18px",
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
-    border: "1px solid #e8eef7",
-    position: "sticky",
-    top: "20px",
-  },
-  sidebarTitle: {
-    fontSize: "14px",
-    fontWeight: "800",
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-    marginBottom: "14px",
-    padding: "4px 8px",
-  },
-  sidebarButton: {
-    width: "100%",
-    textAlign: "left",
-    border: "none",
-    background: "#f8fbff",
-    color: "#0f172a",
-    padding: "14px 14px",
-    borderRadius: "14px",
-    marginBottom: "10px",
-    fontSize: "15px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  sidebarButtonActive: {
-    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-    color: "#fff",
-    boxShadow: "0 10px 24px rgba(37, 99, 235, 0.22)",
-  },
-  content: {
-    minWidth: 0,
   },
   card: {
-    background: "#ffffff",
-    borderRadius: "22px",
+    background: "#fff",
+    borderRadius: "18px",
     padding: "24px",
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
+    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
     border: "1px solid #e8eef7",
   },
   cardTitle: {
     margin: "0 0 18px 0",
-    fontSize: "28px",
+    fontSize: "24px",
     color: "#0f172a",
     fontWeight: "800",
   },
@@ -522,13 +395,10 @@ const styles = {
     gap: "14px",
   },
   input: {
-    padding: "13px 14px",
-    borderRadius: "12px",
+    padding: "12px 14px",
+    borderRadius: "10px",
     border: "1px solid #cbd5e1",
     fontSize: "15px",
-    background: "#fff",
-    width: "100%",
-    boxSizing: "border-box",
   },
   checkboxRow: {
     display: "flex",
@@ -538,11 +408,11 @@ const styles = {
     fontWeight: "600",
   },
   button: {
-    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+    background: "#2563eb",
     color: "#fff",
     border: "none",
-    borderRadius: "12px",
-    padding: "13px 18px",
+    borderRadius: "10px",
+    padding: "12px 18px",
     fontSize: "15px",
     fontWeight: "700",
     cursor: "pointer",
@@ -567,15 +437,6 @@ const styles = {
     background: "#1d4ed8",
     color: "#fff",
   },
-  tabPanel: {
-    marginTop: "8px",
-  },
-  sectionTitle: {
-    margin: "0 0 14px 0",
-    fontSize: "20px",
-    color: "#1e293b",
-    fontWeight: "800",
-  },
   userGrid: {
     display: "grid",
     gap: "12px",
@@ -586,7 +447,7 @@ const styles = {
     alignItems: "center",
     gap: "16px",
     border: "1px solid #e2e8f0",
-    borderRadius: "14px",
+    borderRadius: "12px",
     padding: "16px",
     flexWrap: "wrap",
   },
@@ -594,10 +455,9 @@ const styles = {
     minWidth: "180px",
   },
   userName: {
-    fontWeight: "800",
+    fontWeight: "700",
     color: "#0f172a",
     marginBottom: "6px",
-    fontSize: "17px",
   },
   userMeta: {
     color: "#64748b",
@@ -610,8 +470,8 @@ const styles = {
     flexWrap: "wrap",
   },
   smallSelect: {
-    padding: "10px 12px",
-    borderRadius: "10px",
+    padding: "8px 10px",
+    borderRadius: "8px",
     border: "1px solid #cbd5e1",
     fontSize: "14px",
   },
@@ -621,7 +481,6 @@ const styles = {
     gap: "6px",
     fontSize: "14px",
     color: "#334155",
-    fontWeight: "600",
   },
   viewButton: {
     background: "#1d4ed8",
@@ -647,6 +506,5 @@ const styles = {
     background: "#f8fafc",
     color: "#64748b",
     border: "1px dashed #cbd5e1",
-    fontWeight: "600",
   },
 };
