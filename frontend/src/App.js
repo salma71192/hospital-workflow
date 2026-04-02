@@ -5,7 +5,9 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
+
 import api from "./api/api";
+
 import Login from "./pages/Login";
 import AdminDashboard from "./pages/AdminDashboard";
 import ReceptionDashboard from "./pages/ReceptionDashboard";
@@ -19,6 +21,9 @@ import VisitorsDashboard from "./pages/VisitorsDashboard";
 import VisitorCeoDashboard from "./pages/VisitorCeoDashboard";
 import ApprovalsDashboard from "./pages/ApprovalsDashboard";
 import PatientDetails from "./pages/PatientDetails";
+
+import ProtectedRoute from "./components/routing/ProtectedRoute";
+import RoleRoute from "./components/routing/RoleRoute";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -61,7 +66,7 @@ function App() {
   };
 
   const currentUser = actingAs || user;
-  const isAdmin = user && (user.is_superuser || user.role === "admin");
+  const isAdmin = !!(user && (user.is_superuser || user.role === "admin"));
 
   if (loading) {
     return <div style={{ padding: "20px" }}>Loading...</div>;
@@ -76,193 +81,207 @@ function App() {
         <Route
           path="/admin"
           element={
-            isAdmin ? (
+            <ProtectedRoute isAllowed={isAdmin}>
               <AdminDashboard
                 user={user}
                 onLogout={handleLogout}
                 onActAsUser={setActingAs}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/approvals"
           element={
-            currentUser && (currentUser.role === "approvals" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["approvals"]}
+            >
               <ApprovalsDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/reception"
           element={
-            currentUser && (currentUser.role === "reception" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["reception"]}
+            >
               <ReceptionDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/reception-supervisor"
           element={
-            currentUser &&
-            (currentUser.role === "reception_supervisor" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["reception_supervisor"]}
+            >
               <ReceptionSupervisorDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/physio"
           element={
-            currentUser && (currentUser.role === "physio" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["physio"]}
+            >
               <PhysioDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/doctor"
           element={
-            currentUser && (currentUser.role === "doctor" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["doctor"]}
+            >
               <DoctorDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/rcm"
           element={
-            currentUser && (currentUser.role === "rcm" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["rcm"]}
+            >
               <RcmDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/callcenter"
           element={
-            currentUser && (currentUser.role === "callcenter" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["callcenter"]}
+            >
               <CallCenterDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/callcenter-supervisor"
           element={
-            currentUser &&
-            (currentUser.role === "callcenter_supervisor" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["callcenter_supervisor"]}
+            >
               <CallCenterSupervisorDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/visitors"
           element={
-            currentUser && (currentUser.role === "visitor" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["visitor"]}
+            >
               <VisitorsDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/visitor-ceo"
           element={
-            currentUser && (currentUser.role === "visitor_ceo" || isAdmin) ? (
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["visitor_ceo"]}
+            >
               <VisitorCeoDashboard
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </RoleRoute>
           }
         />
 
         <Route
           path="/patients/:id"
           element={
-            currentUser ? (
+            <ProtectedRoute isAllowed={!!currentUser}>
               <PatientDetails
                 user={currentUser}
                 onLogout={handleLogout}
                 actingAs={actingAs}
                 onStopImpersonation={stopImpersonation}
               />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </ProtectedRoute>
           }
         />
 
