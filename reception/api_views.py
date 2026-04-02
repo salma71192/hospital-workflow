@@ -4,6 +4,8 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from datetime import date, datetime
+from django.db.models import Count, Max
 
 from patients.models import Patient
 from .models import PatientAssignment
@@ -318,3 +320,103 @@ def assignments_api(request, assignment_id=None):
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+    @csrf_exempt
+def physio_tracker_api(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    role = (getattr(request.user, "role", "") or "").strip().lower()
+    is_admin = _is_admin(request.user)
+
+    if not (is_admin or role == "physio"):
+        return JsonResponse({"error": "Not authorized"}, status=403)
+
+    month = request.GET.get("month")  # format YYYY-MM
+    viewed_user_id = request.GET.get("viewed_user_id")
+    viewed_user_role = (request.GET.get("viewed_user_role") or "").strip().lower()
+    search = (request.GET.get("search") or "").strip()
+
+    if month:
+        try:
+            month_start = datetime.strptime(month, "%Y-%m").date().replace(day=1)
+        except ValueError:
+            return JsonResponse({"error": "Invalid month format. Use YYYY-MM"}, status=400)
+    else:
+        today = date.today()
+        month_start = today.replace(day=1)
+
+    if month_start.month == 12:
+        next_month_start = month_start.replace(year=month_start.year + 1, month=1, day=1)
+    else:
+        next_month_start = month_start.replace(month=month_start.month + 1, day=1)
+
+    tracker_qs = PatientAssignment.objects.select_related("patient", "therapist").filter(
+        assignment_date__gte=month_start,
+        assignment_date__lt=next_month_start,
+    )
+
+    if is_admin:
+        if viewed_user_id and viewed_user_role == "physio":
+            tracker_qs = tracker_qs.filter(therapist_id=viewed_user_id)
+    else:
+        tracker_qs = tracker_qs.filter(therapist=request.user)
+
+    if search:
+        tracker_qs = tracker_qs.filter(
+            patient__name__icontains=search
+        ) | tracker_qs.filter(
+            patient__patient_id__icontains=search
+        )
+
+    grouped = (
+        tracker_qs.values(
+            "patient_id",
+            "patient__name",
+            "patient__patient_id",
+            "patient__current_approval_number",
+            "patient__approval_start_date",
+            "patient__approval_expiry_date",
+            "patient__approved_sessions",
+            "patient__insurance_provider",
+            "patient__current_future_appointments",
+            "therapist__username",
+        )
+        .annotate(
+            utilized_sessions=Count("id"),
+            latest_seen_date=Max("assignment_date"),
+        )
+        .order_by("patient__name")
+    )
+
+    patients = [
+        {
+            "id": item["patient_id"],
+            "name": item["patient__name"],
+            "patient_id": item["patient__patient_id"],
+            "current_approval_number": item["patient__current_approval_number"],
+            "approval_start_date": (
+                str(item["patient__approval_start_date"])
+                if item["patient__approval_start_date"]
+                else ""
+            ),
+            "approval_expiry_date": (
+                str(item["patient__approval_expiry_date"])
+                if item["patient__approval_expiry_date"]
+                else ""
+            ),
+            "approved_sessions": item["patient__approved_sessions"] or 0,
+            "insurance_provider": item["patient__insurance_provider"] or "",
+            "current_future_appointments": item["patient__current_future_appointments"] or "",
+            "therapist_name": item["therapist__username"] or "-",
+            "sessions_taken": item["utilized_sessions"],
+            "latest_seen_date": str(item["latest_seen_date"]) if item["latest_seen_date"] else "",
+        }
+        for item in grouped
+    ]
+
+    return JsonResponse({
+        "month": month_start.strftime("%Y-%m"),
+        "patients": patients,
+    })

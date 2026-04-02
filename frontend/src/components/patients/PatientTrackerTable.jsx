@@ -1,40 +1,57 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function PatientTrackerTable({
   patients = [],
   title = "Patient Tracker",
+  monthLabel = "",
 }) {
-  const rows = patients.map((patient) => ({
-    ...patient,
-    approvedSessions: Number(patient.current_approval_number) || 0,
-    utilizedSessions: Number(patient.sessions_taken) || 0,
-  }));
+  const navigate = useNavigate();
 
   return (
     <div style={styles.card}>
-      <h2 style={styles.cardTitle}>{title}</h2>
+      <div style={styles.headerRow}>
+        <h2 style={styles.cardTitle}>{title}</h2>
+        {monthLabel ? <div style={styles.monthBadge}>{monthLabel}</div> : null}
+      </div>
 
-      {rows.length ? (
+      {patients.length ? (
         <div style={styles.tableWrap}>
           <table style={styles.table}>
             <thead>
               <tr>
                 <th style={styles.th}>Patient ID</th>
                 <th style={styles.th}>Patient Name</th>
+                <th style={styles.th}>Therapist</th>
                 <th style={styles.th}>Approved Sessions</th>
-                <th style={styles.th}>Utilized Sessions</th>
+                <th style={styles.th}>Utilized This Month</th>
+                <th style={styles.th}>Approval No.</th>
+                <th style={styles.th}>Latest Seen</th>
                 <th style={styles.th}>Appointments</th>
+                <th style={styles.th}>File</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {patients.map((row) => (
                 <tr key={row.id}>
                   <td style={styles.td}>{row.patient_id}</td>
                   <td style={styles.tdBold}>{row.name}</td>
-                  <td style={styles.td}>{row.approvedSessions}</td>
-                  <td style={styles.td}>{row.utilizedSessions}</td>
+                  <td style={styles.td}>{row.therapist_name || "-"}</td>
+                  <td style={styles.td}>{row.approved_sessions ?? 0}</td>
+                  <td style={styles.td}>{row.sessions_taken ?? 0}</td>
+                  <td style={styles.td}>{row.current_approval_number || "-"}</td>
+                  <td style={styles.td}>{row.latest_seen_date || "-"}</td>
                   <td style={styles.td}>
                     {row.current_future_appointments || "-"}
+                  </td>
+                  <td style={styles.td}>
+                    <button
+                      type="button"
+                      style={styles.openButton}
+                      onClick={() => navigate(`/patients/${row.id}`)}
+                    >
+                      Open File
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -42,7 +59,7 @@ export default function PatientTrackerTable({
           </table>
         </div>
       ) : (
-        <div style={styles.emptyState}>No patients found.</div>
+        <div style={styles.emptyState}>No patients found for this month.</div>
       )}
     </div>
   );
@@ -56,11 +73,28 @@ const styles = {
     boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
     border: "1px solid #e8eef7",
   },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginBottom: "18px",
+  },
   cardTitle: {
-    margin: "0 0 18px 0",
+    margin: 0,
     fontSize: "22px",
     color: "#0f172a",
     fontWeight: "800",
+  },
+  monthBadge: {
+    background: "#dcfce7",
+    color: "#166534",
+    border: "1px solid #86efac",
+    borderRadius: "999px",
+    padding: "8px 12px",
+    fontWeight: "700",
+    fontSize: "13px",
   },
   tableWrap: {
     width: "100%",
@@ -71,7 +105,7 @@ const styles = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "760px",
+    minWidth: "1200px",
     background: "#fff",
   },
   th: {
@@ -97,6 +131,16 @@ const styles = {
     fontWeight: "700",
     borderBottom: "1px solid #eef2f7",
     verticalAlign: "top",
+  },
+  openButton: {
+    background: "#0ea5e9",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "8px 12px",
+    fontWeight: "700",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
   emptyState: {
     padding: "18px",
