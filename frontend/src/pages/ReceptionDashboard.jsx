@@ -19,7 +19,6 @@ export default function ReceptionDashboard({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
-  const today = new Date().toISOString().split("T")[0];
 
   const [activeSection, setActiveSection] = useState("search");
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
@@ -40,7 +39,6 @@ export default function ReceptionDashboard({
   const [assignmentForm, setAssignmentForm] = useState({
     patient_id: "",
     therapist_id: "",
-    assignment_date: today,
     category: "appointment",
     notes: "",
   });
@@ -51,6 +49,8 @@ export default function ReceptionDashboard({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  const today = new Date().toISOString().split("T")[0];
+
   const handleBackToAdmin = () => {
     onStopImpersonation();
     navigate("/admin");
@@ -60,7 +60,6 @@ export default function ReceptionDashboard({
     setAssignmentForm({
       patient_id: "",
       therapist_id: "",
-      assignment_date: today,
       category: "appointment",
       notes: "",
     });
@@ -184,7 +183,6 @@ export default function ReceptionDashboard({
           `reception/assignments/${editingAssignmentId}/`,
           {
             therapist_id: assignmentForm.therapist_id,
-            assignment_date: assignmentForm.assignment_date,
             category: assignmentForm.category,
             notes: assignmentForm.notes,
           }
@@ -217,7 +215,6 @@ export default function ReceptionDashboard({
     setAssignmentForm({
       patient_id: assignment.patient_id,
       therapist_id: assignment.therapist_id,
-      assignment_date: assignment.assignment_date,
       category: assignment.category || "appointment",
       notes: assignment.notes || "",
     });
@@ -305,14 +302,8 @@ export default function ReceptionDashboard({
 
           <DashboardStatsGrid
             stats={[
-              {
-                label: "Today's Assignments",
-                value: todayAssignments.length,
-              },
-              {
-                label: "Daily Target",
-                value: dailyTarget,
-              },
+              { label: "Today's Assignments", value: todayAssignments.length },
+              { label: "Daily Target", value: dailyTarget },
               {
                 label: "Remaining",
                 value: Math.max(Number(dailyTarget) - todayAssignments.length, 0),
