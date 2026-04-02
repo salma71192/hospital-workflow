@@ -1,328 +1,186 @@
-import json
-from datetime import date
-from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from datetime import date, datetime
+
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from datetime import date, datetime
-from django.db.models import Count, Max
+from django.db.models import Q, Count, Max
+import json
 
+from users.models import CustomUser
 from patients.models import Patient
 from .models import PatientAssignment
 
-User = get_user_model()
 
-
+# ================================
+# HELPERS
+# ================================
 def _is_admin(user):
     role = (getattr(user, "role", "") or "").strip().lower()
     return user.is_superuser or role == "admin"
 
 
-def _can_assign(user):
-    role = (getattr(user, "role", "") or "").strip().lower()
-    return user.is_superuser or role in ["admin", "reception", "reception_supervisor"]
+def _parse_date(value):
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except Exception:
+        return None
 
 
-def _same_day_edit_allowed(user, assignment):
-    role = (getattr(user, "role", "") or "").strip().lower()
-    today = date.today()
-
-    if user.is_superuser or role == "admin":
-        return True
-
-    if role in ["reception", "reception_supervisor"]:
-        return assignment.assignment_date == today
-
-    return False
-
-
-@csrf_exempt
+# ================================
+# THERAPISTS
+# ================================
 def therapists_api(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
-    therapists = list(
-        User.objects.filter(role="physio").values("id", "username")
-    )
-    return JsonResponse({"therapists": therapists})
+    therapists = CustomUser.objects.filter(role="physio").values("id", "username")
+
+    return JsonResponse({"therapists": list(therapists)})
 
 
-@csrf_exempt
+# ================================
+# STAFF FILTERS (admin use)
+# ================================
 def staff_filters_api(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
-    if not _is_admin(request.user):
-        return JsonResponse({"error": "Only admin can view staff filters"}, status=403)
-
-    receptionists = list(
-        User.objects.filter(role__in=["reception", "reception_supervisor"])
-        .values("id", "username", "role")
+    users = CustomUser.objects.exclude(role="visitor").values(
+        "id", "username", "role"
     )
 
-    therapists = list(
-        User.objects.filter(role="physio")
-        .values("id", "username", "role")
-    )
-
-    return JsonResponse({
-        "receptionists": receptionists,
-        "therapists": therapists,
-    })
+    return JsonResponse({"users": list(users)})
 
 
+# ================================
+# ASSIGNMENTS (CREATE / LIST / DELETE)
+# ================================
 @csrf_exempt
 def assignments_api(request, assignment_id=None):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
+    role = (getattr(request.user, "role", "") or "").strip().lower()
+    is_admin = _is_admin(request.user)
+
+    # =====================
+    # GET (LIST)
+    # =====================
     if request.method == "GET":
-        start_date = request.GET.get("start_date")
-        end_date = request.GET.get("end_date")
-        created_by_id = request.GET.get("created_by_id")
-        therapist_id = request.GET.get("therapist_id")
+        start_date = _parse_date(request.GET.get("start_date"))
+        end_date = _parse_date(request.GET.get("end_date"))
+
+        qs = PatientAssignment.objects.select_related("patient", "therapist")
+
+        if start_date:
+            qs = qs.filter(assignment_date__gte=start_date)
+        if end_date:
+            qs = qs.filter(assignment_date__lte=end_date)
+
         viewed_user_id = request.GET.get("viewed_user_id")
         viewed_user_role = (request.GET.get("viewed_user_role") or "").strip().lower()
 
-        assignments_qs = PatientAssignment.objects.select_related(
-            "patient", "therapist", "created_by"
-        )
-
-        if assignment_id is not None:
-            assignments_qs = assignments_qs.filter(id=assignment_id)
-
-        if start_date:
-            assignments_qs = assignments_qs.filter(assignment_date__gte=start_date)
-
-        if end_date:
-            assignments_qs = assignments_qs.filter(assignment_date__lte=end_date)
-
-        role = (getattr(request.user, "role", "") or "").strip().lower()
-        is_admin = _is_admin(request.user)
-
         if is_admin:
-            if created_by_id:
-                assignments_qs = assignments_qs.filter(created_by_id=created_by_id)
-            if therapist_id:
-                assignments_qs = assignments_qs.filter(therapist_id=therapist_id)
-
             if viewed_user_id and viewed_user_role == "physio":
-                assignments_qs = assignments_qs.filter(therapist_id=viewed_user_id)
-            elif viewed_user_id and viewed_user_role == "reception":
-                assignments_qs = assignments_qs.filter(created_by_id=viewed_user_id)
-
+                qs = qs.filter(therapist_id=viewed_user_id)
         elif role == "physio":
-            assignments_qs = assignments_qs.filter(therapist_id=request.user.id)
-
+            qs = qs.filter(therapist=request.user)
         elif role == "reception":
-            assignments_qs = assignments_qs.filter(created_by_id=request.user.id)
-
-        elif role == "reception_supervisor":
-            pass
-
-        else:
-            return JsonResponse(
-                {"error": f"Unauthorized role for assignments: {role}"},
-                status=403,
-            )
-
-        assignments_qs = assignments_qs.order_by("-assignment_date", "-created_at")
+            qs = qs.filter(created_by=request.user)
 
         assignments = [
             {
-                "id": item.id,
-                "patient_id": item.patient.id,
-                "patient_name": item.patient.name,
-                "patient_file_id": item.patient.patient_id,
-                "therapist_id": item.therapist.id,
-                "therapist_name": item.therapist.username,
-                "created_by_id": item.created_by.id if item.created_by else None,
-                "created_by_name": item.created_by.username if item.created_by else "-",
-                "assignment_date": str(item.assignment_date),
-                "category": item.category,
-                "category_label": item.get_category_display(),
-                "notes": item.notes or "",
-                "can_edit_today": _same_day_edit_allowed(request.user, item),
-                "can_cancel_today": _same_day_edit_allowed(request.user, item),
+                "id": a.id,
+                "patient_id": a.patient.id,
+                "patient_name": a.patient.name,
+                "therapist_id": a.therapist.id if a.therapist else None,
+                "therapist_name": a.therapist.username if a.therapist else "-",
+                "assignment_date": str(a.assignment_date),
+                "category": a.category,
+                "notes": a.notes or "",
+                "created_by": a.created_by.username if a.created_by else "",
             }
-            for item in assignments_qs
+            for a in qs.order_by("-assignment_date", "-created_at")
         ]
-
-        if assignment_id is not None:
-            if not assignments:
-                return JsonResponse({"error": "Assignment not found"}, status=404)
-            return JsonResponse({"assignment": assignments[0]})
 
         return JsonResponse({"assignments": assignments})
 
+    # =====================
+    # POST (CREATE)
+    # =====================
     if request.method == "POST":
-        if not _can_assign(request.user):
-            return JsonResponse(
-                {"error": "Only reception or admin can assign patients"},
-                status=403,
-            )
+        if role not in ["reception", "admin"] and not is_admin:
+            return JsonResponse({"error": "Not allowed"}, status=403)
 
         try:
             data = json.loads(request.body)
-        except json.JSONDecodeError:
+        except:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
         patient_id = data.get("patient_id")
         therapist_id = data.get("therapist_id")
         category = data.get("category", "appointment")
         notes = data.get("notes", "")
-        today = date.today()
-
-        valid_categories = [
-            "appointment",
-            "walk_in",
-            "initial_evaluation",
-            "task_without_eligibility",
-        ]
 
         if not patient_id or not therapist_id:
-            return JsonResponse(
-                {"error": "Patient and therapist are required"},
-                status=400,
-            )
-
-        if category not in valid_categories:
-            return JsonResponse({"error": "Invalid category"}, status=400)
+            return JsonResponse({"error": "Missing fields"}, status=400)
 
         try:
             patient = Patient.objects.get(id=patient_id)
-        except Patient.DoesNotExist:
-            return JsonResponse({"error": "Patient not found"}, status=404)
+            therapist = CustomUser.objects.get(id=therapist_id)
+        except:
+            return JsonResponse({"error": "Invalid patient or therapist"}, status=400)
 
-        try:
-            therapist = User.objects.get(id=therapist_id, role="physio")
-        except User.DoesNotExist:
-            return JsonResponse({"error": "Therapist not found"}, status=404)
+        today = date.today()
 
-        # explicit duplicate prevention
-        existing = PatientAssignment.objects.filter(
+        # 🔒 prevent duplicate same-day assignment
+        if PatientAssignment.objects.filter(
             patient=patient,
             assignment_date=today,
-        ).exists()
-
-        if existing:
+        ).exists():
             return JsonResponse(
-                {"error": "This patient is already assigned today"},
+                {"error": "Patient already assigned today"},
                 status=400,
             )
 
-        try:
-            assignment = PatientAssignment.objects.create(
-                patient=patient,
-                therapist=therapist,
-                created_by=request.user,
-                assignment_date=today,
-                category=category,
-                notes=notes or None,
-            )
-        except IntegrityError:
-            return JsonResponse(
-                {"error": "This patient is already assigned today"},
-                status=400,
-            )
+        assignment = PatientAssignment.objects.create(
+            patient=patient,
+            therapist=therapist,
+            assignment_date=today,
+            category=category,
+            notes=notes,
+            created_by=request.user,
+        )
 
-        return JsonResponse({
-            "success": True,
-            "message": "Patient assigned successfully",
-            "assignment": {
-                "id": assignment.id,
-                "patient_name": assignment.patient.name,
-                "therapist_name": assignment.therapist.username,
-                "created_by_name": assignment.created_by.username if assignment.created_by else "-",
-                "assignment_date": str(assignment.assignment_date),
-                "category": assignment.category,
-                "category_label": assignment.get_category_display(),
-            },
-        })
+        return JsonResponse({"success": True, "id": assignment.id})
 
-    if request.method == "PUT":
-        if assignment_id is None:
-            return JsonResponse({"error": "Assignment ID is required"}, status=400)
-
-        try:
-            assignment = PatientAssignment.objects.get(id=assignment_id)
-        except PatientAssignment.DoesNotExist:
-            return JsonResponse({"error": "Assignment not found"}, status=404)
-
-        if not _same_day_edit_allowed(request.user, assignment):
-            return JsonResponse(
-                {"error": "You can only edit assignments for today"},
-                status=403,
-            )
-
-        try:
-            data = json.loads(request.body)
-        except json.JSONDecodeError:
-            return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-        therapist_id = data.get("therapist_id", assignment.therapist_id)
-        category = data.get("category", assignment.category)
-        notes = data.get("notes", assignment.notes or "")
-
-        valid_categories = [
-            "appointment",
-            "walk_in",
-            "initial_evaluation",
-            "task_without_eligibility",
-        ]
-
-        if category not in valid_categories:
-            return JsonResponse({"error": "Invalid category"}, status=400)
-
-        try:
-            therapist = User.objects.get(id=therapist_id, role="physio")
-        except User.DoesNotExist:
-            return JsonResponse({"error": "Therapist not found"}, status=404)
-
-        assignment.therapist = therapist
-        assignment.category = category
-        assignment.notes = notes or None
-        # force same original day / no day changes by reception
-        assignment.assignment_date = assignment.assignment_date
-
-        try:
-            assignment.save()
-        except IntegrityError:
-            return JsonResponse(
-                {"error": "This patient is already assigned today"},
-                status=400,
-            )
-
-        return JsonResponse({
-            "success": True,
-            "message": "Assignment updated successfully",
-        })
-
+    # =====================
+    # DELETE (same day only)
+    # =====================
     if request.method == "DELETE":
-        if assignment_id is None:
-            return JsonResponse({"error": "Assignment ID is required"}, status=400)
-
         try:
             assignment = PatientAssignment.objects.get(id=assignment_id)
-        except PatientAssignment.DoesNotExist:
-            return JsonResponse({"error": "Assignment not found"}, status=404)
+        except:
+            return JsonResponse({"error": "Not found"}, status=404)
 
-        if not _same_day_edit_allowed(request.user, assignment):
+        if assignment.assignment_date != date.today():
             return JsonResponse(
-                {"error": "You can only cancel assignments for today"},
+                {"error": "Cannot delete past assignments"},
                 status=403,
             )
+
+        if not (is_admin or assignment.created_by == request.user):
+            return JsonResponse({"error": "Not allowed"}, status=403)
 
         assignment.delete()
-        return JsonResponse({
-            "success": True,
-            "message": "Assignment cancelled successfully",
-        })
+        return JsonResponse({"success": True})
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
-    @csrf_exempt
+# ================================
+# 🔥 MONTHLY PHYSIO TRACKER
+# ================================
+@csrf_exempt
 def physio_tracker_api(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authenticated"}, status=401)
@@ -333,87 +191,75 @@ def physio_tracker_api(request):
     if not (is_admin or role == "physio"):
         return JsonResponse({"error": "Not authorized"}, status=403)
 
-    month = request.GET.get("month")  # format YYYY-MM
-    viewed_user_id = request.GET.get("viewed_user_id")
-    viewed_user_role = (request.GET.get("viewed_user_role") or "").strip().lower()
+    month = request.GET.get("month")  # YYYY-MM
     search = (request.GET.get("search") or "").strip()
 
     if month:
         try:
             month_start = datetime.strptime(month, "%Y-%m").date().replace(day=1)
-        except ValueError:
-            return JsonResponse({"error": "Invalid month format. Use YYYY-MM"}, status=400)
+        except:
+            return JsonResponse({"error": "Invalid month"}, status=400)
     else:
         today = date.today()
         month_start = today.replace(day=1)
 
+    # next month
     if month_start.month == 12:
-        next_month_start = month_start.replace(year=month_start.year + 1, month=1, day=1)
+        next_month = month_start.replace(year=month_start.year + 1, month=1, day=1)
     else:
-        next_month_start = month_start.replace(month=month_start.month + 1, day=1)
+        next_month = month_start.replace(month=month_start.month + 1, day=1)
 
-    tracker_qs = PatientAssignment.objects.select_related("patient", "therapist").filter(
+    qs = PatientAssignment.objects.select_related("patient", "therapist").filter(
         assignment_date__gte=month_start,
-        assignment_date__lt=next_month_start,
+        assignment_date__lt=next_month,
     )
+
+    viewed_user_id = request.GET.get("viewed_user_id")
+    viewed_user_role = (request.GET.get("viewed_user_role") or "").strip().lower()
 
     if is_admin:
         if viewed_user_id and viewed_user_role == "physio":
-            tracker_qs = tracker_qs.filter(therapist_id=viewed_user_id)
+            qs = qs.filter(therapist_id=viewed_user_id)
     else:
-        tracker_qs = tracker_qs.filter(therapist=request.user)
+        qs = qs.filter(therapist=request.user)
 
     if search:
-        tracker_qs = tracker_qs.filter(
-            patient__name__icontains=search
-        ) | tracker_qs.filter(
-            patient__patient_id__icontains=search
+        qs = qs.filter(
+            Q(patient__name__icontains=search)
+            | Q(patient__patient_id__icontains=search)
         )
 
+    # 🔥 GROUP BY patient (core logic)
     grouped = (
-        tracker_qs.values(
+        qs.values(
             "patient_id",
             "patient__name",
             "patient__patient_id",
-            "patient__current_approval_number",
-            "patient__approval_start_date",
-            "patient__approval_expiry_date",
             "patient__approved_sessions",
-            "patient__insurance_provider",
+            "patient__current_approval_number",
             "patient__current_future_appointments",
             "therapist__username",
         )
         .annotate(
-            utilized_sessions=Count("id"),
-            latest_seen_date=Max("assignment_date"),
+            sessions_taken=Count("id"),
+            latest_seen=Max("assignment_date"),
         )
         .order_by("patient__name")
     )
 
     patients = [
         {
-            "id": item["patient_id"],
-            "name": item["patient__name"],
-            "patient_id": item["patient__patient_id"],
-            "current_approval_number": item["patient__current_approval_number"],
-            "approval_start_date": (
-                str(item["patient__approval_start_date"])
-                if item["patient__approval_start_date"]
-                else ""
-            ),
-            "approval_expiry_date": (
-                str(item["patient__approval_expiry_date"])
-                if item["patient__approval_expiry_date"]
-                else ""
-            ),
-            "approved_sessions": item["patient__approved_sessions"] or 0,
-            "insurance_provider": item["patient__insurance_provider"] or "",
-            "current_future_appointments": item["patient__current_future_appointments"] or "",
-            "therapist_name": item["therapist__username"] or "-",
-            "sessions_taken": item["utilized_sessions"],
-            "latest_seen_date": str(item["latest_seen_date"]) if item["latest_seen_date"] else "",
+            "id": g["patient_id"],
+            "name": g["patient__name"],
+            "patient_id": g["patient__patient_id"],
+            "approved_sessions": g["patient__approved_sessions"] or 0,
+            "current_approval_number": g["patient__current_approval_number"],
+            "current_future_appointments": g["patient__current_future_appointments"],
+            "therapist_name": g["therapist__username"],
+            "sessions_taken": g["sessions_taken"],
+            "latest_seen_date": str(g["latest_seen"]) if g["latest_seen"] else "",
         }
-        for item in grouped
+        for g in grouped
     ]
 
     return JsonResponse({
