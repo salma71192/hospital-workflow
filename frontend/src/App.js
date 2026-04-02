@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -8,22 +8,16 @@ import {
 
 import api from "./api/api";
 
+// pages
 import Login from "./pages/Login";
-import AdminDashboard from "./pages/AdminDashboard";
-import ReceptionDashboard from "./pages/ReceptionDashboard";
-import ReceptionSupervisorDashboard from "./pages/ReceptionSupervisorDashboard";
-import PhysioDashboard from "./pages/PhysioDashboard";
-import DoctorDashboard from "./pages/DoctorDashboard";
-import RcmDashboard from "./pages/RcmDashboard";
-import CallCenterDashboard from "./pages/CallCenterDashboard";
-import CallCenterSupervisorDashboard from "./pages/CallCenterSupervisorDashboard";
-import VisitorsDashboard from "./pages/VisitorsDashboard";
-import VisitorCeoDashboard from "./pages/VisitorCeoDashboard";
-import ApprovalsDashboard from "./pages/ApprovalsDashboard";
 import PatientDetails from "./pages/PatientDetails";
 
+// routing helpers
 import ProtectedRoute from "./components/routing/ProtectedRoute";
 import RoleRoute from "./components/routing/RoleRoute";
+
+// routes config (MAKE SURE FILE IS .js NOT .jsx)
+import { dashboardRoutes } from "./routes/routesConfig";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -33,15 +27,9 @@ function App() {
   useEffect(() => {
     api
       .get("users/me/")
-      .then((res) => {
-        setUser(res.data);
-      })
-      .catch(() => {
-        setUser(null);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      .then((res) => setUser(res.data))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
   }, []);
 
   const handleLogin = (userData) => {
@@ -74,219 +62,79 @@ function App() {
 
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="/login" element={<Login onLogin={handleLogin} />} />
+      <Suspense fallback={<div style={{ padding: 20 }}>Loading page...</div>}>
+        <Routes>
+          {/* Default */}
+          <Route path="/" element={<Navigate to="/login" replace />} />
 
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute isAllowed={isAdmin}>
-              <AdminDashboard
-                user={user}
-                onLogout={handleLogout}
-                onActAsUser={setActingAs}
+          {/* Login */}
+          <Route path="/login" element={<Login onLogin={handleLogin} />} />
+
+          {/* Dynamic dashboards */}
+          {dashboardRoutes.map((route) => {
+            const Component = route.component;
+
+            // Admin-only route
+            if (route.adminOnly) {
+              return (
+                <Route
+                  key={route.path}
+                  path={route.path}
+                  element={
+                    <ProtectedRoute isAllowed={isAdmin}>
+                      <Component
+                        user={user}
+                        onLogout={handleLogout}
+                        onActAsUser={setActingAs}
+                      />
+                    </ProtectedRoute>
+                  }
+                />
+              );
+            }
+
+            // Role-based route
+            return (
+              <Route
+                key={route.path}
+                path={route.path}
+                element={
+                  <RoleRoute
+                    currentUser={currentUser}
+                    isAdmin={isAdmin}
+                    allowedRoles={route.roles}
+                  >
+                    <Component
+                      user={currentUser}
+                      onLogout={handleLogout}
+                      actingAs={actingAs}
+                      onStopImpersonation={stopImpersonation}
+                    />
+                  </RoleRoute>
+                }
               />
-            </ProtectedRoute>
-          }
-        />
+            );
+          })}
 
-        <Route
-          path="/approvals"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["approvals"]}
-            >
-              <ApprovalsDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
+          {/* Patient file */}
+          <Route
+            path="/patients/:id"
+            element={
+              <ProtectedRoute isAllowed={!!currentUser}>
+                <PatientDetails
+                  user={currentUser}
+                  onLogout={handleLogout}
+                  actingAs={actingAs}
+                  onStopImpersonation={stopImpersonation}
+                />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/reception"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["reception"]}
-            >
-              <ReceptionDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
-
-        <Route
-          path="/reception-supervisor"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["reception_supervisor"]}
-            >
-              <ReceptionSupervisorDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
-
-        <Route
-          path="/physio"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["physio"]}
-            >
-              <PhysioDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
-
-        <Route
-          path="/doctor"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["doctor"]}
-            >
-              <DoctorDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
-
-        <Route
-          path="/rcm"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["rcm"]}
-            >
-              <RcmDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
-
-        <Route
-          path="/callcenter"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["callcenter"]}
-            >
-              <CallCenterDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
-
-        <Route
-          path="/callcenter-supervisor"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["callcenter_supervisor"]}
-            >
-              <CallCenterSupervisorDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
-
-        <Route
-          path="/visitors"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["visitor"]}
-            >
-              <VisitorsDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
-
-        <Route
-          path="/visitor-ceo"
-          element={
-            <RoleRoute
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              allowedRoles={["visitor_ceo"]}
-            >
-              <VisitorCeoDashboard
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </RoleRoute>
-          }
-        />
-
-        <Route
-          path="/patients/:id"
-          element={
-            <ProtectedRoute isAllowed={!!currentUser}>
-              <PatientDetails
-                user={currentUser}
-                onLogout={handleLogout}
-                actingAs={actingAs}
-                onStopImpersonation={stopImpersonation}
-              />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Suspense>
     </Router>
   );
 }
