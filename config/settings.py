@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "users",
     "patients",
     "reception",
+    "approvals",
 ]
 
 # -------------------
