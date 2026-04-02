@@ -2,14 +2,9 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 import AssignmentHistory from "../components/AssignmentHistory";
-import AssignmentProgressCard from "../components/AssignmentProgressCard";
 import DashboardLayout from "../components/DashboardLayout";
-import PatientTrackerTable from "../components/patients/PatientTrackerTable";
-import PatientSearchBar from "../components/patients/PatientSearchBar";
-import DashboardNotice from "../components/common/DashboardNotice";
-import DashboardMetricInput from "../components/common/DashboardMetricInput";
-import DashboardStatsGrid from "../components/common/DashboardStatsGrid";
-import TodayAssignmentsList from "../components/assignments/TodayAssignmentsList";
+import PhysioTodaySection from "../components/physio/PhysioTodaySection";
+import PhysioTrackerSection from "../components/physio/PhysioTrackerSection";
 
 export default function PhysioDashboard({
   user,
@@ -103,43 +98,12 @@ export default function PhysioDashboard({
       onBackToAdmin={handleBackToAdmin}
     >
       {activeSection === "today" && (
-        <>
-          <DashboardMetricInput
-            label="Daily Target"
-            value={dailyTarget}
-            onChange={setDailyTarget}
-            placeholder="Daily target"
-          />
-
-          <DashboardStatsGrid
-            stats={[
-              {
-                label: "Today's Assignments",
-                value: assignments.length,
-              },
-              {
-                label: "Daily Target",
-                value: dailyTarget,
-              },
-              {
-                label: "Remaining",
-                value: Math.max(Number(dailyTarget) - assignments.length, 0),
-              },
-            ]}
-          />
-
-          <AssignmentProgressCard
-            title="Today's Assignments"
-            count={assignments.length}
-            target={dailyTarget}
-            subtitle={today}
-          />
-
-          <TodayAssignmentsList
-            assignments={assignments}
-            title="Today's Assigned Patients"
-          />
-        </>
+        <PhysioTodaySection
+          today={today}
+          assignments={assignments}
+          dailyTarget={dailyTarget}
+          setDailyTarget={setDailyTarget}
+        />
       )}
 
       {activeSection === "history" && (
@@ -151,96 +115,16 @@ export default function PhysioDashboard({
       )}
 
       {activeSection === "tracker" && (
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Monthly Follow-up Tracker</h2>
-
-          <div style={styles.filtersRow}>
-            <div style={styles.monthField}>
-              <label style={styles.label}>Month</label>
-              <input
-                type="month"
-                value={trackerMonth}
-                onChange={(e) => {
-                  setTrackerMonth(e.target.value);
-                  loadTracker(e.target.value, patientSearch);
-                }}
-                style={styles.input}
-              />
-            </div>
-
-            <div style={styles.searchWrap}>
-              <PatientSearchBar
-                value={patientSearch}
-                onChange={setPatientSearch}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  loadTracker(trackerMonth, patientSearch);
-                }}
-                onClear={() => {
-                  setPatientSearch("");
-                  loadTracker(trackerMonth, "");
-                }}
-              />
-            </div>
-          </div>
-
-          {patientError ? (
-            <DashboardNotice type="error">{patientError}</DashboardNotice>
-          ) : (
-            <PatientTrackerTable
-              patients={patients}
-              title="Therapist Monthly Tracker"
-              monthLabel={trackerMonth}
-            />
-          )}
-        </div>
+        <PhysioTrackerSection
+          trackerMonth={trackerMonth}
+          setTrackerMonth={setTrackerMonth}
+          patientSearch={patientSearch}
+          setPatientSearch={setPatientSearch}
+          loadTracker={loadTracker}
+          patients={patients}
+          patientError={patientError}
+        />
       )}
     </DashboardLayout>
   );
 }
-
-const styles = {
-  card: {
-    background: "#fff",
-    borderRadius: "18px",
-    padding: "24px",
-    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
-    border: "1px solid #d9f1e5",
-    display: "grid",
-    gap: "18px",
-  },
-  cardTitle: {
-    margin: "0",
-    fontSize: "22px",
-    color: "#0f172a",
-    fontWeight: "800",
-  },
-  filtersRow: {
-    display: "grid",
-    gap: "16px",
-  },
-  monthField: {
-    maxWidth: "220px",
-    display: "grid",
-    gap: "6px",
-  },
-  label: {
-    fontSize: "13px",
-    fontWeight: "800",
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-  },
-  input: {
-    padding: "13px 14px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    fontSize: "15px",
-    background: "#fff",
-    width: "100%",
-    boxSizing: "border-box",
-  },
-  searchWrap: {
-    minWidth: 0,
-  },
-};
