@@ -1,47 +1,51 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import api from "../api/api";
 
-export default function PatientDetails({
-  user,
-  onLogout,
-  actingAs,
-  onStopImpersonation,
-}) {
+export default function PatientDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
 
   const [patient, setPatient] = useState(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const loadPatient = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await api.get(`patients/${id}/`);
+      setPatient(res.data.patient || null);
+    } catch (err) {
+      setError("Failed to load patient file");
+      setPatient(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    api
-      .get("patients/")
-      .then((res) => {
-        const found = (res.data.patients || []).find((p) => p.id === Number(id));
-        if (!found) {
-          setError("Patient not found");
-          return;
-        }
-        setPatient(found);
-      })
-      .catch(() => setError("Failed to load patient"));
+    loadPatient();
   }, [id]);
 
-  const handleBack = () => {
-    navigate(-1);
-  };
-
-  const handleBackToAdmin = () => {
-    if (onStopImpersonation) onStopImpersonation();
-    navigate("/admin");
-  };
+  if (loading) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.wrapper}>
+          <div style={styles.infoBox}>Loading patient file...</div>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
       <div style={styles.page}>
-        <div style={styles.container}>
-          <div style={styles.errorCard}>{error}</div>
+        <div style={styles.wrapper}>
+          <button style={styles.backButton} onClick={() => navigate(-1)}>
+            Back
+          </button>
+          <div style={styles.errorBox}>{error}</div>
         </div>
       </div>
     );
@@ -50,8 +54,11 @@ export default function PatientDetails({
   if (!patient) {
     return (
       <div style={styles.page}>
-        <div style={styles.container}>
-          <div style={styles.loadingCard}>Loading patient...</div>
+        <div style={styles.wrapper}>
+          <button style={styles.backButton} onClick={() => navigate(-1)}>
+            Back
+          </button>
+          <div style={styles.infoBox}>Patient not found.</div>
         </div>
       </div>
     );
@@ -59,61 +66,93 @@ export default function PatientDetails({
 
   return (
     <div style={styles.page}>
-      <div style={styles.container}>
-        {actingAs && (
-          <div style={styles.banner}>
-            <span>Viewing as: {user?.username}</span>
-            <button style={styles.bannerButton} onClick={handleBackToAdmin}>
-              Back to Admin
-            </button>
-          </div>
-        )}
-
+      <div style={styles.wrapper}>
         <div style={styles.topBar}>
-          <div style={styles.leftActions}>
-            <button onClick={handleBack} style={styles.backButton}>
-              ← Back
-            </button>
+          <div>
+            <h1 style={styles.title}>Patient File</h1>
+            <p style={styles.subtitle}>
+              Complete patient information in organized sections
+            </p>
           </div>
 
-          <button onClick={onLogout} style={styles.logoutButton}>
-            Logout
+          <button style={styles.backButton} onClick={() => navigate(-1)}>
+            Back
           </button>
         </div>
 
         <div style={styles.heroCard}>
           <div>
-            <p style={styles.kicker}>Patient File</p>
-            <h1 style={styles.title}>{patient.name}</h1>
-            <p style={styles.subtitle}>Patient ID: {patient.patient_id}</p>
+            <div style={styles.patientName}>{patient.name}</div>
+            <div style={styles.patientId}>Patient ID: {patient.patient_id}</div>
           </div>
-
-          <div style={styles.heroBadge}>Active File</div>
         </div>
 
-        <div style={styles.detailsGrid}>
-          <div style={styles.detailCard}>
-            <span style={styles.label}>Current Approval Number</span>
-            <span style={styles.value}>
-              {patient.current_approval_number || "-"}
-            </span>
+        <div style={styles.grid}>
+          <div style={styles.sectionCard}>
+            <div style={styles.sectionHeader}>Approvals</div>
+            <div style={styles.fieldRow}>
+              <span style={styles.label}>Insurance Provider</span>
+              <span style={styles.value}>{patient.insurance_provider || "-"}</span>
+            </div>
+            <div style={styles.fieldRow}>
+              <span style={styles.label}>Authorization Number</span>
+              <span style={styles.value}>
+                {patient.current_approval_number || "-"}
+              </span>
+            </div>
+            <div style={styles.fieldRow}>
+              <span style={styles.label}>Approval Start Date</span>
+              <span style={styles.value}>
+                {patient.approval_start_date || "-"}
+              </span>
+            </div>
+            <div style={styles.fieldRow}>
+              <span style={styles.label}>Approval Expiry Date</span>
+              <span style={styles.value}>
+                {patient.approval_expiry_date || "-"}
+              </span>
+            </div>
+            <div style={styles.fieldRow}>
+              <span style={styles.label}>Approved Sessions</span>
+              <span style={styles.value}>{patient.approved_sessions ?? 0}</span>
+            </div>
+            <div style={styles.fieldBlock}>
+              <span style={styles.label}>Approved CPT Codes</span>
+              <div style={styles.chipsWrap}>
+                {patient.approved_cpt_codes &&
+                patient.approved_cpt_codes.length > 0 ? (
+                  patient.approved_cpt_codes.map((code, index) => (
+                    <span key={index} style={styles.chip}>
+                      {code}
+                    </span>
+                  ))
+                ) : (
+                  <span style={styles.muted}>No approved CPT codes</span>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div style={styles.detailCard}>
-            <span style={styles.label}>Sessions Taken</span>
-            <span style={styles.value}>{patient.sessions_taken ?? 0}</span>
+          <div style={styles.sectionCard}>
+            <div style={styles.sectionHeader}>Physio</div>
+            <div style={styles.fieldRow}>
+              <span style={styles.label}>Utilized Sessions</span>
+              <span style={styles.value}>{patient.sessions_taken ?? 0}</span>
+            </div>
+            <div style={styles.fieldRow}>
+              <span style={styles.label}>Therapist Names</span>
+              <span style={styles.value}>{patient.taken_with || "-"}</span>
+            </div>
           </div>
 
-          <div style={styles.detailCardWide}>
-            <span style={styles.label}>Taken With</span>
-            <span style={styles.value}>{patient.taken_with || "-"}</span>
-          </div>
-
-          <div style={styles.detailCardWide}>
-            <span style={styles.label}>Current / Future Appointments</span>
-            <span style={styles.value}>
-              {patient.current_future_appointments || "-"}
-            </span>
+          <div style={styles.sectionCard}>
+            <div style={styles.sectionHeader}>Call Center</div>
+            <div style={styles.fieldBlock}>
+              <span style={styles.label}>Appointments</span>
+              <div style={styles.largeValue}>
+                {patient.current_future_appointments || "-"}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -124,155 +163,145 @@ export default function PatientDetails({
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "linear-gradient(135deg, #f3f7fb 0%, #eef4ff 100%)",
+    background: "linear-gradient(135deg, #f3f7fb 0%, #fbfdff 100%)",
     padding: "32px 20px",
     fontFamily: "Arial, sans-serif",
   },
-  container: {
-    maxWidth: "950px",
+  wrapper: {
+    maxWidth: "1100px",
     margin: "0 auto",
-  },
-  banner: {
-    background: "#fef3c7",
-    border: "1px solid #fcd34d",
-    color: "#92400e",
-    padding: "12px 16px",
-    borderRadius: "12px",
-    marginBottom: "18px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  bannerButton: {
-    background: "#92400e",
-    color: "#fff",
-    border: "none",
-    borderRadius: "8px",
-    padding: "8px 12px",
-    cursor: "pointer",
-    fontWeight: "700",
+    display: "grid",
+    gap: "20px",
   },
   topBar: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "12px",
-    marginBottom: "18px",
+    gap: "16px",
+    flexWrap: "wrap",
   },
-  leftActions: {
-    display: "flex",
-    gap: "12px",
+  title: {
+    margin: 0,
+    fontSize: "34px",
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  subtitle: {
+    margin: "8px 0 0 0",
+    color: "#64748b",
+    fontSize: "15px",
   },
   backButton: {
-    padding: "12px 16px",
-    borderRadius: "12px",
-    border: "1px solid #d6deea",
-    background: "#fff",
-    color: "#0f172a",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  logoutButton: {
-    background: "#ef4444",
+    background: "#2563eb",
     color: "#fff",
     border: "none",
     borderRadius: "12px",
-    padding: "12px 16px",
-    cursor: "pointer",
+    padding: "12px 18px",
     fontWeight: "700",
+    cursor: "pointer",
   },
   heroCard: {
-    background: "linear-gradient(135deg, #ffffff 0%, #f8fbff 100%)",
+    background: "#ffffff",
+    borderRadius: "20px",
+    padding: "24px",
+    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
     border: "1px solid #e8eef7",
-    borderRadius: "24px",
-    padding: "28px",
-    boxShadow: "0 18px 40px rgba(15, 23, 42, 0.08)",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "16px",
-    marginBottom: "22px",
   },
-  kicker: {
-    margin: 0,
-    color: "#2563eb",
-    fontWeight: "700",
-    fontSize: "13px",
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-  },
-  title: {
-    margin: "10px 0 6px 0",
-    fontSize: "34px",
-    color: "#0f172a",
+  patientName: {
+    fontSize: "28px",
     fontWeight: "800",
+    color: "#0f172a",
+    marginBottom: "8px",
   },
-  subtitle: {
-    margin: 0,
-    color: "#64748b",
+  patientId: {
     fontSize: "16px",
+    color: "#475569",
     fontWeight: "600",
   },
-  heroBadge: {
-    background: "#dbeafe",
-    color: "#1d4ed8",
-    padding: "10px 14px",
-    borderRadius: "999px",
-    fontSize: "13px",
-    fontWeight: "700",
-    whiteSpace: "nowrap",
-  },
-  detailsGrid: {
+  grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: "16px",
+    gap: "20px",
   },
-  detailCard: {
-    background: "#fff",
-    border: "1px solid #e6edf7",
-    borderRadius: "18px",
-    padding: "20px",
-    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
-    display: "grid",
-    gap: "8px",
-  },
-  detailCardWide: {
-    gridColumn: "1 / -1",
-    background: "#fff",
-    border: "1px solid #e6edf7",
-    borderRadius: "18px",
-    padding: "20px",
-    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
-    display: "grid",
-    gap: "8px",
-  },
-  label: {
-    fontSize: "12px",
-    fontWeight: "800",
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-  },
-  value: {
-    fontSize: "18px",
-    fontWeight: "700",
-    color: "#0f172a",
-    lineHeight: 1.5,
-  },
-  loadingCard: {
-    background: "#fff",
+  sectionCard: {
+    background: "#ffffff",
     borderRadius: "18px",
     padding: "24px",
-    border: "1px solid #e5e7eb",
-    color: "#475569",
+    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+    border: "1px solid #e8eef7",
+    display: "grid",
+    gap: "14px",
+  },
+  sectionHeader: {
+    fontSize: "22px",
+    fontWeight: "800",
+    color: "#1d4ed8",
+    marginBottom: "4px",
+  },
+  fieldRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
+    flexWrap: "wrap",
+    paddingBottom: "10px",
+    borderBottom: "1px solid #eef2f7",
+  },
+  fieldBlock: {
+    display: "grid",
+    gap: "10px",
+  },
+  label: {
+    color: "#64748b",
+    fontSize: "14px",
     fontWeight: "700",
   },
-  errorCard: {
+  value: {
+    color: "#0f172a",
+    fontSize: "15px",
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  largeValue: {
+    color: "#0f172a",
+    fontSize: "15px",
+    fontWeight: "700",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "12px",
+    padding: "12px 14px",
+    whiteSpace: "pre-wrap",
+  },
+  chipsWrap: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+  chip: {
+    background: "#dbeafe",
+    color: "#1d4ed8",
+    padding: "6px 10px",
+    borderRadius: "999px",
+    fontSize: "13px",
+    fontWeight: "800",
+  },
+  muted: {
+    color: "#94a3b8",
+    fontSize: "14px",
+    fontWeight: "600",
+  },
+  infoBox: {
+    background: "#f8fafc",
+    color: "#64748b",
+    border: "1px dashed #cbd5e1",
+    borderRadius: "12px",
+    padding: "16px",
+    fontWeight: "700",
+  },
+  errorBox: {
     background: "#fef2f2",
     color: "#b91c1c",
     border: "1px solid #fecaca",
-    borderRadius: "18px",
-    padding: "24px",
+    borderRadius: "12px",
+    padding: "16px",
     fontWeight: "700",
   },
 };
