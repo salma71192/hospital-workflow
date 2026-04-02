@@ -326,13 +326,15 @@ export default function ReceptionDashboard({
         </>
       )}
 
-      {activeSection === "history" && (
-        <AssignmentHistory
-          title="Reception Assignment History"
-          currentUser={user}
-          actingAs={actingAs}
-        />
-      )}
+        {activeSection === "history" && (
+  <AssignmentHistory
+    title="Reception Assignment History"
+    currentUser={user}
+    actingAs={actingAs}
+    onEditAssignment={handleEditAssignment}
+    onCancelAssignment={handleCancelAssignment}
+  />
+)}
     </DashboardLayout>
   );
 }

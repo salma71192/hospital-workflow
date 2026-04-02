@@ -8,6 +8,8 @@ export default function AssignmentHistory({
   title = "Assignment History",
   currentUser,
   actingAs,
+  onEditAssignment,
+  onCancelAssignment,
 }) {
   const today = new Date().toISOString().split("T")[0];
 
@@ -39,7 +41,7 @@ export default function AssignmentHistory({
 
       const res = await api.get(`reception/assignments/?${params.toString()}`);
       setAssignments(res.data.assignments || []);
-    } catch (err) {
+    } catch {
       setError("Failed to load assignment history");
       setAssignments([]);
     } finally {
@@ -94,9 +96,7 @@ export default function AssignmentHistory({
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Assignments");
-
-    const filename = `assignment_history_${startDate}_to_${endDate}.xlsx`;
-    XLSX.writeFile(workbook, filename);
+    XLSX.writeFile(workbook, `assignment_history_${startDate}_to_${endDate}.xlsx`);
   };
 
   return (
@@ -135,9 +135,7 @@ export default function AssignmentHistory({
             <option value="appointment">Has Appointment</option>
             <option value="walk_in">Walk In</option>
             <option value="initial_evaluation">Initial Evaluation</option>
-            <option value="task_without_eligibility">
-              Task Without Eligibility
-            </option>
+            <option value="task_without_eligibility">Task Without Eligibility</option>
           </select>
         </div>
 
@@ -162,29 +160,43 @@ export default function AssignmentHistory({
             <div key={item.id} style={styles.card}>
               <div style={styles.left}>
                 <div style={styles.patient}>{item.patient_name}</div>
-                <div style={styles.meta}>
-                  Patient ID: {item.patient_file_id}
-                </div>
-
+                <div style={styles.meta}>Patient ID: {item.patient_file_id}</div>
                 <div style={styles.categoryBadge}>
                   {item.category_label || item.category || "-"}
                 </div>
               </div>
 
               <div style={styles.right}>
-                <div style={styles.meta}>
-                  Therapist: {item.therapist_name}
-                </div>
-
+                <div style={styles.meta}>Therapist: {item.therapist_name}</div>
                 <div style={styles.meta}>Date: {item.assignment_date}</div>
-
                 <div style={styles.meta}>
                   Created By: {item.created_by_name || "-"}
                 </div>
-
-                {item.notes && (
+                {item.notes ? (
                   <div style={styles.meta}>Notes: {item.notes}</div>
-                )}
+                ) : null}
+
+                <div style={styles.buttonRow}>
+                  {item.can_edit_today && onEditAssignment ? (
+                    <button
+                      type="button"
+                      style={styles.editButton}
+                      onClick={() => onEditAssignment(item)}
+                    >
+                      Edit
+                    </button>
+                  ) : null}
+
+                  {item.can_cancel_today && onCancelAssignment ? (
+                    <button
+                      type="button"
+                      style={styles.cancelButton}
+                      onClick={() => onCancelAssignment(item)}
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           ))}
@@ -207,40 +219,34 @@ const styles = {
     display: "grid",
     gap: "18px",
   },
-
   title: {
     fontSize: "22px",
     fontWeight: "800",
     margin: 0,
   },
-
   filters: {
     display: "flex",
     gap: "12px",
     flexWrap: "wrap",
     alignItems: "end",
   },
-
   field: {
     display: "flex",
     flexDirection: "column",
     gap: "4px",
     minWidth: "180px",
   },
-
   label: {
     fontSize: "12px",
     fontWeight: "700",
     color: "#64748b",
   },
-
   input: {
     padding: "10px 12px",
     borderRadius: "10px",
     border: "1px solid #cbd5e1",
     background: "#fff",
   },
-
   button: {
     background: "#1d4ed8",
     color: "#fff",
@@ -251,7 +257,6 @@ const styles = {
     cursor: "pointer",
     height: "42px",
   },
-
   exportButton: {
     background: "#166534",
     color: "#fff",
@@ -262,12 +267,10 @@ const styles = {
     cursor: "pointer",
     height: "42px",
   },
-
   list: {
     display: "grid",
     gap: "12px",
   },
-
   card: {
     border: "1px solid #e2e8f0",
     borderRadius: "12px",
@@ -277,27 +280,22 @@ const styles = {
     gap: "16px",
     flexWrap: "wrap",
   },
-
   left: {
     minWidth: "200px",
   },
-
   right: {
-    minWidth: "200px",
+    minWidth: "220px",
   },
-
   patient: {
     fontWeight: "800",
     fontSize: "16px",
     marginBottom: "6px",
   },
-
   meta: {
     fontSize: "14px",
     color: "#64748b",
     marginBottom: "4px",
   },
-
   categoryBadge: {
     marginTop: "8px",
     display: "inline-block",
@@ -308,14 +306,36 @@ const styles = {
     fontSize: "12px",
     fontWeight: "800",
   },
-
+  buttonRow: {
+    display: "flex",
+    gap: "10px",
+    marginTop: "12px",
+    flexWrap: "wrap",
+  },
+  editButton: {
+    background: "#2563eb",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "8px 12px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+  cancelButton: {
+    background: "#ef4444",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "8px 12px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
   empty: {
     padding: "16px",
     background: "#f8fafc",
     borderRadius: "10px",
     color: "#64748b",
   },
-
   loading: {
     color: "#64748b",
     fontWeight: "600",
