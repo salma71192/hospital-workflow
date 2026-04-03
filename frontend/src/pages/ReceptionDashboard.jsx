@@ -1,16 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api/api";
-import AssignmentHistory from "../components/AssignmentHistory";
-import AssignmentProgressCard from "../components/AssignmentProgressCard";
+
 import DashboardLayout from "../components/DashboardLayout";
-import TodayAssignmentsList from "../components/assignments/TodayAssignmentsList";
-import PatientSearchPanel from "../components/patients/PatientSearchPanel";
-import PatientRegisterForm from "../components/patients/PatientRegisterForm";
-import PatientAssignmentForm from "../components/patients/PatientAssignmentForm";
 import DashboardNotice from "../components/common/DashboardNotice";
-import DashboardMetricInput from "../components/common/DashboardMetricInput";
-import DashboardStatsGrid from "../components/common/DashboardStatsGrid";
+import ReceptionAlerts from "../components/reception/ReceptionAlerts";
+import ReceptionTodaySection from "../components/reception/ReceptionTodaySection";
+import ReceptionSearchAssignSection from "../components/reception/ReceptionSearchAssignSection";
+import useReceptionDashboard from "../components/reception/useReceptionDashboard";
 
 export default function ReceptionDashboard({
   user,
@@ -19,239 +15,37 @@ export default function ReceptionDashboard({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
+  const [activeSection, setActiveSection] = useState("today");
 
-  const [activeSection, setActiveSection] = useState("search");
-  const [editingAssignmentId, setEditingAssignmentId] = useState(null);
-
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [selectedPatient, setSelectedPatient] = useState(null);
-
-  const [patientForm, setPatientForm] = useState({
-    name: "",
-    patient_id: "",
-    current_approval_number: "",
-    sessions_taken: "",
-    taken_with: "",
-    current_future_appointments: "",
-  });
-
-  const [assignmentForm, setAssignmentForm] = useState({
-    patient_id: "",
-    therapist_id: "",
-    category: "appointment",
-    notes: "",
-  });
-
-  const [therapists, setTherapists] = useState([]);
-  const [todayAssignments, setTodayAssignments] = useState([]);
-  const [dailyTarget, setDailyTarget] = useState(10);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  const today = new Date().toISOString().split("T")[0];
+  const {
+    search,
+    setSearch,
+    patients,
+    assignments,
+    therapists,
+    selectedTherapist,
+    setSelectedTherapist,
+    category,
+    setCategory,
+    message,
+    alerts,
+    handleSearch,
+    handleAssign,
+  } = useReceptionDashboard(user, actingAs);
 
   const handleBackToAdmin = () => {
     onStopImpersonation();
     navigate("/admin");
   };
 
-  const resetAssignmentForm = () => {
-    setAssignmentForm({
-      patient_id: "",
-      therapist_id: "",
-      category: "appointment",
-      notes: "",
-    });
-    setSelectedPatient(null);
-    setEditingAssignmentId(null);
-  };
-
-  const loadTherapists = async () => {
-    try {
-      const res = await api.get("reception/therapists/");
-      setTherapists(res.data.therapists || []);
-    } catch (err) {
-      console.error("Failed to load therapists", err);
-    }
-  };
-
-  const loadTodayAssignments = async () => {
-    try {
-      const params = new URLSearchParams({
-        start_date: today,
-        end_date: today,
-      });
-
-      if (actingAs && (user?.is_superuser || user?.role === "admin")) {
-        params.append("viewed_user_id", String(actingAs.id));
-        params.append("viewed_user_role", String(actingAs.role || ""));
-      }
-
-      const res = await api.get(`reception/assignments/?${params.toString()}`);
-      setTodayAssignments(res.data.assignments || []);
-    } catch (err) {
-      console.error("Failed to load today's assignments", err);
-    }
-  };
-
-  useEffect(() => {
-    loadTherapists();
-    loadTodayAssignments();
-  }, [today, actingAs, user]);
-
-  const handleSearchPatient = async (e) => {
-    e.preventDefault();
-    setMessage("");
-    setError("");
-    setSelectedPatient(null);
-
-    try {
-      const url = searchTerm
-        ? `patients/?search=${encodeURIComponent(searchTerm)}`
-        : "patients/";
-      const res = await api.get(url);
-      const patients = res.data.patients || [];
-      setSearchResults(patients);
-
-      if (patients.length > 0) {
-        setMessage("Patient found. You can open file or assign to therapist.");
-      } else {
-        setMessage("Patient not found. Please register new patient.");
-      }
-    } catch (err) {
-      setError("Failed to search patient");
-    }
-  };
-
-  const handleSelectPatient = (patient) => {
-    setSelectedPatient(patient);
-    setAssignmentForm((prev) => ({
-      ...prev,
-      patient_id: patient.id,
-    }));
-    setEditingAssignmentId(null);
-    setActiveSection("assign");
-    setMessage(`Selected ${patient.name} for assignment.`);
-    setError("");
-  };
-
-  const handleCreatePatientFile = async (e) => {
-    e.preventDefault();
-    setMessage("");
-    setError("");
-
-    try {
-      const res = await api.post("patients/", patientForm);
-      const createdPatient = res.data.patient;
-
-      setMessage(res.data.message || "Patient file created successfully");
-      setError("");
-
-      setPatientForm({
-        name: "",
-        patient_id: "",
-        current_approval_number: "",
-        sessions_taken: "",
-        taken_with: "",
-        current_future_appointments: "",
-      });
-
-      if (createdPatient) {
-        setSelectedPatient(createdPatient);
-        setAssignmentForm((prev) => ({
-          ...prev,
-          patient_id: createdPatient.id,
-        }));
-        setEditingAssignmentId(null);
-        setActiveSection("assign");
-      }
-    } catch (err) {
-      setError(err?.response?.data?.error || "Failed to create patient file");
-      setMessage("");
-    }
-  };
-
-  const handleCreateOrUpdateAssignment = async (e) => {
-    e.preventDefault();
-    setMessage("");
-    setError("");
-
-    try {
-      if (editingAssignmentId) {
-        const res = await api.put(
-          `reception/assignments/${editingAssignmentId}/`,
-          {
-            therapist_id: assignmentForm.therapist_id,
-            category: assignmentForm.category,
-            notes: assignmentForm.notes,
-          }
-        );
-        setMessage(res.data.message || "Assignment updated successfully");
-      } else {
-        const res = await api.post("reception/assignments/", assignmentForm);
-        setMessage(res.data.message || "Patient assigned successfully");
-      }
-
-      setError("");
-      resetAssignmentForm();
-      setSearchResults([]);
-      setSearchTerm("");
-      await loadTodayAssignments();
-      setActiveSection("today");
-    } catch (err) {
-      setError(err?.response?.data?.error || "Failed to save assignment");
-      setMessage("");
-    }
-  };
-
-  const handleEditAssignment = (assignment) => {
-    setEditingAssignmentId(assignment.id);
-    setSelectedPatient({
-      id: assignment.patient_id,
-      name: assignment.patient_name,
-      patient_id: assignment.patient_file_id,
-    });
-    setAssignmentForm({
-      patient_id: assignment.patient_id,
-      therapist_id: assignment.therapist_id,
-      category: assignment.category || "appointment",
-      notes: assignment.notes || "",
-    });
-    setActiveSection("assign");
-    setMessage(`Editing assignment for ${assignment.patient_name}`);
-    setError("");
-  };
-
-  const handleCancelAssignment = async (assignment) => {
-    const confirmed = window.confirm(
-      `Cancel today's assignment for ${assignment.patient_name}?`
-    );
-    if (!confirmed) return;
-
-    try {
-      const res = await api.delete(`reception/assignments/${assignment.id}/`);
-      setMessage(res.data.message || "Assignment cancelled successfully");
-      setError("");
-      await loadTodayAssignments();
-    } catch (err) {
-      setError(err?.response?.data?.error || "Failed to cancel assignment");
-      setMessage("");
-    }
-  };
-
   return (
     <DashboardLayout
       title="Reception Dashboard"
-      subtitle={`Welcome, ${actingAs?.username || user?.username || "Reception User"}`}
-      accent="#1e3a8a"
-      sidebarTitle="Workflow"
+      subtitle={`Welcome ${actingAs?.username || user?.username || ""}`}
+      sidebarTitle="Reception"
       sidebarItems={[
-        { key: "search", label: "Search Patient" },
-        { key: "register", label: "Register New Patient" },
-        { key: "assign", label: editingAssignmentId ? "Edit Assignment" : "Assign Patient" },
         { key: "today", label: "Today's Assignments" },
-        { key: "history", label: "History" },
+        { key: "search", label: "Search & Assign" },
       ]}
       activeSection={activeSection}
       setActiveSection={setActiveSection}
@@ -260,81 +54,28 @@ export default function ReceptionDashboard({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
+      <ReceptionAlerts alerts={alerts} />
+
       {message && <DashboardNotice type="success">{message}</DashboardNotice>}
-      {error && <DashboardNotice type="error">{error}</DashboardNotice>}
-
-      {activeSection === "search" && (
-        <PatientSearchPanel
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          onSearch={handleSearchPatient}
-          searchResults={searchResults}
-          onSelectPatient={handleSelectPatient}
-        />
-      )}
-
-      {activeSection === "register" && (
-        <PatientRegisterForm
-          patientForm={patientForm}
-          setPatientForm={setPatientForm}
-          onSubmit={handleCreatePatientFile}
-        />
-      )}
-
-      {activeSection === "assign" && (
-        <PatientAssignmentForm
-          selectedPatient={selectedPatient}
-          assignmentForm={assignmentForm}
-          setAssignmentForm={setAssignmentForm}
-          therapists={therapists}
-          onSubmit={handleCreateOrUpdateAssignment}
-        />
-      )}
 
       {activeSection === "today" && (
-        <>
-          <DashboardMetricInput
-            label="Daily Target"
-            value={dailyTarget}
-            onChange={setDailyTarget}
-            placeholder="Daily target"
-          />
-
-          <DashboardStatsGrid
-            stats={[
-              { label: "Today's Assignments", value: todayAssignments.length },
-              { label: "Daily Target", value: dailyTarget },
-              {
-                label: "Remaining",
-                value: Math.max(Number(dailyTarget) - todayAssignments.length, 0),
-              },
-            ]}
-          />
-
-          <AssignmentProgressCard
-            title="Today's Assignments"
-            count={todayAssignments.length}
-            target={dailyTarget}
-            subtitle={today}
-          />
-
-          <TodayAssignmentsList
-            assignments={todayAssignments}
-            onEditAssignment={handleEditAssignment}
-            onCancelAssignment={handleCancelAssignment}
-          />
-        </>
+        <ReceptionTodaySection assignments={assignments} />
       )}
 
-        {activeSection === "history" && (
-  <AssignmentHistory
-    title="Reception Assignment History"
-    currentUser={user}
-    actingAs={actingAs}
-    onEditAssignment={handleEditAssignment}
-    onCancelAssignment={handleCancelAssignment}
-  />
-)}
+      {activeSection === "search" && (
+        <ReceptionSearchAssignSection
+          search={search}
+          setSearch={setSearch}
+          handleSearch={handleSearch}
+          therapists={therapists}
+          selectedTherapist={selectedTherapist}
+          setSelectedTherapist={setSelectedTherapist}
+          category={category}
+          setCategory={setCategory}
+          patients={patients}
+          handleAssign={handleAssign}
+        />
+      )}
     </DashboardLayout>
   );
 }
