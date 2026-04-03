@@ -1,30 +1,111 @@
-import React from "react";
+import React, { useState } from "react";
+import api from "../../api/api";
+import BillingCodePresets from "./BillingCodePresets";
 
 export default function BillingCodesSection({
   billingForm,
   setBillingForm,
   billingCodes = [],
   onSubmit,
+  reloadCodes,
 }) {
+  const [editingId, setEditingId] = useState(null);
+
+  const resetForm = () => {
+    setEditingId(null);
+    setBillingForm((prev) => ({
+      ...prev,
+      code: "",
+      default_sessions: 6,
+    }));
+  };
+
+  const handlePickPreset = (item) => {
+    setEditingId(null);
+    setBillingForm((prev) => ({
+      ...prev,
+      code: item.code,
+      default_sessions: item.default_sessions,
+    }));
+  };
+
+  const handleAddDefaultCodes = async (codes) => {
+    try {
+      for (const item of codes) {
+        await api.post("approvals/billing-codes/", {
+          insurance_provider: "thiqa",
+          code: item.code,
+          default_sessions: item.default_sessions,
+        });
+      }
+
+      if (reloadCodes) {
+        await reloadCodes();
+      }
+    } catch (err) {
+      console.error("Failed to add default codes", err);
+    }
+  };
+
+  const handleEdit = (item) => {
+    setEditingId(item.id);
+    setBillingForm((prev) => ({
+      ...prev,
+      code: item.code,
+      default_sessions: item.default_sessions,
+    }));
+  };
+
+  const handleDelete = async (id) => {
+    const confirmed = window.confirm("Delete this CPT code?");
+    if (!confirmed) return;
+
+    try {
+      await api.delete("approvals/billing-codes/", {
+        data: { id },
+      });
+
+      if (editingId === id) {
+        resetForm();
+      }
+
+      if (reloadCodes) {
+        await reloadCodes();
+      }
+    } catch (err) {
+      console.error("Delete failed", err);
+    }
+  };
+
+  const wrappedSubmit = async (e) => {
+    e.preventDefault();
+    await onSubmit(e);
+    resetForm();
+  };
+
   return (
     <div style={styles.page}>
-      <div style={styles.headerCard}>
-        <div>
-          <div style={styles.eyebrow}>Billing Setup</div>
-          <h2 style={styles.title}>Billing Codes</h2>
-          <div style={styles.subtext}>
-            Add or update insurance CPT billing codes and amounts.
-          </div>
-        </div>
-      </div>
+      <BillingCodePresets
+        existingCodes={billingCodes}
+        onPickCode={handlePickPreset}
+        onAddDefaultCodes={handleAddDefaultCodes}
+      />
 
       <div style={styles.card}>
-        <form onSubmit={onSubmit} style={styles.form}>
+        <div style={styles.eyebrow}>Manage CPT Defaults</div>
+        <h2 style={styles.title}>
+          {editingId ? "Edit CPT Code" : "Add CPT Code"}
+        </h2>
+        <div style={styles.subtext}>
+          Save CPT code defaults with editable session counts.
+        </div>
+
+        <form onSubmit={wrappedSubmit} style={styles.form}>
           <div style={styles.formGrid}>
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Code</label>
+              <label style={styles.label}>CPT Code</label>
               <input
-                placeholder="Enter code"
+                placeholder="Enter CPT code"
                 value={billingForm.code}
                 onChange={(e) =>
                   setBillingForm({ ...billingForm, code: e.target.value })
@@ -34,27 +115,17 @@ export default function BillingCodesSection({
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Description</label>
+              <label style={styles.label}>Default Sessions</label>
               <input
-                placeholder="Enter description"
-                value={billingForm.description}
+                type="number"
+                min="0"
+                placeholder="Enter default sessions"
+                value={billingForm.default_sessions ?? 6}
                 onChange={(e) =>
                   setBillingForm({
                     ...billingForm,
-                    description: e.target.value,
+                    default_sessions: e.target.value,
                   })
-                }
-                style={styles.input}
-              />
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Amount</label>
-              <input
-                placeholder="Enter amount"
-                value={billingForm.amount}
-                onChange={(e) =>
-                  setBillingForm({ ...billingForm, amount: e.target.value })
                 }
                 style={styles.input}
               />
@@ -62,25 +133,60 @@ export default function BillingCodesSection({
           </div>
 
           <div style={styles.actionBar}>
+            {editingId ? (
+              <button
+                type="button"
+                style={styles.secondary}
+                onClick={resetForm}
+              >
+                Cancel Edit
+              </button>
+            ) : null}
+
             <button type="submit" style={styles.primary}>
-              Save Billing Code
+              {editingId ? "Update CPT Code" : "Save CPT Code"}
             </button>
           </div>
         </form>
       </div>
 
       <div style={styles.listCard}>
-        <div style={styles.listTitle}>Saved Codes</div>
+        <div style={styles.listTitle}>Available CPT Codes</div>
 
-        <div style={styles.billingList}>
-          {billingCodes.map((item) => (
-            <div key={item.id} style={styles.billingCard}>
-              <div style={styles.billingCode}>{item.code}</div>
-              <div style={styles.billingDesc}>{item.description}</div>
-              <div style={styles.billingAmount}>{item.amount}</div>
-            </div>
-          ))}
-        </div>
+        {billingCodes.length === 0 ? (
+          <div style={styles.emptyState}>
+            No CPT codes added yet. Use the default 4 codes button or add one manually.
+          </div>
+        ) : (
+          <div style={styles.billingList}>
+            {billingCodes.map((item) => (
+              <div key={item.id} style={styles.billingCard}>
+                <div style={styles.billingCode}>{item.code}</div>
+                <div style={styles.billingSessions}>
+                  Default Sessions: {item.default_sessions}
+                </div>
+
+                <div style={styles.rowActions}>
+                  <button
+                    type="button"
+                    style={styles.editBtn}
+                    onClick={() => handleEdit(item)}
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    style={styles.deleteBtn}
+                    onClick={() => handleDelete(item.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -91,11 +197,12 @@ const styles = {
     display: "grid",
     gap: "16px",
   },
-  headerCard: {
-    background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
-    border: "1px solid #dbeafe",
+  card: {
+    background: "#fff",
     borderRadius: "18px",
     padding: "22px",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
   },
   eyebrow: {
     fontSize: "12px",
@@ -106,22 +213,15 @@ const styles = {
     marginBottom: "8px",
   },
   title: {
-    margin: 0,
-    fontSize: "26px",
+    margin: "0 0 6px 0",
+    fontSize: "24px",
     fontWeight: "800",
     color: "#0f172a",
   },
   subtext: {
-    marginTop: "6px",
     fontSize: "14px",
     color: "#64748b",
-  },
-  card: {
-    background: "#fff",
-    borderRadius: "18px",
-    padding: "22px",
-    border: "1px solid #e2e8f0",
-    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+    marginBottom: "14px",
   },
   form: {
     display: "grid",
@@ -150,6 +250,7 @@ const styles = {
   actionBar: {
     display: "flex",
     justifyContent: "flex-end",
+    gap: "10px",
     paddingTop: "8px",
     borderTop: "1px solid #e2e8f0",
   },
@@ -160,6 +261,15 @@ const styles = {
     border: "none",
     borderRadius: "10px",
     fontWeight: "800",
+    cursor: "pointer",
+  },
+  secondary: {
+    background: "#e2e8f0",
+    color: "#0f172a",
+    padding: "12px 20px",
+    border: "none",
+    borderRadius: "10px",
+    fontWeight: "700",
     cursor: "pointer",
   },
   listCard: {
@@ -175,6 +285,15 @@ const styles = {
     color: "#0f172a",
     marginBottom: "14px",
   },
+  emptyState: {
+    color: "#64748b",
+    fontSize: "14px",
+    fontWeight: "600",
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    borderRadius: "12px",
+    padding: "14px",
+  },
   billingList: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
@@ -185,20 +304,36 @@ const styles = {
     borderRadius: "12px",
     padding: "12px",
     background: "#f8fafc",
+    display: "grid",
+    gap: "8px",
   },
   billingCode: {
     fontWeight: "800",
     color: "#0f172a",
-    marginBottom: "4px",
   },
-  billingDesc: {
-    fontSize: "13px",
-    color: "#64748b",
-    marginBottom: "6px",
-  },
-  billingAmount: {
+  billingSessions: {
     fontSize: "14px",
-    fontWeight: "700",
     color: "#166534",
+    fontWeight: "700",
+  },
+  rowActions: {
+    display: "flex",
+    gap: "8px",
+  },
+  editBtn: {
+    background: "#0ea5e9",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "8px 10px",
+    cursor: "pointer",
+  },
+  deleteBtn: {
+    background: "#dc2626",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "8px 10px",
+    cursor: "pointer",
   },
 };

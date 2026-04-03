@@ -9,7 +9,6 @@ from reception.models import PatientAssignment
 from .models import PatientApproval, InsuranceBillingCode, ApprovalHistory
 
 
-# ================= PERMISSION =================
 def _can_use_approvals(user):
     if not user.is_authenticated:
         return False
@@ -17,7 +16,6 @@ def _can_use_approvals(user):
     return user.is_superuser or role in ["admin", "approvals"]
 
 
-# ================= HELPERS =================
 def _parse_json(request):
     try:
         raw = request.body.decode("utf-8") if request.body else "{}"
@@ -36,7 +34,6 @@ def _validate_date(value):
         return None
 
 
-# ================= APPROVAL API =================
 @csrf_exempt
 def patient_approval_api(request, patient_id):
     if not _can_use_approvals(request.user):
@@ -86,17 +83,11 @@ def patient_approval_api(request, patient_id):
             if approved_sessions < 0:
                 approved_sessions = 0
         except Exception:
-            return JsonResponse(
-                {"error": "approved_sessions must be a number"},
-                status=400,
-            )
+            return JsonResponse({"error": "approved_sessions must be a number"}, status=400)
 
         codes = data.get("approved_cpt_codes", [])
         if not isinstance(codes, list):
-            return JsonResponse(
-                {"error": "approved_cpt_codes must be a list"},
-                status=400,
-            )
+            return JsonResponse({"error": "approved_cpt_codes must be a list"}, status=400)
 
         insurance_provider = data.get("insurance_provider", "thiqa")
         authorization_number = data.get("authorization_number") or None
@@ -137,7 +128,6 @@ def patient_approval_api(request, patient_id):
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
-# ================= APPROVAL ALERTS =================
 def approvals_alerts_api(request):
     if not _can_use_approvals(request.user):
         return JsonResponse({"error": "Not authorized"}, status=403)
@@ -195,7 +185,6 @@ def approvals_alerts_api(request):
     return JsonResponse({"alerts": alerts[:20]})
 
 
-# ================= PHYSIO ALERTS =================
 def physio_alerts_api(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authorized"}, status=403)
@@ -242,27 +231,21 @@ def physio_alerts_api(request):
     return JsonResponse({"alerts": alerts})
 
 
-# ================= BILLING =================
 @csrf_exempt
 def billing_codes_api(request):
     if not _can_use_approvals(request.user):
         return JsonResponse({"error": "Not authorized"}, status=403)
 
-    provider = request.GET.get("provider")
+    provider = request.GET.get("provider", "thiqa")
 
     if request.method == "GET":
-        qs = InsuranceBillingCode.objects.all()
-
-        if provider:
-            qs = qs.filter(insurance_provider=provider)
-
+        qs = InsuranceBillingCode.objects.filter(insurance_provider=provider)
         codes = list(
             qs.values(
                 "id",
                 "insurance_provider",
                 "code",
-                "description",
-                "amount",
+                "default_sessions",
             )
         )
         return JsonResponse({"codes": codes})
@@ -272,23 +255,24 @@ def billing_codes_api(request):
         if data is None:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-        code = data.get("code")
-        description = data.get("description")
-        amount = data.get("amount")
+        code = (data.get("code") or "").strip()
         insurance_provider = data.get("insurance_provider", "thiqa")
 
-        if not code or not description or amount in [None, ""]:
-            return JsonResponse(
-                {"error": "Code, description and amount are required"},
-                status=400,
-            )
+        try:
+            default_sessions = int(data.get("default_sessions", 6))
+            if default_sessions < 0:
+                default_sessions = 0
+        except Exception:
+            return JsonResponse({"error": "default_sessions must be a number"}, status=400)
+
+        if not code:
+            return JsonResponse({"error": "Code is required"}, status=400)
 
         obj, created = InsuranceBillingCode.objects.update_or_create(
             insurance_provider=insurance_provider,
             code=code,
             defaults={
-                "description": description,
-                "amount": amount,
+                "default_sessions": default_sessions,
             },
         )
 
@@ -296,7 +280,27 @@ def billing_codes_api(request):
             "success": True,
             "created": created,
             "id": obj.id,
-            "message": "Billing code saved successfully",
+            "message": "CPT code saved successfully",
+        })
+
+    if request.method == "DELETE":
+        data = _parse_json(request)
+        if data is None:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        code_id = data.get("id")
+        if not code_id:
+            return JsonResponse({"error": "Code id is required"}, status=400)
+
+        try:
+            obj = InsuranceBillingCode.objects.get(id=code_id)
+        except InsuranceBillingCode.DoesNotExist:
+            return JsonResponse({"error": "Code not found"}, status=404)
+
+        obj.delete()
+        return JsonResponse({
+            "success": True,
+            "message": "CPT code deleted successfully",
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)

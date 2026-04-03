@@ -32,8 +32,7 @@ export default function useApprovalsDashboard() {
   const [billingForm, setBillingForm] = useState({
     insurance_provider: "thiqa",
     code: "",
-    description: "",
-    amount: "",
+    default_sessions: 6,
   });
 
   useEffect(() => {
@@ -85,6 +84,8 @@ export default function useApprovalsDashboard() {
 
   const handleCreatePatientFile = async (e) => {
     e.preventDefault();
+    setMessage("");
+    setError("");
 
     try {
       const res = await api.post("patients/", patientForm);
@@ -112,6 +113,8 @@ export default function useApprovalsDashboard() {
 
   const handleSaveApproval = async (e) => {
     e.preventDefault();
+    setMessage("");
+    setError("");
 
     if (!selectedPatient) {
       setError("Select patient first");
@@ -157,19 +160,24 @@ export default function useApprovalsDashboard() {
 
   const handleSaveBillingCode = async (e) => {
     e.preventDefault();
+    setMessage("");
+    setError("");
 
     try {
-      await api.post("approvals/billing-codes/", billingForm);
+      await api.post("approvals/billing-codes/", {
+        insurance_provider: billingForm.insurance_provider,
+        code: billingForm.code,
+        default_sessions: Number(billingForm.default_sessions || 6),
+      });
 
       setBillingForm({
         insurance_provider: "thiqa",
         code: "",
-        description: "",
-        amount: "",
+        default_sessions: 6,
       });
 
-      loadBillingCodes();
-      setMessage("Billing saved");
+      await loadBillingCodes();
+      setMessage("CPT code saved");
     } catch {
       setError("Billing failed");
     }
@@ -193,5 +201,6 @@ export default function useApprovalsDashboard() {
     handleCreatePatientFile,
     handleSaveApproval,
     handleSaveBillingCode,
+    reloadCodes: loadBillingCodes,
   };
 }

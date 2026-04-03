@@ -7,7 +7,7 @@ import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 import AlertPanel from "../components/common/AlertPanel";
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import ApprovalEditor from "../components/approvals/ApprovalEditor";
-import BillingCodesSection from "../components/approvals/BillingCodesSection";
+import ApprovalHistorySection from "../components/approvals/ApprovalHistorySection";
 import useApprovalsDashboard from "../components/approvals/useApprovalsDashboard";
 
 export default function ApprovalsDashboard({
@@ -30,18 +30,19 @@ export default function ApprovalsDashboard({
     approvalForm,
     setApprovalForm,
     billingCodes,
-    billingForm,
-    setBillingForm,
     handleSelectPatient,
     handleCreatePatientFile,
     handleSaveApproval,
-    handleSaveBillingCode,
   } = useApprovalsDashboard();
 
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
     navigate("/admin");
   };
+
+  const hasExistingApproval = Boolean(
+    selectedPatient?.current_approval_number || approvalForm?.authorization_number
+  );
 
   return (
     <DashboardLayout
@@ -51,8 +52,11 @@ export default function ApprovalsDashboard({
       sidebarItems={[
         { key: "search", label: "Search Patient" },
         { key: "register", label: "Register Patient" },
-        { key: "approval", label: "Update Approval" },
-        { key: "billing", label: "Billing Codes" },
+        {
+          key: "approval",
+          label: hasExistingApproval ? "Update Approval" : "Add Approval",
+        },
+        { key: "history", label: "Approval History" },
       ]}
       activeSection={activeSection}
       setActiveSection={setActiveSection}
@@ -73,8 +77,10 @@ export default function ApprovalsDashboard({
       {activeSection === "search" && (
         <UnifiedPatientSearch
           title="Search Patient"
-          actionLabel="Update Approval"
+          actionLabel={hasExistingApproval ? "Update Approval" : "Add Approval"}
           onSelectPatient={handleSelectPatient}
+          noResultsText="No patients found."
+          onRegisterNew={() => setActiveSection("register")}
         />
       )}
 
@@ -97,14 +103,7 @@ export default function ApprovalsDashboard({
         />
       )}
 
-      {activeSection === "billing" && (
-        <BillingCodesSection
-          billingForm={billingForm}
-          setBillingForm={setBillingForm}
-          billingCodes={billingCodes}
-          onSubmit={handleSaveBillingCode}
-        />
-      )}
+      {activeSection === "history" && <ApprovalHistorySection />}
     </DashboardLayout>
   );
 }
