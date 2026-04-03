@@ -9,6 +9,7 @@ export default function UnifiedPatientSearch({
   debounceMs = 350,
   onSelectPatient,
   actionLabel = "Select",
+  getActionLabel,
   showOpenFile = true,
   emptyText = "Start typing to search patients.",
   noResultsText = "No patients found.",
@@ -194,7 +195,11 @@ export default function UnifiedPatientSearch({
                       onSelectPatient && onSelectPatient(patient);
                     }}
                   >
-                    {isDisabled ? disabledActionLabel : actionLabel}
+                    {isDisabled
+                      ? disabledActionLabel
+                      : getActionLabel
+                      ? getActionLabel(patient)
+                      : actionLabel}
                   </button>
                 </div>
               </div>
