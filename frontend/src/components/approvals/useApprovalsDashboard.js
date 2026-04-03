@@ -25,7 +25,6 @@ export default function useApprovalsDashboard() {
     expiry_date: "",
     approved_sessions: 0,
     approved_cpt_codes_text: "",
-    notes: "",
   });
 
   const [billingCodes, setBillingCodes] = useState([]);
@@ -70,8 +69,10 @@ export default function useApprovalsDashboard() {
           approval.authorization_number ||
           patient.current_approval_number ||
           "",
-        start_date: approval.start_date || patient.approval_start_date || "",
-        expiry_date: approval.expiry_date || patient.approval_expiry_date || "",
+        start_date:
+          approval.start_date || patient.approval_start_date || "",
+        expiry_date:
+          approval.expiry_date || patient.approval_expiry_date || "",
         approved_sessions:
           approval.approved_sessions ?? patient.approved_sessions ?? 0,
         approved_cpt_codes_text: (
@@ -79,7 +80,6 @@ export default function useApprovalsDashboard() {
           patient.approved_cpt_codes ||
           []
         ).join(","),
-        notes: approval.notes || "",
       });
     } catch {
       setError("Failed to load approval");
@@ -108,7 +108,6 @@ export default function useApprovalsDashboard() {
           expiry_date: patientForm.approval_expiry_date,
           approved_sessions: Number(patientForm.approved_sessions || 0),
           approved_cpt_codes: [],
-          notes: "",
         });
       }
 
@@ -143,23 +142,24 @@ export default function useApprovalsDashboard() {
     }
 
     try {
+      const hadExistingApproval = Boolean(selectedPatient?.current_approval_number);
+
       const payload = {
         insurance_provider: approvalForm.insurance_provider,
         authorization_number: approvalForm.authorization_number,
         start_date: approvalForm.start_date,
         expiry_date: approvalForm.expiry_date,
         approved_sessions: Number(approvalForm.approved_sessions || 0),
-        approved_cpt_codes: approvalForm.approved_cpt_codes_text
+        approved_cpt_codes: (approvalForm.approved_cpt_codes_text || "")
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean),
-        notes: approvalForm.notes,
       };
 
       await api.post(`approvals/patient-approval/${selectedPatient.id}/`, payload);
 
       setMessage(
-        selectedPatient?.current_approval_number
+        hadExistingApproval
           ? "Approval updated successfully"
           : "Approval added successfully"
       );
@@ -179,6 +179,16 @@ export default function useApprovalsDashboard() {
             }
           : prev
       );
+
+      setApprovalForm((prev) => ({
+        ...prev,
+        insurance_provider: payload.insurance_provider,
+        authorization_number: payload.authorization_number,
+        start_date: payload.start_date,
+        expiry_date: payload.expiry_date,
+        approved_sessions: payload.approved_sessions,
+        approved_cpt_codes_text: payload.approved_cpt_codes.join(","),
+      }));
     } catch (err) {
       setError(err?.response?.data?.error || "Save failed");
     }
