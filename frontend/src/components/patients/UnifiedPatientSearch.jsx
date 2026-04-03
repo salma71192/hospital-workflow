@@ -16,6 +16,7 @@ export default function UnifiedPatientSearch({
   disabledPatientIds = [],
   disabledActionLabel = "Already Assigned Today",
   getExtraBadgeText,
+  onRegisterNew,
 }) {
   const navigate = useNavigate();
 
@@ -50,11 +51,9 @@ export default function UnifiedPatientSearch({
         );
 
         if (currentRequestId !== requestIdRef.current) return;
-
         setResults(res.data.patients || []);
       } catch (err) {
         if (currentRequestId !== requestIdRef.current) return;
-        console.error("Patient live search failed", err);
         setResults([]);
       } finally {
         if (currentRequestId === requestIdRef.current) {
@@ -90,7 +89,19 @@ export default function UnifiedPatientSearch({
       )}
 
       {!loading && searchTerm.trim() && hasTyped && results.length === 0 && (
-        <div style={styles.helperText}>{noResultsText}</div>
+        <div style={styles.noResultsCard}>
+          <div style={styles.helperText}>{noResultsText}</div>
+
+          {onRegisterNew && (
+            <button
+              type="button"
+              style={styles.registerButton}
+              onClick={onRegisterNew}
+            >
+              Register New Patient
+            </button>
+          )}
+        </div>
       )}
 
       {results.length > 0 && (
@@ -156,18 +167,6 @@ export default function UnifiedPatientSearch({
                   {"approval_expiry_date" in patient && (
                     <div style={styles.resultMeta}>
                       Expiry Date: {patient.approval_expiry_date || "-"}
-                    </div>
-                  )}
-
-                  {"current_future_appointments" in patient && (
-                    <div style={styles.resultMeta}>
-                      Appointments: {patient.current_future_appointments || "-"}
-                    </div>
-                  )}
-
-                  {"taken_with" in patient && (
-                    <div style={styles.resultMeta}>
-                      Therapist Names: {patient.taken_with || "-"}
                     </div>
                   )}
                 </div>
@@ -267,6 +266,20 @@ const styles = {
     border: "1px dashed #cbd5e1",
     borderRadius: "12px",
     padding: "14px",
+  },
+  noResultsCard: {
+    display: "grid",
+    gap: "10px",
+  },
+  registerButton: {
+    width: "fit-content",
+    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "10px 14px",
+    fontWeight: "700",
+    cursor: "pointer",
   },
   resultsList: {
     display: "grid",

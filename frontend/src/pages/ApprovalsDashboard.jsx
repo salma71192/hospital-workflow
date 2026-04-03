@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
-import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 import AlertPanel from "../components/common/AlertPanel";
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import ApprovalEditor from "../components/approvals/ApprovalEditor";
 import ApprovalHistorySection from "../components/approvals/ApprovalHistorySection";
+import ApprovalsPatientRegisterForm from "../components/approvals/ApprovalsPatientRegisterForm";
 import useApprovalsDashboard from "../components/approvals/useApprovalsDashboard";
 
 export default function ApprovalsDashboard({
@@ -85,7 +85,7 @@ export default function ApprovalsDashboard({
       )}
 
       {activeSection === "register" && (
-        <PatientRegisterForm
+        <ApprovalsPatientRegisterForm
           patientForm={patientForm}
           setPatientForm={setPatientForm}
           onSubmit={handleCreatePatientFile}

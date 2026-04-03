@@ -1,6 +1,24 @@
 import React from "react";
 import PatientSummaryCard from "../patients/PatientSummaryCard";
 
+const DEFAULT_CODES = [
+  { code: "97140", default_sessions: 6 },
+  { code: "97110", default_sessions: 6 },
+  { code: "97026", default_sessions: 6 },
+  { code: "94014", default_sessions: 6 },
+];
+
+const OPTIONAL_CODES = [
+  { code: "97035", default_sessions: 6 },
+  { code: "97112", default_sessions: 6 },
+  { code: "97032", default_sessions: 6 },
+  { code: "97530", default_sessions: 6 },
+  { code: "90912", default_sessions: 6 },
+  { code: "90913", default_sessions: 6 },
+  { code: "97116", default_sessions: 6 },
+  { code: "97016", default_sessions: 6 },
+];
+
 export default function ApprovalEditor({
   selectedPatient,
   approvalForm,
@@ -13,14 +31,59 @@ export default function ApprovalEditor({
     return <div style={styles.emptyState}>Select a patient first from search.</div>;
   }
 
+  const selectedCodes = (approvalForm.approved_cpt_codes_text || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const hasExistingApproval = Boolean(
+    selectedPatient?.current_approval_number || approvalForm?.authorization_number
+  );
+
+  const toggleCode = (code, defaultSessions = 6) => {
+    let nextCodes = [...selectedCodes];
+
+    if (nextCodes.includes(code)) {
+      nextCodes = nextCodes.filter((c) => c !== code);
+    } else {
+      nextCodes.push(code);
+    }
+
+    setApprovalForm({
+      ...approvalForm,
+      approved_cpt_codes_text: nextCodes.join(","),
+      approved_sessions:
+        Number(approvalForm.approved_sessions || 0) > 0
+          ? approvalForm.approved_sessions
+          : defaultSessions,
+    });
+  };
+
+  const addAllDefaultCodes = () => {
+    const merged = [
+      ...new Set([...selectedCodes, ...DEFAULT_CODES.map((x) => x.code)]),
+    ];
+
+    setApprovalForm({
+      ...approvalForm,
+      approved_cpt_codes_text: merged.join(","),
+      approved_sessions:
+        Number(approvalForm.approved_sessions || 0) > 0
+          ? approvalForm.approved_sessions
+          : 6,
+    });
+  };
+
   return (
     <div style={styles.page}>
       <div style={styles.headerCard}>
         <div>
           <div style={styles.eyebrow}>Approval Management</div>
-          <h2 style={styles.title}>Update Approval</h2>
+          <h2 style={styles.title}>
+            {hasExistingApproval ? "Update Approval" : "Add Approval"}
+          </h2>
           <div style={styles.subtext}>
-            Review authorization details, sessions, approved CPT codes, and notes.
+            Add authorization details, sessions, and approved CPT codes.
           </div>
         </div>
       </div>
@@ -103,49 +166,41 @@ export default function ApprovalEditor({
         </div>
 
         <div style={styles.section}>
-          <div style={styles.sectionTitle}>Approved CPT Codes</div>
-          <div style={styles.sectionHint}>
-            Click codes to add or remove them from this approval.
+          <div style={styles.sectionHeader}>
+            <div>
+              <div style={styles.sectionTitle}>Default CPT Codes</div>
+              <div style={styles.sectionHint}>
+                Add the 4 default codes at once or select individually.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              style={styles.fillDefaultsButton}
+              onClick={addAllDefaultCodes}
+            >
+              Fill 4 Default Codes
+            </button>
           </div>
 
           <div style={styles.codesWrap}>
-            {billingCodes.map((code) => {
-              const selected = approvalForm.approved_cpt_codes_text
-                .split(",")
-                .map((x) => x.trim())
-                .filter(Boolean)
-                .includes(code.code);
+            {DEFAULT_CODES.map((item) => {
+              const selected = selectedCodes.includes(item.code);
 
               return (
                 <button
-                  key={code.id}
+                  key={item.code}
                   type="button"
-                  onClick={() => {
-                    let list = approvalForm.approved_cpt_codes_text
-                      .split(",")
-                      .map((x) => x.trim())
-                      .filter(Boolean);
-
-                    if (selected) {
-                      list = list.filter((c) => c !== code.code);
-                    } else {
-                      list.push(code.code);
-                    }
-
-                    setApprovalForm({
-                      ...approvalForm,
-                      approved_cpt_codes_text: list.join(","),
-                    });
-                  }}
+                  onClick={() => toggleCode(item.code, item.default_sessions)}
                   style={{
                     ...styles.codeChip,
                     ...(selected ? styles.codeChipActive : {}),
                   }}
                 >
-                  <span style={styles.codeChipCode}>{code.code}</span>
-                  {code.description ? (
-                    <span style={styles.codeChipDesc}>{code.description}</span>
-                  ) : null}
+                  <span style={styles.codeChipCode}>{item.code}</span>
+                  <span style={styles.codeChipDesc}>
+                    {item.default_sessions} sessions
+                  </span>
                 </button>
               );
             })}
@@ -153,12 +208,76 @@ export default function ApprovalEditor({
         </div>
 
         <div style={styles.section}>
+          <div style={styles.sectionTitle}>Additional CPT Codes</div>
+          <div style={styles.sectionHint}>
+            Optional extra codes you can add to the same approval.
+          </div>
+
+          <div style={styles.codesWrap}>
+            {OPTIONAL_CODES.map((item) => {
+              const selected = selectedCodes.includes(item.code);
+
+              return (
+                <button
+                  key={item.code}
+                  type="button"
+                  onClick={() => toggleCode(item.code, item.default_sessions)}
+                  style={{
+                    ...styles.codeChip,
+                    ...(selected ? styles.codeChipActive : {}),
+                  }}
+                >
+                  <span style={styles.codeChipCode}>{item.code}</span>
+                  <span style={styles.codeChipDesc}>
+                    {item.default_sessions} sessions
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {billingCodes.length > 0 && (
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>Saved CPT Defaults</div>
+            <div style={styles.sectionHint}>
+              CPT defaults already configured in the system.
+            </div>
+
+            <div style={styles.codesWrap}>
+              {billingCodes.map((item) => {
+                const selected = selectedCodes.includes(item.code);
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() =>
+                      toggleCode(item.code, item.default_sessions || 6)
+                    }
+                    style={{
+                      ...styles.codeChip,
+                      ...(selected ? styles.codeChipActive : {}),
+                    }}
+                  >
+                    <span style={styles.codeChipCode}>{item.code}</span>
+                    <span style={styles.codeChipDesc}>
+                      {item.default_sessions || 6} sessions
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div style={styles.section}>
           <div style={styles.sectionTitle}>Notes</div>
 
           <div style={styles.fieldGroup}>
             <label style={styles.label}>Internal Notes</label>
             <textarea
-              placeholder="Add notes about approval, payer comments, or follow-up needed"
+              placeholder="Add notes about approval or follow-up needed"
               value={approvalForm.notes}
               onChange={(e) =>
                 setApprovalForm({
@@ -173,7 +292,7 @@ export default function ApprovalEditor({
 
         <div style={styles.actionBar}>
           <button type="submit" style={styles.primary}>
-            Save Approval
+            {hasExistingApproval ? "Update Approval" : "Add Approval"}
           </button>
         </div>
       </form>
@@ -231,6 +350,13 @@ const styles = {
     display: "grid",
     gap: "12px",
   },
+  sectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
   sectionTitle: {
     fontSize: "16px",
     fontWeight: "800",
@@ -239,6 +365,15 @@ const styles = {
   sectionHint: {
     fontSize: "13px",
     color: "#64748b",
+  },
+  fillDefaultsButton: {
+    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "10px 14px",
+    fontWeight: "800",
+    cursor: "pointer",
   },
   formGrid: {
     display: "grid",

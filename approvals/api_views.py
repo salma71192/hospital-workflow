@@ -3,7 +3,7 @@ from datetime import datetime, date, timedelta
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-
+from django.utils import timezone
 from patients.models import Patient
 from reception.models import PatientAssignment
 from .models import PatientApproval, InsuranceBillingCode, ApprovalHistory
@@ -304,3 +304,49 @@ def billing_codes_api(request):
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
+def approval_history_api(request):
+    if not _can_use_approvals(request.user):
+        return JsonResponse({"error": "Not authorized"}, status=403)
+
+    rows = []
+    today = timezone.localdate()
+
+    approvals = (
+        PatientApproval.objects
+        .select_related("patient")
+        .all()
+        .order_by("-updated_at")
+    )
+
+    for approval in approvals:
+        patient = approval.patient
+
+        approved_quantity = approval.approved_sessions or 0
+        used_sessions = patient.sessions_taken or 0
+        remaining_sessions = max(approved_quantity - used_sessions, 0)
+
+        booked = bool((patient.current_future_appointments or "").strip())
+
+        if approval.expiry_date and approval.expiry_date < today:
+            status = "Expired"
+        elif remaining_sessions <= 1 and approved_quantity > 0:
+            status = "Renewal Needed"
+        elif remaining_sessions <= 2 and approved_quantity > 0:
+            status = "Low Sessions"
+        else:
+            status = "Active"
+
+        rows.append({
+            "patient_name": patient.name,
+            "patient_id": patient.patient_id,
+            "approval_date": str(approval.start_date) if approval.start_date else "",
+            "expiry_date": str(approval.expiry_date) if approval.expiry_date else "",
+            "approved_quantity": approved_quantity,
+            "booked": "Yes" if booked else "No",
+            "used_sessions": used_sessions,
+            "remaining_sessions": remaining_sessions,
+            "status": status,
+        })
+
+    return JsonResponse({"history": rows})

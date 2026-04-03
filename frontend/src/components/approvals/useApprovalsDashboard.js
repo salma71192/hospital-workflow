@@ -12,10 +12,10 @@ export default function useApprovalsDashboard() {
   const [patientForm, setPatientForm] = useState({
     name: "",
     patient_id: "",
-    current_approval_number: "",
-    sessions_taken: "",
-    taken_with: "",
-    current_future_appointments: "",
+    authorization_number: "",
+    approval_start_date: "",
+    approval_expiry_date: "",
+    approved_sessions: 6,
   });
 
   const [approvalForm, setApprovalForm] = useState({
@@ -29,11 +29,6 @@ export default function useApprovalsDashboard() {
   });
 
   const [billingCodes, setBillingCodes] = useState([]);
-  const [billingForm, setBillingForm] = useState({
-    insurance_provider: "thiqa",
-    code: "",
-    default_sessions: 6,
-  });
 
   useEffect(() => {
     loadBillingCodes();
@@ -69,12 +64,21 @@ export default function useApprovalsDashboard() {
       const approval = res.data.approval || {};
 
       setApprovalForm({
-        insurance_provider: approval.insurance_provider || "thiqa",
-        authorization_number: approval.authorization_number || "",
-        start_date: approval.start_date || "",
-        expiry_date: approval.expiry_date || "",
-        approved_sessions: approval.approved_sessions || 0,
-        approved_cpt_codes_text: (approval.approved_cpt_codes || []).join(","),
+        insurance_provider:
+          approval.insurance_provider || patient.insurance_provider || "thiqa",
+        authorization_number:
+          approval.authorization_number ||
+          patient.current_approval_number ||
+          "",
+        start_date: approval.start_date || patient.approval_start_date || "",
+        expiry_date: approval.expiry_date || patient.approval_expiry_date || "",
+        approved_sessions:
+          approval.approved_sessions ?? patient.approved_sessions ?? 0,
+        approved_cpt_codes_text: (
+          approval.approved_cpt_codes ||
+          patient.approved_cpt_codes ||
+          []
+        ).join(","),
         notes: approval.notes || "",
       });
     } catch {
@@ -88,26 +92,43 @@ export default function useApprovalsDashboard() {
     setError("");
 
     try {
-      const res = await api.post("patients/", patientForm);
+      const patientPayload = {
+        name: patientForm.name,
+        patient_id: patientForm.patient_id,
+      };
+
+      const res = await api.post("patients/", patientPayload);
       const patient = res.data.patient;
+
+      if (patient && patientForm.authorization_number) {
+        await api.post(`approvals/patient-approval/${patient.id}/`, {
+          insurance_provider: "thiqa",
+          authorization_number: patientForm.authorization_number,
+          start_date: patientForm.approval_start_date,
+          expiry_date: patientForm.approval_expiry_date,
+          approved_sessions: Number(patientForm.approved_sessions || 0),
+          approved_cpt_codes: [],
+          notes: "",
+        });
+      }
 
       setPatientForm({
         name: "",
         patient_id: "",
-        current_approval_number: "",
-        sessions_taken: "",
-        taken_with: "",
-        current_future_appointments: "",
+        authorization_number: "",
+        approval_start_date: "",
+        approval_expiry_date: "",
+        approved_sessions: 6,
       });
 
       if (patient) {
         await handleSelectPatient(patient);
       }
 
-      setMessage("Patient created");
+      setMessage("Patient created successfully");
       loadAlerts();
-    } catch {
-      setError("Create failed");
+    } catch (err) {
+      setError(err?.response?.data?.error || "Create failed");
     }
   };
 
@@ -122,7 +143,7 @@ export default function useApprovalsDashboard() {
     }
 
     try {
-      await api.post(`approvals/patient-approval/${selectedPatient.id}/`, {
+      const payload = {
         insurance_provider: approvalForm.insurance_provider,
         authorization_number: approvalForm.authorization_number,
         start_date: approvalForm.start_date,
@@ -133,53 +154,33 @@ export default function useApprovalsDashboard() {
           .map((x) => x.trim())
           .filter(Boolean),
         notes: approvalForm.notes,
-      });
+      };
 
-      setMessage("Approval saved");
+      await api.post(`approvals/patient-approval/${selectedPatient.id}/`, payload);
+
+      setMessage(
+        selectedPatient?.current_approval_number
+          ? "Approval updated successfully"
+          : "Approval added successfully"
+      );
+
       loadAlerts();
 
       setSelectedPatient((prev) =>
         prev
           ? {
               ...prev,
-              current_approval_number: approvalForm.authorization_number,
-              approval_start_date: approvalForm.start_date,
-              approval_expiry_date: approvalForm.expiry_date,
-              approved_sessions: Number(approvalForm.approved_sessions || 0),
-              approved_cpt_codes: approvalForm.approved_cpt_codes_text
-                .split(",")
-                .map((x) => x.trim())
-                .filter(Boolean),
+              insurance_provider: payload.insurance_provider,
+              current_approval_number: payload.authorization_number,
+              approval_start_date: payload.start_date,
+              approval_expiry_date: payload.expiry_date,
+              approved_sessions: payload.approved_sessions,
+              approved_cpt_codes: payload.approved_cpt_codes,
             }
           : prev
       );
-    } catch {
-      setError("Save failed");
-    }
-  };
-
-  const handleSaveBillingCode = async (e) => {
-    e.preventDefault();
-    setMessage("");
-    setError("");
-
-    try {
-      await api.post("approvals/billing-codes/", {
-        insurance_provider: billingForm.insurance_provider,
-        code: billingForm.code,
-        default_sessions: Number(billingForm.default_sessions || 6),
-      });
-
-      setBillingForm({
-        insurance_provider: "thiqa",
-        code: "",
-        default_sessions: 6,
-      });
-
-      await loadBillingCodes();
-      setMessage("CPT code saved");
-    } catch {
-      setError("Billing failed");
+    } catch (err) {
+      setError(err?.response?.data?.error || "Save failed");
     }
   };
 
@@ -195,12 +196,8 @@ export default function useApprovalsDashboard() {
     approvalForm,
     setApprovalForm,
     billingCodes,
-    billingForm,
-    setBillingForm,
     handleSelectPatient,
     handleCreatePatientFile,
     handleSaveApproval,
-    handleSaveBillingCode,
-    reloadCodes: loadBillingCodes,
   };
 }

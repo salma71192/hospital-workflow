@@ -4,6 +4,7 @@ from .api_views import (
     billing_codes_api,
     approvals_alerts_api,
     physio_alerts_api,
+    approval_history_api,
 )
 
 urlpatterns = [
@@ -11,4 +12,5 @@ urlpatterns = [
     path("billing-codes/", billing_codes_api),
     path("alerts/", approvals_alerts_api),
     path("physio-alerts/", physio_alerts_api),
+    path("history/", approval_history_api),
 ]
