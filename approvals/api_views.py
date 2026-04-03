@@ -4,6 +4,7 @@ from datetime import datetime, date, timedelta
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
+
 from patients.models import Patient
 from reception.models import PatientAssignment
 from .models import PatientApproval, InsuranceBillingCode, ApprovalHistory
@@ -83,11 +84,17 @@ def patient_approval_api(request, patient_id):
             if approved_sessions < 0:
                 approved_sessions = 0
         except Exception:
-            return JsonResponse({"error": "approved_sessions must be a number"}, status=400)
+            return JsonResponse(
+                {"error": "approved_sessions must be a number"},
+                status=400,
+            )
 
         codes = data.get("approved_cpt_codes", [])
         if not isinstance(codes, list):
-            return JsonResponse({"error": "approved_cpt_codes must be a list"}, status=400)
+            return JsonResponse(
+                {"error": "approved_cpt_codes must be a list"},
+                status=400,
+            )
 
         insurance_provider = data.get("insurance_provider", "thiqa")
         authorization_number = data.get("authorization_number") or None
@@ -263,7 +270,10 @@ def billing_codes_api(request):
             if default_sessions < 0:
                 default_sessions = 0
         except Exception:
-            return JsonResponse({"error": "default_sessions must be a number"}, status=400)
+            return JsonResponse(
+                {"error": "default_sessions must be a number"},
+                status=400,
+            )
 
         if not code:
             return JsonResponse({"error": "Code is required"}, status=400)
@@ -304,6 +314,7 @@ def billing_codes_api(request):
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
 
 def approval_history_api(request):
     if not _can_use_approvals(request.user):
@@ -350,3 +361,88 @@ def approval_history_api(request):
         })
 
     return JsonResponse({"history": rows})
+
+
+def patient_approval_timeline_api(request, patient_id):
+    if not _can_use_approvals(request.user):
+        return JsonResponse({"error": "Not authorized"}, status=403)
+
+    try:
+        patient = Patient.objects.get(id=patient_id)
+    except Patient.DoesNotExist:
+        return JsonResponse({"error": "Patient not found"}, status=404)
+
+    today = timezone.localdate()
+    rows = []
+
+    history_items = (
+        ApprovalHistory.objects
+        .filter(patient=patient)
+        .order_by("-created_at")
+    )
+
+    current_used_sessions = patient.sessions_taken or 0
+
+    for item in history_items:
+        approved_quantity = item.approved_sessions or 0
+        remaining_sessions = max(approved_quantity - current_used_sessions, 0)
+
+        if item.expiry_date and item.expiry_date < today:
+            status = "Expired"
+        elif remaining_sessions <= 1 and approved_quantity > 0:
+            status = "Renewal Needed"
+        elif remaining_sessions <= 2 and approved_quantity > 0:
+            status = "Low Sessions"
+        else:
+            status = "Active"
+
+        rows.append({
+            "id": item.id,
+            "authorization_number": item.authorization_number or "",
+            "approval_date": str(item.created_at.date()) if item.created_at else "",
+            "start_date": str(item.created_at.date()) if item.created_at else "",
+            "expiry_date": str(item.expiry_date) if item.expiry_date else "",
+            "approved_sessions": approved_quantity,
+            "used_sessions": current_used_sessions,
+            "remaining_sessions": remaining_sessions,
+            "status": status,
+            "insurance_provider": item.insurance_provider or "thiqa",
+            "approved_cpt_codes": item.approved_cpt_codes or [],
+        })
+
+    current_approval = getattr(patient, "approval_record", None)
+    if current_approval and not history_items.exists():
+        approved_quantity = current_approval.approved_sessions or 0
+        remaining_sessions = max(approved_quantity - current_used_sessions, 0)
+
+        if current_approval.expiry_date and current_approval.expiry_date < today:
+            status = "Expired"
+        elif remaining_sessions <= 1 and approved_quantity > 0:
+            status = "Renewal Needed"
+        elif remaining_sessions <= 2 and approved_quantity > 0:
+            status = "Low Sessions"
+        else:
+            status = "Active"
+
+        rows.append({
+            "id": f"current-{patient.id}",
+            "authorization_number": current_approval.authorization_number or "",
+            "approval_date": str(current_approval.updated_at.date()) if current_approval.updated_at else "",
+            "start_date": str(current_approval.start_date) if current_approval.start_date else "",
+            "expiry_date": str(current_approval.expiry_date) if current_approval.expiry_date else "",
+            "approved_sessions": approved_quantity,
+            "used_sessions": current_used_sessions,
+            "remaining_sessions": remaining_sessions,
+            "status": status,
+            "insurance_provider": current_approval.insurance_provider or "thiqa",
+            "approved_cpt_codes": current_approval.approved_cpt_codes or [],
+        })
+
+    return JsonResponse({
+        "patient": {
+            "id": patient.id,
+            "name": patient.name,
+            "patient_id": patient.patient_id,
+        },
+        "timeline": rows,
+    })

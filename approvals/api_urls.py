@@ -5,10 +5,12 @@ from .api_views import (
     approvals_alerts_api,
     physio_alerts_api,
     approval_history_api,
+    patient_approval_timeline_api,
 )
 
 urlpatterns = [
     path("patient-approval/<int:patient_id>/", patient_approval_api),
+    path("patient-approval-timeline/<int:patient_id>/", patient_approval_timeline_api),
     path("billing-codes/", billing_codes_api),
     path("alerts/", approvals_alerts_api),
     path("physio-alerts/", physio_alerts_api),

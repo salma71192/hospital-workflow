@@ -1,5 +1,6 @@
 import React from "react";
 import PatientSummaryCard from "../patients/PatientSummaryCard";
+import PatientApprovalTimeline from "./PatientApprovalTimeline";
 
 const DEFAULT_CODES = [
   { code: "97140", default_sessions: 6 },
@@ -28,7 +29,11 @@ export default function ApprovalEditor({
   onReloadPatient,
 }) {
   if (!selectedPatient) {
-    return <div style={styles.emptyState}>Select a patient first from search.</div>;
+    return (
+      <div style={styles.emptyState}>
+        Select a patient first from search.
+      </div>
+    );
   }
 
   const selectedCodes = (approvalForm.approved_cpt_codes_text || "")
@@ -95,6 +100,8 @@ export default function ApprovalEditor({
           actionLabel="Reload"
         />
       </div>
+
+      <PatientApprovalTimeline patientId={selectedPatient.id} />
 
       <form onSubmit={onSubmit} style={styles.formCard}>
         <div style={styles.section}>
