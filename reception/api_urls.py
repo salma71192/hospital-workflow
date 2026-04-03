@@ -1,5 +1,6 @@
 from django.urls import path
 from .api_views import (
+    last_therapist_api,
     therapists_api,
     assignments_api,
     staff_filters_api,
@@ -14,4 +15,5 @@ urlpatterns = [
     path("staff-filters/", staff_filters_api, name="staff_filters_api"),
     path("physio-tracker/", physio_tracker_api, name="physio_tracker_api"),
     path("follow-up-required/", follow_up_required_api, name="follow_up_required_api"),
+    path("last-therapist/<int:patient_id>/", last_therapist_api),
 ]

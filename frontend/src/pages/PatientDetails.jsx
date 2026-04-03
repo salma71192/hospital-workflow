@@ -16,7 +16,7 @@ export default function PatientDetails() {
       setError("");
       const res = await api.get(`patients/${id}/`);
       setPatient(res.data.patient || null);
-    } catch (err) {
+    } catch {
       setError("Failed to load patient file");
       setPatient(null);
     } finally {

@@ -20,26 +20,42 @@ export default function PatientTrackerTable({
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={styles.th}>Patient ID</th>
                 <th style={styles.th}>Patient Name</th>
-                <th style={styles.th}>Therapist</th>
+                <th style={styles.th}>Patient ID</th>
                 <th style={styles.th}>Approved Sessions</th>
-                <th style={styles.th}>Utilized This Month</th>
-                <th style={styles.th}>Approval No.</th>
+                <th style={styles.th}>Utilized</th>
+                <th style={styles.th}>Remaining</th>
+                <th style={styles.th}>Status</th>
                 <th style={styles.th}>Latest Seen</th>
                 <th style={styles.th}>Appointments</th>
                 <th style={styles.th}>File</th>
               </tr>
             </thead>
+
             <tbody>
               {patients.map((row) => (
                 <tr key={row.id}>
-                  <td style={styles.td}>{row.patient_id}</td>
                   <td style={styles.tdBold}>{row.name}</td>
-                  <td style={styles.td}>{row.therapist_name || "-"}</td>
+                  <td style={styles.td}>{row.patient_id}</td>
                   <td style={styles.td}>{row.approved_sessions ?? 0}</td>
                   <td style={styles.td}>{row.sessions_taken ?? 0}</td>
-                  <td style={styles.td}>{row.current_approval_number || "-"}</td>
+                  <td style={styles.td}>{row.remaining_sessions ?? 0}</td>
+                  <td style={styles.td}>
+                    <span
+                      style={{
+                        ...styles.statusBadge,
+                        ...(row.status === "expired"
+                          ? styles.statusExpired
+                          : row.status === "inactive"
+                          ? styles.statusInactive
+                          : row.status === "irregular"
+                          ? styles.statusIrregular
+                          : styles.statusActive),
+                      }}
+                    >
+                      {row.status}
+                    </span>
+                  </td>
                   <td style={styles.td}>{row.latest_seen_date || "-"}</td>
                   <td style={styles.td}>
                     {row.current_future_appointments || "-"}
@@ -105,7 +121,7 @@ const styles = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "1200px",
+    minWidth: "1000px",
     background: "#fff",
   },
   th: {
@@ -122,7 +138,6 @@ const styles = {
     color: "#475569",
     fontSize: "14px",
     borderBottom: "1px solid #eef2f7",
-    verticalAlign: "top",
   },
   tdBold: {
     padding: "14px 16px",
@@ -130,7 +145,6 @@ const styles = {
     fontSize: "14px",
     fontWeight: "700",
     borderBottom: "1px solid #eef2f7",
-    verticalAlign: "top",
   },
   openButton: {
     background: "#0ea5e9",
@@ -140,7 +154,30 @@ const styles = {
     padding: "8px 12px",
     fontWeight: "700",
     cursor: "pointer",
-    whiteSpace: "nowrap",
+  },
+  statusBadge: {
+    padding: "6px 10px",
+    borderRadius: "999px",
+    fontSize: "12px",
+    fontWeight: "800",
+    textTransform: "capitalize",
+    display: "inline-block",
+  },
+  statusActive: {
+    background: "#dcfce7",
+    color: "#166534",
+  },
+  statusIrregular: {
+    background: "#fef3c7",
+    color: "#92400e",
+  },
+  statusInactive: {
+    background: "#e5e7eb",
+    color: "#374151",
+  },
+  statusExpired: {
+    background: "#fee2e2",
+    color: "#b91c1c",
   },
   emptyState: {
     padding: "18px",

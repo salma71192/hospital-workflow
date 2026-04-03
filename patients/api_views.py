@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.db.models import Q
 import json
 
 from .models import Patient
@@ -15,9 +16,9 @@ def patients_api(request):
         patients_qs = Patient.objects.all().order_by("-created_at")
 
         if search:
-            patients_qs = patients_qs.filter(name__icontains=search) | Patient.objects.filter(
-                patient_id__icontains=search
-            )
+            patients_qs = patients_qs.filter(
+                Q(name__icontains=search) | Q(patient_id__icontains=search)
+            ).order_by("-created_at")
 
         patients = list(
             patients_qs.values(
@@ -25,12 +26,14 @@ def patients_api(request):
                 "name",
                 "patient_id",
                 "current_approval_number",
+                "approval_start_date",
+                "approval_expiry_date",
                 "approved_sessions",
-                "utilized_sessions",
-                "number_of_evaluations",
-                "booking",
+                "approved_cpt_codes",
+                "sessions_taken",
                 "taken_with",
                 "current_future_appointments",
+                "insurance_provider",
                 "created_at",
             )
         )
@@ -39,10 +42,15 @@ def patients_api(request):
     if request.method == "POST":
         if not (
             request.user.is_superuser
-            or getattr(request.user, "role", "") in ["admin", "reception", "reception_supervisor"]
+            or getattr(request.user, "role", "") in [
+                "admin",
+                "reception",
+                "reception_supervisor",
+                "approvals",
+            ]
         ):
             return JsonResponse(
-                {"error": "Only admin or reception can create patient files"},
+                {"error": "Not allowed to create patients"},
                 status=403,
             )
 
@@ -53,13 +61,6 @@ def patients_api(request):
 
         name = data.get("name")
         patient_id = data.get("patient_id")
-        current_approval_number = data.get("current_approval_number")
-        approved_sessions = data.get("approved_sessions", 0)
-        utilized_sessions = data.get("utilized_sessions", 0)
-        number_of_evaluations = data.get("number_of_evaluations", 0)
-        booking = data.get("booking")
-        taken_with = data.get("taken_with")
-        current_future_appointments = data.get("current_future_appointments")
 
         if not name or not patient_id:
             return JsonResponse(
@@ -76,13 +77,6 @@ def patients_api(request):
         patient = Patient.objects.create(
             name=name,
             patient_id=patient_id,
-            current_approval_number=current_approval_number or None,
-            approved_sessions=approved_sessions or 0,
-            utilized_sessions=utilized_sessions or 0,
-            number_of_evaluations=number_of_evaluations or 0,
-            booking=booking or None,
-            taken_with=taken_with or None,
-            current_future_appointments=current_future_appointments or None,
         )
 
         return JsonResponse({
@@ -93,13 +87,46 @@ def patients_api(request):
                 "name": patient.name,
                 "patient_id": patient.patient_id,
                 "current_approval_number": patient.current_approval_number,
+                "approval_start_date": patient.approval_start_date,
+                "approval_expiry_date": patient.approval_expiry_date,
                 "approved_sessions": patient.approved_sessions,
-                "utilized_sessions": patient.utilized_sessions,
-                "number_of_evaluations": patient.number_of_evaluations,
-                "booking": patient.booking,
+                "approved_cpt_codes": patient.approved_cpt_codes,
+                "sessions_taken": patient.sessions_taken,
                 "taken_with": patient.taken_with,
                 "current_future_appointments": patient.current_future_appointments,
+                "insurance_provider": patient.insurance_provider,
             },
+        })
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+def patient_detail_api(request, patient_id):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    try:
+        patient = Patient.objects.get(id=patient_id)
+    except Patient.DoesNotExist:
+        return JsonResponse({"error": "Patient not found"}, status=404)
+
+    if request.method == "GET":
+        return JsonResponse({
+            "patient": {
+                "id": patient.id,
+                "name": patient.name,
+                "patient_id": patient.patient_id,
+                "current_approval_number": patient.current_approval_number,
+                "approval_start_date": str(patient.approval_start_date) if patient.approval_start_date else "",
+                "approval_expiry_date": str(patient.approval_expiry_date) if patient.approval_expiry_date else "",
+                "approved_sessions": patient.approved_sessions,
+                "approved_cpt_codes": patient.approved_cpt_codes or [],
+                "sessions_taken": patient.sessions_taken,
+                "taken_with": patient.taken_with,
+                "current_future_appointments": patient.current_future_appointments,
+                "insurance_provider": patient.insurance_provider or "",
+            }
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
