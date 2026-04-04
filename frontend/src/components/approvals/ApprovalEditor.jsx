@@ -24,9 +24,9 @@ export default function ApprovalEditor({
   selectedPatient,
   approvalForm,
   setApprovalForm,
-  billingCodes = [],
   onSubmit,
   onReloadPatient,
+  onDeleteApproval,
 }) {
   if (!selectedPatient) {
     return (
@@ -42,7 +42,8 @@ export default function ApprovalEditor({
     .filter(Boolean);
 
   const hasExistingApproval = Boolean(
-    selectedPatient?.current_approval_number || approvalForm?.authorization_number
+    selectedPatient?.current_approval_number ||
+      approvalForm?.authorization_number
   );
 
   const toggleCode = (code, defaultSessions = 6) => {
@@ -85,10 +86,10 @@ export default function ApprovalEditor({
         <div>
           <div style={styles.eyebrow}>Approval Management</div>
           <h2 style={styles.title}>
-            {hasExistingApproval ? "Update Approval" : "Add Approval"}
+            {hasExistingApproval ? "Edit Current Approval" : "Add New Approval"}
           </h2>
           <div style={styles.subtext}>
-            Add authorization details, sessions, and approved CPT codes.
+            Manage authorization details, sessions, and approved CPT codes.
           </div>
         </div>
       </div>
@@ -128,7 +129,6 @@ export default function ApprovalEditor({
               <input
                 type="number"
                 min="0"
-                placeholder="Enter approved sessions"
                 value={approvalForm.approved_sessions}
                 onChange={(e) =>
                   setApprovalForm({
@@ -244,62 +244,23 @@ export default function ApprovalEditor({
           </div>
         </div>
 
-        {billingCodes.length > 0 && (
-          <div style={styles.section}>
-            <div style={styles.sectionTitle}>Saved CPT Defaults</div>
-            <div style={styles.sectionHint}>
-              CPT defaults already configured in the system.
-            </div>
-
-            <div style={styles.codesWrap}>
-              {billingCodes.map((item) => {
-                const selected = selectedCodes.includes(item.code);
-
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() =>
-                      toggleCode(item.code, item.default_sessions || 6)
-                    }
-                    style={{
-                      ...styles.codeChip,
-                      ...(selected ? styles.codeChipActive : {}),
-                    }}
-                  >
-                    <span style={styles.codeChipCode}>{item.code}</span>
-                    <span style={styles.codeChipDesc}>
-                      {item.default_sessions || 6} sessions
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>Notes</div>
-
-          <div style={styles.fieldGroup}>
-            <label style={styles.label}>Internal Notes</label>
-            <textarea
-              placeholder="Add notes about approval or follow-up needed"
-              value={approvalForm.notes}
-              onChange={(e) =>
-                setApprovalForm({
-                  ...approvalForm,
-                  notes: e.target.value,
-                })
-              }
-              style={styles.textarea}
-            />
-          </div>
-        </div>
-
         <div style={styles.actionBar}>
+          <div style={styles.leftActions}>
+            {hasExistingApproval ? (
+              <button
+                type="button"
+                style={styles.deleteButton}
+                onClick={() =>
+                  onDeleteApproval && onDeleteApproval(selectedPatient)
+                }
+              >
+                Delete Approval
+              </button>
+            ) : null}
+          </div>
+
           <button type="submit" style={styles.primary}>
-            {hasExistingApproval ? "Update Approval" : "Add Approval"}
+            Save
           </button>
         </div>
       </form>
@@ -404,15 +365,6 @@ const styles = {
     background: "#fff",
     outline: "none",
   },
-  textarea: {
-    minHeight: "110px",
-    padding: "12px 14px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    fontSize: "15px",
-    resize: "vertical",
-    outline: "none",
-  },
   codesWrap: {
     display: "flex",
     flexWrap: "wrap",
@@ -443,12 +395,26 @@ const styles = {
   },
   actionBar: {
     display: "flex",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingTop: "8px",
     borderTop: "1px solid #e2e8f0",
   },
+  leftActions: {
+    display: "flex",
+    gap: "10px",
+  },
   primary: {
     background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+    color: "#fff",
+    padding: "12px 20px",
+    border: "none",
+    borderRadius: "10px",
+    fontWeight: "800",
+    cursor: "pointer",
+  },
+  deleteButton: {
+    background: "#dc2626",
     color: "#fff",
     padding: "12px 20px",
     border: "none",
