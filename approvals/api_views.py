@@ -382,6 +382,7 @@ def approval_history_api(request):
             "patient_id_db": patient.id,
             "patient_name": patient.name,
             "patient_id": patient.patient_id,
+            "authorization_number": approval.authorization_number or "",
             "approval_date": str(approval.start_date) if approval.start_date else "",
             "expiry_date": str(approval.expiry_date) if approval.expiry_date else "",
             "approved_quantity": approved_quantity,

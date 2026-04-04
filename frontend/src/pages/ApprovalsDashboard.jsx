@@ -54,7 +54,7 @@ export default function ApprovalsDashboard({
         { key: "register", label: "Register Patient" },
         {
           key: "approval",
-          label: hasExistingApproval ? "Update Approval" : "Add Approval",
+          label: hasExistingApproval ? "Edit Current Approval" : "Add New Approval",
         },
         { key: "history", label: "Approval History" },
       ]}
@@ -77,10 +77,12 @@ export default function ApprovalsDashboard({
       {activeSection === "search" && (
         <UnifiedPatientSearch
           title="Search Patient"
-          actionLabel={hasExistingApproval ? "Update Approval" : "Add Approval"}
           onSelectPatient={handleSelectPatient}
           noResultsText="No patients found."
           onRegisterNew={() => setActiveSection("register")}
+          getActionLabel={(patient) =>
+            patient?.current_approval_number ? "Edit Approval" : "Add New Approval"
+          }
         />
       )}
 
@@ -103,7 +105,9 @@ export default function ApprovalsDashboard({
         />
       )}
 
-      {activeSection === "history" && <ApprovalHistorySection />}
+      {activeSection === "history" && (
+  <ApprovalHistorySection onEditApproval={handleSelectPatient} />
+)}
     </DashboardLayout>
   );
 }

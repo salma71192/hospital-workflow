@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/api";
 
-export default function ApprovalHistorySection() {
+export default function ApprovalHistorySection({ onEditApproval }) {
   const navigate = useNavigate();
   const defaultMonth = new Date().toISOString().slice(0, 7);
 
@@ -112,13 +112,34 @@ export default function ApprovalHistorySection() {
                     <span style={getStatusStyle(row.status)}>{row.status}</span>
                   </td>
                   <td style={styles.td}>
-                    <button
-                      type="button"
-                      style={styles.openButton}
-                      onClick={() => navigate(`/patients/${row.patient_id_db}`)}
-                    >
-                      Open File
-                    </button>
+                    <div style={styles.actionButtons}>
+                      <button
+                        type="button"
+                        style={styles.openButton}
+                        onClick={() => navigate(`/patients/${row.patient_id_db}`)}
+                      >
+                        Open File
+                      </button>
+
+                      <button
+                        type="button"
+                        style={styles.editButton}
+                        onClick={() =>
+                          onEditApproval &&
+                          onEditApproval({
+                            id: row.patient_id_db,
+                            name: row.patient_name,
+                            patient_id: row.patient_id,
+                            current_approval_number: row.authorization_number || "",
+                            approval_start_date: row.approval_date || "",
+                            approval_expiry_date: row.expiry_date || "",
+                            approved_sessions: row.approved_quantity || 0,
+                          })
+                        }
+                      >
+                        Edit Approval
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -204,7 +225,7 @@ const styles = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "1100px",
+    minWidth: "1180px",
   },
   th: {
     textAlign: "left",
@@ -220,6 +241,11 @@ const styles = {
     fontSize: "14px",
     color: "#0f172a",
     verticalAlign: "middle",
+  },
+  actionButtons: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
   },
   statusBadge: {
     padding: "4px 10px",
@@ -242,6 +268,15 @@ const styles = {
   },
   openButton: {
     background: "#0ea5e9",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "8px 12px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+  editButton: {
+    background: "#16a34a",
     color: "#fff",
     border: "none",
     borderRadius: "10px",
