@@ -33,6 +33,7 @@ export default function ApprovalsDashboard({
     handleSelectPatient,
     handleCreatePatientFile,
     handleSaveApproval,
+    handleDeleteApproval,
   } = useApprovalsDashboard();
 
   const handleBackToAdmin = () => {
@@ -102,12 +103,13 @@ export default function ApprovalsDashboard({
           billingCodes={billingCodes}
           onSubmit={handleSaveApproval}
           onReloadPatient={handleSelectPatient}
+          onDeleteApproval={handleDeleteApproval}
         />
       )}
 
       {activeSection === "history" && (
-  <ApprovalHistorySection onEditApproval={handleSelectPatient} />
-)}
+        <ApprovalHistorySection onEditApproval={handleSelectPatient} />
+      )}
     </DashboardLayout>
   );
 }
