@@ -97,8 +97,24 @@ def patient_approval_api(request, patient_id):
             )
 
         insurance_provider = data.get("insurance_provider", "thiqa")
-        authorization_number = data.get("authorization_number") or None
+        authorization_number = (data.get("authorization_number") or "").strip() or None
         notes = data.get("notes") or None
+
+        if authorization_number:
+            duplicate = (
+                PatientApproval.objects
+                .filter(authorization_number=authorization_number)
+                .exclude(patient=patient)
+                .select_related("patient")
+                .first()
+            )
+            if duplicate:
+                return JsonResponse(
+                    {
+                        "error": f"Authorization number already used for patient {duplicate.patient.name}"
+                    },
+                    status=400,
+                )
 
         ApprovalHistory.objects.create(
             patient=patient,
@@ -322,6 +338,7 @@ def approval_history_api(request):
 
     rows = []
     today = timezone.localdate()
+    month = (request.GET.get("month") or "").strip()
 
     approvals = (
         PatientApproval.objects
@@ -329,6 +346,19 @@ def approval_history_api(request):
         .all()
         .order_by("-updated_at")
     )
+
+    if month:
+        try:
+            year, month_num = month.split("-")
+            approvals = approvals.filter(
+                updated_at__year=int(year),
+                updated_at__month=int(month_num),
+            )
+        except Exception:
+            return JsonResponse(
+                {"error": "Invalid month format. Use YYYY-MM"},
+                status=400,
+            )
 
     for approval in approvals:
         patient = approval.patient
@@ -349,6 +379,7 @@ def approval_history_api(request):
             status = "Active"
 
         rows.append({
+            "patient_id_db": patient.id,
             "patient_name": patient.name,
             "patient_id": patient.patient_id,
             "approval_date": str(approval.start_date) if approval.start_date else "",
