@@ -125,7 +125,7 @@ export default function useApprovalsDashboard() {
       }
 
       setMessage("Patient created successfully");
-      loadAlerts();
+      await loadAlerts();
     } catch (err) {
       setError(err?.response?.data?.error || "Create failed");
     }
@@ -142,7 +142,9 @@ export default function useApprovalsDashboard() {
     }
 
     try {
-      const hadExistingApproval = Boolean(selectedPatient?.current_approval_number);
+      const hadExistingApproval = Boolean(
+        selectedPatient?.current_approval_number
+      );
 
       const payload = {
         insurance_provider: approvalForm.insurance_provider,
@@ -164,31 +166,31 @@ export default function useApprovalsDashboard() {
           : "Approval added successfully"
       );
 
-      loadAlerts();
+      await loadAlerts();
 
-      setSelectedPatient((prev) =>
-        prev
-          ? {
-              ...prev,
-              insurance_provider: payload.insurance_provider,
-              current_approval_number: payload.authorization_number,
-              approval_start_date: payload.start_date,
-              approval_expiry_date: payload.expiry_date,
-              approved_sessions: payload.approved_sessions,
-              approved_cpt_codes: payload.approved_cpt_codes,
-            }
-          : prev
-      );
+      const refreshedPatient = {
+        ...selectedPatient,
+        insurance_provider: payload.insurance_provider,
+        current_approval_number: payload.authorization_number,
+        approval_start_date: payload.start_date,
+        approval_expiry_date: payload.expiry_date,
+        approved_sessions: payload.approved_sessions,
+        approved_cpt_codes: payload.approved_cpt_codes,
+      };
 
-      setApprovalForm((prev) => ({
-        ...prev,
+      setSelectedPatient(refreshedPatient);
+
+      setApprovalForm({
         insurance_provider: payload.insurance_provider,
         authorization_number: payload.authorization_number,
         start_date: payload.start_date,
         expiry_date: payload.expiry_date,
         approved_sessions: payload.approved_sessions,
         approved_cpt_codes_text: payload.approved_cpt_codes.join(","),
-      }));
+      });
+
+      await handleSelectPatient(refreshedPatient);
+      setActiveSection("approval");
     } catch (err) {
       setError(err?.response?.data?.error || "Save failed");
     }
