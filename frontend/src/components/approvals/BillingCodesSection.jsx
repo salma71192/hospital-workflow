@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import api from "../../api/api";
 import BillingCodePresets from "./BillingCodePresets";
 
@@ -10,11 +10,21 @@ export default function BillingCodesSection({
   reloadCodes,
 }) {
   const [editingId, setEditingId] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAddingDefaults, setIsAddingDefaults] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const provider = billingForm?.insurance_provider || "thiqa";
+  const normalizedCode = useMemo(
+    () => String(billingForm?.code || "").trim().toUpperCase(),
+    [billingForm?.code]
+  );
 
   const resetForm = () => {
     setEditingId(null);
     setBillingForm((prev) => ({
       ...prev,
+      insurance_provider: prev?.insurance_provider || "thiqa",
       code: "",
       default_sessions: 6,
     }));
@@ -30,10 +40,14 @@ export default function BillingCodesSection({
   };
 
   const handleAddDefaultCodes = async (codes) => {
+    if (!codes?.length) return;
+
     try {
+      setIsAddingDefaults(true);
+
       for (const item of codes) {
         await api.post("approvals/billing-codes/", {
-          insurance_provider: "thiqa",
+          insurance_provider: provider,
           code: item.code,
           default_sessions: item.default_sessions,
         });
@@ -44,6 +58,8 @@ export default function BillingCodesSection({
       }
     } catch (err) {
       console.error("Failed to add default codes", err);
+    } finally {
+      setIsAddingDefaults(false);
     }
   };
 
@@ -51,6 +67,7 @@ export default function BillingCodesSection({
     setEditingId(item.id);
     setBillingForm((prev) => ({
       ...prev,
+      insurance_provider: item.insurance_provider || "thiqa",
       code: item.code,
       default_sessions: item.default_sessions,
     }));
@@ -61,6 +78,8 @@ export default function BillingCodesSection({
     if (!confirmed) return;
 
     try {
+      setDeletingId(id);
+
       await api.delete("approvals/billing-codes/", {
         data: { id },
       });
@@ -74,13 +93,33 @@ export default function BillingCodesSection({
       }
     } catch (err) {
       console.error("Delete failed", err);
+    } finally {
+      setDeletingId(null);
     }
   };
 
   const wrappedSubmit = async (e) => {
     e.preventDefault();
-    await onSubmit(e);
-    resetForm();
+
+    if (!normalizedCode) return;
+
+    try {
+      setIsSubmitting(true);
+
+      await onSubmit({
+        ...e,
+        editingId,
+        payloadOverride: {
+          insurance_provider: provider,
+          code: normalizedCode,
+          default_sessions: Number(billingForm?.default_sessions ?? 6),
+        },
+      });
+
+      resetForm();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -89,6 +128,7 @@ export default function BillingCodesSection({
         existingCodes={billingCodes}
         onPickCode={handlePickPreset}
         onAddDefaultCodes={handleAddDefaultCodes}
+        disabled={isAddingDefaults || isSubmitting}
       />
 
       <div style={styles.card}>
@@ -103,12 +143,32 @@ export default function BillingCodesSection({
         <form onSubmit={wrappedSubmit} style={styles.form}>
           <div style={styles.formGrid}>
             <div style={styles.fieldGroup}>
+              <label style={styles.label}>Insurance Provider</label>
+              <select
+                value={provider}
+                onChange={(e) =>
+                  setBillingForm({
+                    ...billingForm,
+                    insurance_provider: e.target.value,
+                  })
+                }
+                style={styles.input}
+              >
+                <option value="thiqa">Thiqa</option>
+                <option value="daman">Daman</option>
+              </select>
+            </div>
+
+            <div style={styles.fieldGroup}>
               <label style={styles.label}>CPT Code</label>
               <input
                 placeholder="Enter CPT code"
-                value={billingForm.code}
+                value={billingForm?.code || ""}
                 onChange={(e) =>
-                  setBillingForm({ ...billingForm, code: e.target.value })
+                  setBillingForm({
+                    ...billingForm,
+                    code: e.target.value.toUpperCase(),
+                  })
                 }
                 style={styles.input}
               />
@@ -120,7 +180,7 @@ export default function BillingCodesSection({
                 type="number"
                 min="0"
                 placeholder="Enter default sessions"
-                value={billingForm.default_sessions ?? 6}
+                value={billingForm?.default_sessions ?? 6}
                 onChange={(e) =>
                   setBillingForm({
                     ...billingForm,
@@ -138,13 +198,25 @@ export default function BillingCodesSection({
                 type="button"
                 style={styles.secondary}
                 onClick={resetForm}
+                disabled={isSubmitting}
               >
                 Cancel Edit
               </button>
             ) : null}
 
-            <button type="submit" style={styles.primary}>
-              {editingId ? "Update CPT Code" : "Save CPT Code"}
+            <button
+              type="submit"
+              style={{
+                ...styles.primary,
+                ...(!normalizedCode || isSubmitting ? styles.primaryDisabled : {}),
+              }}
+              disabled={!normalizedCode || isSubmitting}
+            >
+              {isSubmitting
+                ? "Saving..."
+                : editingId
+                ? "Update CPT Code"
+                : "Save CPT Code"}
             </button>
           </div>
         </form>
@@ -162,6 +234,9 @@ export default function BillingCodesSection({
             {billingCodes.map((item) => (
               <div key={item.id} style={styles.billingCard}>
                 <div style={styles.billingCode}>{item.code}</div>
+                <div style={styles.billingProvider}>
+                  Provider: {(item.insurance_provider || "thiqa").toUpperCase()}
+                </div>
                 <div style={styles.billingSessions}>
                   Default Sessions: {item.default_sessions}
                 </div>
@@ -171,16 +246,21 @@ export default function BillingCodesSection({
                     type="button"
                     style={styles.editBtn}
                     onClick={() => handleEdit(item)}
+                    disabled={isSubmitting}
                   >
                     Edit
                   </button>
 
                   <button
                     type="button"
-                    style={styles.deleteBtn}
+                    style={{
+                      ...styles.deleteBtn,
+                      ...(deletingId === item.id ? styles.deleteBtnDisabled : {}),
+                    }}
                     onClick={() => handleDelete(item.id)}
+                    disabled={deletingId === item.id}
                   >
-                    Delete
+                    {deletingId === item.id ? "Deleting..." : "Delete"}
                   </button>
                 </div>
               </div>
@@ -246,6 +326,7 @@ const styles = {
     borderRadius: "12px",
     border: "1px solid #cbd5e1",
     fontSize: "15px",
+    background: "#fff",
   },
   actionBar: {
     display: "flex",
@@ -262,6 +343,10 @@ const styles = {
     borderRadius: "10px",
     fontWeight: "800",
     cursor: "pointer",
+  },
+  primaryDisabled: {
+    opacity: 0.65,
+    cursor: "not-allowed",
   },
   secondary: {
     background: "#e2e8f0",
@@ -311,6 +396,11 @@ const styles = {
     fontWeight: "800",
     color: "#0f172a",
   },
+  billingProvider: {
+    fontSize: "13px",
+    color: "#475569",
+    fontWeight: "700",
+  },
   billingSessions: {
     fontSize: "14px",
     color: "#166534",
@@ -335,5 +425,9 @@ const styles = {
     borderRadius: "8px",
     padding: "8px 10px",
     cursor: "pointer",
+  },
+  deleteBtnDisabled: {
+    opacity: 0.7,
+    cursor: "not-allowed",
   },
 };

@@ -1,24 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import PatientSummaryCard from "../patients/PatientSummaryCard";
 import PatientApprovalTimeline from "./PatientApprovalTimeline";
-
-const DEFAULT_CODES = [
-  { code: "97140", default_sessions: 6 },
-  { code: "97110", default_sessions: 6 },
-  { code: "97026", default_sessions: 6 },
-  { code: "94014", default_sessions: 6 },
-];
-
-const OPTIONAL_CODES = [
-  { code: "97035", default_sessions: 6 },
-  { code: "97112", default_sessions: 6 },
-  { code: "97032", default_sessions: 6 },
-  { code: "97530", default_sessions: 6 },
-  { code: "90912", default_sessions: 6 },
-  { code: "90913", default_sessions: 6 },
-  { code: "97116", default_sessions: 6 },
-  { code: "97016", default_sessions: 6 },
-];
+import BillingCodePresets from "./BillingCodePresets";
 
 export default function ApprovalEditor({
   selectedPatient,
@@ -39,38 +22,40 @@ export default function ApprovalEditor({
   const selectedCodes = useMemo(() => {
     return (approvalForm?.approved_cpt_codes_text || "")
       .split(",")
-      .map((x) => x.trim())
+      .map((x) => String(x).trim().toUpperCase())
       .filter(Boolean);
   }, [approvalForm?.approved_cpt_codes_text]);
 
+  const existingCodes = useMemo(() => {
+    return selectedCodes.map((code) => ({ code }));
+  }, [selectedCodes]);
+
   useEffect(() => {
     if (!selectedPatient) return;
-
-    if (hasExistingApproval) {
-      setIsEditing(false);
-    } else {
-      setIsEditing(true);
-    }
+    setIsEditing(!hasExistingApproval);
   }, [selectedPatient?.id, hasExistingApproval]);
 
   useEffect(() => {
     if (!selectedPatient) return;
-
     if (hasExistingApproval) {
       setIsEditing(false);
     }
-  }, [refreshTimelineKey, hasExistingApproval, selectedPatient]);
+  }, [refreshTimelineKey, hasExistingApproval, selectedPatient?.id]);
 
-  const toggleCode = (code, defaultSessions = 6) => {
+  const updateCodes = (nextCodes) => {
+    setApprovalForm({
+      ...approvalForm,
+      approved_cpt_codes_text: [...new Set(nextCodes)].join(","),
+    });
+  };
+
+  const handlePickCode = (item) => {
     if (!isEditing) return;
 
-    let nextCodes = [...selectedCodes];
+    const code = String(item?.code || "").trim().toUpperCase();
+    if (!code || selectedCodes.includes(code)) return;
 
-    if (nextCodes.includes(code)) {
-      nextCodes = nextCodes.filter((c) => c !== code);
-    } else {
-      nextCodes.push(code);
-    }
+    const nextCodes = [...selectedCodes, code];
 
     setApprovalForm({
       ...approvalForm,
@@ -78,16 +63,17 @@ export default function ApprovalEditor({
       approved_sessions:
         Number(approvalForm?.approved_sessions || 0) > 0
           ? approvalForm.approved_sessions
-          : defaultSessions,
+          : item.default_sessions,
     });
   };
 
-  const addAllDefaultCodes = () => {
+  const handleAddDefaultCodes = (missingDefaults) => {
     if (!isEditing) return;
 
-    const merged = [
-      ...new Set([...selectedCodes, ...DEFAULT_CODES.map((x) => x.code)]),
-    ];
+    const newCodes = missingDefaults.map((x) =>
+      String(x.code || "").trim().toUpperCase()
+    );
+    const merged = [...new Set([...selectedCodes, ...newCodes])];
 
     setApprovalForm({
       ...approvalForm,
@@ -97,6 +83,11 @@ export default function ApprovalEditor({
           ? approvalForm.approved_sessions
           : 6,
     });
+  };
+
+  const handleRemoveCode = (codeToRemove) => {
+    if (!isEditing) return;
+    updateCodes(selectedCodes.filter((code) => code !== codeToRemove));
   };
 
   const handleSubmit = async (e) => {
@@ -233,84 +224,39 @@ export default function ApprovalEditor({
           </div>
         </div>
 
-        <div style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div>
-              <div style={styles.sectionTitle}>Default CPT Codes</div>
-              <div style={styles.sectionHint}>
-                Add the 4 default codes at once or select individually.
-              </div>
+        <BillingCodePresets
+          existingCodes={existingCodes}
+          onPickCode={handlePickCode}
+          onAddDefaultCodes={handleAddDefaultCodes}
+          disabled={!isEditing}
+        />
+
+        <div style={styles.selectedCodesCard}>
+          <div style={styles.sectionTitle}>Selected CPT Codes</div>
+          {selectedCodes.length === 0 ? (
+            <div style={styles.sectionHint}>No CPT codes selected yet.</div>
+          ) : (
+            <div style={styles.codesWrap}>
+              {selectedCodes.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => handleRemoveCode(code)}
+                  style={{
+                    ...styles.codeChip,
+                    ...styles.codeChipActive,
+                    ...(isEditing ? {} : styles.codeChipDisabled),
+                  }}
+                  disabled={!isEditing}
+                >
+                  <span style={styles.codeChipCode}>{code}</span>
+                  <span style={styles.codeChipDesc}>
+                    {isEditing ? "Click to remove" : "Selected"}
+                  </span>
+                </button>
+              ))}
             </div>
-
-            <button
-              type="button"
-              style={{
-                ...styles.fillDefaultsButton,
-                ...(!isEditing ? styles.disabledButton : {}),
-              }}
-              onClick={addAllDefaultCodes}
-              disabled={!isEditing}
-            >
-              Fill 4 Default Codes
-            </button>
-          </div>
-
-          <div style={styles.codesWrap}>
-            {DEFAULT_CODES.map((item) => {
-              const selected = selectedCodes.includes(item.code);
-
-              return (
-                <button
-                  key={item.code}
-                  type="button"
-                  onClick={() => toggleCode(item.code, item.default_sessions)}
-                  disabled={!isEditing}
-                  style={{
-                    ...styles.codeChip,
-                    ...(selected ? styles.codeChipActive : {}),
-                    ...(!isEditing ? styles.codeChipDisabled : {}),
-                  }}
-                >
-                  <span style={styles.codeChipCode}>{item.code}</span>
-                  <span style={styles.codeChipDesc}>
-                    {item.default_sessions} sessions
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>Additional CPT Codes</div>
-          <div style={styles.sectionHint}>
-            Optional extra codes you can add to the same approval.
-          </div>
-
-          <div style={styles.codesWrap}>
-            {OPTIONAL_CODES.map((item) => {
-              const selected = selectedCodes.includes(item.code);
-
-              return (
-                <button
-                  key={item.code}
-                  type="button"
-                  onClick={() => toggleCode(item.code, item.default_sessions)}
-                  disabled={!isEditing}
-                  style={{
-                    ...styles.codeChip,
-                    ...(selected ? styles.codeChipActive : {}),
-                    ...(!isEditing ? styles.codeChipDisabled : {}),
-                  }}
-                >
-                  <span style={styles.codeChipCode}>{item.code}</span>
-                  <span style={styles.codeChipDesc}>
-                    {item.default_sessions} sessions
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          )}
         </div>
 
         <div style={styles.actionBar}>
@@ -385,10 +331,6 @@ const styles = {
     display: "grid",
     gap: "22px",
   },
-  section: {
-    display: "grid",
-    gap: "12px",
-  },
   sectionHeader: {
     display: "flex",
     justifyContent: "space-between",
@@ -413,28 +355,6 @@ const styles = {
     fontSize: "14px",
     color: "#475569",
     fontWeight: "600",
-  },
-  fillDefaultsButton: {
-    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "800",
-    cursor: "pointer",
-  },
-  secondaryButton: {
-    background: "#e2e8f0",
-    color: "#0f172a",
-    padding: "12px 20px",
-    border: "none",
-    borderRadius: "10px",
-    fontWeight: "800",
-    cursor: "pointer",
-  },
-  disabledButton: {
-    background: "#cbd5e1",
-    cursor: "not-allowed",
   },
   formGrid: {
     display: "grid",
@@ -462,6 +382,24 @@ const styles = {
     background: "#f8fafc",
     color: "#64748b",
     cursor: "not-allowed",
+  },
+  secondaryButton: {
+    background: "#e2e8f0",
+    color: "#0f172a",
+    padding: "12px 20px",
+    border: "none",
+    borderRadius: "10px",
+    fontWeight: "800",
+    cursor: "pointer",
+  },
+  selectedCodesCard: {
+    background: "#fff",
+    borderRadius: "18px",
+    padding: "18px",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+    display: "grid",
+    gap: "12px",
   },
   codesWrap: {
     display: "flex",

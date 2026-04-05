@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 
 const DEFAULT_CODES = [
   { code: "97140", default_sessions: 6 },
@@ -22,21 +22,80 @@ export default function BillingCodePresets({
   existingCodes = [],
   onPickCode,
   onAddDefaultCodes,
+  disabled = false,
 }) {
-  const existingSet = new Set(existingCodes.map((item) => item.code));
+  const normalizeCode = (value) => String(value || "").trim().toUpperCase();
 
-  const missingDefaultCodes = DEFAULT_CODES.filter(
-    (item) => !existingSet.has(item.code)
-  );
+  const existingSet = useMemo(() => {
+    return new Set(
+      existingCodes
+        .map((item) => normalizeCode(item?.code))
+        .filter(Boolean)
+    );
+  }, [existingCodes]);
+
+  const missingDefaultCodes = useMemo(() => {
+    return DEFAULT_CODES.filter((item) => !existingSet.has(normalizeCode(item.code)));
+  }, [existingSet]);
+
+  const handlePickCode = (item, exists) => {
+    if (disabled || exists || !onPickCode) return;
+    onPickCode(item);
+  };
+
+  const handleAddDefaultCodes = () => {
+    if (disabled || !missingDefaultCodes.length || !onAddDefaultCodes) return;
+    onAddDefaultCodes(missingDefaultCodes);
+  };
+
+  const renderCodeGrid = (items) => {
+    return (
+      <div style={styles.grid}>
+        {items.map((item) => {
+          const exists = existingSet.has(normalizeCode(item.code));
+
+          return (
+            <button
+              key={item.code}
+              type="button"
+              onClick={() => handlePickCode(item, exists)}
+              disabled={disabled || exists}
+              title={
+                exists
+                  ? `${item.code} already added`
+                  : disabled
+                  ? "Editing is disabled"
+                  : `Add ${item.code}`
+              }
+              style={{
+                ...styles.codeButton,
+                ...(exists || disabled ? styles.codeButtonDisabled : {}),
+              }}
+            >
+              <span style={styles.codeText}>{item.code}</span>
+              <span style={styles.codeMeta}>
+                {exists ? "Added" : `${item.default_sessions} sessions`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
-    <div style={styles.card}>
+    <div
+      style={{
+        ...styles.card,
+        ...(disabled ? styles.cardDisabled : {}),
+      }}
+    >
       <div style={styles.header}>
         <div>
           <div style={styles.eyebrow}>Quick Setup</div>
-          <h3 style={styles.title}>CPT Code Defaults</h3>
+          <h3 style={styles.title}>CPT Code Presets</h3>
           <div style={styles.subtext}>
-            Add the 4 default codes at once, or add optional codes below.
+            Add the 4 default codes at once, or choose optional codes below.
           </div>
         </div>
       </div>
@@ -49,68 +108,30 @@ export default function BillingCodePresets({
             type="button"
             style={{
               ...styles.fillAllButton,
-              ...(missingDefaultCodes.length === 0 ? styles.disabledButton : {}),
+              ...(disabled || missingDefaultCodes.length === 0
+                ? styles.disabledButton
+                : {}),
             }}
-            disabled={missingDefaultCodes.length === 0}
-            onClick={() => onAddDefaultCodes && onAddDefaultCodes(missingDefaultCodes)}
+            disabled={disabled || missingDefaultCodes.length === 0}
+            onClick={handleAddDefaultCodes}
+            title={
+              disabled
+                ? "Editing is disabled"
+                : missingDefaultCodes.length === 0
+                ? "All default codes are already added"
+                : "Add all missing default CPT codes"
+            }
           >
-            {missingDefaultCodes.length === 0
-              ? "Defaults Added"
-              : "Fill 4 Default Codes"}
+            {missingDefaultCodes.length === 0 ? "Defaults Added" : "Fill 4 Default Codes"}
           </button>
         </div>
 
-        <div style={styles.grid}>
-          {DEFAULT_CODES.map((item) => {
-            const exists = existingSet.has(item.code);
-
-            return (
-              <button
-                key={item.code}
-                type="button"
-                onClick={() => !exists && onPickCode(item)}
-                disabled={exists}
-                style={{
-                  ...styles.codeButton,
-                  ...(exists ? styles.codeButtonDisabled : {}),
-                }}
-              >
-                <span style={styles.codeText}>{item.code}</span>
-                <span style={styles.codeMeta}>
-                  {exists ? "Added" : `${item.default_sessions} sessions`}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {renderCodeGrid(DEFAULT_CODES)}
       </div>
 
       <div style={styles.group}>
         <div style={styles.groupTitle}>Optional Additional Codes</div>
-
-        <div style={styles.grid}>
-          {OPTIONAL_CODES.map((item) => {
-            const exists = existingSet.has(item.code);
-
-            return (
-              <button
-                key={item.code}
-                type="button"
-                onClick={() => !exists && onPickCode(item)}
-                disabled={exists}
-                style={{
-                  ...styles.codeButton,
-                  ...(exists ? styles.codeButtonDisabled : {}),
-                }}
-              >
-                <span style={styles.codeText}>{item.code}</span>
-                <span style={styles.codeMeta}>
-                  {exists ? "Added" : `${item.default_sessions} sessions`}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {renderCodeGrid(OPTIONAL_CODES)}
       </div>
     </div>
   );
@@ -125,6 +146,9 @@ const styles = {
     boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
     display: "grid",
     gap: "18px",
+  },
+  cardDisabled: {
+    opacity: 0.75,
   },
   header: {
     marginBottom: "4px",
@@ -196,6 +220,7 @@ const styles = {
     background: "#e2e8f0",
     color: "#64748b",
     cursor: "not-allowed",
+    opacity: 0.9,
   },
   codeText: {
     fontSize: "14px",
