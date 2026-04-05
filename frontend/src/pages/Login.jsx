@@ -6,63 +6,64 @@ export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
-      const res = await api.post("users/login/", { username, password });
+      const res = await api.post("users/login/", {
+        username,
+        password,
+      });
 
-      if (res.data.success) {
-        const userData = {
-          id: res.data.id,
-          username: res.data.username,
-          role: res.data.role,
-          is_superuser: res.data.is_superuser,
-          is_staff: res.data.is_staff,
-        };
+      const userData = res.data;
 
-        onLogin(userData);
+      onLogin(userData);
 
-        if (res.data.is_superuser || res.data.role === "admin") {
-          navigate("/admin");
-        } else if (res.data.role === "approvals") {
-          navigate("/approvals");
-        } else if (res.data.role === "reception") {
-          navigate("/reception");
-        } else if (res.data.role === "reception_supervisor") {
-          navigate("/reception-supervisor");
-        } else if (res.data.role === "physio") {
-          navigate("/physio");
-        } else if (res.data.role === "doctor") {
-          navigate("/doctor");
-        } else if (res.data.role === "rcm") {
-          navigate("/rcm");
-        } else if (res.data.role === "callcenter") {
-          navigate("/callcenter");
-        } else if (res.data.role === "callcenter_supervisor") {
-          navigate("/callcenter-supervisor");
-        } else if (res.data.role === "visitor") {
-          navigate("/visitors");
-        } else if (res.data.role === "visitor_ceo") {
-          navigate("/visitor-ceo");
-        } else {
-          navigate("/login");
-        }
+      // Role routing
+      const role = userData.role;
+
+      if (userData.is_superuser || role === "admin") {
+        navigate("/admin");
+      } else if (role === "approvals") {
+        navigate("/approvals");
+      } else if (role === "reception") {
+        navigate("/reception");
+      } else if (role === "reception_supervisor") {
+        navigate("/reception-supervisor");
+      } else if (role === "physio") {
+        navigate("/physio");
+      } else if (role === "doctor") {
+        navigate("/doctor");
+      } else if (role === "rcm") {
+        navigate("/rcm");
+      } else if (role === "callcenter") {
+        navigate("/callcenter");
+      } else if (role === "callcenter_supervisor") {
+        navigate("/callcenter-supervisor");
+      } else if (role === "visitor") {
+        navigate("/visitors");
+      } else if (role === "visitor_ceo") {
+        navigate("/visitor-ceo");
       } else {
-        setError("Wrong credentials");
+        navigate("/");
       }
     } catch (err) {
-      setError(err?.response?.data?.error || "Wrong credentials");
+      setError(err?.response?.data?.error || "Invalid username or password");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Hospital Login</h1>
+        <h1 style={styles.title}>Hospital System</h1>
+        <p style={styles.subtitle}>Sign in to continue</p>
 
         <form onSubmit={handleLogin} style={styles.form}>
           <input
@@ -83,11 +84,11 @@ export default function Login({ onLogin }) {
             required
           />
 
-          <button type="submit" style={styles.button}>
-            Login
+          <button type="submit" style={styles.button} disabled={loading}>
+            {loading ? "Logging in..." : "Login"}
           </button>
 
-          {error && <p style={styles.error}>{error}</p>}
+          {error && <div style={styles.error}>{error}</div>}
         </form>
       </div>
     </div>
@@ -100,43 +101,56 @@ const styles = {
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    background: "#f4f6f8",
+    background: "linear-gradient(135deg, #eff6ff, #ffffff)",
   },
   card: {
-    width: "360px",
+    width: "380px",
     background: "#fff",
     padding: "32px",
-    borderRadius: "12px",
-    boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+    borderRadius: "16px",
+    boxShadow: "0 20px 40px rgba(15, 23, 42, 0.08)",
+    display: "grid",
+    gap: "16px",
   },
   title: {
     textAlign: "center",
-    marginBottom: "24px",
-    color: "#2c3e50",
+    margin: 0,
+    fontSize: "26px",
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  subtitle: {
+    textAlign: "center",
+    fontSize: "14px",
+    color: "#64748b",
   },
   form: {
-    display: "flex",
-    flexDirection: "column",
+    display: "grid",
     gap: "14px",
   },
   input: {
-    padding: "12px",
-    borderRadius: "8px",
-    border: "1px solid #ccc",
+    padding: "12px 14px",
+    borderRadius: "10px",
+    border: "1px solid #cbd5e1",
     fontSize: "15px",
+    outline: "none",
   },
   button: {
     padding: "12px",
-    borderRadius: "8px",
+    borderRadius: "10px",
     border: "none",
-    background: "#1abc9c",
-    color: "white",
-    fontSize: "16px",
+    background: "#2563eb",
+    color: "#fff",
+    fontSize: "15px",
+    fontWeight: "700",
     cursor: "pointer",
   },
   error: {
-    color: "red",
-    margin: 0,
+    background: "#fee2e2",
+    color: "#b91c1c",
+    padding: "10px",
+    borderRadius: "8px",
     textAlign: "center",
+    fontSize: "14px",
   },
 };

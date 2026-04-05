@@ -1,21 +1,26 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import api from "../../api/api";
 
 export default function ApprovalHistorySection({ onEditApproval }) {
-  const navigate = useNavigate();
   const defaultMonth = new Date().toISOString().slice(0, 7);
 
   const [rows, setRows] = useState([]);
   const [month, setMonth] = useState(defaultMonth);
+  const [search, setSearch] = useState("");
+  const [approvalType, setApprovalType] = useState("");
+  const [selectedRowKey, setSelectedRowKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    loadHistory(defaultMonth);
+    loadHistory(defaultMonth, "", "");
   }, []);
 
-  const loadHistory = async (monthValue = month) => {
+  const loadHistory = async (
+    monthValue = month,
+    searchValue = search,
+    approvalTypeValue = approvalType
+  ) => {
     try {
       setLoading(true);
       setError("");
@@ -23,6 +28,12 @@ export default function ApprovalHistorySection({ onEditApproval }) {
       const params = new URLSearchParams();
       if (monthValue) {
         params.append("month", monthValue);
+      }
+      if (searchValue?.trim()) {
+        params.append("search", searchValue.trim());
+      }
+      if (approvalTypeValue?.trim()) {
+        params.append("approval_type", approvalTypeValue.trim());
       }
 
       const res = await api.get(`approvals/history/?${params.toString()}`);
@@ -36,11 +47,38 @@ export default function ApprovalHistorySection({ onEditApproval }) {
   };
 
   const getStatusStyle = (status) => {
-    if (status === "Expired") return { ...styles.statusBadge, ...styles.statusRed };
+    if (status === "Expired" || status === "Deleted") {
+      return { ...styles.statusBadge, ...styles.statusRed };
+    }
     if (status === "Renewal Needed" || status === "Low Sessions") {
       return { ...styles.statusBadge, ...styles.statusYellow };
     }
     return { ...styles.statusBadge, ...styles.statusGreen };
+  };
+
+  const formatApprovalType = (value) => {
+    if (!value) return "-";
+    if (value === "thiqa") return "Thiqa";
+    if (value === "daman") return "Daman";
+    return value;
+  };
+
+  const handleRowClick = (row, index) => {
+    const rowKey = `${row.patient_id}-${index}`;
+    setSelectedRowKey(rowKey);
+
+    if (onEditApproval) {
+      onEditApproval({
+        id: row.patient_id_db,
+        name: row.patient_name,
+        patient_id: row.patient_id,
+        current_approval_number: row.authorization_number || "",
+        approval_start_date: row.approval_date || "",
+        approval_expiry_date: row.expiry_date || "",
+        approved_sessions: row.approved_quantity || 0,
+        insurance_provider: row.approval_type || "thiqa",
+      });
+    }
   };
 
   return (
@@ -54,23 +92,48 @@ export default function ApprovalHistorySection({ onEditApproval }) {
           </div>
         </div>
 
-        <div style={styles.filterBox}>
-          <label style={styles.label}>Month</label>
-          <div style={styles.filterRow}>
+        <div style={styles.filtersWrap}>
+          <div style={styles.filterBox}>
+            <label style={styles.label}>Month</label>
             <input
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
               style={styles.input}
             />
-            <button
-              type="button"
-              onClick={() => loadHistory(month)}
-              style={styles.filterButton}
-            >
-              Filter
-            </button>
           </div>
+
+          <div style={styles.filterBoxWide}>
+            <label style={styles.label}>Search Patient</label>
+            <input
+              type="text"
+              placeholder="Search by name, patient ID, or approval number"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={styles.input}
+            />
+          </div>
+
+          <div style={styles.filterBox}>
+            <label style={styles.label}>Approval Type</label>
+            <select
+              value={approvalType}
+              onChange={(e) => setApprovalType(e.target.value)}
+              style={styles.input}
+            >
+              <option value="">All</option>
+              <option value="thiqa">Thiqa</option>
+              <option value="daman">Daman</option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => loadHistory(month, search, approvalType)}
+            style={styles.filterButton}
+          >
+            Filter
+          </button>
         </div>
       </div>
 
@@ -79,7 +142,9 @@ export default function ApprovalHistorySection({ onEditApproval }) {
       ) : error ? (
         <div style={styles.errorState}>{error}</div>
       ) : rows.length === 0 ? (
-        <div style={styles.emptyState}>No approval records found for this month.</div>
+        <div style={styles.emptyState}>
+          No approval records found for this filter.
+        </div>
       ) : (
         <div style={styles.tableWrap}>
           <table style={styles.table}>
@@ -87,64 +152,60 @@ export default function ApprovalHistorySection({ onEditApproval }) {
               <tr>
                 <th style={styles.th}>Patient Name</th>
                 <th style={styles.th}>Patient ID</th>
+                <th style={styles.th}>Approval No.</th>
+                <th style={styles.th}>Type</th>
                 <th style={styles.th}>Approval Date</th>
                 <th style={styles.th}>Expiry Date</th>
                 <th style={styles.th}>Approved Qty</th>
                 <th style={styles.th}>Booked</th>
                 <th style={styles.th}>Used</th>
                 <th style={styles.th}>Remaining</th>
+                <th style={styles.th}>CPT Count</th>
                 <th style={styles.th}>Status</th>
-                <th style={styles.th}>Action</th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                <tr key={`${row.patient_id}-${index}`}>
-                  <td style={styles.td}>{row.patient_name}</td>
-                  <td style={styles.td}>{row.patient_id}</td>
-                  <td style={styles.td}>{row.approval_date || "-"}</td>
-                  <td style={styles.td}>{row.expiry_date || "-"}</td>
-                  <td style={styles.td}>{row.approved_quantity}</td>
-                  <td style={styles.td}>{row.booked}</td>
-                  <td style={styles.td}>{row.used_sessions}</td>
-                  <td style={styles.td}>{row.remaining_sessions}</td>
-                  <td style={styles.td}>
-                    <span style={getStatusStyle(row.status)}>{row.status}</span>
-                  </td>
-                  <td style={styles.td}>
-                    <div style={styles.actionButtons}>
-                      <button
-                        type="button"
-                        style={styles.openButton}
-                        onClick={() => navigate(`/patients/${row.patient_id_db}`)}
-                      >
-                        Open File
-                      </button>
 
-                      <button
-                        type="button"
-                        style={styles.editButton}
-                        onClick={() =>
-                          onEditApproval &&
-                          onEditApproval({
-                            id: row.patient_id_db,
-                            name: row.patient_name,
-                            patient_id: row.patient_id,
-                            current_approval_number: row.authorization_number || "",
-                            approval_start_date: row.approval_date || "",
-                            approval_expiry_date: row.expiry_date || "",
-                            approved_sessions: row.approved_quantity || 0,
-                          })
-                        }
-                      >
-                        Edit Approval
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+            <tbody>
+              {rows.map((row, index) => {
+                const rowKey = `${row.patient_id}-${index}`;
+                const isActive = selectedRowKey === rowKey;
+
+                return (
+                  <tr
+                    key={rowKey}
+                    onClick={() => handleRowClick(row, index)}
+                    style={{
+                      ...styles.clickableRow,
+                      ...(isActive ? styles.activeRow : {}),
+                    }}
+                  >
+                    <td style={styles.td}>{row.patient_name}</td>
+                    <td style={styles.td}>{row.patient_id}</td>
+                    <td style={styles.td}>{row.authorization_number || "-"}</td>
+                    <td style={styles.td}>
+                      {formatApprovalType(row.approval_type)}
+                    </td>
+                    <td style={styles.td}>{row.approval_date || "-"}</td>
+                    <td style={styles.td}>{row.expiry_date || "-"}</td>
+                    <td style={styles.td}>{row.approved_quantity}</td>
+                    <td style={styles.td}>{row.booked}</td>
+                    <td style={styles.td}>{row.used_sessions}</td>
+                    <td style={styles.td}>{row.remaining_sessions}</td>
+                    <td style={styles.td}>{row.cpt_count ?? 0}</td>
+                    <td style={styles.td}>
+                      <span style={getStatusStyle(row.status)}>
+                        {row.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+
+          <div style={styles.helperNote}>
+            Click any row to open that patient’s approval information and edit it if needed.
+          </div>
         </div>
       )}
     </div>
@@ -187,21 +248,26 @@ const styles = {
     fontSize: "14px",
     color: "#64748b",
   },
+  filtersWrap: {
+    display: "grid",
+    gridTemplateColumns: "180px 320px 180px auto",
+    gap: "10px",
+    alignItems: "end",
+  },
   filterBox: {
     display: "grid",
     gap: "8px",
-    minWidth: "260px",
+    minWidth: "180px",
+  },
+  filterBoxWide: {
+    display: "grid",
+    gap: "8px",
+    minWidth: "320px",
   },
   label: {
     fontSize: "13px",
     fontWeight: "700",
     color: "#475569",
-  },
-  filterRow: {
-    display: "grid",
-    gridTemplateColumns: "1fr auto",
-    gap: "10px",
-    alignItems: "center",
   },
   input: {
     padding: "12px 14px",
@@ -218,6 +284,7 @@ const styles = {
     padding: "12px 16px",
     fontWeight: "700",
     cursor: "pointer",
+    height: "46px",
   },
   tableWrap: {
     overflowX: "auto",
@@ -225,7 +292,7 @@ const styles = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "1180px",
+    minWidth: "1380px",
   },
   th: {
     textAlign: "left",
@@ -242,10 +309,12 @@ const styles = {
     color: "#0f172a",
     verticalAlign: "middle",
   },
-  actionButtons: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
+  clickableRow: {
+    cursor: "pointer",
+    transition: "background 0.18s ease",
+  },
+  activeRow: {
+    background: "#eff6ff",
   },
   statusBadge: {
     padding: "4px 10px",
@@ -266,23 +335,11 @@ const styles = {
     background: "#fee2e2",
     color: "#b91c1c",
   },
-  openButton: {
-    background: "#0ea5e9",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "8px 12px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  editButton: {
-    background: "#16a34a",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "8px 12px",
-    fontWeight: "700",
-    cursor: "pointer",
+  helperNote: {
+    marginTop: "12px",
+    color: "#64748b",
+    fontSize: "13px",
+    fontWeight: "600",
   },
   emptyState: {
     color: "#64748b",

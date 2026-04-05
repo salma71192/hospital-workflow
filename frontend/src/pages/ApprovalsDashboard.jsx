@@ -8,6 +8,7 @@ import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import ApprovalEditor from "../components/approvals/ApprovalEditor";
 import ApprovalHistorySection from "../components/approvals/ApprovalHistorySection";
 import ApprovalsPatientRegisterForm from "../components/approvals/ApprovalsPatientRegisterForm";
+import ApprovalAlertsSection from "../components/approvals/ApprovalAlertsSection";
 import useApprovalsDashboard from "../components/approvals/useApprovalsDashboard";
 
 export default function ApprovalsDashboard({
@@ -29,11 +30,11 @@ export default function ApprovalsDashboard({
     setPatientForm,
     approvalForm,
     setApprovalForm,
-    billingCodes,
     handleSelectPatient,
     handleCreatePatientFile,
     handleSaveApproval,
     handleDeleteApproval,
+    refreshTimelineKey,
   } = useApprovalsDashboard();
 
   const handleBackToAdmin = () => {
@@ -42,7 +43,8 @@ export default function ApprovalsDashboard({
   };
 
   const hasExistingApproval = Boolean(
-    selectedPatient?.current_approval_number || approvalForm?.authorization_number
+    selectedPatient?.current_approval_number ||
+      approvalForm?.authorization_number
   );
 
   return (
@@ -55,8 +57,11 @@ export default function ApprovalsDashboard({
         { key: "register", label: "Register Patient" },
         {
           key: "approval",
-          label: hasExistingApproval ? "Edit Current Approval" : "Add New Approval",
+          label: hasExistingApproval
+            ? "Edit Current Approval"
+            : "Add New Approval",
         },
+        { key: "alerts", label: "Alerts" },
         { key: "history", label: "Approval History" },
       ]}
       activeSection={activeSection}
@@ -82,7 +87,9 @@ export default function ApprovalsDashboard({
           noResultsText="No patients found."
           onRegisterNew={() => setActiveSection("register")}
           getActionLabel={(patient) =>
-            patient?.current_approval_number ? "Edit Approval" : "Add New Approval"
+            patient?.current_approval_number
+              ? "Edit Approval"
+              : "Add New Approval"
           }
         />
       )}
@@ -100,11 +107,15 @@ export default function ApprovalsDashboard({
           selectedPatient={selectedPatient}
           approvalForm={approvalForm}
           setApprovalForm={setApprovalForm}
-          billingCodes={billingCodes}
           onSubmit={handleSaveApproval}
           onReloadPatient={handleSelectPatient}
           onDeleteApproval={handleDeleteApproval}
+          refreshTimelineKey={refreshTimelineKey}
         />
+      )}
+
+      {activeSection === "alerts" && (
+        <ApprovalAlertsSection onEditApproval={handleSelectPatient} />
       )}
 
       {activeSection === "history" && (

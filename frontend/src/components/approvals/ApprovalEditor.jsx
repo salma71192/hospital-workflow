@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import PatientSummaryCard from "../patients/PatientSummaryCard";
 import PatientApprovalTimeline from "./PatientApprovalTimeline";
 
@@ -27,7 +27,10 @@ export default function ApprovalEditor({
   onSubmit,
   onReloadPatient,
   onDeleteApproval,
+  refreshTimelineKey = 0,
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+
   if (!selectedPatient) {
     return (
       <div style={styles.emptyState}>
@@ -46,7 +49,23 @@ export default function ApprovalEditor({
       approvalForm?.authorization_number
   );
 
+  useEffect(() => {
+    if (hasExistingApproval) {
+      setIsEditing(false);
+    } else {
+      setIsEditing(true);
+    }
+  }, [selectedPatient?.id, hasExistingApproval]);
+
+  useEffect(() => {
+    if (hasExistingApproval) {
+      setIsEditing(false);
+    }
+  }, [refreshTimelineKey, hasExistingApproval]);
+
   const toggleCode = (code, defaultSessions = 6) => {
+    if (!isEditing) return;
+
     let nextCodes = [...selectedCodes];
 
     if (nextCodes.includes(code)) {
@@ -66,6 +85,8 @@ export default function ApprovalEditor({
   };
 
   const addAllDefaultCodes = () => {
+    if (!isEditing) return;
+
     const merged = [
       ...new Set([...selectedCodes, ...DEFAULT_CODES.map((x) => x.code)]),
     ];
@@ -80,16 +101,25 @@ export default function ApprovalEditor({
     });
   };
 
+  const handleSubmit = async (e) => {
+    await onSubmit(e);
+    setIsEditing(false);
+  };
+
+  const inputStyle = isEditing
+    ? styles.input
+    : { ...styles.input, ...styles.inputDisabled };
+
   return (
     <div style={styles.page}>
       <div style={styles.headerCard}>
         <div>
           <div style={styles.eyebrow}>Approval Management</div>
           <h2 style={styles.title}>
-            {hasExistingApproval ? "Edit Current Approval" : "Add New Approval"}
+            {hasExistingApproval ? "Current Approval" : "Add New Approval"}
           </h2>
           <div style={styles.subtext}>
-            Manage authorization details, sessions, and approved CPT codes.
+            Review approval details, inspect timeline records, and edit only when needed.
           </div>
         </div>
       </div>
@@ -102,73 +132,95 @@ export default function ApprovalEditor({
         />
       </div>
 
-      <PatientApprovalTimeline patientId={selectedPatient.id} />
+      <PatientApprovalTimeline
+        patientId={selectedPatient.id}
+        refreshKey={refreshTimelineKey}
+      />
 
-      <form onSubmit={onSubmit} style={styles.formCard}>
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>Authorization Details</div>
-
-          <div style={styles.formGrid}>
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Authorization Number</label>
-              <input
-                placeholder="Enter authorization number"
-                value={approvalForm.authorization_number}
-                onChange={(e) =>
-                  setApprovalForm({
-                    ...approvalForm,
-                    authorization_number: e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
+      <form onSubmit={handleSubmit} style={styles.formCard}>
+        <div style={styles.sectionHeader}>
+          <div>
+            <div style={styles.sectionTitle}>Authorization Details</div>
+            <div style={styles.sectionHint}>
+              {isEditing
+                ? "Editing is enabled. Review before saving."
+                : "Fields are locked to avoid accidental changes."}
             </div>
+          </div>
 
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Approved Sessions</label>
-              <input
-                type="number"
-                min="0"
-                value={approvalForm.approved_sessions}
-                onChange={(e) =>
-                  setApprovalForm({
-                    ...approvalForm,
-                    approved_sessions: e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </div>
+          {hasExistingApproval && !isEditing ? (
+            <button
+              type="button"
+              style={styles.secondaryButton}
+              onClick={() => setIsEditing(true)}
+            >
+              Edit Approval
+            </button>
+          ) : null}
+        </div>
 
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Start Date</label>
-              <input
-                type="date"
-                value={approvalForm.start_date}
-                onChange={(e) =>
-                  setApprovalForm({
-                    ...approvalForm,
-                    start_date: e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </div>
+        <div style={styles.infoBox}>
+          Approval start date is set automatically when the approval is first added.
+        </div>
 
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Expiry Date</label>
-              <input
-                type="date"
-                value={approvalForm.expiry_date}
-                onChange={(e) =>
-                  setApprovalForm({
-                    ...approvalForm,
-                    expiry_date: e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </div>
+        <div style={styles.formGrid}>
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Authorization Number</label>
+            <input
+              placeholder="Enter authorization number"
+              value={approvalForm.authorization_number}
+              onChange={(e) =>
+                setApprovalForm({
+                  ...approvalForm,
+                  authorization_number: e.target.value,
+                })
+              }
+              style={inputStyle}
+              disabled={!isEditing}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Approved Sessions</label>
+            <input
+              type="number"
+              min="0"
+              value={approvalForm.approved_sessions}
+              onChange={(e) =>
+                setApprovalForm({
+                  ...approvalForm,
+                  approved_sessions: e.target.value,
+                })
+              }
+              style={inputStyle}
+              disabled={!isEditing}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Expiry Date</label>
+            <input
+              type="date"
+              value={approvalForm.expiry_date}
+              onChange={(e) =>
+                setApprovalForm({
+                  ...approvalForm,
+                  expiry_date: e.target.value,
+                })
+              }
+              style={inputStyle}
+              disabled={!isEditing}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Current Start Date</label>
+            <input
+              type="text"
+              value={approvalForm.start_date || "Will be set automatically"}
+              style={{ ...styles.input, ...styles.inputDisabled }}
+              disabled
+            />
           </div>
         </div>
 
@@ -183,8 +235,12 @@ export default function ApprovalEditor({
 
             <button
               type="button"
-              style={styles.fillDefaultsButton}
+              style={{
+                ...styles.fillDefaultsButton,
+                ...(!isEditing ? styles.disabledButton : {}),
+              }}
               onClick={addAllDefaultCodes}
+              disabled={!isEditing}
             >
               Fill 4 Default Codes
             </button>
@@ -199,9 +255,11 @@ export default function ApprovalEditor({
                   key={item.code}
                   type="button"
                   onClick={() => toggleCode(item.code, item.default_sessions)}
+                  disabled={!isEditing}
                   style={{
                     ...styles.codeChip,
                     ...(selected ? styles.codeChipActive : {}),
+                    ...(!isEditing ? styles.codeChipDisabled : {}),
                   }}
                 >
                   <span style={styles.codeChipCode}>{item.code}</span>
@@ -229,9 +287,11 @@ export default function ApprovalEditor({
                   key={item.code}
                   type="button"
                   onClick={() => toggleCode(item.code, item.default_sessions)}
+                  disabled={!isEditing}
                   style={{
                     ...styles.codeChip,
                     ...(selected ? styles.codeChipActive : {}),
+                    ...(!isEditing ? styles.codeChipDisabled : {}),
                   }}
                 >
                   <span style={styles.codeChipCode}>{item.code}</span>
@@ -259,9 +319,11 @@ export default function ApprovalEditor({
             ) : null}
           </div>
 
-          <button type="submit" style={styles.primary}>
-            Save
-          </button>
+          {isEditing ? (
+            <button type="submit" style={styles.primary}>
+              Save
+            </button>
+          ) : null}
         </div>
       </form>
     </div>
@@ -334,6 +396,15 @@ const styles = {
     fontSize: "13px",
     color: "#64748b",
   },
+  infoBox: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "12px",
+    padding: "12px 14px",
+    fontSize: "14px",
+    color: "#475569",
+    fontWeight: "600",
+  },
   fillDefaultsButton: {
     background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
     color: "#fff",
@@ -342,6 +413,19 @@ const styles = {
     padding: "10px 14px",
     fontWeight: "800",
     cursor: "pointer",
+  },
+  secondaryButton: {
+    background: "#e2e8f0",
+    color: "#0f172a",
+    padding: "12px 20px",
+    border: "none",
+    borderRadius: "10px",
+    fontWeight: "800",
+    cursor: "pointer",
+  },
+  disabledButton: {
+    background: "#cbd5e1",
+    cursor: "not-allowed",
   },
   formGrid: {
     display: "grid",
@@ -365,6 +449,11 @@ const styles = {
     background: "#fff",
     outline: "none",
   },
+  inputDisabled: {
+    background: "#f8fafc",
+    color: "#64748b",
+    cursor: "not-allowed",
+  },
   codesWrap: {
     display: "flex",
     flexWrap: "wrap",
@@ -384,6 +473,10 @@ const styles = {
     background: "#2563eb",
     color: "#fff",
     borderColor: "#2563eb",
+  },
+  codeChipDisabled: {
+    cursor: "not-allowed",
+    opacity: 0.8,
   },
   codeChipCode: {
     fontSize: "13px",

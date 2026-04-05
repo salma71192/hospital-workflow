@@ -8,6 +8,7 @@ export default function useApprovalsDashboard() {
 
   const [alerts, setAlerts] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const [isEditingApproval, setIsEditingApproval] = useState(false);
 
   const [patientForm, setPatientForm] = useState({
     name: "",
@@ -27,21 +28,9 @@ export default function useApprovalsDashboard() {
     approved_cpt_codes_text: "",
   });
 
-  const [billingCodes, setBillingCodes] = useState([]);
-
   useEffect(() => {
-    loadBillingCodes();
     loadAlerts();
   }, []);
-
-  const loadBillingCodes = async () => {
-    try {
-      const res = await api.get("approvals/billing-codes/?provider=thiqa");
-      setBillingCodes(res.data.codes || []);
-    } catch {
-      setBillingCodes([]);
-    }
-  };
 
   const loadAlerts = async () => {
     try {
@@ -69,10 +58,8 @@ export default function useApprovalsDashboard() {
           approval.authorization_number ||
           patient.current_approval_number ||
           "",
-        start_date:
-          approval.start_date || patient.approval_start_date || "",
-        expiry_date:
-          approval.expiry_date || patient.approval_expiry_date || "",
+        start_date: approval.start_date || patient.approval_start_date || "",
+        expiry_date: approval.expiry_date || patient.approval_expiry_date || "",
         approved_sessions:
           approval.approved_sessions ?? patient.approved_sessions ?? 0,
         approved_cpt_codes_text: (
@@ -81,6 +68,11 @@ export default function useApprovalsDashboard() {
           []
         ).join(","),
       });
+
+      const hasApproval = Boolean(
+        approval.authorization_number || patient.current_approval_number
+      );
+      setIsEditingApproval(!hasApproval);
     } catch {
       setError("Failed to load approval");
     }
@@ -179,20 +171,53 @@ export default function useApprovalsDashboard() {
       };
 
       setSelectedPatient(refreshedPatient);
-
-      setApprovalForm({
-        insurance_provider: payload.insurance_provider,
-        authorization_number: payload.authorization_number,
-        start_date: payload.start_date,
-        expiry_date: payload.expiry_date,
-        approved_sessions: payload.approved_sessions,
-        approved_cpt_codes_text: payload.approved_cpt_codes.join(","),
-      });
-
+      setIsEditingApproval(false);
       await handleSelectPatient(refreshedPatient);
       setActiveSection("approval");
     } catch (err) {
       setError(err?.response?.data?.error || "Save failed");
+    }
+  };
+
+  const handleDeleteApproval = async (patient) => {
+    if (!patient?.id) return;
+
+    const confirmed = window.confirm(
+      `Delete current approval for ${patient.name}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      setMessage("");
+      setError("");
+
+      await api.delete(`approvals/patient-approval/${patient.id}/`);
+      await loadAlerts();
+
+      const refreshedPatient = {
+        ...patient,
+        insurance_provider: "thiqa",
+        current_approval_number: "",
+        approval_start_date: "",
+        approval_expiry_date: "",
+        approved_sessions: 0,
+        approved_cpt_codes: [],
+      };
+
+      setSelectedPatient(refreshedPatient);
+      setApprovalForm({
+        insurance_provider: "thiqa",
+        authorization_number: "",
+        start_date: "",
+        expiry_date: "",
+        approved_sessions: 0,
+        approved_cpt_codes_text: "",
+      });
+      setIsEditingApproval(true);
+      setMessage("Approval deleted successfully");
+      setActiveSection("approval");
+    } catch (err) {
+      setError(err?.response?.data?.error || "Delete failed");
     }
   };
 
@@ -207,9 +232,11 @@ export default function useApprovalsDashboard() {
     setPatientForm,
     approvalForm,
     setApprovalForm,
-    billingCodes,
+    isEditingApproval,
+    setIsEditingApproval,
     handleSelectPatient,
     handleCreatePatientFile,
     handleSaveApproval,
+    handleDeleteApproval,
   };
 }
