@@ -13,6 +13,7 @@ ALLOWED_HOSTS = ["*"]
 # -------------------
 INSTALLED_APPS = [
     "corsheaders",
+
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -67,7 +68,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # -------------------
-# Database (SQLite)
+# Database
 # -------------------
 DATABASES = {
     "default": {
@@ -85,11 +86,8 @@ AUTH_PASSWORD_VALIDATORS = []
 # Internationalization
 # -------------------
 LANGUAGE_CODE = "en-us"
-
 TIME_ZONE = "UTC"
-
 USE_I18N = True
-
 USE_TZ = True
 
 # -------------------
@@ -103,27 +101,39 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # -------------------
-# CORS SETTINGS (VERY IMPORTANT)
+# AUTH USER MODEL
 # -------------------
-# -------------------
-# CORS SETTINGS
-# -------------------
+AUTH_USER_MODEL = "users.User"
+
+# ===========================
+# 🚨 CORS + CSRF (CRITICAL)
+# ===========================
+
+# 🔴 IMPORTANT: Replace with YOUR exact Codespaces URL
+FRONTEND_URL = "https://miniature-train-4qrjjq6wvwhqwwr-3000.app.github.dev"
+
 CORS_ALLOWED_ORIGINS = [
-    "https://miniature-train-4qrjjq6wvwhqwwr-3000.app.github.dev",
+    FRONTEND_URL,
+    "http://localhost:3000",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://miniature-train-4qrjjq6wvwhqwwr-3000.app.github.dev",
+    FRONTEND_URL,
+    "http://localhost:3000",
 ]
+
+# ===========================
+# 🍪 COOKIES (REQUIRED FOR LOGIN)
+# ===========================
 
 SESSION_COOKIE_SAMESITE = "None"
 SESSION_COOKIE_SECURE = True
 
 CSRF_COOKIE_SAMESITE = "None"
 CSRF_COOKIE_SECURE = True
-# -------------------
-# Custom User Model
-# -------------------
-AUTH_USER_MODEL = "users.User"
+
+# Optional but helpful
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = False

@@ -25,6 +25,7 @@ export default function useApprovalsDashboard() {
     start_date: "",
     expiry_date: "",
     approved_sessions: 0,
+    used_sessions: 0,
     approved_cpt_codes_text: "",
   });
 
@@ -62,6 +63,7 @@ export default function useApprovalsDashboard() {
         expiry_date: approval.expiry_date || patient.approval_expiry_date || "",
         approved_sessions:
           approval.approved_sessions ?? patient.approved_sessions ?? 0,
+        used_sessions: patient.sessions_taken ?? 0,
         approved_cpt_codes_text: (
           approval.approved_cpt_codes ||
           patient.approved_cpt_codes ||
@@ -93,6 +95,7 @@ export default function useApprovalsDashboard() {
           authorization_number: patientForm.authorization_number,
           expiry_date: patientForm.approval_expiry_date,
           approved_sessions: Number(patientForm.approved_sessions || 0),
+          used_sessions: 0,
           approved_cpt_codes: [],
         });
       }
@@ -138,6 +141,7 @@ export default function useApprovalsDashboard() {
         authorization_number: approvalForm.authorization_number,
         expiry_date: approvalForm.expiry_date,
         approved_sessions: Number(approvalForm.approved_sessions || 0),
+        used_sessions: Number(approvalForm.used_sessions || 0),
         approved_cpt_codes: (approvalForm.approved_cpt_codes_text || "")
           .split(",")
           .map((x) => x.trim().toUpperCase())
@@ -161,6 +165,7 @@ export default function useApprovalsDashboard() {
         approval_expiry_date: payload.expiry_date,
         approved_sessions: payload.approved_sessions,
         approved_cpt_codes: payload.approved_cpt_codes,
+        sessions_taken: payload.used_sessions,
       };
 
       setSelectedPatient(refreshedPatient);
@@ -195,6 +200,7 @@ export default function useApprovalsDashboard() {
         approval_expiry_date: "",
         approved_sessions: 0,
         approved_cpt_codes: [],
+        sessions_taken: 0,
       };
 
       setSelectedPatient(refreshedPatient);
@@ -204,6 +210,7 @@ export default function useApprovalsDashboard() {
         start_date: "",
         expiry_date: "",
         approved_sessions: 0,
+        used_sessions: 0,
         approved_cpt_codes_text: "",
       });
 

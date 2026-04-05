@@ -1,36 +1,46 @@
 # -----------------------
 # Python / Django
 # -----------------------
-venv/                   # Python virtual environment
-__pycache__/            # Python cache
+venv/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
-db.sqlite3               # SQLite database (ignore if switching to Postgres)
-*.sqlite3-journal        # SQLite temp files
-.env                     # Django environment variables
+
+# 🚨 IMPORTANT: Database
+db.sqlite3
+*.sqlite3
+*.sqlite3-journal
+
+# Environment variables
+.env
+.env.*
+
+# Backups (VERY IMPORTANT)
+backups/
 
 # -----------------------
 # React / Node
 # -----------------------
-node_modules/            # Node modules
-build/                   # React build output
-.env.local               # React environment variables
+node_modules/
+build/
+
+# React env
+.env.local
 .env.development
 .env.production
 
 # -----------------------
 # IDE / OS files
 # -----------------------
-.vscode/                 # VSCode workspace settings
-.DS_Store                # macOS
-Thumbs.db                # Windows
-*.log                    # log files
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
 
 # -----------------------
 # Optional extras
 # -----------------------
-coverage/                # test coverage
-*.egg-info/              # Python packaging
-pip-wheel-metadata/      
-node_modules
+coverage/
+*.egg-info/
+pip-wheel-metadata/

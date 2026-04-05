@@ -30,6 +30,12 @@ export default function ApprovalEditor({
     return selectedCodes.map((code) => ({ code }));
   }, [selectedCodes]);
 
+  const remainingSessions = useMemo(() => {
+    const approved = Number(approvalForm?.approved_sessions || 0);
+    const used = Number(approvalForm?.used_sessions || 0);
+    return Math.max(approved - used, 0);
+  }, [approvalForm?.approved_sessions, approvalForm?.used_sessions]);
+
   useEffect(() => {
     if (!selectedPatient) return;
     setIsEditing(!hasExistingApproval);
@@ -198,6 +204,33 @@ export default function ApprovalEditor({
           </div>
 
           <div style={styles.fieldGroup}>
+            <label style={styles.label}>Used Sessions</label>
+            <input
+              type="number"
+              min="0"
+              value={approvalForm?.used_sessions ?? 0}
+              onChange={(e) =>
+                setApprovalForm({
+                  ...approvalForm,
+                  used_sessions: e.target.value,
+                })
+              }
+              style={inputStyle}
+              disabled={!isEditing}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Remaining Sessions</label>
+            <input
+              type="text"
+              value={remainingSessions}
+              style={{ ...styles.input, ...styles.inputDisabled }}
+              disabled
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
             <label style={styles.label}>Expiry Date</label>
             <input
               type="date"
@@ -222,6 +255,10 @@ export default function ApprovalEditor({
               disabled
             />
           </div>
+        </div>
+
+        <div style={styles.infoBoxSoft}>
+          Use Used Sessions only when you need to correct the recorded count manually.
         </div>
 
         <BillingCodePresets
@@ -354,6 +391,15 @@ const styles = {
     padding: "12px 14px",
     fontSize: "14px",
     color: "#475569",
+    fontWeight: "600",
+  },
+  infoBoxSoft: {
+    background: "#fffbeb",
+    border: "1px solid #fde68a",
+    borderRadius: "12px",
+    padding: "12px 14px",
+    fontSize: "13px",
+    color: "#92400e",
     fontWeight: "600",
   },
   formGrid: {

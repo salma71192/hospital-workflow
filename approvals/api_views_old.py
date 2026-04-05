@@ -45,7 +45,7 @@ def patient_approval_api(request, patient_id):
     except Patient.DoesNotExist:
         return JsonResponse({"error": "Patient not found"}, status=404)
 
-    approval, _ = PatientApproval.objects.get_or_create(patient=patient)
+    approval, created = PatientApproval.objects.get_or_create(patient=patient)
 
     if request.method == "GET":
         return JsonResponse({
@@ -53,6 +53,7 @@ def patient_approval_api(request, patient_id):
                 "id": patient.id,
                 "name": patient.name,
                 "patient_id": patient.patient_id,
+                "sessions_taken": patient.sessions_taken or 0,
             },
             "approval": {
                 "insurance_provider": approval.insurance_provider,
@@ -70,12 +71,9 @@ def patient_approval_api(request, patient_id):
         if data is None:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-        start_date = _validate_date(data.get("start_date"))
+        # Start date is controlled by backend.
+        # Keep existing start_date if approval already exists, otherwise use today.
         expiry_date = _validate_date(data.get("expiry_date"))
-
-        if data.get("start_date") and not start_date:
-            return JsonResponse({"error": "Invalid start_date"}, status=400)
-
         if data.get("expiry_date") and not expiry_date:
             return JsonResponse({"error": "Invalid expiry_date"}, status=400)
 
@@ -89,6 +87,16 @@ def patient_approval_api(request, patient_id):
                 status=400,
             )
 
+        try:
+            used_sessions = int(data.get("used_sessions", patient.sessions_taken or 0))
+            if used_sessions < 0:
+                used_sessions = 0
+        except Exception:
+            return JsonResponse(
+                {"error": "used_sessions must be a number"},
+                status=400,
+            )
+
         codes = data.get("approved_cpt_codes", [])
         if not isinstance(codes, list):
             return JsonResponse(
@@ -96,7 +104,16 @@ def patient_approval_api(request, patient_id):
                 status=400,
             )
 
-        insurance_provider = data.get("insurance_provider", "thiqa")
+        # Normalize CPT codes
+        normalized_codes = []
+        seen_codes = set()
+        for code in codes:
+            normalized = str(code or "").strip().upper()
+            if normalized and normalized not in seen_codes:
+                normalized_codes.append(normalized)
+                seen_codes.add(normalized)
+
+        insurance_provider = (data.get("insurance_provider") or "thiqa").strip().lower()
         authorization_number = (data.get("authorization_number") or "").strip() or None
         notes = data.get("notes") or None
 
@@ -116,13 +133,16 @@ def patient_approval_api(request, patient_id):
                     status=400,
                 )
 
+        start_date = approval.start_date or timezone.localdate()
+
         ApprovalHistory.objects.create(
             patient=patient,
             authorization_number=authorization_number,
             approved_sessions=approved_sessions,
+            start_date=start_date,
             expiry_date=expiry_date,
             insurance_provider=insurance_provider,
-            approved_cpt_codes=codes,
+            approved_cpt_codes=normalized_codes,
             updated_by=request.user,
         )
 
@@ -131,7 +151,7 @@ def patient_approval_api(request, patient_id):
         approval.start_date = start_date
         approval.expiry_date = expiry_date
         approval.approved_sessions = approved_sessions
-        approval.approved_cpt_codes = codes
+        approval.approved_cpt_codes = normalized_codes
         approval.notes = notes
         approval.save()
 
@@ -139,13 +159,45 @@ def patient_approval_api(request, patient_id):
         patient.approval_start_date = start_date
         patient.approval_expiry_date = expiry_date
         patient.approved_sessions = approved_sessions
-        patient.approved_cpt_codes = codes
+        patient.approved_cpt_codes = normalized_codes
         patient.insurance_provider = insurance_provider
+        patient.sessions_taken = used_sessions
         patient.save()
 
         return JsonResponse({
             "success": True,
             "message": "Approval updated successfully",
+        })
+
+    if request.method == "DELETE":
+        old_authorization_number = approval.authorization_number
+
+        if old_authorization_number:
+            ApprovalHistory.objects.create(
+                patient=patient,
+                authorization_number=old_authorization_number,
+                approved_sessions=approval.approved_sessions or 0,
+                start_date=approval.start_date,
+                expiry_date=approval.expiry_date,
+                insurance_provider=approval.insurance_provider or "thiqa",
+                approved_cpt_codes=approval.approved_cpt_codes or [],
+                updated_by=request.user,
+            )
+
+        approval.delete()
+
+        patient.current_approval_number = ""
+        patient.approval_start_date = None
+        patient.approval_expiry_date = None
+        patient.approved_sessions = 0
+        patient.approved_cpt_codes = []
+        patient.insurance_provider = "thiqa"
+        patient.sessions_taken = 0
+        patient.save()
+
+        return JsonResponse({
+            "success": True,
+            "message": "Approval deleted successfully",
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -278,8 +330,8 @@ def billing_codes_api(request):
         if data is None:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-        code = (data.get("code") or "").strip()
-        insurance_provider = data.get("insurance_provider", "thiqa")
+        code = (data.get("code") or "").strip().upper()
+        insurance_provider = (data.get("insurance_provider") or "thiqa").strip().lower()
 
         try:
             default_sessions = int(data.get("default_sessions", 6))
@@ -432,7 +484,7 @@ def patient_approval_timeline_api(request, patient_id):
             "id": item.id,
             "authorization_number": item.authorization_number or "",
             "approval_date": str(item.created_at.date()) if item.created_at else "",
-            "start_date": str(item.created_at.date()) if item.created_at else "",
+            "start_date": str(item.start_date) if item.start_date else "",
             "expiry_date": str(item.expiry_date) if item.expiry_date else "",
             "approved_sessions": approved_quantity,
             "used_sessions": current_used_sessions,
