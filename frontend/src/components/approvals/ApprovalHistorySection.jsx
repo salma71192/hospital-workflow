@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../api/api";
 
 export default function ApprovalHistorySection({ onEditApproval }) {
@@ -12,39 +12,85 @@ export default function ApprovalHistorySection({ onEditApproval }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    loadHistory(defaultMonth, "", "");
-  }, []);
+  const debounceRef = useRef(null);
+  const requestIdRef = useRef(0);
+
+  const buildRowKey = (row, index) =>
+    `${row.patient_id_db || "na"}-${row.authorization_number || "no-auth"}-${index}`;
 
   const loadHistory = async (
     monthValue = month,
     searchValue = search,
     approvalTypeValue = approvalType
   ) => {
+    const currentRequestId = ++requestIdRef.current;
+
     try {
       setLoading(true);
       setError("");
 
       const params = new URLSearchParams();
+
       if (monthValue) {
         params.append("month", monthValue);
       }
+
       if (searchValue?.trim()) {
         params.append("search", searchValue.trim());
       }
+
       if (approvalTypeValue?.trim()) {
         params.append("approval_type", approvalTypeValue.trim());
       }
 
       const res = await api.get(`approvals/history/?${params.toString()}`);
-      setRows(res.data.history || []);
+
+      if (currentRequestId !== requestIdRef.current) return;
+
+      const nextRows = res.data.history || [];
+      setRows(nextRows);
     } catch (err) {
+      if (currentRequestId !== requestIdRef.current) return;
+
       setRows([]);
       setError(err?.response?.data?.error || "Failed to load approval history");
     } finally {
-      setLoading(false);
+      if (currentRequestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
+
+  useEffect(() => {
+    loadHistory(defaultMonth, "", "");
+  }, []);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(() => {
+      loadHistory(month, search, approvalType);
+    }, 400);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [month, search, approvalType]);
+
+  useEffect(() => {
+    if (!rows.length) {
+      setSelectedRowKey("");
+      return;
+    }
+
+    const stillExists = rows.some(
+      (row, index) => buildRowKey(row, index) === selectedRowKey
+    );
+
+    if (!stillExists) {
+      setSelectedRowKey("");
+    }
+  }, [rows, selectedRowKey]);
 
   const getStatusStyle = (status) => {
     if (status === "Expired" || status === "Deleted") {
@@ -64,7 +110,7 @@ export default function ApprovalHistorySection({ onEditApproval }) {
   };
 
   const handleRowClick = (row, index) => {
-    const rowKey = `${row.patient_id}-${index}`;
+    const rowKey = buildRowKey(row, index);
     setSelectedRowKey(rowKey);
 
     if (onEditApproval) {
@@ -76,10 +122,24 @@ export default function ApprovalHistorySection({ onEditApproval }) {
         approval_start_date: row.approval_date || "",
         approval_expiry_date: row.expiry_date || "",
         approved_sessions: row.approved_quantity || 0,
+        approved_cpt_codes: row.approved_cpt_codes || [],
         insurance_provider: row.approval_type || "thiqa",
       });
     }
   };
+
+  const handleReset = () => {
+    setMonth(defaultMonth);
+    setSearch("");
+    setApprovalType("");
+    setSelectedRowKey("");
+  };
+
+  const hasActiveFilters = useMemo(() => {
+    return Boolean(
+      month !== defaultMonth || search.trim() || approvalType.trim()
+    );
+  }, [month, search, approvalType, defaultMonth]);
 
   return (
     <div style={styles.card}>
@@ -127,13 +187,19 @@ export default function ApprovalHistorySection({ onEditApproval }) {
             </select>
           </div>
 
-          <button
-            type="button"
-            onClick={() => loadHistory(month, search, approvalType)}
-            style={styles.filterButton}
-          >
-            Filter
-          </button>
+          <div style={styles.buttonGroup}>
+            <button
+              type="button"
+              onClick={handleReset}
+              style={{
+                ...styles.resetButton,
+                ...(hasActiveFilters ? {} : styles.resetButtonDisabled),
+              }}
+              disabled={!hasActiveFilters}
+            >
+              Reset
+            </button>
+          </div>
         </div>
       </div>
 
@@ -167,7 +233,7 @@ export default function ApprovalHistorySection({ onEditApproval }) {
 
             <tbody>
               {rows.map((row, index) => {
-                const rowKey = `${row.patient_id}-${index}`;
+                const rowKey = buildRowKey(row, index);
                 const isActive = selectedRowKey === rowKey;
 
                 return (
@@ -250,7 +316,7 @@ const styles = {
   },
   filtersWrap: {
     display: "grid",
-    gridTemplateColumns: "180px 320px 180px auto",
+    gridTemplateColumns: "180px minmax(240px, 320px) 180px auto",
     gap: "10px",
     alignItems: "end",
   },
@@ -262,7 +328,7 @@ const styles = {
   filterBoxWide: {
     display: "grid",
     gap: "8px",
-    minWidth: "320px",
+    minWidth: "240px",
   },
   label: {
     fontSize: "13px",
@@ -276,15 +342,24 @@ const styles = {
     fontSize: "14px",
     background: "#fff",
   },
-  filterButton: {
-    background: "#2563eb",
-    color: "#fff",
+  buttonGroup: {
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+  },
+  resetButton: {
+    background: "#e2e8f0",
+    color: "#0f172a",
     border: "none",
     borderRadius: "10px",
     padding: "12px 16px",
     fontWeight: "700",
     cursor: "pointer",
     height: "46px",
+  },
+  resetButtonDisabled: {
+    opacity: 0.6,
+    cursor: "not-allowed",
   },
   tableWrap: {
     overflowX: "auto",
