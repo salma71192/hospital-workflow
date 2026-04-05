@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import PatientSummaryCard from "../patients/PatientSummaryCard";
 import PatientApprovalTimeline from "./PatientApprovalTimeline";
 
@@ -31,25 +31,21 @@ export default function ApprovalEditor({
 }) {
   const [isEditing, setIsEditing] = useState(false);
 
-  if (!selectedPatient) {
-    return (
-      <div style={styles.emptyState}>
-        Select a patient first from search.
-      </div>
-    );
-  }
-
-  const selectedCodes = (approvalForm.approved_cpt_codes_text || "")
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
-
   const hasExistingApproval = Boolean(
     selectedPatient?.current_approval_number ||
       approvalForm?.authorization_number
   );
 
+  const selectedCodes = useMemo(() => {
+    return (approvalForm?.approved_cpt_codes_text || "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }, [approvalForm?.approved_cpt_codes_text]);
+
   useEffect(() => {
+    if (!selectedPatient) return;
+
     if (hasExistingApproval) {
       setIsEditing(false);
     } else {
@@ -58,10 +54,12 @@ export default function ApprovalEditor({
   }, [selectedPatient?.id, hasExistingApproval]);
 
   useEffect(() => {
+    if (!selectedPatient) return;
+
     if (hasExistingApproval) {
       setIsEditing(false);
     }
-  }, [refreshTimelineKey, hasExistingApproval]);
+  }, [refreshTimelineKey, hasExistingApproval, selectedPatient]);
 
   const toggleCode = (code, defaultSessions = 6) => {
     if (!isEditing) return;
@@ -78,7 +76,7 @@ export default function ApprovalEditor({
       ...approvalForm,
       approved_cpt_codes_text: nextCodes.join(","),
       approved_sessions:
-        Number(approvalForm.approved_sessions || 0) > 0
+        Number(approvalForm?.approved_sessions || 0) > 0
           ? approvalForm.approved_sessions
           : defaultSessions,
     });
@@ -95,13 +93,14 @@ export default function ApprovalEditor({
       ...approvalForm,
       approved_cpt_codes_text: merged.join(","),
       approved_sessions:
-        Number(approvalForm.approved_sessions || 0) > 0
+        Number(approvalForm?.approved_sessions || 0) > 0
           ? approvalForm.approved_sessions
           : 6,
     });
   };
 
   const handleSubmit = async (e) => {
+    e.preventDefault();
     await onSubmit(e);
     setIsEditing(false);
   };
@@ -109,6 +108,14 @@ export default function ApprovalEditor({
   const inputStyle = isEditing
     ? styles.input
     : { ...styles.input, ...styles.inputDisabled };
+
+  if (!selectedPatient) {
+    return (
+      <div style={styles.emptyState}>
+        Select a patient first from search.
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
@@ -119,7 +126,8 @@ export default function ApprovalEditor({
             {hasExistingApproval ? "Current Approval" : "Add New Approval"}
           </h2>
           <div style={styles.subtext}>
-            Review approval details, inspect timeline records, and edit only when needed.
+            Review approval details, inspect timeline records, and edit only
+            when needed.
           </div>
         </div>
       </div>
@@ -160,7 +168,8 @@ export default function ApprovalEditor({
         </div>
 
         <div style={styles.infoBox}>
-          Approval start date is set automatically when the approval is first added.
+          Approval start date is set automatically when the approval is first
+          added.
         </div>
 
         <div style={styles.formGrid}>
@@ -168,7 +177,7 @@ export default function ApprovalEditor({
             <label style={styles.label}>Authorization Number</label>
             <input
               placeholder="Enter authorization number"
-              value={approvalForm.authorization_number}
+              value={approvalForm?.authorization_number || ""}
               onChange={(e) =>
                 setApprovalForm({
                   ...approvalForm,
@@ -185,7 +194,7 @@ export default function ApprovalEditor({
             <input
               type="number"
               min="0"
-              value={approvalForm.approved_sessions}
+              value={approvalForm?.approved_sessions ?? 0}
               onChange={(e) =>
                 setApprovalForm({
                   ...approvalForm,
@@ -201,7 +210,7 @@ export default function ApprovalEditor({
             <label style={styles.label}>Expiry Date</label>
             <input
               type="date"
-              value={approvalForm.expiry_date}
+              value={approvalForm?.expiry_date || ""}
               onChange={(e) =>
                 setApprovalForm({
                   ...approvalForm,
@@ -217,7 +226,7 @@ export default function ApprovalEditor({
             <label style={styles.label}>Current Start Date</label>
             <input
               type="text"
-              value={approvalForm.start_date || "Will be set automatically"}
+              value={approvalForm?.start_date || "Will be set automatically"}
               style={{ ...styles.input, ...styles.inputDisabled }}
               disabled
             />
