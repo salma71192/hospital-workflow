@@ -32,10 +32,6 @@ export default function ReceptionDashboard({
   const [patientForm, setPatientForm] = useState({
     name: "",
     patient_id: "",
-    current_approval_number: "",
-    sessions_taken: "",
-    taken_with: "",
-    current_future_appointments: "",
   });
 
   const [assignmentForm, setAssignmentForm] = useState({
@@ -152,16 +148,16 @@ export default function ReceptionDashboard({
     setError("");
 
     try {
-      const res = await api.post("patients/", patientForm);
+      const res = await api.post("patients/", {
+        name: patientForm.name,
+        patient_id: patientForm.patient_id,
+      });
+
       const patient = res.data.patient;
 
       setPatientForm({
         name: "",
         patient_id: "",
-        current_approval_number: "",
-        sessions_taken: "",
-        taken_with: "",
-        current_future_appointments: "",
       });
 
       if (patient) {
