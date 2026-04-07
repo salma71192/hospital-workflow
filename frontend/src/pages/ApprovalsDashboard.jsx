@@ -42,6 +42,11 @@ export default function ApprovalsDashboard({
     navigate("/admin");
   };
 
+  const handleEditFromOutside = async (patient) => {
+    await handleSelectPatient(patient);
+    setActiveSection("approval");
+  };
+
   const hasExistingApproval = Boolean(
     selectedPatient?.current_approval_number ||
       approvalForm?.authorization_number
@@ -77,13 +82,18 @@ export default function ApprovalsDashboard({
         emptyText="No approval alerts right now."
       />
 
-      {message && <DashboardNotice type="success">{message}</DashboardNotice>}
-      {error && <DashboardNotice type="error">{error}</DashboardNotice>}
+      {message ? (
+        <DashboardNotice type="success">{message}</DashboardNotice>
+      ) : null}
+
+      {error ? (
+        <DashboardNotice type="error">{error}</DashboardNotice>
+      ) : null}
 
       {activeSection === "search" && (
         <UnifiedPatientSearch
           title="Search Patient"
-          onSelectPatient={handleSelectPatient}
+          onSelectPatient={handleEditFromOutside}
           noResultsText="No patients found."
           onRegisterNew={() => setActiveSection("register")}
           getActionLabel={(patient) =>
@@ -115,11 +125,11 @@ export default function ApprovalsDashboard({
       )}
 
       {activeSection === "alerts" && (
-        <ApprovalAlertsSection onEditApproval={handleSelectPatient} />
+        <ApprovalAlertsSection onEditApproval={handleEditFromOutside} />
       )}
 
       {activeSection === "history" && (
-        <ApprovalHistorySection onEditApproval={handleSelectPatient} />
+        <ApprovalHistorySection onEditApproval={handleEditFromOutside} />
       )}
     </DashboardLayout>
   );

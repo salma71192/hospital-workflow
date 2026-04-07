@@ -69,7 +69,7 @@ export default function ApprovalEditor({
       approved_sessions:
         Number(approvalForm?.approved_sessions || 0) > 0
           ? approvalForm.approved_sessions
-          : item.default_sessions,
+          : item.default_sessions || 6,
     });
   };
 
@@ -165,11 +165,29 @@ export default function ApprovalEditor({
         </div>
 
         <div style={styles.infoBox}>
-          Approval start date is set automatically when the approval is first
-          added.
+          For a new approval, Approved Sessions starts at 6 and Used Sessions
+          starts at 0. Both can be changed before saving.
         </div>
 
         <div style={styles.formGrid}>
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Insurance Provider</label>
+            <select
+              value={approvalForm?.insurance_provider || "thiqa"}
+              onChange={(e) =>
+                setApprovalForm({
+                  ...approvalForm,
+                  insurance_provider: e.target.value,
+                })
+              }
+              style={inputStyle}
+              disabled={!isEditing}
+            >
+              <option value="thiqa">Thiqa</option>
+              <option value="daman">Daman</option>
+            </select>
+          </div>
+
           <div style={styles.fieldGroup}>
             <label style={styles.label}>Authorization Number</label>
             <input
@@ -187,11 +205,43 @@ export default function ApprovalEditor({
           </div>
 
           <div style={styles.fieldGroup}>
+            <label style={styles.label}>Start Date</label>
+            <input
+              type="date"
+              value={approvalForm?.start_date || ""}
+              onChange={(e) =>
+                setApprovalForm({
+                  ...approvalForm,
+                  start_date: e.target.value,
+                })
+              }
+              style={inputStyle}
+              disabled={!isEditing}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Expiry Date</label>
+            <input
+              type="date"
+              value={approvalForm?.expiry_date || ""}
+              onChange={(e) =>
+                setApprovalForm({
+                  ...approvalForm,
+                  expiry_date: e.target.value,
+                })
+              }
+              style={inputStyle}
+              disabled={!isEditing}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
             <label style={styles.label}>Approved Sessions</label>
             <input
               type="number"
               min="0"
-              value={approvalForm?.approved_sessions ?? 0}
+              value={approvalForm?.approved_sessions ?? 6}
               onChange={(e) =>
                 setApprovalForm({
                   ...approvalForm,
@@ -229,36 +279,11 @@ export default function ApprovalEditor({
               disabled
             />
           </div>
-
-          <div style={styles.fieldGroup}>
-            <label style={styles.label}>Expiry Date</label>
-            <input
-              type="date"
-              value={approvalForm?.expiry_date || ""}
-              onChange={(e) =>
-                setApprovalForm({
-                  ...approvalForm,
-                  expiry_date: e.target.value,
-                })
-              }
-              style={inputStyle}
-              disabled={!isEditing}
-            />
-          </div>
-
-          <div style={styles.fieldGroup}>
-            <label style={styles.label}>Current Start Date</label>
-            <input
-              type="text"
-              value={approvalForm?.start_date || "Will be set automatically"}
-              style={{ ...styles.input, ...styles.inputDisabled }}
-              disabled
-            />
-          </div>
         </div>
 
         <div style={styles.infoBoxSoft}>
-          Use Used Sessions only when you need to correct the recorded count manually.
+          Use Used Sessions only when you need to correct the recorded count
+          manually.
         </div>
 
         <BillingCodePresets

@@ -20,7 +20,7 @@ export default function useApprovalsDashboard() {
     authorization_number: "",
     start_date: "",
     expiry_date: "",
-    approved_sessions: 0,
+    approved_sessions: 6,
     used_sessions: 0,
     approved_cpt_codes_text: "",
   });
@@ -58,7 +58,7 @@ export default function useApprovalsDashboard() {
         start_date: approval.start_date || patient.approval_start_date || "",
         expiry_date: approval.expiry_date || patient.approval_expiry_date || "",
         approved_sessions:
-          approval.approved_sessions ?? patient.approved_sessions ?? 0,
+          approval.approved_sessions ?? patient.approved_sessions ?? 6,
         used_sessions: patient.sessions_taken ?? 0,
         approved_cpt_codes_text: (
           approval.approved_cpt_codes ||
@@ -85,24 +85,9 @@ export default function useApprovalsDashboard() {
       const res = await api.post("patients/", patientPayload);
       const patient = res.data.patient;
 
-      if (patient && patientForm.authorization_number) {
-        await api.post(`approvals/patient-approval/${patient.id}/`, {
-          insurance_provider: "thiqa",
-          authorization_number: patientForm.authorization_number,
-          expiry_date: patientForm.approval_expiry_date,
-          approved_sessions: Number(patientForm.approved_sessions || 0),
-          used_sessions: 0,
-          approved_cpt_codes: [],
-        });
-      }
-
       setPatientForm({
         name: "",
         patient_id: "",
-        authorization_number: "",
-        approval_start_date: "",
-        approval_expiry_date: "",
-        approved_sessions: 6,
       });
 
       if (patient) {
@@ -133,10 +118,11 @@ export default function useApprovalsDashboard() {
       );
 
       const payload = {
-        insurance_provider: approvalForm.insurance_provider,
+        insurance_provider: approvalForm.insurance_provider || "thiqa",
         authorization_number: approvalForm.authorization_number,
+        start_date: approvalForm.start_date,
         expiry_date: approvalForm.expiry_date,
-        approved_sessions: Number(approvalForm.approved_sessions || 0),
+        approved_sessions: Number(approvalForm.approved_sessions || 6),
         used_sessions: Number(approvalForm.used_sessions || 0),
         approved_cpt_codes: (approvalForm.approved_cpt_codes_text || "")
           .split(",")
@@ -158,6 +144,7 @@ export default function useApprovalsDashboard() {
         ...selectedPatient,
         insurance_provider: payload.insurance_provider,
         current_approval_number: payload.authorization_number,
+        approval_start_date: payload.start_date,
         approval_expiry_date: payload.expiry_date,
         approved_sessions: payload.approved_sessions,
         approved_cpt_codes: payload.approved_cpt_codes,
@@ -205,7 +192,7 @@ export default function useApprovalsDashboard() {
         authorization_number: "",
         start_date: "",
         expiry_date: "",
-        approved_sessions: 0,
+        approved_sessions: 6,
         used_sessions: 0,
         approved_cpt_codes_text: "",
       });

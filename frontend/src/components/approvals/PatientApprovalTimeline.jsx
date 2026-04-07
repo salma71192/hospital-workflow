@@ -8,6 +8,7 @@ export default function PatientApprovalTimeline({
 }) {
   const [rows, setRows] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [showChanges, setShowChanges] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -58,6 +59,10 @@ export default function PatientApprovalTimeline({
     if (selectedIndex < 0 || selectedIndex === rows.length - 1) return null;
     return rows[selectedIndex + 1];
   }, [rows, selectedIndex]);
+
+  useEffect(() => {
+    setShowChanges(false);
+  }, [selectedId]);
 
   useEffect(() => {
     if (selectedRow && onSelectTimelineItem) {
@@ -112,6 +117,13 @@ export default function PatientApprovalTimeline({
       return { ...styles.badge, ...styles.badgeYellow };
     }
     return { ...styles.badge, ...styles.badgeGreen };
+  };
+
+  const formatInsurance = (value) => {
+    if (!value) return "-";
+    if (String(value).toLowerCase() === "thiqa") return "Thiqa";
+    if (String(value).toLowerCase() === "daman") return "Daman";
+    return value;
   };
 
   return (
@@ -212,7 +224,7 @@ export default function PatientApprovalTimeline({
                 </div>
                 <div>
                   <strong>Type:</strong>{" "}
-                  {selectedRow.insurance_provider || "-"}
+                  {formatInsurance(selectedRow.insurance_provider)}
                 </div>
                 <div>
                   <strong>Approval Date:</strong>{" "}
@@ -245,22 +257,37 @@ export default function PatientApprovalTimeline({
               </div>
 
               <div style={styles.changesBlock}>
-                <div style={styles.changesTitle}>What changed</div>
+                <button
+                  type="button"
+                  style={styles.collapseButton}
+                  onClick={() => setShowChanges((prev) => !prev)}
+                >
+                  <span style={styles.changesTitle}>Edit History</span>
+                  <span style={styles.collapseIcon}>
+                    {showChanges ? "−" : "+"}
+                  </span>
+                </button>
 
-                {changes.length === 0 ? (
-                  <div style={styles.helperText}>No recorded changes.</div>
-                ) : (
-                  <div style={styles.changesList}>
-                    {changes.map((change) => (
-                      <div key={change.label} style={styles.changeItem}>
-                        <div style={styles.changeLabel}>{change.label}</div>
-                        <div style={styles.changeValues}>
-                          <span style={styles.changeFrom}>{change.from}</span>
-                          <span style={styles.arrow}>→</span>
-                          <span style={styles.changeTo}>{change.to}</span>
+                {showChanges ? (
+                  changes.length === 0 ? (
+                    <div style={styles.helperText}>No recorded changes.</div>
+                  ) : (
+                    <div style={styles.changesList}>
+                      {changes.map((change) => (
+                        <div key={change.label} style={styles.changeItem}>
+                          <div style={styles.changeLabel}>{change.label}</div>
+                          <div style={styles.changeValues}>
+                            <span style={styles.changeFrom}>{change.from}</span>
+                            <span style={styles.arrow}>→</span>
+                            <span style={styles.changeTo}>{change.to}</span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  <div style={styles.helperText}>
+                    Click to view what was updated in this approval record.
                   </div>
                 )}
               </div>
@@ -407,9 +434,28 @@ const styles = {
     display: "grid",
     gap: "10px",
   },
+  collapseButton: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    background: "#fff",
+    border: "1px solid #e2e8f0",
+    borderRadius: "12px",
+    padding: "12px 14px",
+    cursor: "pointer",
+    textAlign: "left",
+  },
   changesTitle: {
     fontWeight: "800",
     fontSize: "15px",
+    color: "#0f172a",
+  },
+  collapseIcon: {
+    fontSize: "18px",
+    fontWeight: "800",
+    color: "#334155",
+    lineHeight: 1,
   },
   helperText: {
     color: "#64748b",

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../api/api";
 
@@ -9,25 +9,6 @@ export default function PatientDetails({ user, actingAs }) {
   const [patient, setPatient] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-
-  const currentUser = actingAs || user;
-
-  const canEditPatientFile = useMemo(() => {
-    if (!currentUser) return false;
-
-    if (currentUser.is_superuser) return true;
-
-    const role = (currentUser.role || "").toLowerCase();
-
-    return [
-      "admin",
-      "reception",
-      "reception_supervisor",
-      "approvals",
-      "callcenter",
-      "callcenter_supervisor",
-    ].includes(role);
-  }, [currentUser]);
 
   const loadPatient = async () => {
     try {
@@ -77,8 +58,11 @@ export default function PatientDetails({ user, actingAs }) {
     }
   };
 
-  const handleEditPatientFile = () => {
-    navigate(`/patients/${id}/edit`);
+  const formatInsurance = (value) => {
+    if (!value) return "-";
+    if (value.toLowerCase() === "thiqa") return "Thiqa";
+    if (value.toLowerCase() === "daman") return "Daman";
+    return value;
   };
 
   if (loading) {
@@ -123,19 +107,12 @@ export default function PatientDetails({ user, actingAs }) {
         <div style={styles.topBar}>
           <div>
             <h1 style={styles.title}>Patient File</h1>
-            <p style={styles.subtitle}>Complete patient overview and tracking</p>
+            <p style={styles.subtitle}>Clean patient overview</p>
           </div>
 
-          <div style={styles.topActions}>
-            {canEditPatientFile && (
-              <button style={styles.editButton} onClick={handleEditPatientFile}>
-                Edit Patient File
-              </button>
-            )}
-            <button style={styles.backButton} onClick={() => navigate(-1)}>
-              Back
-            </button>
-          </div>
+          <button style={styles.backButton} onClick={() => navigate(-1)}>
+            Back
+          </button>
         </div>
 
         <div style={styles.heroCard}>
@@ -159,67 +136,64 @@ export default function PatientDetails({ user, actingAs }) {
         </div>
 
         <div style={styles.summaryGrid}>
-          <div style={styles.summaryCard}>
-            <div style={styles.summaryLabel}>Approved</div>
-            <div style={styles.summaryValue}>{approved}</div>
+          <SummaryCard label="Approved" value={approved} />
+          <SummaryCard label="Used" value={used} />
+          <SummaryCard label="Remaining" value={remaining} />
+        </div>
+
+        <div style={styles.sectionCard}>
+          <div style={styles.sectionHeader}>Approval Details</div>
+          <div style={styles.infoGrid}>
+            <InfoCard label="Insurance" value={formatInsurance(patient.insurance_provider)} />
+            <InfoCard label="Authorization" value={patient.current_approval_number || "-"} />
+            <InfoCard label="Start Date" value={patient.approval_start_date || "-"} />
+            <InfoCard label="Expiry Date" value={patient.approval_expiry_date || "-"} />
+            <InfoCard label="Approved Sessions" value={patient.approved_sessions ?? 0} />
+            <InfoCard label="Used Sessions" value={patient.sessions_taken ?? 0} />
           </div>
 
-          <div style={styles.summaryCard}>
-            <div style={styles.summaryLabel}>Used</div>
-            <div style={styles.summaryValue}>{used}</div>
-          </div>
-
-          <div style={styles.summaryCard}>
-            <div style={styles.summaryLabel}>Remaining</div>
-            <div style={styles.summaryValue}>{remaining}</div>
+          <div style={styles.fieldBlock}>
+            <div style={styles.blockLabel}>Approved CPT Codes</div>
+            <div style={styles.chipsWrap}>
+              {patient.approved_cpt_codes?.length ? (
+                patient.approved_cpt_codes.map((code, i) => (
+                  <span key={i} style={styles.chip}>
+                    {code}
+                  </span>
+                ))
+              ) : (
+                <span style={styles.muted}>No approved CPT codes</span>
+              )}
+            </div>
           </div>
         </div>
 
-        <div style={styles.grid}>
-          <div style={styles.sectionCard}>
-            <div style={styles.sectionHeader}>Approval Details</div>
-            <Field label="Insurance" value={patient.insurance_provider} />
-            <Field label="Authorization" value={patient.current_approval_number} />
-            <Field label="Start Date" value={patient.approval_start_date} />
-            <Field label="Expiry Date" value={patient.approval_expiry_date} />
-
-            <div style={styles.fieldBlock}>
-              <span style={styles.label}>CPT Codes</span>
-              <div style={styles.chipsWrap}>
-                {patient.approved_cpt_codes?.length ? (
-                  patient.approved_cpt_codes.map((code, i) => (
-                    <span key={i} style={styles.chip}>
-                      {code}
-                    </span>
-                  ))
-                ) : (
-                  <span style={styles.muted}>No codes</span>
-                )}
-              </div>
-            </div>
-          </div>
-
+        <div style={styles.dualGrid}>
           <div style={styles.sectionCard}>
             <div style={styles.sectionHeader}>Physio</div>
-            <Field label="Sessions Used" value={patient.sessions_taken} />
-            <Field label="Therapist" value={patient.taken_with} />
-          </div>
-
-          <div style={styles.sectionCard}>
-            <div style={styles.sectionHeader}>Appointments</div>
-            <div style={styles.largeValue}>
-              {patient.current_future_appointments || "-"}
+            <div style={styles.infoGrid}>
+              <InfoCard label="Sessions Used" value={patient.sessions_taken ?? 0} />
+              <InfoCard label="Therapist" value={patient.taken_with || "-"} />
             </div>
           </div>
 
           <div style={styles.sectionCard}>
             <div style={styles.sectionHeader}>Registration</div>
-            <Field label="Registered By" value={patient.registered_by} />
-            <Field label="Role" value={formatRole(patient.registered_by_role)} />
-            <Field
-              label="Registered At"
-              value={formatDate(patient.registered_at || patient.created_at)}
-            />
+            <div style={styles.infoGrid}>
+              <InfoCard label="Registered By" value={patient.registered_by || "-"} />
+              <InfoCard label="Role" value={formatRole(patient.registered_by_role)} />
+              <InfoCard
+                label="Registered At"
+                value={formatDate(patient.registered_at || patient.created_at)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div style={styles.sectionCard}>
+          <div style={styles.sectionHeader}>Appointments</div>
+          <div style={styles.largeValue}>
+            {patient.current_future_appointments || "-"}
           </div>
         </div>
       </div>
@@ -227,11 +201,20 @@ export default function PatientDetails({ user, actingAs }) {
   );
 }
 
-function Field({ label, value }) {
+function SummaryCard({ label, value }) {
   return (
-    <div style={styles.fieldRow}>
-      <span style={styles.label}>{label}</span>
-      <span style={styles.value}>{value || "-"}</span>
+    <div style={styles.summaryCard}>
+      <div style={styles.summaryLabel}>{label}</div>
+      <div style={styles.summaryValue}>{value}</div>
+    </div>
+  );
+}
+
+function InfoCard({ label, value }) {
+  return (
+    <div style={styles.infoCard}>
+      <div style={styles.infoLabel}>{label}</div>
+      <div style={styles.infoValue}>{value}</div>
     </div>
   );
 }
@@ -255,11 +238,6 @@ const styles = {
     gap: "16px",
     flexWrap: "wrap",
   },
-  topActions: {
-    display: "flex",
-    gap: "10px",
-    flexWrap: "wrap",
-  },
   title: {
     margin: 0,
     fontSize: "34px",
@@ -271,17 +249,26 @@ const styles = {
     color: "#64748b",
     fontSize: "15px",
   },
+  backButton: {
+    background: "#2563eb",
+    color: "#fff",
+    border: "none",
+    borderRadius: "12px",
+    padding: "12px 18px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
   heroCard: {
-    background: "#fff",
+    background: "#ffffff",
     borderRadius: "20px",
     padding: "24px",
+    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
+    border: "1px solid #e8eef7",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "16px",
+    gap: "12px",
     flexWrap: "wrap",
-    border: "1px solid #e8eef7",
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
   },
   patientName: {
     fontSize: "28px",
@@ -300,30 +287,21 @@ const styles = {
     fontWeight: "800",
     fontSize: "12px",
   },
-  badgeGreen: {
-    background: "#dcfce7",
-    color: "#166534",
-  },
-  badgeYellow: {
-    background: "#fef3c7",
-    color: "#92400e",
-  },
-  badgeRed: {
-    background: "#fee2e2",
-    color: "#991b1b",
-  },
+  badgeGreen: { background: "#dcfce7", color: "#166534" },
+  badgeYellow: { background: "#fef3c7", color: "#92400e" },
+  badgeRed: { background: "#fee2e2", color: "#991b1b" },
   summaryGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
     gap: "12px",
   },
   summaryCard: {
     background: "#fff",
-    padding: "16px",
-    borderRadius: "14px",
-    textAlign: "center",
+    borderRadius: "16px",
     border: "1px solid #e2e8f0",
     boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+    padding: "18px",
+    textAlign: "center",
   },
   summaryLabel: {
     fontSize: "13px",
@@ -331,96 +309,91 @@ const styles = {
     fontWeight: "700",
   },
   summaryValue: {
-    fontSize: "22px",
-    fontWeight: "800",
+    marginTop: "6px",
+    fontSize: "24px",
     color: "#0f172a",
-    marginTop: "4px",
+    fontWeight: "800",
   },
-  grid: {
+  dualGrid: {
     display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
     gap: "20px",
   },
   sectionCard: {
-    background: "#fff",
-    padding: "20px",
-    borderRadius: "16px",
-    border: "1px solid #e2e8f0",
+    background: "#ffffff",
+    borderRadius: "18px",
+    padding: "24px",
+    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+    border: "1px solid #e8eef7",
     display: "grid",
-    gap: "12px",
-    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+    gap: "16px",
   },
   sectionHeader: {
-    fontSize: "18px",
+    fontSize: "22px",
     fontWeight: "800",
     color: "#1d4ed8",
   },
-  fieldRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "16px",
-    flexWrap: "wrap",
-    paddingBottom: "10px",
-    borderBottom: "1px solid #eef2f7",
+  infoGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: "12px",
   },
-  label: {
+  infoCard: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "14px",
+    padding: "14px",
+    display: "grid",
+    gap: "6px",
+  },
+  infoLabel: {
     color: "#64748b",
+    fontSize: "12px",
     fontWeight: "700",
-    fontSize: "14px",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
   },
-  value: {
-    fontWeight: "700",
+  infoValue: {
     color: "#0f172a",
-    fontSize: "14px",
-    textAlign: "right",
+    fontSize: "15px",
+    fontWeight: "800",
   },
   fieldBlock: {
     display: "grid",
-    gap: "8px",
+    gap: "10px",
+  },
+  blockLabel: {
+    color: "#64748b",
+    fontSize: "13px",
+    fontWeight: "700",
+  },
+  largeValue: {
+    color: "#0f172a",
+    fontSize: "15px",
+    fontWeight: "700",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "12px",
+    padding: "14px",
+    whiteSpace: "pre-wrap",
   },
   chipsWrap: {
     display: "flex",
-    gap: "6px",
+    gap: "8px",
     flexWrap: "wrap",
   },
   chip: {
     background: "#dbeafe",
     color: "#1d4ed8",
-    padding: "4px 8px",
+    padding: "6px 10px",
     borderRadius: "999px",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: "800",
   },
   muted: {
     color: "#94a3b8",
-    fontWeight: "600",
     fontSize: "14px",
-  },
-  largeValue: {
-    background: "#f8fafc",
-    padding: "12px",
-    borderRadius: "10px",
-    border: "1px solid #e2e8f0",
-    color: "#0f172a",
-    fontWeight: "700",
-    whiteSpace: "pre-wrap",
-  },
-  backButton: {
-    background: "#2563eb",
-    color: "#fff",
-    padding: "10px 14px",
-    borderRadius: "10px",
-    border: "none",
-    cursor: "pointer",
-    fontWeight: "700",
-  },
-  editButton: {
-    background: "#16a34a",
-    color: "#fff",
-    padding: "10px 14px",
-    borderRadius: "10px",
-    border: "none",
-    cursor: "pointer",
-    fontWeight: "700",
+    fontWeight: "600",
   },
   infoBox: {
     background: "#f8fafc",
