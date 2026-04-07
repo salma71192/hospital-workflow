@@ -1,10 +1,14 @@
 import React from "react";
+import BookingWeekStrip from "./BookingWeekStrip";
+import BookingSlotsBoard from "./BookingSlotsBoard";
 
 export default function CallCenterBookingSection({
   selectedPatient,
   bookingForm,
   setBookingForm,
   therapists,
+  weekDates,
+  slots,
   onSelectTherapist,
   onSelectDate,
   onSelectSlot,
@@ -17,6 +21,11 @@ export default function CallCenterBookingSection({
       </div>
     );
   }
+
+  const selectedTherapist =
+    therapists.find(
+      (item) => String(item.id) === String(bookingForm.therapist_id)
+    ) || null;
 
   return (
     <div style={styles.page}>
@@ -57,16 +66,31 @@ export default function CallCenterBookingSection({
         )}
       </div>
 
+      <BookingWeekStrip
+        weekDates={weekDates}
+        selectedDate={bookingForm.appointment_date}
+        onSelectDate={onSelectDate}
+      />
+
+      <BookingSlotsBoard
+        slots={slots}
+        selectedTime={bookingForm.appointment_time}
+        onSelectSlot={onSelectSlot}
+      />
+
       <div style={styles.card}>
         <div style={styles.sectionTitle}>Selected Booking</div>
 
         <div style={styles.summaryGrid}>
           <div style={styles.summaryItem}>
+            <div style={styles.summaryLabel}>Patient</div>
+            <div style={styles.summaryValue}>{selectedPatient.name}</div>
+          </div>
+
+          <div style={styles.summaryItem}>
             <div style={styles.summaryLabel}>Therapist</div>
             <div style={styles.summaryValue}>
-              {therapists.find(
-                (item) => String(item.id) === String(bookingForm.therapist_id)
-              )?.name || "-"}
+              {selectedTherapist?.name || "-"}
             </div>
           </div>
 
@@ -85,13 +109,31 @@ export default function CallCenterBookingSection({
           </div>
         </div>
 
-        <div style={styles.infoBox}>
-          Next step: add week strip and slot blocks here.
+        <div style={styles.notesWrap}>
+          <label style={styles.notesLabel}>Notes</label>
+          <textarea
+            value={bookingForm.notes || ""}
+            onChange={(e) =>
+              setBookingForm((prev) => ({
+                ...prev,
+                notes: e.target.value,
+              }))
+            }
+            placeholder="Add optional booking notes"
+            style={styles.textarea}
+          />
         </div>
 
         <button
           type="button"
-          style={styles.primaryButton}
+          style={{
+            ...styles.primaryButton,
+            ...((!bookingForm.therapist_id ||
+              !bookingForm.appointment_date ||
+              !bookingForm.appointment_time)
+              ? styles.primaryButtonDisabled
+              : {}),
+          }}
           onClick={onConfirmBooking}
           disabled={
             !bookingForm.therapist_id ||
@@ -163,10 +205,12 @@ const styles = {
     cursor: "pointer",
     textAlign: "left",
     fontWeight: "700",
+    transition: "all 0.18s ease",
   },
   therapistCardActive: {
     borderColor: "#be185d",
     background: "#fdf2f8",
+    boxShadow: "0 0 0 1px #f9a8d4 inset",
   },
   therapistName: {
     fontSize: "15px",
@@ -197,13 +241,24 @@ const styles = {
     fontWeight: "800",
     color: "#0f172a",
   },
-  infoBox: {
-    background: "#f8fafc",
-    border: "1px dashed #cbd5e1",
+  notesWrap: {
+    display: "grid",
+    gap: "8px",
+  },
+  notesLabel: {
+    fontSize: "13px",
+    fontWeight: "700",
+    color: "#475569",
+  },
+  textarea: {
+    minHeight: "90px",
+    padding: "12px 14px",
     borderRadius: "12px",
-    padding: "14px",
-    color: "#64748b",
-    fontWeight: "600",
+    border: "1px solid #cbd5e1",
+    fontSize: "14px",
+    background: "#fff",
+    resize: "vertical",
+    outline: "none",
   },
   primaryButton: {
     background: "#be185d",
@@ -213,6 +268,10 @@ const styles = {
     padding: "12px 18px",
     fontWeight: "800",
     cursor: "pointer",
+  },
+  primaryButtonDisabled: {
+    background: "#f9a8d4",
+    cursor: "not-allowed",
   },
   emptyState: {
     color: "#64748b",

@@ -30,6 +30,8 @@ export default function CallCenterDashboard({
     bookingForm,
     setBookingForm,
     therapists,
+    weekDates,
+    slots,
     todayBookingsCount,
     monthlyBookingsCount,
     handleSelectPatient,
@@ -103,6 +105,8 @@ export default function CallCenterDashboard({
           bookingForm={bookingForm}
           setBookingForm={setBookingForm}
           therapists={therapists}
+          weekDates={weekDates}
+          slots={slots}
           onSelectTherapist={handleSelectTherapist}
           onSelectDate={handleSelectDate}
           onSelectSlot={handleSelectSlot}
