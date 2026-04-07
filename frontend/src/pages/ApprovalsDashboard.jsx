@@ -42,7 +42,7 @@ export default function ApprovalsDashboard({
     navigate("/admin");
   };
 
-  const handleEditFromOutside = async (patient) => {
+  const handleOpenApproval = async (patient) => {
     await handleSelectPatient(patient);
     setActiveSection("approval");
   };
@@ -93,7 +93,7 @@ export default function ApprovalsDashboard({
       {activeSection === "search" && (
         <UnifiedPatientSearch
           title="Search Patient"
-          onSelectPatient={handleEditFromOutside}
+          onSelectPatient={handleOpenApproval}
           noResultsText="No patients found."
           onRegisterNew={() => setActiveSection("register")}
           getActionLabel={(patient) =>
@@ -125,11 +125,11 @@ export default function ApprovalsDashboard({
       )}
 
       {activeSection === "alerts" && (
-        <ApprovalAlertsSection onEditApproval={handleEditFromOutside} />
+        <ApprovalAlertsSection onEditApproval={handleOpenApproval} />
       )}
 
       {activeSection === "history" && (
-        <ApprovalHistorySection onEditApproval={handleEditFromOutside} />
+        <ApprovalHistorySection onEditApproval={handleOpenApproval} />
       )}
     </DashboardLayout>
   );

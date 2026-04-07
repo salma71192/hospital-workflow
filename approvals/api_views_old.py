@@ -29,8 +29,8 @@ def _validate_date(value):
     if not value:
         return None
     try:
-        datetime.strptime(value, "%Y-%m-%d")
-        return value
+        parsed = datetime.strptime(value, "%Y-%m-%d").date()
+        return parsed
     except Exception:
         return None
 
@@ -45,7 +45,7 @@ def patient_approval_api(request, patient_id):
     except Patient.DoesNotExist:
         return JsonResponse({"error": "Patient not found"}, status=404)
 
-    approval, created = PatientApproval.objects.get_or_create(patient=patient)
+    approval, _ = PatientApproval.objects.get_or_create(patient=patient)
 
     if request.method == "GET":
         return JsonResponse({
@@ -56,7 +56,7 @@ def patient_approval_api(request, patient_id):
                 "sessions_taken": patient.sessions_taken or 0,
             },
             "approval": {
-                "insurance_provider": approval.insurance_provider,
+                "insurance_provider": approval.insurance_provider or "thiqa",
                 "authorization_number": approval.authorization_number or "",
                 "start_date": str(approval.start_date) if approval.start_date else "",
                 "expiry_date": str(approval.expiry_date) if approval.expiry_date else "",
@@ -71,14 +71,20 @@ def patient_approval_api(request, patient_id):
         if data is None:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-        # Start date is controlled by backend.
-        # Keep existing start_date if approval already exists, otherwise use today.
+        start_date = _validate_date(data.get("start_date"))
         expiry_date = _validate_date(data.get("expiry_date"))
+
+        if data.get("start_date") and not start_date:
+            return JsonResponse({"error": "Invalid start_date"}, status=400)
+
         if data.get("expiry_date") and not expiry_date:
             return JsonResponse({"error": "Invalid expiry_date"}, status=400)
 
+        if not start_date:
+            start_date = approval.start_date or timezone.localdate()
+
         try:
-            approved_sessions = int(data.get("approved_sessions", 0))
+            approved_sessions = int(data.get("approved_sessions", 6))
             if approved_sessions < 0:
                 approved_sessions = 0
         except Exception:
@@ -104,7 +110,6 @@ def patient_approval_api(request, patient_id):
                 status=400,
             )
 
-        # Normalize CPT codes
         normalized_codes = []
         seen_codes = set()
         for code in codes:
@@ -115,7 +120,7 @@ def patient_approval_api(request, patient_id):
 
         insurance_provider = (data.get("insurance_provider") or "thiqa").strip().lower()
         authorization_number = (data.get("authorization_number") or "").strip() or None
-        notes = data.get("notes") or None
+        notes = (data.get("notes") or "").strip() or None
 
         if authorization_number:
             duplicate = (
@@ -132,8 +137,6 @@ def patient_approval_api(request, patient_id):
                     },
                     status=400,
                 )
-
-        start_date = approval.start_date or timezone.localdate()
 
         ApprovalHistory.objects.create(
             patient=patient,
