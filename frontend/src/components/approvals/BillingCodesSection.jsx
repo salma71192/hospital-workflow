@@ -14,7 +14,7 @@ export default function BillingCodesSection({
   const [isAddingDefaults, setIsAddingDefaults] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
-  const provider = billingForm?.insurance_provider || "thiqa";
+  const provider = billingForm?.insurance_provider || "Thiqa";
   const normalizedCode = useMemo(
     () => String(billingForm?.code || "").trim().toUpperCase(),
     [billingForm?.code]
@@ -24,7 +24,7 @@ export default function BillingCodesSection({
     setEditingId(null);
     setBillingForm((prev) => ({
       ...prev,
-      insurance_provider: prev?.insurance_provider || "thiqa",
+      insurance_provider: prev?.insurance_provider || "Thiqa",
       code: "",
       default_sessions: 6,
     }));
@@ -67,7 +67,7 @@ export default function BillingCodesSection({
     setEditingId(item.id);
     setBillingForm((prev) => ({
       ...prev,
-      insurance_provider: item.insurance_provider || "thiqa",
+      insurance_provider: item.insurance_provider || "Thiqa",
       code: item.code,
       default_sessions: item.default_sessions,
     }));
@@ -235,7 +235,7 @@ export default function BillingCodesSection({
               <div key={item.id} style={styles.billingCard}>
                 <div style={styles.billingCode}>{item.code}</div>
                 <div style={styles.billingProvider}>
-                  Provider: {(item.insurance_provider || "thiqa").toUpperCase()}
+                  Provider: {(item.insurance_provider || "Thiqa").toUpperCase()}
                 </div>
                 <div style={styles.billingSessions}>
                   Default Sessions: {item.default_sessions}

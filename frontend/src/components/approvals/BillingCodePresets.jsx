@@ -4,7 +4,7 @@ const DEFAULT_CODES = [
   { code: "97140", default_sessions: 6 },
   { code: "97110", default_sessions: 6 },
   { code: "97026", default_sessions: 6 },
-  { code: "94014", default_sessions: 6 },
+  { code: "97014", default_sessions: 6 },
 ];
 
 const OPTIONAL_CODES = [
