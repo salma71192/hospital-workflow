@@ -9,9 +9,10 @@ export default function ApprovalsPatientRegisterForm({
     <div style={styles.card}>
       <div style={styles.header}>
         <div style={styles.eyebrow}>Patient Registration</div>
-        <h2 style={styles.title}>Register Patient with Approval</h2>
+        <h2 style={styles.title}>Register New Patient</h2>
         <div style={styles.subtext}>
-          Create a new patient and add the first approval details.
+          Create the patient file with patient name and file number only.
+          Approval details can be added after registration.
         </div>
       </div>
 
@@ -25,7 +26,7 @@ export default function ApprovalsPatientRegisterForm({
               <input
                 type="text"
                 placeholder="Enter patient name"
-                value={patientForm.name}
+                value={patientForm.name || ""}
                 onChange={(e) =>
                   setPatientForm({ ...patientForm, name: e.target.value })
                 }
@@ -35,11 +36,11 @@ export default function ApprovalsPatientRegisterForm({
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Patient ID</label>
+              <label style={styles.label}>File Number</label>
               <input
                 type="text"
-                placeholder="Enter patient ID"
-                value={patientForm.patient_id}
+                placeholder="Enter file number"
+                value={patientForm.patient_id || ""}
                 onChange={(e) =>
                   setPatientForm({ ...patientForm, patient_id: e.target.value })
                 }
@@ -50,73 +51,9 @@ export default function ApprovalsPatientRegisterForm({
           </div>
         </div>
 
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>Approval Details</div>
-
-          <div style={styles.formGrid}>
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Approval Number</label>
-              <input
-                type="text"
-                placeholder="Enter approval number"
-                value={patientForm.authorization_number}
-                onChange={(e) =>
-                  setPatientForm({
-                    ...patientForm,
-                    authorization_number: e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Start Date</label>
-              <input
-                type="date"
-                value={patientForm.approval_start_date}
-                onChange={(e) =>
-                  setPatientForm({
-                    ...patientForm,
-                    approval_start_date: e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Expiry Date</label>
-              <input
-                type="date"
-                value={patientForm.approval_expiry_date}
-                onChange={(e) =>
-                  setPatientForm({
-                    ...patientForm,
-                    approval_expiry_date: e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Approved Sessions</label>
-              <input
-                type="number"
-                min="0"
-                placeholder="Enter approved sessions"
-                value={patientForm.approved_sessions}
-                onChange={(e) =>
-                  setPatientForm({
-                    ...patientForm,
-                    approved_sessions: e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </div>
-          </div>
+        <div style={styles.infoBox}>
+          The first registration user and role are recorded automatically in the
+          patient file.
         </div>
 
         <div style={styles.actionBar}>
@@ -194,6 +131,15 @@ const styles = {
     fontSize: "15px",
     background: "#fff",
     outline: "none",
+  },
+  infoBox: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "12px",
+    padding: "12px 14px",
+    fontSize: "14px",
+    color: "#475569",
+    fontWeight: "600",
   },
   actionBar: {
     display: "flex",

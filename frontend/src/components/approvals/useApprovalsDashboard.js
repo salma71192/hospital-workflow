@@ -13,10 +13,6 @@ export default function useApprovalsDashboard() {
   const [patientForm, setPatientForm] = useState({
     name: "",
     patient_id: "",
-    authorization_number: "",
-    approval_start_date: "",
-    approval_expiry_date: "",
-    approved_sessions: 6,
   });
 
   const [approvalForm, setApprovalForm] = useState({
