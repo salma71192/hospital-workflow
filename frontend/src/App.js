@@ -11,12 +11,13 @@ import api from "./api/api";
 // pages
 import Login from "./pages/Login";
 import PatientDetails from "./pages/PatientDetails";
+import EditPatientFile from "./pages/EditPatientFile";
 
 // routing helpers
 import ProtectedRoute from "./components/routing/ProtectedRoute";
 import RoleRoute from "./components/routing/RoleRoute";
 
-// routes config (MAKE SURE FILE IS .js NOT .jsx)
+// routes config
 import { dashboardRoutes } from "./routes/routesConfig";
 
 function App() {
@@ -64,17 +65,13 @@ function App() {
     <Router>
       <Suspense fallback={<div style={{ padding: 20 }}>Loading page...</div>}>
         <Routes>
-          {/* Default */}
           <Route path="/" element={<Navigate to="/login" replace />} />
 
-          {/* Login */}
           <Route path="/login" element={<Login onLogin={handleLogin} />} />
 
-          {/* Dynamic dashboards */}
           {dashboardRoutes.map((route) => {
             const Component = route.component;
 
-            // Admin-only route
             if (route.adminOnly) {
               return (
                 <Route
@@ -93,7 +90,6 @@ function App() {
               );
             }
 
-            // Role-based route
             return (
               <Route
                 key={route.path}
@@ -116,7 +112,6 @@ function App() {
             );
           })}
 
-          {/* Patient file */}
           <Route
             path="/patients/:id"
             element={
@@ -131,7 +126,20 @@ function App() {
             }
           />
 
-          {/* Fallback */}
+          <Route
+            path="/patients/:id/edit"
+            element={
+              <ProtectedRoute isAllowed={!!currentUser}>
+                <EditPatientFile
+                  user={currentUser}
+                  actingAs={actingAs}
+                  onLogout={handleLogout}
+                  onStopImpersonation={stopImpersonation}
+                />
+              </ProtectedRoute>
+            }
+          />
+
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Suspense>
