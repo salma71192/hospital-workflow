@@ -9,6 +9,7 @@ import CallCenterRegisterSection from "../components/callcenter/CallCenterRegist
 import CallCenterBookingSection from "../components/callcenter/CallCenterBookingSection";
 import TodayBookingsSection from "../components/callcenter/TodayBookingsSection";
 import MonthlyBookingsSection from "../components/callcenter/MonthlyBookingsSection";
+import FutureBookingsSection from "../components/callcenter/FutureBookingsSection";
 
 import useCallCenterDashboard from "../components/callcenter/useCallCenterDashboard";
 
@@ -40,6 +41,11 @@ export default function CallCenterDashboard({
     monthlyAgents,
     monthlyFilter,
     setMonthlyFilter,
+    futureBookings,
+    futureTherapistSummary,
+    futureDaySummary,
+    futureFilter,
+    setFutureFilter,
     handleSelectPatient,
     handleCreatePatientFile,
     handleSelectTherapist,
@@ -47,6 +53,9 @@ export default function CallCenterDashboard({
     handleSelectSlot,
     handleConfirmBooking,
     handleApplyMonthlyFilters,
+    handleApplyFutureFilters,
+    handleEditBooking,
+    handleDeleteBooking,
   } = useCallCenterDashboard();
 
   const handleBackToAdmin = () => {
@@ -65,6 +74,7 @@ export default function CallCenterDashboard({
         { key: "booking", label: "Book Appointment" },
         { key: "today", label: `Daily Booking (${todayBookingsCount || 0})` },
         { key: "monthly", label: `Monthly Tracker (${monthlyBookingsCount || 0})` },
+        { key: "future", label: "Future Booking" },
       ]}
       activeSection={activeSection}
       setActiveSection={setActiveSection}
@@ -113,7 +123,11 @@ export default function CallCenterDashboard({
       )}
 
       {activeSection === "today" && (
-        <TodayBookingsSection bookings={todayBookings} />
+        <TodayBookingsSection
+          bookings={todayBookings}
+          onEditBooking={handleEditBooking}
+          onDeleteBooking={handleDeleteBooking}
+        />
       )}
 
       {activeSection === "monthly" && (
@@ -124,6 +138,20 @@ export default function CallCenterDashboard({
           monthlyFilter={monthlyFilter}
           setMonthlyFilter={setMonthlyFilter}
           onApplyFilters={handleApplyMonthlyFilters}
+        />
+      )}
+
+      {activeSection === "future" && (
+        <FutureBookingsSection
+          futureBookings={futureBookings}
+          therapistSummary={futureTherapistSummary}
+          daySummary={futureDaySummary}
+          therapists={therapists}
+          futureFilter={futureFilter}
+          setFutureFilter={setFutureFilter}
+          onApplyFilters={handleApplyFutureFilters}
+          onEditBooking={handleEditBooking}
+          onDeleteBooking={handleDeleteBooking}
         />
       )}
     </DashboardLayout>

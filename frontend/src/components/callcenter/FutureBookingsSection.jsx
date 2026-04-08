@@ -8,6 +8,8 @@ export default function FutureBookingsSection({
   futureFilter,
   setFutureFilter,
   onApplyFilters,
+  onEditBooking,
+  onDeleteBooking,
 }) {
   return (
     <div style={styles.page}>
@@ -149,6 +151,7 @@ export default function FutureBookingsSection({
                   <th style={styles.th}>Date</th>
                   <th style={styles.th}>Time</th>
                   <th style={styles.th}>Booked By</th>
+                  <th style={styles.th}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -160,6 +163,26 @@ export default function FutureBookingsSection({
                     <td style={styles.td}>{item.appointment_date}</td>
                     <td style={styles.td}>{item.appointment_time}</td>
                     <td style={styles.td}>{item.created_by_name || "-"}</td>
+                    <td style={styles.td}>
+                      <div style={styles.actions}>
+                        <button
+                          type="button"
+                          style={styles.editBtn}
+                          onClick={() => onEditBooking && onEditBooking(item)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.deleteBtn}
+                          onClick={() =>
+                            onDeleteBooking && onDeleteBooking(item.id)
+                          }
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -288,7 +311,7 @@ const styles = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "860px",
+    minWidth: "980px",
   },
   th: {
     textAlign: "left",
@@ -303,6 +326,32 @@ const styles = {
     borderBottom: "1px solid #eef2f7",
     fontSize: "14px",
     color: "#0f172a",
+    verticalAlign: "top",
+  },
+  actions: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+  editBtn: {
+    background: "#0ea5e9",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "6px 10px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "700",
+  },
+  deleteBtn: {
+    background: "#ef4444",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "6px 10px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "700",
   },
   emptyState: {
     color: "#64748b",

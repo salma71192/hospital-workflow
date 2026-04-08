@@ -47,6 +47,7 @@ export default function useCallCenterDashboard() {
   });
 
   const [bookingForm, setBookingForm] = useState({
+    booking_id: "",
     therapist_id: "",
     appointment_date: getTodayString(),
     appointment_time: "",
@@ -69,6 +70,16 @@ export default function useCallCenterDashboard() {
     user_id: "all",
     patient: "",
     therapist_id: "all",
+  });
+
+  const [futureBookings, setFutureBookings] = useState([]);
+  const [futureTherapistSummary, setFutureTherapistSummary] = useState([]);
+  const [futureDaySummary, setFutureDaySummary] = useState([]);
+  const [futureFilter, setFutureFilter] = useState({
+    from_date: getTodayString(),
+    to_date: "",
+    therapist_id: "all",
+    day: "",
   });
 
   const selectedTherapist = useMemo(() => {
@@ -94,6 +105,7 @@ export default function useCallCenterDashboard() {
       loadTherapists(),
       loadTodayBookings(),
       loadMonthlyBookings(),
+      loadFutureBookings(),
     ]);
   };
 
@@ -130,18 +142,13 @@ export default function useCallCenterDashboard() {
     try {
       const params = new URLSearchParams();
 
-      if (monthValue) {
-        params.append("month", monthValue);
-      }
-
+      if (monthValue) params.append("month", monthValue);
       if (userIdValue && userIdValue !== "all") {
         params.append("user_id", userIdValue);
       }
-
       if (patientValue?.trim()) {
         params.append("patient", patientValue.trim());
       }
-
       if (therapistIdValue && therapistIdValue !== "all") {
         params.append("therapist_id", therapistIdValue);
       }
@@ -164,6 +171,40 @@ export default function useCallCenterDashboard() {
     }
   };
 
+  const loadFutureBookings = async (
+    fromDateValue = futureFilter.from_date,
+    toDateValue = futureFilter.to_date,
+    therapistIdValue = futureFilter.therapist_id,
+    dayValue = futureFilter.day
+  ) => {
+    try {
+      const params = new URLSearchParams();
+
+      if (fromDateValue) params.append("from_date", fromDateValue);
+      if (toDateValue) params.append("to_date", toDateValue);
+      if (therapistIdValue && therapistIdValue !== "all") {
+        params.append("therapist_id", therapistIdValue);
+      }
+      if (dayValue) params.append("day", dayValue);
+
+      const query = params.toString();
+      const url = query
+        ? `callcenter/bookings/future/?${query}`
+        : "callcenter/bookings/future/";
+
+      const res = await api.get(url);
+
+      setFutureBookings(res.data.bookings || []);
+      setFutureTherapistSummary(res.data.therapist_summary || []);
+      setFutureDaySummary(res.data.day_summary || []);
+    } catch (err) {
+      console.error("Failed to load future bookings", err);
+      setFutureBookings([]);
+      setFutureTherapistSummary([]);
+      setFutureDaySummary([]);
+    }
+  };
+
   const loadSlots = async (therapistId, appointmentDate) => {
     try {
       setError("");
@@ -178,9 +219,7 @@ export default function useCallCenterDashboard() {
       const mergedSlots = allTimes.map((time) => {
         const existing = backendSlots.find((slot) => slot.time === time);
 
-        if (existing) {
-          return existing;
-        }
+        if (existing) return existing;
 
         return {
           time,
@@ -211,6 +250,7 @@ export default function useCallCenterDashboard() {
 
     setBookingForm((prev) => ({
       ...prev,
+      booking_id: "",
       appointment_time: "",
       notes: "",
     }));
@@ -317,23 +357,29 @@ export default function useCallCenterDashboard() {
         notes: bookingForm.notes || "",
       };
 
-      await api.post("callcenter/bookings/", payload);
-
-      setMessage("Appointment booked successfully");
+      if (bookingForm.booking_id) {
+        await api.put(`callcenter/bookings/${bookingForm.booking_id}/`, payload);
+        setMessage("Appointment updated successfully");
+      } else {
+        await api.post("callcenter/bookings/", payload);
+        setMessage("Appointment booked successfully");
+      }
 
       await Promise.all([
         loadSlots(bookingForm.therapist_id, bookingForm.appointment_date),
         loadTodayBookings(),
         loadMonthlyBookings(),
+        loadFutureBookings(),
       ]);
 
       setBookingForm((prev) => ({
         ...prev,
+        booking_id: "",
         appointment_time: "",
         notes: "",
       }));
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to book appointment");
+      setError(err?.response?.data?.error || "Failed to save appointment");
     }
   };
 
@@ -344,6 +390,62 @@ export default function useCallCenterDashboard() {
       monthlyFilter.patient,
       monthlyFilter.therapist_id
     );
+  };
+
+  const handleApplyFutureFilters = async () => {
+    await loadFutureBookings(
+      futureFilter.from_date,
+      futureFilter.to_date,
+      futureFilter.therapist_id,
+      futureFilter.day
+    );
+  };
+
+  const handleEditBooking = async (booking) => {
+    setMessage("");
+    setError("");
+
+    setSelectedPatient({
+      id: booking.patient_db_id,
+      name: booking.patient_name,
+      patient_id: booking.patient_id,
+    });
+
+    setBookingForm({
+      booking_id: booking.id,
+      therapist_id: String(booking.therapist_id || ""),
+      appointment_date: booking.appointment_date || getTodayString(),
+      appointment_time: booking.appointment_time || "",
+      notes: booking.notes || "",
+    });
+
+    setActiveSection("booking");
+  };
+
+  const handleDeleteBooking = async (bookingId) => {
+    const confirmed = window.confirm("Delete this booking?");
+    if (!confirmed) return;
+
+    try {
+      setMessage("");
+      setError("");
+
+      await api.delete(`callcenter/bookings/${bookingId}/`);
+
+      setMessage("Booking deleted successfully");
+
+      await Promise.all([
+        loadTodayBookings(),
+        loadMonthlyBookings(),
+        loadFutureBookings(),
+      ]);
+
+      if (bookingForm.therapist_id && bookingForm.appointment_date) {
+        await loadSlots(bookingForm.therapist_id, bookingForm.appointment_date);
+      }
+    } catch (err) {
+      setError(err?.response?.data?.error || "Failed to delete booking");
+    }
   };
 
   return {
@@ -379,6 +481,12 @@ export default function useCallCenterDashboard() {
     monthlyFilter,
     setMonthlyFilter,
 
+    futureBookings,
+    futureTherapistSummary,
+    futureDaySummary,
+    futureFilter,
+    setFutureFilter,
+
     handleSelectPatient,
     handleCreatePatientFile,
     handleSelectTherapist,
@@ -386,5 +494,8 @@ export default function useCallCenterDashboard() {
     handleSelectSlot,
     handleConfirmBooking,
     handleApplyMonthlyFilters,
+    handleApplyFutureFilters,
+    handleEditBooking,
+    handleDeleteBooking,
   };
 }

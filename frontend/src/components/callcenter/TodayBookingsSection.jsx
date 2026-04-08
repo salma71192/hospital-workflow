@@ -2,6 +2,8 @@ import React from "react";
 
 export default function TodayBookingsSection({
   bookings = [],
+  onEditBooking,
+  onDeleteBooking,
 }) {
   return (
     <div style={styles.card}>
@@ -21,7 +23,30 @@ export default function TodayBookingsSection({
             <div key={item.id} style={styles.bookingCard}>
               <div style={styles.topRow}>
                 <div style={styles.patientName}>{item.patient_name}</div>
-                <div style={styles.timeBadge}>{item.appointment_time}</div>
+
+                <div style={styles.rightActions}>
+                  <div style={styles.timeBadge}>
+                    {item.appointment_time}
+                  </div>
+
+                  <div style={styles.actions}>
+                    <button
+                      style={styles.editBtn}
+                      onClick={() => onEditBooking && onEditBooking(item)}
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      style={styles.deleteBtn}
+                      onClick={() =>
+                        onDeleteBooking && onDeleteBooking(item.id)
+                      }
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div style={styles.metaGrid}>
@@ -102,6 +127,11 @@ const styles = {
     alignItems: "center",
     flexWrap: "wrap",
   },
+  rightActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+  },
   patientName: {
     fontSize: "16px",
     fontWeight: "800",
@@ -114,6 +144,30 @@ const styles = {
     borderRadius: "999px",
     fontSize: "12px",
     fontWeight: "800",
+  },
+  actions: {
+    display: "flex",
+    gap: "6px",
+  },
+  editBtn: {
+    background: "#0ea5e9",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "6px 10px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "700",
+  },
+  deleteBtn: {
+    background: "#ef4444",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "6px 10px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "700",
   },
   metaGrid: {
     display: "grid",
