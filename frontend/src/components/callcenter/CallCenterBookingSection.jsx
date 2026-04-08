@@ -38,32 +38,23 @@ export default function CallCenterBookingSection({
       </div>
 
       <div style={styles.card}>
-        <div style={styles.sectionTitle}>Choose Therapist</div>
+        <div style={styles.sectionTitle}>Choose Physio</div>
 
-        {therapists.length === 0 ? (
-          <div style={styles.emptyState}>No therapists available.</div>
-        ) : (
-          <div style={styles.therapistGrid}>
-            {therapists.map((therapist) => {
-              const isActive =
-                String(bookingForm.therapist_id) === String(therapist.id);
-
-              return (
-                <button
-                  key={therapist.id}
-                  type="button"
-                  onClick={() => onSelectTherapist(therapist.id)}
-                  style={{
-                    ...styles.therapistCard,
-                    ...(isActive ? styles.therapistCardActive : {}),
-                  }}
-                >
-                  <div style={styles.therapistName}>{therapist.name}</div>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <div style={styles.fieldGroup}>
+          <label style={styles.label}>Physio</label>
+          <select
+            value={bookingForm.therapist_id || ""}
+            onChange={(e) => onSelectTherapist(e.target.value)}
+            style={styles.input}
+          >
+            <option value="">Select physio</option>
+            {therapists.map((therapist) => (
+              <option key={therapist.id} value={therapist.id}>
+                {therapist.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <BookingWeekStrip
@@ -72,16 +63,26 @@ export default function CallCenterBookingSection({
         onSelectDate={onSelectDate}
       />
 
-      <BookingSlotsBoard
-        slots={slots}
-        selectedTime={bookingForm.appointment_time}
-        onSelectSlot={onSelectSlot}
-      />
+      <div style={styles.card}>
+        <div style={styles.sectionTitle}>Available Slots</div>
+
+        {!bookingForm.therapist_id ? (
+          <div style={styles.emptyState}>
+            Select a physio first to view slots.
+          </div>
+        ) : (
+          <BookingSlotsBoard
+            slots={slots}
+            selectedTime={bookingForm.appointment_time}
+            onSelectSlot={onSelectSlot}
+          />
+        )}
+      </div>
 
       <div style={styles.actionCard}>
         <div style={styles.selectionRow}>
           <div style={styles.selectionItem}>
-            <span style={styles.selectionLabel}>Therapist</span>
+            <span style={styles.selectionLabel}>Physio</span>
             <span style={styles.selectionValue}>
               {selectedTherapist?.name || "-"}
             </span>
@@ -103,7 +104,7 @@ export default function CallCenterBookingSection({
         </div>
 
         <div style={styles.notesWrap}>
-          <label style={styles.notesLabel}>Notes</label>
+          <label style={styles.label}>Notes</label>
           <textarea
             value={bookingForm.notes || ""}
             onChange={(e) =>
@@ -194,30 +195,22 @@ const styles = {
     fontWeight: "800",
     color: "#0f172a",
   },
-  therapistGrid: {
+  fieldGroup: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: "12px",
+    gap: "8px",
   },
-  therapistCard: {
-    border: "1px solid #e2e8f0",
-    background: "#fff",
-    borderRadius: "14px",
-    padding: "16px",
-    cursor: "pointer",
-    textAlign: "left",
+  label: {
+    fontSize: "13px",
     fontWeight: "700",
-    transition: "all 0.18s ease",
+    color: "#475569",
   },
-  therapistCardActive: {
-    borderColor: "#be185d",
-    background: "#fdf2f8",
-    boxShadow: "0 0 0 1px #f9a8d4 inset",
-  },
-  therapistName: {
-    fontSize: "15px",
-    fontWeight: "800",
-    color: "#0f172a",
+  input: {
+    padding: "12px 14px",
+    borderRadius: "12px",
+    border: "1px solid #cbd5e1",
+    fontSize: "14px",
+    background: "#fff",
+    outline: "none",
   },
   selectionRow: {
     display: "grid",
@@ -246,11 +239,6 @@ const styles = {
   notesWrap: {
     display: "grid",
     gap: "8px",
-  },
-  notesLabel: {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#475569",
   },
   textarea: {
     minHeight: "90px",
