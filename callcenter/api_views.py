@@ -204,6 +204,7 @@ def today_bookings_api(request):
             "patient_name": booking.patient.name,
             "patient_id": booking.patient.patient_id,
             "therapist_name": booking.therapist.username,
+            "therapist_id": booking.therapist.id,
             "appointment_date": str(booking.appointment_date),
             "appointment_time": booking.appointment_time.strftime("%H:%M"),
             "notes": booking.notes or "",
@@ -225,6 +226,7 @@ def monthly_bookings_api(request):
     month_value = (request.GET.get("month") or "").strip()
     user_id = (request.GET.get("user_id") or "").strip()
     patient_search = (request.GET.get("patient") or "").strip()
+    therapist_id = (request.GET.get("therapist_id") or "").strip()
 
     if month_value:
         try:
@@ -252,6 +254,9 @@ def monthly_bookings_api(request):
     if user_id and user_id != "all":
         bookings_qs = bookings_qs.filter(created_by_id=user_id)
 
+    if therapist_id and therapist_id != "all":
+        bookings_qs = bookings_qs.filter(therapist_id=therapist_id)
+
     if patient_search:
         bookings_qs = bookings_qs.filter(
             Q(patient__name__icontains=patient_search) |
@@ -264,6 +269,7 @@ def monthly_bookings_api(request):
             "patient_name": booking.patient.name,
             "patient_id": booking.patient.patient_id,
             "therapist_name": booking.therapist.username,
+            "therapist_id": booking.therapist.id,
             "appointment_date": str(booking.appointment_date),
             "appointment_time": booking.appointment_time.strftime("%H:%M"),
             "notes": booking.notes or "",
@@ -277,6 +283,8 @@ def monthly_bookings_api(request):
         role__in=["callcenter", "callcenter_supervisor"]
     ).order_by("username")
 
+    therapists = User.objects.filter(role="physio").order_by("username")
+
     return JsonResponse({
         "count": len(bookings),
         "month": month_value,
@@ -287,6 +295,13 @@ def monthly_bookings_api(request):
                 "name": agent.username,
             }
             for agent in agents
+        ],
+        "therapists": [
+            {
+                "id": therapist.id,
+                "name": therapist.username,
+            }
+            for therapist in therapists
         ],
     })
 

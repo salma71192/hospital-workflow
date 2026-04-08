@@ -59,8 +59,17 @@ export default function useCallCenterDashboard() {
 
   const [todayBookingsCount, setTodayBookingsCount] = useState(0);
   const [monthlyBookingsCount, setMonthlyBookingsCount] = useState(0);
+
   const [todayBookings, setTodayBookings] = useState([]);
   const [monthlyBookings, setMonthlyBookings] = useState([]);
+  const [monthlyAgents, setMonthlyAgents] = useState([]);
+
+  const [monthlyFilter, setMonthlyFilter] = useState({
+    month: getMonthString(),
+    user_id: "all",
+    patient: "",
+    therapist_id: "all",
+  });
 
   const selectedTherapist = useMemo(() => {
     return therapists.find(
@@ -70,7 +79,8 @@ export default function useCallCenterDashboard() {
 
   useEffect(() => {
     loadTherapists();
-    loadBookingData();
+    loadTodayBookings();
+    loadMonthlyBookings();
   }, []);
 
   useEffect(() => {
@@ -91,26 +101,50 @@ export default function useCallCenterDashboard() {
     }
   };
 
-  const loadBookingData = async () => {
+  const loadTodayBookings = async () => {
     try {
       const today = getTodayString();
-      const month = getMonthString();
+      const res = await api.get(`callcenter/bookings/today/?date=${today}`);
 
-      const [todayRes, monthRes] = await Promise.all([
-        api.get(`callcenter/bookings/today/?date=${today}`),
-        api.get(`callcenter/bookings/monthly/?month=${month}`),
-      ]);
-
-      setTodayBookingsCount(todayRes.data.count || 0);
-      setMonthlyBookingsCount(monthRes.data.count || 0);
-      setTodayBookings(todayRes.data.bookings || []);
-      setMonthlyBookings(monthRes.data.bookings || []);
+      setTodayBookingsCount(res.data.count || 0);
+      setTodayBookings(res.data.bookings || []);
     } catch (err) {
-      console.error("Failed to load booking data", err);
+      console.error("Failed to load today bookings", err);
       setTodayBookingsCount(0);
-      setMonthlyBookingsCount(0);
       setTodayBookings([]);
+    }
+  };
+
+  const loadMonthlyBookings = async (
+    monthValue = monthlyFilter.month,
+    userIdValue = monthlyFilter.user_id,
+    patientValue = monthlyFilter.patient,
+    therapistIdValue = monthlyFilter.therapist_id
+  ) => {
+    try {
+      const params = new URLSearchParams();
+
+      if (monthValue) params.append("month", monthValue);
+      if (userIdValue && userIdValue !== "all") {
+        params.append("user_id", userIdValue);
+      }
+      if (patientValue?.trim()) {
+        params.append("patient", patientValue.trim());
+      }
+      if (therapistIdValue && therapistIdValue !== "all") {
+        params.append("therapist_id", therapistIdValue);
+      }
+
+      const res = await api.get(`callcenter/bookings/monthly/?${params.toString()}`);
+
+      setMonthlyBookingsCount(res.data.count || 0);
+      setMonthlyBookings(res.data.bookings || []);
+      setMonthlyAgents(res.data.agents || []);
+    } catch (err) {
+      console.error("Failed to load monthly bookings", err);
+      setMonthlyBookingsCount(0);
       setMonthlyBookings([]);
+      setMonthlyAgents([]);
     }
   };
 
@@ -278,7 +312,8 @@ export default function useCallCenterDashboard() {
         bookingForm.therapist_id,
         bookingForm.appointment_date
       );
-      await loadBookingData();
+      await loadTodayBookings();
+      await loadMonthlyBookings();
 
       setBookingForm((prev) => ({
         ...prev,
@@ -288,6 +323,15 @@ export default function useCallCenterDashboard() {
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to book appointment");
     }
+  };
+
+  const handleApplyMonthlyFilters = async () => {
+    await loadMonthlyBookings(
+      monthlyFilter.month,
+      monthlyFilter.user_id,
+      monthlyFilter.patient,
+      monthlyFilter.therapist_id
+    );
   };
 
   return {
@@ -319,11 +363,16 @@ export default function useCallCenterDashboard() {
     todayBookings,
     monthlyBookings,
 
+    monthlyAgents,
+    monthlyFilter,
+    setMonthlyFilter,
+
     handleSelectPatient,
     handleCreatePatientFile,
     handleSelectTherapist,
     handleSelectDate,
     handleSelectSlot,
     handleConfirmBooking,
+    handleApplyMonthlyFilters,
   };
 }
