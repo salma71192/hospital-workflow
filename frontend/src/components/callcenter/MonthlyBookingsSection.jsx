@@ -3,6 +3,7 @@ import React from "react";
 export default function MonthlyBookingsSection({
   bookings = [],
   agents = [],
+  therapists = [],
   monthlyFilter,
   setMonthlyFilter,
   onApplyFilters,
@@ -13,7 +14,7 @@ export default function MonthlyBookingsSection({
         <div style={styles.eyebrow}>Monthly Tracker</div>
         <h2 style={styles.title}>Monthly Bookings</h2>
         <div style={styles.subtext}>
-          View bookings by month, agent, or patient.
+          View bookings by month, agent, physio, or patient.
         </div>
       </div>
 
@@ -55,6 +56,27 @@ export default function MonthlyBookingsSection({
         </div>
 
         <div style={styles.fieldGroup}>
+          <label style={styles.label}>Physio</label>
+          <select
+            value={monthlyFilter.therapist_id}
+            onChange={(e) =>
+              setMonthlyFilter((prev) => ({
+                ...prev,
+                therapist_id: e.target.value,
+              }))
+            }
+            style={styles.input}
+          >
+            <option value="all">All</option>
+            {therapists.map((therapist) => (
+              <option key={therapist.id} value={therapist.id}>
+                {therapist.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={styles.fieldGroup}>
           <label style={styles.label}>Patient</label>
           <input
             type="text"
@@ -71,7 +93,11 @@ export default function MonthlyBookingsSection({
         </div>
 
         <div style={styles.fieldGroupEnd}>
-          <button type="button" style={styles.primaryButton} onClick={onApplyFilters}>
+          <button
+            type="button"
+            style={styles.primaryButton}
+            onClick={onApplyFilters}
+          >
             Apply Filters
           </button>
         </div>

@@ -37,12 +37,16 @@ export default function CallCenterDashboard({
     monthlyBookingsCount,
     todayBookings,
     monthlyBookings,
+    monthlyAgents,
+    monthlyFilter,
+    setMonthlyFilter,
     handleSelectPatient,
     handleCreatePatientFile,
     handleSelectTherapist,
     handleSelectDate,
     handleSelectSlot,
     handleConfirmBooking,
+    handleApplyMonthlyFilters,
   } = useCallCenterDashboard();
 
   const handleBackToAdmin = () => {
@@ -115,7 +119,11 @@ export default function CallCenterDashboard({
       {activeSection === "monthly" && (
         <MonthlyBookingsSection
           bookings={monthlyBookings}
-          month={new Date().toISOString().slice(0, 7)}
+          agents={monthlyAgents}
+          therapists={therapists}
+          monthlyFilter={monthlyFilter}
+          setMonthlyFilter={setMonthlyFilter}
+          onApplyFilters={handleApplyMonthlyFilters}
         />
       )}
     </DashboardLayout>
