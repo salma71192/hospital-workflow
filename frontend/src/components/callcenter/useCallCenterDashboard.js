@@ -56,8 +56,11 @@ export default function useCallCenterDashboard() {
   const [therapists, setTherapists] = useState([]);
   const [weekDates, setWeekDates] = useState(getWeekDates());
   const [slots, setSlots] = useState([]);
+
   const [todayBookingsCount, setTodayBookingsCount] = useState(0);
   const [monthlyBookingsCount, setMonthlyBookingsCount] = useState(0);
+  const [todayBookings, setTodayBookings] = useState([]);
+  const [monthlyBookings, setMonthlyBookings] = useState([]);
 
   const selectedTherapist = useMemo(() => {
     return therapists.find(
@@ -67,7 +70,7 @@ export default function useCallCenterDashboard() {
 
   useEffect(() => {
     loadTherapists();
-    loadBookingCounts();
+    loadBookingData();
   }, []);
 
   useEffect(() => {
@@ -88,7 +91,7 @@ export default function useCallCenterDashboard() {
     }
   };
 
-  const loadBookingCounts = async () => {
+  const loadBookingData = async () => {
     try {
       const today = getTodayString();
       const month = getMonthString();
@@ -100,10 +103,14 @@ export default function useCallCenterDashboard() {
 
       setTodayBookingsCount(todayRes.data.count || 0);
       setMonthlyBookingsCount(monthRes.data.count || 0);
+      setTodayBookings(todayRes.data.bookings || []);
+      setMonthlyBookings(monthRes.data.bookings || []);
     } catch (err) {
-      console.error("Failed to load booking counts", err);
+      console.error("Failed to load booking data", err);
       setTodayBookingsCount(0);
       setMonthlyBookingsCount(0);
+      setTodayBookings([]);
+      setMonthlyBookings([]);
     }
   };
 
@@ -271,7 +278,7 @@ export default function useCallCenterDashboard() {
         bookingForm.therapist_id,
         bookingForm.appointment_date
       );
-      await loadBookingCounts();
+      await loadBookingData();
 
       setBookingForm((prev) => ({
         ...prev,
@@ -309,6 +316,8 @@ export default function useCallCenterDashboard() {
 
     todayBookingsCount,
     monthlyBookingsCount,
+    todayBookings,
+    monthlyBookings,
 
     handleSelectPatient,
     handleCreatePatientFile,
