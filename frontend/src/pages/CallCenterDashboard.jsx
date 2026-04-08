@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
-import DashboardStatsGrid from "../components/common/DashboardStatsGrid";
 
 import CallCenterSearchSection from "../components/callcenter/CallCenterSearchSection";
 import CallCenterRegisterSection from "../components/callcenter/CallCenterRegisterSection";
@@ -56,6 +55,8 @@ export default function CallCenterDashboard({
         { key: "search", label: "Search Patient" },
         { key: "register", label: "Register Patient" },
         { key: "booking", label: "Book Appointment" },
+        { key: "today", label: `Daily Booking (${todayBookingsCount || 0})` },
+        { key: "monthly", label: `Monthly Tracker (${monthlyBookingsCount || 0})` },
       ]}
       activeSection={activeSection}
       setActiveSection={setActiveSection}
@@ -72,17 +73,6 @@ export default function CallCenterDashboard({
       {error ? (
         <DashboardNotice type="error">{error}</DashboardNotice>
       ) : null}
-
-      <DashboardStatsGrid
-        stats={[
-          { label: "Today's Bookings", value: todayBookingsCount || 0 },
-          { label: "Monthly Bookings", value: monthlyBookingsCount || 0 },
-          {
-            label: "Selected Patient",
-            value: selectedPatient?.name || "-",
-          },
-        ]}
-      />
 
       {activeSection === "search" && (
         <CallCenterSearchSection
@@ -113,6 +103,55 @@ export default function CallCenterDashboard({
           onConfirmBooking={handleConfirmBooking}
         />
       )}
+
+      {activeSection === "today" && (
+        <div style={styles.infoCard}>
+          <div style={styles.eyebrow}>Daily Booking</div>
+          <div style={styles.bigNumber}>{todayBookingsCount || 0}</div>
+          <div style={styles.helperText}>
+            Total bookings created today by this agent.
+          </div>
+        </div>
+      )}
+
+      {activeSection === "monthly" && (
+        <div style={styles.infoCard}>
+          <div style={styles.eyebrow}>Monthly Tracker</div>
+          <div style={styles.bigNumber}>{monthlyBookingsCount || 0}</div>
+          <div style={styles.helperText}>
+            Total bookings created this month by this agent.
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }
+
+const styles = {
+  infoCard: {
+    background: "#fff",
+    borderRadius: "18px",
+    padding: "24px",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+    display: "grid",
+    gap: "8px",
+  },
+  eyebrow: {
+    fontSize: "12px",
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    color: "#be185d",
+  },
+  bigNumber: {
+    fontSize: "34px",
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  helperText: {
+    fontSize: "14px",
+    color: "#64748b",
+    fontWeight: "600",
+  },
+};

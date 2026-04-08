@@ -78,34 +78,27 @@ export default function CallCenterBookingSection({
         onSelectSlot={onSelectSlot}
       />
 
-      <div style={styles.card}>
-        <div style={styles.sectionTitle}>Selected Booking</div>
-
-        <div style={styles.summaryGrid}>
-          <div style={styles.summaryItem}>
-            <div style={styles.summaryLabel}>Patient</div>
-            <div style={styles.summaryValue}>{selectedPatient.name}</div>
-          </div>
-
-          <div style={styles.summaryItem}>
-            <div style={styles.summaryLabel}>Therapist</div>
-            <div style={styles.summaryValue}>
+      <div style={styles.actionCard}>
+        <div style={styles.selectionRow}>
+          <div style={styles.selectionItem}>
+            <span style={styles.selectionLabel}>Therapist</span>
+            <span style={styles.selectionValue}>
               {selectedTherapist?.name || "-"}
-            </div>
+            </span>
           </div>
 
-          <div style={styles.summaryItem}>
-            <div style={styles.summaryLabel}>Date</div>
-            <div style={styles.summaryValue}>
+          <div style={styles.selectionItem}>
+            <span style={styles.selectionLabel}>Date</span>
+            <span style={styles.selectionValue}>
               {bookingForm.appointment_date || "-"}
-            </div>
+            </span>
           </div>
 
-          <div style={styles.summaryItem}>
-            <div style={styles.summaryLabel}>Time</div>
-            <div style={styles.summaryValue}>
+          <div style={styles.selectionItem}>
+            <span style={styles.selectionLabel}>Time</span>
+            <span style={styles.selectionValue}>
               {bookingForm.appointment_time || "-"}
-            </div>
+            </span>
           </div>
         </div>
 
@@ -162,6 +155,15 @@ const styles = {
     display: "grid",
     gap: "16px",
   },
+  actionCard: {
+    background: "#fff",
+    borderRadius: "18px",
+    padding: "18px",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+    display: "grid",
+    gap: "14px",
+  },
   patientCard: {
     background: "linear-gradient(135deg, #fdf2f8 0%, #ffffff 100%)",
     border: "1px solid #fbcfe8",
@@ -217,26 +219,26 @@ const styles = {
     fontWeight: "800",
     color: "#0f172a",
   },
-  summaryGrid: {
+  selectionRow: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
     gap: "12px",
   },
-  summaryItem: {
+  selectionItem: {
     background: "#f8fafc",
     border: "1px solid #e2e8f0",
     borderRadius: "12px",
-    padding: "14px",
+    padding: "12px 14px",
     display: "grid",
-    gap: "6px",
+    gap: "4px",
   },
-  summaryLabel: {
+  selectionLabel: {
     fontSize: "12px",
     fontWeight: "700",
     color: "#64748b",
     textTransform: "uppercase",
   },
-  summaryValue: {
+  selectionValue: {
     fontSize: "15px",
     fontWeight: "800",
     color: "#0f172a",
