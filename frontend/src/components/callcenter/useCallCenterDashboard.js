@@ -78,9 +78,7 @@ export default function useCallCenterDashboard() {
   }, [therapists, bookingForm.therapist_id]);
 
   useEffect(() => {
-    loadTherapists();
-    loadTodayBookings();
-    loadMonthlyBookings();
+    loadInitialData();
   }, []);
 
   useEffect(() => {
@@ -90,6 +88,14 @@ export default function useCallCenterDashboard() {
       setSlots([]);
     }
   }, [bookingForm.therapist_id, bookingForm.appointment_date]);
+
+  const loadInitialData = async () => {
+    await Promise.all([
+      loadTherapists(),
+      loadTodayBookings(),
+      loadMonthlyBookings(),
+    ]);
+  };
 
   const loadTherapists = async () => {
     try {
@@ -124,18 +130,28 @@ export default function useCallCenterDashboard() {
     try {
       const params = new URLSearchParams();
 
-      if (monthValue) params.append("month", monthValue);
+      if (monthValue) {
+        params.append("month", monthValue);
+      }
+
       if (userIdValue && userIdValue !== "all") {
         params.append("user_id", userIdValue);
       }
+
       if (patientValue?.trim()) {
         params.append("patient", patientValue.trim());
       }
+
       if (therapistIdValue && therapistIdValue !== "all") {
         params.append("therapist_id", therapistIdValue);
       }
 
-      const res = await api.get(`callcenter/bookings/monthly/?${params.toString()}`);
+      const query = params.toString();
+      const url = query
+        ? `callcenter/bookings/monthly/?${query}`
+        : "callcenter/bookings/monthly/";
+
+      const res = await api.get(url);
 
       setMonthlyBookingsCount(res.data.count || 0);
       setMonthlyBookings(res.data.bookings || []);
@@ -151,6 +167,7 @@ export default function useCallCenterDashboard() {
   const loadSlots = async (therapistId, appointmentDate) => {
     try {
       setError("");
+
       const res = await api.get(
         `callcenter/slots/?therapist_id=${therapistId}&date=${appointmentDate}`
       );
@@ -161,7 +178,9 @@ export default function useCallCenterDashboard() {
       const mergedSlots = allTimes.map((time) => {
         const existing = backendSlots.find((slot) => slot.time === time);
 
-        if (existing) return existing;
+        if (existing) {
+          return existing;
+        }
 
         return {
           time,
@@ -173,6 +192,7 @@ export default function useCallCenterDashboard() {
       setSlots(mergedSlots);
     } catch (err) {
       console.error("Failed to load slots", err);
+
       setSlots(
         generateTimeSlots().map((time) => ({
           time,
@@ -192,6 +212,7 @@ export default function useCallCenterDashboard() {
     setBookingForm((prev) => ({
       ...prev,
       appointment_time: "",
+      notes: "",
     }));
   };
 
@@ -224,22 +245,18 @@ export default function useCallCenterDashboard() {
     }
   };
 
-  const handleSelectTherapist = async (therapistId) => {
+  const handleSelectTherapist = (therapistId) => {
     setMessage("");
     setError("");
 
     setBookingForm((prev) => ({
       ...prev,
-      therapist_id: String(therapistId),
+      therapist_id: String(therapistId || ""),
       appointment_time: "",
     }));
-
-    if (therapistId && bookingForm.appointment_date) {
-      await loadSlots(therapistId, bookingForm.appointment_date);
-    }
   };
 
-  const handleSelectDate = async (date) => {
+  const handleSelectDate = (date) => {
     setMessage("");
     setError("");
 
@@ -248,10 +265,6 @@ export default function useCallCenterDashboard() {
       appointment_date: date,
       appointment_time: "",
     }));
-
-    if (bookingForm.therapist_id) {
-      await loadSlots(bookingForm.therapist_id, date);
-    }
   };
 
   const handleSelectSlot = (slot) => {
@@ -308,12 +321,11 @@ export default function useCallCenterDashboard() {
 
       setMessage("Appointment booked successfully");
 
-      await loadSlots(
-        bookingForm.therapist_id,
-        bookingForm.appointment_date
-      );
-      await loadTodayBookings();
-      await loadMonthlyBookings();
+      await Promise.all([
+        loadSlots(bookingForm.therapist_id, bookingForm.appointment_date),
+        loadTodayBookings(),
+        loadMonthlyBookings(),
+      ]);
 
       setBookingForm((prev) => ({
         ...prev,
