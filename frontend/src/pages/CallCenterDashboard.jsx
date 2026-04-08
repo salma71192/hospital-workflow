@@ -6,12 +6,12 @@ import DashboardNotice from "../components/common/DashboardNotice";
 
 import CallCenterSearchSection from "../components/callcenter/CallCenterSearchSection";
 import CallCenterRegisterSection from "../components/callcenter/CallCenterRegisterSection";
-import CallCenterBookingSection from "../components/callcenter/CallCenterBookingSection";
-import TodayBookingsSection from "../components/callcenter/TodayBookingsSection";
-import MonthlyBookingsSection from "../components/callcenter/MonthlyBookingsSection";
-import FutureBookingsSection from "../components/callcenter/FutureBookingsSection";
 
-import useCallCenterDashboard from "../components/callcenter/useCallCenterDashboard";
+import BookingSection from "../components/booking/BookingSection";
+import TodayBookingsSection from "../components/booking/TodayBookingsSection";
+import MonthlyBookingsSection from "../components/booking/MonthlyBookingsSection";
+import FutureBookingsSection from "../components/booking/FutureBookingsSection";
+import useBookingDashboard from "../components/booking/useBookingDashboard";
 
 export default function CallCenterDashboard({
   user,
@@ -56,7 +56,7 @@ export default function CallCenterDashboard({
     handleApplyFutureFilters,
     handleEditBooking,
     handleDeleteBooking,
-  } = useCallCenterDashboard();
+  } = useBookingDashboard();
 
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
@@ -73,7 +73,10 @@ export default function CallCenterDashboard({
         { key: "register", label: "Register Patient" },
         { key: "booking", label: "Book Appointment" },
         { key: "today", label: `Daily Booking (${todayBookingsCount || 0})` },
-        { key: "monthly", label: `Monthly Tracker (${monthlyBookingsCount || 0})` },
+        {
+          key: "monthly",
+          label: `Monthly Tracker (${monthlyBookingsCount || 0})`,
+        },
         { key: "future", label: "Future Booking" },
       ]}
       activeSection={activeSection}
@@ -108,7 +111,7 @@ export default function CallCenterDashboard({
       )}
 
       {activeSection === "booking" && (
-        <CallCenterBookingSection
+        <BookingSection
           selectedPatient={selectedPatient}
           bookingForm={bookingForm}
           setBookingForm={setBookingForm}

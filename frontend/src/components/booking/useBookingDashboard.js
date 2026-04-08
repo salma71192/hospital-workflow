@@ -34,7 +34,7 @@ function generateTimeSlots() {
   return slots;
 }
 
-export default function useCallCenterDashboard() {
+export default function useBookingDashboard() {
   const [activeSection, setActiveSection] = useState("search");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");

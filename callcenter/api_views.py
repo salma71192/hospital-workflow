@@ -23,6 +23,8 @@ def _can_use_callcenter(user):
         "admin",
         "callcenter",
         "callcenter_supervisor",
+        "reception",
+        "reception_supervisor",
     ]
 
 
@@ -170,14 +172,22 @@ def bookings_api(request):
     if slot_count >= 2:
         return JsonResponse({"error": "This slot is fully booked"}, status=400)
 
-    same_day_patient_booking = Appointment.objects.filter(
-        patient_id=patient_id,
-        appointment_date=appointment_date,
-    ).exists()
+    existing_booking = (
+        Appointment.objects
+        .select_related("patient", "therapist", "created_by")
+        .filter(
+            patient_id=patient_id,
+            appointment_date=appointment_date,
+        )
+        .first()
+    )
 
-    if same_day_patient_booking:
+    if existing_booking:
         return JsonResponse(
-            {"error": "Patient already has a booking on this day"},
+            {
+                "error": "Patient already has a booking on this day",
+                "existing_booking": _serialize_booking(existing_booking),
+            },
             status=400,
         )
 
@@ -236,14 +246,23 @@ def booking_detail_api(request, booking_id):
         if slot_count >= 2:
             return JsonResponse({"error": "This slot is fully booked"}, status=400)
 
-        same_day_patient_booking = Appointment.objects.filter(
-            patient_id=appointment.patient_id,
-            appointment_date=appointment_date,
-        ).exclude(id=appointment.id).exists()
+        existing_booking = (
+            Appointment.objects
+            .select_related("patient", "therapist", "created_by")
+            .filter(
+                patient_id=appointment.patient_id,
+                appointment_date=appointment_date,
+            )
+            .exclude(id=appointment.id)
+            .first()
+        )
 
-        if same_day_patient_booking:
+        if existing_booking:
             return JsonResponse(
-                {"error": "Patient already has a booking on this day"},
+                {
+                    "error": "Patient already has a booking on this day",
+                    "existing_booking": _serialize_booking(existing_booking),
+                },
                 status=400,
             )
 
@@ -337,7 +356,12 @@ def monthly_bookings_api(request):
     qs = qs.order_by("appointment_date", "appointment_time")
 
     agents = User.objects.filter(
-        role__in=["callcenter", "callcenter_supervisor"]
+        role__in=[
+            "callcenter",
+            "callcenter_supervisor",
+            "reception",
+            "reception_supervisor",
+        ]
     ).order_by("username")
 
     therapists = User.objects.filter(role="physio").order_by("username")

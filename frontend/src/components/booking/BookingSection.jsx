@@ -2,7 +2,7 @@ import React from "react";
 import BookingWeekStrip from "./BookingWeekStrip";
 import BookingSlotsBoard from "./BookingSlotsBoard";
 
-export default function CallCenterBookingSection({
+export default function BookingSection({
   selectedPatient,
   bookingForm,
   setBookingForm,
