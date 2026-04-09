@@ -24,7 +24,7 @@ export default function ReceptionRegistrationWorkspace({
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
 
-  const [activeSection, setActiveSection] = useState("search");
+  const [activeSection, setActiveSection] = useState("register");
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
 
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -112,7 +112,7 @@ export default function ReceptionRegistrationWorkspace({
     }));
 
     setEditingAssignmentId(null);
-    setActiveSection("assign");
+    setActiveSection("register");
 
     try {
       const res = await api.get(`reception/last-therapist/${patient.id}/`);
@@ -162,9 +162,8 @@ export default function ReceptionRegistrationWorkspace({
 
       if (patient) {
         await handleSelectPatient(patient);
+        setMessage("Patient created successfully");
       }
-
-      setMessage("Patient created successfully");
     } catch (err) {
       console.error(err);
       setError(err?.response?.data?.error || "Create failed");
@@ -194,7 +193,7 @@ export default function ReceptionRegistrationWorkspace({
 
       resetAssignmentForm();
       await loadTodayAssignments();
-      setActiveSection("today");
+      setActiveSection("tracker");
     } catch (err) {
       console.error(err);
       setError(err?.response?.data?.error || "Assignment failed");
@@ -219,7 +218,7 @@ export default function ReceptionRegistrationWorkspace({
       notes: assignment.notes || "",
     });
 
-    setActiveSection("assign");
+    setActiveSection("register");
     setMessage(`Editing assignment for ${assignment.patient_name}`);
 
     setTimeout(() => {
@@ -257,17 +256,19 @@ export default function ReceptionRegistrationWorkspace({
       accent="#1e3a8a"
       sidebarTitle="Registration"
       sidebarItems={[
-        { key: "search", label: "Search Patient" },
-        { key: "register", label: "Register New Patient" },
-        {
-          key: "assign",
-          label: editingAssignmentId ? "Edit Assignment" : "Assign to Physio",
-        },
-        { key: "today", label: "Today's Assignments" },
-        { key: "history", label: "Monthly Tracker" },
+        { key: "home", label: "Home" },
+        { key: "register", label: "Register" },
+        { key: "open_file", label: "Open New File" },
+        { key: "tracker", label: "Registration Tracker" },
       ]}
       activeSection={activeSection}
-      setActiveSection={setActiveSection}
+      setActiveSection={(key) => {
+        if (key === "home") {
+          navigate("/reception");
+          return;
+        }
+        setActiveSection(key);
+      }}
       onLogout={onLogout}
       actingAs={actingAs}
       actingAsName={actingAs?.username}
@@ -281,19 +282,38 @@ export default function ReceptionRegistrationWorkspace({
         <DashboardNotice type="error">{error}</DashboardNotice>
       ) : null}
 
-      {activeSection === "search" && (
-        <UnifiedPatientSearch
-          title="Search Patient"
-          placeholder="Start typing patient name or ID"
-          actionLabel="Assign to Physio"
-          onSelectPatient={handleSelectPatient}
-          emptyText="Start typing to search patients."
-          noResultsText="No patients found. Register a new patient if needed."
-          onRegisterNew={() => setActiveSection("register")}
-        />
+      {activeSection === "register" && (
+        <div style={styles.stack}>
+          <UnifiedPatientSearch
+            title="Register"
+            placeholder="Search patient name or ID"
+            actionLabel="Assign to Physio"
+            onSelectPatient={handleSelectPatient}
+            emptyText="Start typing to search patients."
+            noResultsText="No patients found. Open a new file if needed."
+            onRegisterNew={() => setActiveSection("open_file")}
+          />
+
+          {selectedPatient ? (
+            <PatientAssignmentForm
+              ref={assignmentRef}
+              selectedPatient={selectedPatient}
+              assignmentForm={assignmentForm}
+              setAssignmentForm={setAssignmentForm}
+              therapists={therapists}
+              onSubmit={handleCreateOrUpdateAssignment}
+            />
+          ) : (
+            <div style={styles.helperCard}>
+              Search for a patient above, then assign to physiotherapist below.
+              If patient is not found, use the <strong>Open New File</strong>{" "}
+              button.
+            </div>
+          )}
+        </div>
       )}
 
-      {activeSection === "register" && (
+      {activeSection === "open_file" && (
         <PatientRegisterForm
           patientForm={patientForm}
           setPatientForm={setPatientForm}
@@ -301,19 +321,8 @@ export default function ReceptionRegistrationWorkspace({
         />
       )}
 
-      {activeSection === "assign" && (
-        <PatientAssignmentForm
-          ref={assignmentRef}
-          selectedPatient={selectedPatient}
-          assignmentForm={assignmentForm}
-          setAssignmentForm={setAssignmentForm}
-          therapists={therapists}
-          onSubmit={handleCreateOrUpdateAssignment}
-        />
-      )}
-
-      {activeSection === "today" && (
-        <>
+      {activeSection === "tracker" && (
+        <div style={styles.stack}>
           <DashboardMetricInput
             label="Daily Target"
             value={dailyTarget}
@@ -327,7 +336,10 @@ export default function ReceptionRegistrationWorkspace({
               { label: "Daily Target", value: dailyTarget },
               {
                 label: "Remaining",
-                value: Math.max(Number(dailyTarget) - todayAssignments.length, 0),
+                value: Math.max(
+                  Number(dailyTarget) - todayAssignments.length,
+                  0
+                ),
               },
             ]}
           />
@@ -344,18 +356,32 @@ export default function ReceptionRegistrationWorkspace({
             onEditAssignment={handleEditAssignment}
             onCancelAssignment={handleCancelAssignment}
           />
-        </>
-      )}
 
-      {activeSection === "history" && (
-        <AssignmentHistory
-          title="Reception Assignment Tracker Monthly"
-          currentUser={user}
-          actingAs={actingAs}
-          onEditAssignment={handleEditAssignment}
-          onCancelAssignment={handleCancelAssignment}
-        />
+          <AssignmentHistory
+            title="Reception Assignment Tracker Monthly"
+            currentUser={user}
+            actingAs={actingAs}
+            onEditAssignment={handleEditAssignment}
+            onCancelAssignment={handleCancelAssignment}
+          />
+        </div>
       )}
     </DashboardLayout>
   );
 }
+
+const styles = {
+  stack: {
+    display: "grid",
+    gap: "16px",
+  },
+  helperCard: {
+    color: "#64748b",
+    fontSize: "14px",
+    fontWeight: "600",
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    borderRadius: "12px",
+    padding: "14px",
+  },
+};
