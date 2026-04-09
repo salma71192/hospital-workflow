@@ -128,7 +128,10 @@ export default function CallCenterDashboard({
       {activeSection === "today" && (
         <TodayBookingsSection
           bookings={todayBookings}
-          onEditBooking={handleEditBooking}
+          onEditBooking={(booking) => {
+            handleEditBooking(booking);
+            setActiveSection("booking");
+          }}
           onDeleteBooking={handleDeleteBooking}
         />
       )}
@@ -153,7 +156,10 @@ export default function CallCenterDashboard({
           futureFilter={futureFilter}
           setFutureFilter={setFutureFilter}
           onApplyFilters={handleApplyFutureFilters}
-          onEditBooking={handleEditBooking}
+          onEditBooking={(booking) => {
+            handleEditBooking(booking);
+            setActiveSection("booking");
+          }}
           onDeleteBooking={handleDeleteBooking}
         />
       )}

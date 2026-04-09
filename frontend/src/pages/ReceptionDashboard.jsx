@@ -54,8 +54,11 @@ export default function ReceptionDashboard({
   const today = new Date().toISOString().split("T")[0];
 
   const {
+    selectedPatient: bookingSelectedPatient,
+    setSelectedPatient: setBookingSelectedPatient,
     bookingForm,
     setBookingForm,
+    therapists: bookingTherapists,
     weekDates,
     slots,
     todayBookings,
@@ -164,11 +167,18 @@ export default function ReceptionDashboard({
   const handleSelectPatientForBooking = (patient) => {
     setMessage("");
     setError("");
-    setSelectedPatient(patient);
+
+    setBookingSelectedPatient({
+      id: patient.id,
+      name: patient.name,
+      patient_id: patient.patient_id,
+    });
 
     setBookingForm((prev) => ({
       ...prev,
       booking_id: "",
+      therapist_id: "",
+      appointment_date: new Date().toISOString().split("T")[0],
       appointment_time: "",
       notes: "",
     }));
@@ -300,7 +310,10 @@ export default function ReceptionDashboard({
         },
         { key: "booking", label: "Book Appointment" },
         { key: "today", label: "Today's Assignments" },
-        { key: "today_bookings", label: `Today's Bookings (${todayBookingsCount || 0})` },
+        {
+          key: "today_bookings",
+          label: `Today's Bookings (${todayBookingsCount || 0})`,
+        },
         { key: "history", label: "Assignment Tracker Monthly" },
       ]}
       activeSection={activeSection}
@@ -314,25 +327,16 @@ export default function ReceptionDashboard({
       {error && <DashboardNotice type="error">{error}</DashboardNotice>}
 
       {activeSection === "search" && (
-        <div style={styles.searchGrid}>
-          <UnifiedPatientSearch
-            title="Search Patient for Assignment"
-            placeholder="Start typing patient name or ID"
-            actionLabel="Assign to Physio"
-            onSelectPatient={handleSelectPatientForAssign}
-            emptyText="Start typing to search patients."
-            noResultsText="No patients found. Register a new patient if needed."
-          />
-
-          <UnifiedPatientSearch
-            title="Search Patient for Booking"
-            placeholder="Start typing patient name or ID"
-            actionLabel="Book Appointment"
-            onSelectPatient={handleSelectPatientForBooking}
-            emptyText="Start typing to search patients."
-            noResultsText="No patients found. Register a new patient if needed."
-          />
-        </div>
+        <UnifiedPatientSearch
+          title="Search Patient"
+          placeholder="Start typing patient name or ID"
+          actionLabel="Assign to Physio"
+          secondaryActionLabel="Book Appointment"
+          onSelectPatient={handleSelectPatientForAssign}
+          onSecondarySelectPatient={handleSelectPatientForBooking}
+          emptyText="Start typing to search patients."
+          noResultsText="No patients found. Register a new patient if needed."
+        />
       )}
 
       {activeSection === "register" && (
@@ -356,10 +360,10 @@ export default function ReceptionDashboard({
 
       {activeSection === "booking" && (
         <BookingSection
-          selectedPatient={selectedPatient}
+          selectedPatient={bookingSelectedPatient}
           bookingForm={bookingForm}
           setBookingForm={setBookingForm}
-          therapists={therapists}
+          therapists={bookingTherapists}
           weekDates={weekDates}
           slots={slots}
           onSelectTherapist={handleSelectTherapist}
@@ -407,7 +411,10 @@ export default function ReceptionDashboard({
       {activeSection === "today_bookings" && (
         <TodayBookingsSection
           bookings={todayBookings}
-          onEditBooking={handleEditBooking}
+          onEditBooking={(booking) => {
+            handleEditBooking(booking);
+            setActiveSection("booking");
+          }}
           onDeleteBooking={handleDeleteBooking}
         />
       )}
@@ -424,11 +431,3 @@ export default function ReceptionDashboard({
     </DashboardLayout>
   );
 }
-
-const styles = {
-  searchGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "16px",
-  },
-};

@@ -25,9 +25,7 @@ export default function TodayBookingsSection({
                 <div style={styles.patientName}>{item.patient_name}</div>
 
                 <div style={styles.rightActions}>
-                  <div style={styles.timeBadge}>
-                    {item.appointment_time}
-                  </div>
+                  <div style={styles.timeBadge}>{item.appointment_time}</div>
 
                   <div style={styles.actions}>
                     <button
