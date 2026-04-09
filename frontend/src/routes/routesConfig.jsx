@@ -1,7 +1,6 @@
 import { lazy } from "react";
 
 const AdminDashboard = lazy(() => import("../pages/AdminDashboard"));
-const ReceptionDashboard = lazy(() => import("../pages/ReceptionDashboard"));
 const ReceptionSupervisorDashboard = lazy(() =>
   import("../pages/ReceptionSupervisorDashboard")
 );
@@ -21,7 +20,9 @@ const ApprovalsDashboard = lazy(() => import("../pages/ApprovalsDashboard"));
 export const dashboardRoutes = [
   { path: "/admin", component: AdminDashboard, adminOnly: true },
   { path: "/approvals", component: ApprovalsDashboard, roles: ["approvals"] },
-  { path: "/reception", component: ReceptionDashboard, roles: ["reception"] },
+
+  // ❌ REMOVED reception from here
+
   {
     path: "/reception-supervisor",
     component: ReceptionSupervisorDashboard,

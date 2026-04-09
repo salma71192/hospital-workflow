@@ -12,6 +12,9 @@ import api from "./api/api";
 import Login from "./pages/Login";
 import PatientDetails from "./pages/PatientDetails";
 import EditPatientFile from "./pages/EditPatientFile";
+import ReceptionHome from "./pages/ReceptionHome";
+import ReceptionRegistrationWorkspace from "./pages/ReceptionRegistrationWorkspace";
+import ReceptionBookingWorkspace from "./pages/ReceptionBookingWorkspace";
 
 // routing helpers
 import ProtectedRoute from "./components/routing/ProtectedRoute";
@@ -111,6 +114,60 @@ function App() {
               />
             );
           })}
+
+          <Route
+            path="/reception"
+            element={
+              <RoleRoute
+                currentUser={currentUser}
+                isAdmin={isAdmin}
+                allowedRoles={["reception", "reception_supervisor"]}
+              >
+                <ReceptionHome
+                  user={currentUser}
+                  onLogout={handleLogout}
+                  actingAs={actingAs}
+                  onStopImpersonation={stopImpersonation}
+                />
+              </RoleRoute>
+            }
+          />
+
+          <Route
+            path="/reception/registration"
+            element={
+              <RoleRoute
+                currentUser={currentUser}
+                isAdmin={isAdmin}
+                allowedRoles={["reception", "reception_supervisor"]}
+              >
+                <ReceptionRegistrationWorkspace
+                  user={currentUser}
+                  onLogout={handleLogout}
+                  actingAs={actingAs}
+                  onStopImpersonation={stopImpersonation}
+                />
+              </RoleRoute>
+            }
+          />
+
+          <Route
+            path="/reception/booking"
+            element={
+              <RoleRoute
+                currentUser={currentUser}
+                isAdmin={isAdmin}
+                allowedRoles={["reception", "reception_supervisor"]}
+              >
+                <ReceptionBookingWorkspace
+                  user={currentUser}
+                  onLogout={handleLogout}
+                  actingAs={actingAs}
+                  onStopImpersonation={stopImpersonation}
+                />
+              </RoleRoute>
+            }
+          />
 
           <Route
             path="/patients/:id"
