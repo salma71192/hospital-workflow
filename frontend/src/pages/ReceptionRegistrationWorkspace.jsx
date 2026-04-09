@@ -4,12 +4,8 @@ import api from "../api/api";
 
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
-import DashboardMetricInput from "../components/common/DashboardMetricInput";
-import DashboardStatsGrid from "../components/common/DashboardStatsGrid";
 
 import AssignmentHistory from "../components/AssignmentHistory";
-import AssignmentProgressCard from "../components/AssignmentProgressCard";
-import TodayAssignmentsList from "../components/assignments/TodayAssignmentsList";
 
 import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 import PatientAssignmentForm from "../components/patients/PatientAssignmentForm";
@@ -42,17 +38,12 @@ export default function ReceptionRegistrationWorkspace({
   });
 
   const [therapists, setTherapists] = useState([]);
-  const [todayAssignments, setTodayAssignments] = useState([]);
-  const [dailyTarget, setDailyTarget] = useState(10);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const today = new Date().toISOString().split("T")[0];
-
   useEffect(() => {
     loadTherapists();
-    loadTodayAssignments();
-  }, [today, actingAs, user]);
+  }, [actingAs, user]);
 
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
@@ -77,26 +68,6 @@ export default function ReceptionRegistrationWorkspace({
     } catch (err) {
       console.error("Failed to load therapists", err);
       setTherapists([]);
-    }
-  };
-
-  const loadTodayAssignments = async () => {
-    try {
-      const params = new URLSearchParams({
-        start_date: today,
-        end_date: today,
-      });
-
-      if (actingAs && (user?.is_superuser || user?.role === "admin")) {
-        params.append("viewed_user_id", String(actingAs.id));
-        params.append("viewed_user_role", String(actingAs.role || ""));
-      }
-
-      const res = await api.get(`reception/assignments/?${params.toString()}`);
-      setTodayAssignments(res.data.assignments || []);
-    } catch (err) {
-      console.error("Failed to load today's assignments", err);
-      setTodayAssignments([]);
     }
   };
 
@@ -192,7 +163,6 @@ export default function ReceptionRegistrationWorkspace({
       }
 
       resetAssignmentForm();
-      await loadTodayAssignments();
       setActiveSection("tracker");
     } catch (err) {
       console.error(err);
@@ -239,7 +209,6 @@ export default function ReceptionRegistrationWorkspace({
       const res = await api.delete(`reception/assignments/${assignment.id}/`);
       setMessage(res.data.message || "Assignment cancelled successfully");
       setError("");
-      await loadTodayAssignments();
     } catch (err) {
       console.error(err);
       setError(err?.response?.data?.error || "Failed to cancel assignment");
@@ -322,49 +291,13 @@ export default function ReceptionRegistrationWorkspace({
       )}
 
       {activeSection === "tracker" && (
-        <div style={styles.stack}>
-          <DashboardMetricInput
-            label="Daily Target"
-            value={dailyTarget}
-            onChange={setDailyTarget}
-            placeholder="Daily target"
-          />
-
-          <DashboardStatsGrid
-            stats={[
-              { label: "Today's Assignments", value: todayAssignments.length },
-              { label: "Daily Target", value: dailyTarget },
-              {
-                label: "Remaining",
-                value: Math.max(
-                  Number(dailyTarget) - todayAssignments.length,
-                  0
-                ),
-              },
-            ]}
-          />
-
-          <AssignmentProgressCard
-            title="Today's Assignments"
-            count={todayAssignments.length}
-            target={dailyTarget}
-            subtitle={today}
-          />
-
-          <TodayAssignmentsList
-            assignments={todayAssignments}
-            onEditAssignment={handleEditAssignment}
-            onCancelAssignment={handleCancelAssignment}
-          />
-
-          <AssignmentHistory
-            title="Reception Assignment Tracker Monthly"
-            currentUser={user}
-            actingAs={actingAs}
-            onEditAssignment={handleEditAssignment}
-            onCancelAssignment={handleCancelAssignment}
-          />
-        </div>
+        <AssignmentHistory
+          title="Registration Tracker"
+          currentUser={user}
+          actingAs={actingAs}
+          onEditAssignment={handleEditAssignment}
+          onCancelAssignment={handleCancelAssignment}
+        />
       )}
     </DashboardLayout>
   );
