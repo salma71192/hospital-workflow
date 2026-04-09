@@ -15,6 +15,10 @@ import DashboardNotice from "../components/common/DashboardNotice";
 import DashboardMetricInput from "../components/common/DashboardMetricInput";
 import DashboardStatsGrid from "../components/common/DashboardStatsGrid";
 
+import BookingSection from "../components/booking/BookingSection";
+import TodayBookingsSection from "../components/booking/TodayBookingsSection";
+import useBookingDashboard from "../components/booking/useBookingDashboard";
+
 export default function ReceptionDashboard({
   user,
   onLogout,
@@ -48,6 +52,21 @@ export default function ReceptionDashboard({
   const [error, setError] = useState("");
 
   const today = new Date().toISOString().split("T")[0];
+
+  const {
+    bookingForm,
+    setBookingForm,
+    weekDates,
+    slots,
+    todayBookings,
+    todayBookingsCount,
+    handleSelectTherapist,
+    handleSelectDate,
+    handleSelectSlot,
+    handleConfirmBooking,
+    handleEditBooking,
+    handleDeleteBooking,
+  } = useBookingDashboard();
 
   useEffect(() => {
     loadTherapists();
@@ -100,7 +119,7 @@ export default function ReceptionDashboard({
     }
   };
 
-  const handleSelectPatient = async (patient) => {
+  const handleSelectPatientForAssign = async (patient) => {
     setMessage("");
     setError("");
     setSelectedPatient(patient);
@@ -142,6 +161,22 @@ export default function ReceptionDashboard({
     }, 200);
   };
 
+  const handleSelectPatientForBooking = (patient) => {
+    setMessage("");
+    setError("");
+    setSelectedPatient(patient);
+
+    setBookingForm((prev) => ({
+      ...prev,
+      booking_id: "",
+      appointment_time: "",
+      notes: "",
+    }));
+
+    setActiveSection("booking");
+    setMessage(`Selected ${patient.name} for booking.`);
+  };
+
   const handleCreatePatientFile = async (e) => {
     e.preventDefault();
     setMessage("");
@@ -161,7 +196,7 @@ export default function ReceptionDashboard({
       });
 
       if (patient) {
-        await handleSelectPatient(patient);
+        await handleSelectPatientForAssign(patient);
       }
 
       setMessage("Patient created");
@@ -261,10 +296,12 @@ export default function ReceptionDashboard({
         { key: "register", label: "Register New Patient" },
         {
           key: "assign",
-          label: editingAssignmentId ? "Edit Assignment" : "Assign Patient",
+          label: editingAssignmentId ? "Edit Assignment" : "Assign to Physio",
         },
+        { key: "booking", label: "Book Appointment" },
         { key: "today", label: "Today's Assignments" },
-        { key: "history", label: "History" },
+        { key: "today_bookings", label: `Today's Bookings (${todayBookingsCount || 0})` },
+        { key: "history", label: "Assignment Tracker Monthly" },
       ]}
       activeSection={activeSection}
       setActiveSection={setActiveSection}
@@ -277,14 +314,25 @@ export default function ReceptionDashboard({
       {error && <DashboardNotice type="error">{error}</DashboardNotice>}
 
       {activeSection === "search" && (
-        <UnifiedPatientSearch
-          title="Search Patient"
-          placeholder="Start typing patient name or ID"
-          actionLabel="Assign"
-          onSelectPatient={handleSelectPatient}
-          emptyText="Start typing to search patients."
-          noResultsText="No patients found. Register a new patient if needed."
-        />
+        <div style={styles.searchGrid}>
+          <UnifiedPatientSearch
+            title="Search Patient for Assignment"
+            placeholder="Start typing patient name or ID"
+            actionLabel="Assign to Physio"
+            onSelectPatient={handleSelectPatientForAssign}
+            emptyText="Start typing to search patients."
+            noResultsText="No patients found. Register a new patient if needed."
+          />
+
+          <UnifiedPatientSearch
+            title="Search Patient for Booking"
+            placeholder="Start typing patient name or ID"
+            actionLabel="Book Appointment"
+            onSelectPatient={handleSelectPatientForBooking}
+            emptyText="Start typing to search patients."
+            noResultsText="No patients found. Register a new patient if needed."
+          />
+        </div>
       )}
 
       {activeSection === "register" && (
@@ -303,6 +351,21 @@ export default function ReceptionDashboard({
           setAssignmentForm={setAssignmentForm}
           therapists={therapists}
           onSubmit={handleCreateOrUpdateAssignment}
+        />
+      )}
+
+      {activeSection === "booking" && (
+        <BookingSection
+          selectedPatient={selectedPatient}
+          bookingForm={bookingForm}
+          setBookingForm={setBookingForm}
+          therapists={therapists}
+          weekDates={weekDates}
+          slots={slots}
+          onSelectTherapist={handleSelectTherapist}
+          onSelectDate={handleSelectDate}
+          onSelectSlot={handleSelectSlot}
+          onConfirmBooking={handleConfirmBooking}
         />
       )}
 
@@ -341,9 +404,17 @@ export default function ReceptionDashboard({
         </>
       )}
 
+      {activeSection === "today_bookings" && (
+        <TodayBookingsSection
+          bookings={todayBookings}
+          onEditBooking={handleEditBooking}
+          onDeleteBooking={handleDeleteBooking}
+        />
+      )}
+
       {activeSection === "history" && (
         <AssignmentHistory
-          title="Reception Assignment History"
+          title="Reception Assignment Tracker Monthly"
           currentUser={user}
           actingAs={actingAs}
           onEditAssignment={handleEditAssignment}
@@ -353,3 +424,11 @@ export default function ReceptionDashboard({
     </DashboardLayout>
   );
 }
+
+const styles = {
+  searchGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gap: "16px",
+  },
+};

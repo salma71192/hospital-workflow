@@ -18,6 +18,13 @@ export default function UnifiedPatientSearch({
   disabledActionLabel = "Already Assigned Today",
   getExtraBadgeText,
   onRegisterNew,
+
+  // NEW
+  onSecondarySelectPatient,
+  secondaryActionLabel = "Book Appointment",
+  getSecondaryActionLabel,
+  disabledSecondaryPatientIds = [],
+  disabledSecondaryActionLabel = "Already Booked",
 }) {
   const navigate = useNavigate();
 
@@ -53,7 +60,7 @@ export default function UnifiedPatientSearch({
 
         if (currentRequestId !== requestIdRef.current) return;
         setResults(res.data.patients || []);
-      } catch (err) {
+      } catch {
         if (currentRequestId !== requestIdRef.current) return;
         setResults([]);
       } finally {
@@ -108,7 +115,10 @@ export default function UnifiedPatientSearch({
       {results.length > 0 && (
         <div style={styles.resultsList}>
           {results.map((patient) => {
-            const isDisabled = disabledPatientIds.includes(patient.id);
+            const isPrimaryDisabled = disabledPatientIds.includes(patient.id);
+            const isSecondaryDisabled =
+              disabledSecondaryPatientIds.includes(patient.id);
+
             const extraBadgeText = getExtraBadgeText
               ? getExtraBadgeText(patient)
               : "";
@@ -118,7 +128,9 @@ export default function UnifiedPatientSearch({
                 key={patient.id}
                 style={{
                   ...styles.resultCard,
-                  ...(isDisabled ? styles.disabledCard : {}),
+                  ...(isPrimaryDisabled && isSecondaryDisabled
+                    ? styles.disabledCard
+                    : {}),
                 }}
               >
                 <div style={styles.infoBlock}>
@@ -183,19 +195,42 @@ export default function UnifiedPatientSearch({
                     </button>
                   )}
 
+                  {onSecondarySelectPatient ? (
+                    <button
+                      type="button"
+                      style={{
+                        ...styles.secondaryButton,
+                        ...(isSecondaryDisabled
+                          ? styles.secondaryButtonDisabled
+                          : {}),
+                      }}
+                      disabled={isSecondaryDisabled}
+                      onClick={() => {
+                        if (isSecondaryDisabled) return;
+                        onSecondarySelectPatient(patient);
+                      }}
+                    >
+                      {isSecondaryDisabled
+                        ? disabledSecondaryActionLabel
+                        : getSecondaryActionLabel
+                        ? getSecondaryActionLabel(patient)
+                        : secondaryActionLabel}
+                    </button>
+                  ) : null}
+
                   <button
                     type="button"
                     style={{
                       ...styles.selectButton,
-                      ...(isDisabled ? styles.selectButtonDisabled : {}),
+                      ...(isPrimaryDisabled ? styles.selectButtonDisabled : {}),
                     }}
-                    disabled={isDisabled}
+                    disabled={isPrimaryDisabled}
                     onClick={() => {
-                      if (isDisabled) return;
+                      if (isPrimaryDisabled) return;
                       onSelectPatient && onSelectPatient(patient);
                     }}
                   >
-                    {isDisabled
+                    {isPrimaryDisabled
                       ? disabledActionLabel
                       : getActionLabel
                       ? getActionLabel(patient)
@@ -341,6 +376,19 @@ const styles = {
     padding: "10px 14px",
     fontWeight: "700",
     cursor: "pointer",
+  },
+  secondaryButton: {
+    background: "#7c3aed",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    padding: "10px 14px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+  secondaryButtonDisabled: {
+    background: "#94a3b8",
+    cursor: "not-allowed",
   },
   selectButton: {
     background: "#16a34a",
