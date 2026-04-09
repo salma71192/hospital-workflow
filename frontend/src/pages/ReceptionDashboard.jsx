@@ -17,6 +17,7 @@ import DashboardStatsGrid from "../components/common/DashboardStatsGrid";
 
 import BookingSection from "../components/booking/BookingSection";
 import TodayBookingsSection from "../components/booking/TodayBookingsSection";
+import MonthlyBookingsSection from "../components/booking/MonthlyBookingsSection";
 import useBookingDashboard from "../components/booking/useBookingDashboard";
 
 export default function ReceptionDashboard({
@@ -28,7 +29,7 @@ export default function ReceptionDashboard({
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
 
-  const [activeSection, setActiveSection] = useState("search");
+  const [activeSection, setActiveSection] = useState("home");
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
 
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -63,12 +64,18 @@ export default function ReceptionDashboard({
     slots,
     todayBookings,
     todayBookingsCount,
+    monthlyBookings,
+    monthlyBookingsCount,
+    monthlyAgents,
+    monthlyFilter,
+    setMonthlyFilter,
     handleSelectTherapist,
     handleSelectDate,
     handleSelectSlot,
     handleConfirmBooking,
     handleEditBooking,
     handleDeleteBooking,
+    handleApplyMonthlyFilters,
   } = useBookingDashboard();
 
   useEffect(() => {
@@ -239,7 +246,7 @@ export default function ReceptionDashboard({
 
       resetAssignmentForm();
       await loadTodayAssignments();
-      setActiveSection("today");
+      setActiveSection("today_assignments");
     } catch (err) {
       console.error(err);
       setError(err?.response?.data?.error || "Assignment failed");
@@ -300,20 +307,13 @@ export default function ReceptionDashboard({
         actingAs?.username || user?.username || "Reception User"
       }`}
       accent="#1e3a8a"
-      sidebarTitle="Workflow"
+      sidebarTitle="Reception Panel"
       sidebarItems={[
-        { key: "search", label: "Search Patient" },
-        { key: "register", label: "Register New Patient" },
-        {
-          key: "assign",
-          label: editingAssignmentId ? "Edit Assignment" : "Assign to Physio",
-        },
-        { key: "booking", label: "Book Appointment" },
-        { key: "today", label: "Today's Assignments" },
-        {
-          key: "today_bookings",
-          label: `Today's Bookings (${todayBookingsCount || 0})`,
-        },
+        { key: "home", label: "Home" },
+        { key: "registration_workflow", label: "Registration Workflow" },
+        { key: "booking_workflow", label: "Booking Workflow" },
+        { key: "today_assignments", label: "Today's Assignments" },
+        { key: "today_bookings", label: `Today's Bookings (${todayBookingsCount || 0})` },
         { key: "history", label: "Assignment Tracker Monthly" },
       ]}
       activeSection={activeSection}
@@ -326,14 +326,92 @@ export default function ReceptionDashboard({
       {message && <DashboardNotice type="success">{message}</DashboardNotice>}
       {error && <DashboardNotice type="error">{error}</DashboardNotice>}
 
-      {activeSection === "search" && (
+      {activeSection === "home" && (
+        <div style={styles.homeGrid}>
+          <div style={styles.welcomeCard}>
+            <div style={styles.welcomeEyebrow}>Reception Workspace</div>
+            <h1 style={styles.welcomeTitle}>
+              Welcome, {actingAs?.username || user?.username || "Reception User"}
+            </h1>
+            <div style={styles.welcomeText}>
+              Manage patient registration, assignments, and appointment booking from one place.
+            </div>
+          </div>
+
+          <div style={styles.workflowGrid}>
+            <div style={styles.blockCard}>
+              <div style={styles.blockHeader}>
+                <div style={styles.blockEyebrow}>Block 1</div>
+                <h2 style={styles.blockTitle}>Registration Workflow</h2>
+                <div style={styles.blockText}>
+                  Search patients, register new files, assign to physiotherapists, and monitor assignment activity.
+                </div>
+              </div>
+
+              <div style={styles.actionGrid}>
+                <button style={styles.actionButton} onClick={() => setActiveSection("registration_workflow")}>
+                  Search Patient
+                </button>
+                <button style={styles.actionButton} onClick={() => setActiveSection("register")}>
+                  Register New Patient
+                </button>
+                <button style={styles.actionButton} onClick={() => setActiveSection("assign")}>
+                  Assign to Physio
+                </button>
+                <button style={styles.actionButtonSoft} onClick={() => setActiveSection("today_assignments")}>
+                  Today's Assignments
+                </button>
+                <button style={styles.actionButtonSoft} onClick={() => setActiveSection("history")}>
+                  Monthly Tracker
+                </button>
+              </div>
+            </div>
+
+            <div style={styles.blockCard}>
+              <div style={styles.blockHeader}>
+                <div style={styles.blockEyebrow}>Block 2</div>
+                <h2 style={styles.blockTitle}>Booking Workflow</h2>
+                <div style={styles.blockText}>
+                  Search patients for appointments, book slots, and review daily and monthly booking activity.
+                </div>
+              </div>
+
+              <div style={styles.actionGrid}>
+                <button style={styles.actionButton} onClick={() => setActiveSection("booking_workflow")}>
+                  Search for Booking
+                </button>
+                <button style={styles.actionButton} onClick={() => setActiveSection("booking")}>
+                  Book Appointment
+                </button>
+                <button style={styles.actionButtonSoft} onClick={() => setActiveSection("today_bookings")}>
+                  Today's Bookings
+                </button>
+                <button style={styles.actionButtonSoft} onClick={() => setActiveSection("monthly_bookings")}>
+                  Monthly Booking
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeSection === "registration_workflow" && (
         <UnifiedPatientSearch
-          title="Search Patient"
+          title="Search Patient for Assignment"
           placeholder="Start typing patient name or ID"
           actionLabel="Assign to Physio"
-          secondaryActionLabel="Book Appointment"
           onSelectPatient={handleSelectPatientForAssign}
-          onSecondarySelectPatient={handleSelectPatientForBooking}
+          emptyText="Start typing to search patients."
+          noResultsText="No patients found. Register a new patient if needed."
+        />
+      )}
+
+      {activeSection === "booking_workflow" && (
+        <UnifiedPatientSearch
+          title="Search Patient for Booking"
+          placeholder="Start typing patient name or ID"
+          actionLabel="Book Appointment"
+          onSelectPatient={handleSelectPatientForBooking}
           emptyText="Start typing to search patients."
           noResultsText="No patients found. Register a new patient if needed."
         />
@@ -373,7 +451,7 @@ export default function ReceptionDashboard({
         />
       )}
 
-      {activeSection === "today" && (
+      {activeSection === "today_assignments" && (
         <>
           <DashboardMetricInput
             label="Daily Target"
@@ -419,6 +497,17 @@ export default function ReceptionDashboard({
         />
       )}
 
+      {activeSection === "monthly_bookings" && (
+        <MonthlyBookingsSection
+          bookings={monthlyBookings}
+          agents={monthlyAgents}
+          therapists={bookingTherapists}
+          monthlyFilter={monthlyFilter}
+          setMonthlyFilter={setMonthlyFilter}
+          onApplyFilters={handleApplyMonthlyFilters}
+        />
+      )}
+
       {activeSection === "history" && (
         <AssignmentHistory
           title="Reception Assignment Tracker Monthly"
@@ -431,3 +520,95 @@ export default function ReceptionDashboard({
     </DashboardLayout>
   );
 }
+
+const styles = {
+  homeGrid: {
+    display: "grid",
+    gap: "18px",
+  },
+  welcomeCard: {
+    background: "linear-gradient(135deg, #dbeafe 0%, #ffffff 100%)",
+    border: "1px solid #bfdbfe",
+    borderRadius: "20px",
+    padding: "28px",
+    display: "grid",
+    gap: "10px",
+  },
+  welcomeEyebrow: {
+    fontSize: "12px",
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    color: "#1d4ed8",
+  },
+  welcomeTitle: {
+    margin: 0,
+    fontSize: "34px",
+    fontWeight: "900",
+    color: "#0f172a",
+  },
+  welcomeText: {
+    fontSize: "15px",
+    color: "#475569",
+    fontWeight: "600",
+  },
+  workflowGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gap: "18px",
+  },
+  blockCard: {
+    background: "#fff",
+    borderRadius: "20px",
+    padding: "24px",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+    display: "grid",
+    gap: "18px",
+  },
+  blockHeader: {
+    display: "grid",
+    gap: "8px",
+  },
+  blockEyebrow: {
+    fontSize: "12px",
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    color: "#1e3a8a",
+  },
+  blockTitle: {
+    margin: 0,
+    fontSize: "24px",
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  blockText: {
+    fontSize: "14px",
+    color: "#64748b",
+  },
+  actionGrid: {
+    display: "grid",
+    gap: "10px",
+  },
+  actionButton: {
+    background: "#1e3a8a",
+    color: "#fff",
+    border: "none",
+    borderRadius: "12px",
+    padding: "12px 16px",
+    fontWeight: "800",
+    cursor: "pointer",
+    textAlign: "left",
+  },
+  actionButtonSoft: {
+    background: "#eff6ff",
+    color: "#1e3a8a",
+    border: "1px solid #bfdbfe",
+    borderRadius: "12px",
+    padding: "12px 16px",
+    fontWeight: "800",
+    cursor: "pointer",
+    textAlign: "left",
+  },
+};
