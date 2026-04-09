@@ -5,6 +5,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
+import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 
 import BookingSection from "../components/booking/BookingSection";
 import TodayBookingsSection from "../components/booking/TodayBookingsSection";
@@ -26,6 +27,8 @@ export default function ReceptionBookingWorkspace({
     message,
     error,
     selectedPatient,
+    patientForm,
+    setPatientForm,
     bookingForm,
     setBookingForm,
     therapists,
@@ -44,6 +47,7 @@ export default function ReceptionBookingWorkspace({
     futureFilter,
     setFutureFilter,
     handleSelectPatient,
+    handleCreatePatientFile,
     handleSelectTherapist,
     handleSelectDate,
     handleSelectSlot,
@@ -59,6 +63,16 @@ export default function ReceptionBookingWorkspace({
     navigate("/admin");
   };
 
+  const handleSelectPatientForBook = (patient) => {
+    handleSelectPatient(patient);
+    setActiveSection("book");
+  };
+
+  const handleCreatePatientThenBook = async (e) => {
+    await handleCreatePatientFile(e);
+    setActiveSection("book");
+  };
+
   return (
     <DashboardLayout
       title="Booking Workspace"
@@ -68,17 +82,19 @@ export default function ReceptionBookingWorkspace({
       accent="#be185d"
       sidebarTitle="Booking"
       sidebarItems={[
-        { key: "search", label: "Search Patient" },
-        { key: "booking", label: "Book Appointment" },
-        { key: "today", label: `Today's Bookings (${todayBookingsCount || 0})` },
-        {
-          key: "monthly",
-          label: `Monthly Bookings (${monthlyBookingsCount || 0})`,
-        },
-        { key: "future", label: "Future Bookings" },
+        { key: "home", label: "Home" },
+        { key: "book", label: "Book" },
+        { key: "open_file", label: "Open New File" },
+        { key: "tracker", label: "Booking Tracker" },
       ]}
       activeSection={activeSection}
-      setActiveSection={setActiveSection}
+      setActiveSection={(key) => {
+        if (key === "home") {
+          navigate("/reception");
+          return;
+        }
+        setActiveSection(key);
+      }}
       onLogout={onLogout}
       actingAs={actingAs}
       actingAsName={actingAs?.username}
@@ -92,73 +108,101 @@ export default function ReceptionBookingWorkspace({
         <DashboardNotice type="error">{error}</DashboardNotice>
       ) : null}
 
-      {activeSection === "search" && (
-        <UnifiedPatientSearch
-          title="Search Patient for Booking"
-          placeholder="Start typing patient name or ID"
-          actionLabel="Book Appointment"
-          onSelectPatient={(patient) => {
-            handleSelectPatient(patient);
-            setActiveSection("booking");
-          }}
-          emptyText="Start typing to search patients."
-          noResultsText="No patients found."
+      {activeSection === "book" && (
+        <div style={styles.stack}>
+          <UnifiedPatientSearch
+            title="Book"
+            placeholder="Search patient name or ID"
+            actionLabel="Book Appointment"
+            onSelectPatient={handleSelectPatientForBook}
+            emptyText="Start typing to search patients."
+            noResultsText="No patients found. Open a new file if needed."
+            onRegisterNew={() => setActiveSection("open_file")}
+          />
+
+          {selectedPatient ? (
+            <BookingSection
+              selectedPatient={selectedPatient}
+              bookingForm={bookingForm}
+              setBookingForm={setBookingForm}
+              therapists={therapists}
+              weekDates={weekDates}
+              slots={slots}
+              onSelectTherapist={handleSelectTherapist}
+              onSelectDate={handleSelectDate}
+              onSelectSlot={handleSelectSlot}
+              onConfirmBooking={handleConfirmBooking}
+            />
+          ) : (
+            <div style={styles.helperCard}>
+              Search for a patient above, then book the appointment below.
+              If patient is not found, use the <strong>Open New File</strong>{" "}
+              button.
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeSection === "open_file" && (
+        <PatientRegisterForm
+          patientForm={patientForm}
+          setPatientForm={setPatientForm}
+          onSubmit={handleCreatePatientThenBook}
         />
       )}
 
-      {activeSection === "booking" && (
-        <BookingSection
-          selectedPatient={selectedPatient}
-          bookingForm={bookingForm}
-          setBookingForm={setBookingForm}
-          therapists={therapists}
-          weekDates={weekDates}
-          slots={slots}
-          onSelectTherapist={handleSelectTherapist}
-          onSelectDate={handleSelectDate}
-          onSelectSlot={handleSelectSlot}
-          onConfirmBooking={handleConfirmBooking}
-        />
-      )}
+      {activeSection === "tracker" && (
+        <div style={styles.stack}>
+          <TodayBookingsSection
+            bookings={todayBookings}
+            onEditBooking={(booking) => {
+              handleEditBooking(booking);
+              setActiveSection("book");
+            }}
+            onDeleteBooking={handleDeleteBooking}
+          />
 
-      {activeSection === "today" && (
-        <TodayBookingsSection
-          bookings={todayBookings}
-          onEditBooking={(booking) => {
-            handleEditBooking(booking);
-            setActiveSection("booking");
-          }}
-          onDeleteBooking={handleDeleteBooking}
-        />
-      )}
+          <MonthlyBookingsSection
+            bookings={monthlyBookings}
+            agents={monthlyAgents}
+            therapists={therapists}
+            monthlyFilter={monthlyFilter}
+            setMonthlyFilter={setMonthlyFilter}
+            onApplyFilters={handleApplyMonthlyFilters}
+          />
 
-      {activeSection === "monthly" && (
-        <MonthlyBookingsSection
-          bookings={monthlyBookings}
-          agents={monthlyAgents}
-          therapists={therapists}
-          monthlyFilter={monthlyFilter}
-          setMonthlyFilter={setMonthlyFilter}
-          onApplyFilters={handleApplyMonthlyFilters}
-        />
-      )}
-
-      {activeSection === "future" && (
-        <FutureBookingsSection
-          futureBookings={futureBookings}
-          therapistSummary={futureTherapistSummary}
-          daySummary={futureDaySummary}
-          therapists={therapists}
-          futureFilter={futureFilter}
-          setFutureFilter={setFutureFilter}
-          onApplyFilters={handleApplyFutureFilters}
-          onEditBooking={(booking) => {
-            handleEditBooking(booking);
-            setActiveSection("booking");
-          }}
-          onDeleteBooking={handleDeleteBooking}
-        />
+          <FutureBookingsSection
+            futureBookings={futureBookings}
+            therapistSummary={futureTherapistSummary}
+            daySummary={futureDaySummary}
+            therapists={therapists}
+            futureFilter={futureFilter}
+            setFutureFilter={setFutureFilter}
+            onApplyFilters={handleApplyFutureFilters}
+            onEditBooking={(booking) => {
+              handleEditBooking(booking);
+              setActiveSection("book");
+            }}
+            onDeleteBooking={handleDeleteBooking}
+          />
+        </div>
       )}
     </DashboardLayout>
   );
 }
+
+const styles = {
+  stack: {
+    display: "grid",
+    gap: "16px",
+  },
+  helperCard: {
+    color: "#64748b",
+    fontSize: "14px",
+    fontWeight: "600",
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    borderRadius: "12px",
+    padding: "14px",
+  },
+};
