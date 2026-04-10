@@ -11,23 +11,38 @@ export default function MonthlyBookingsSection({
   return (
     <div style={styles.card}>
       <div style={styles.header}>
-        <div style={styles.eyebrow}>Monthly Tracker</div>
-        <h2 style={styles.title}>Monthly Bookings</h2>
+        <div style={styles.eyebrow}>Monthly Bookings</div>
+        <h2 style={styles.title}>Monthly Booking Tracker</h2>
         <div style={styles.subtext}>
-          View bookings by month, agent, physio, or patient.
+          Filter bookings by date range, user, patient, or physio.
         </div>
       </div>
 
       <div style={styles.filterGrid}>
         <div style={styles.fieldGroup}>
-          <label style={styles.label}>Month</label>
+          <label style={styles.label}>From Date</label>
           <input
-            type="month"
-            value={monthlyFilter.month}
+            type="date"
+            value={monthlyFilter.from_date}
             onChange={(e) =>
               setMonthlyFilter((prev) => ({
                 ...prev,
-                month: e.target.value,
+                from_date: e.target.value,
+              }))
+            }
+            style={styles.input}
+          />
+        </div>
+
+        <div style={styles.fieldGroup}>
+          <label style={styles.label}>To Date</label>
+          <input
+            type="date"
+            value={monthlyFilter.to_date}
+            onChange={(e) =>
+              setMonthlyFilter((prev) => ({
+                ...prev,
+                to_date: e.target.value,
               }))
             }
             style={styles.input}
@@ -80,7 +95,7 @@ export default function MonthlyBookingsSection({
           <label style={styles.label}>Patient</label>
           <input
             type="text"
-            placeholder="Search by patient name or file number"
+            placeholder="Patient name or file number"
             value={monthlyFilter.patient}
             onChange={(e) =>
               setMonthlyFilter((prev) => ({
@@ -93,18 +108,14 @@ export default function MonthlyBookingsSection({
         </div>
 
         <div style={styles.fieldGroupEnd}>
-          <button
-            type="button"
-            style={styles.primaryButton}
-            onClick={onApplyFilters}
-          >
+          <button type="button" style={styles.primaryButton} onClick={onApplyFilters}>
             Apply Filters
           </button>
         </div>
       </div>
 
       {bookings.length === 0 ? (
-        <div style={styles.emptyState}>No bookings found for this filter.</div>
+        <div style={styles.emptyState}>No bookings found for this range.</div>
       ) : (
         <div style={styles.tableWrap}>
           <table style={styles.table}>
@@ -112,8 +123,8 @@ export default function MonthlyBookingsSection({
               <tr>
                 <th style={styles.th}>Patient</th>
                 <th style={styles.th}>File Number</th>
-                <th style={styles.th}>Therapist</th>
-                <th style={styles.th}>Date</th>
+                <th style={styles.th}>Physio</th>
+                <th style={styles.th}>Appointment Date</th>
                 <th style={styles.th}>Time</th>
                 <th style={styles.th}>Booked By</th>
               </tr>
@@ -147,10 +158,7 @@ const styles = {
     display: "grid",
     gap: "16px",
   },
-  header: {
-    display: "grid",
-    gap: "6px",
-  },
+  header: { display: "grid", gap: "6px" },
   eyebrow: {
     fontSize: "12px",
     fontWeight: "800",
@@ -158,35 +166,17 @@ const styles = {
     letterSpacing: "0.08em",
     color: "#be185d",
   },
-  title: {
-    margin: 0,
-    fontSize: "24px",
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  subtext: {
-    fontSize: "14px",
-    color: "#64748b",
-  },
+  title: { margin: 0, fontSize: "24px", fontWeight: "800", color: "#0f172a" },
+  subtext: { fontSize: "14px", color: "#64748b" },
   filterGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     gap: "12px",
     alignItems: "end",
   },
-  fieldGroup: {
-    display: "grid",
-    gap: "8px",
-  },
-  fieldGroupEnd: {
-    display: "flex",
-    alignItems: "end",
-  },
-  label: {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#475569",
-  },
+  fieldGroup: { display: "grid", gap: "8px" },
+  fieldGroupEnd: { display: "flex", alignItems: "end" },
+  label: { fontSize: "13px", fontWeight: "700", color: "#475569" },
   input: {
     padding: "12px 14px",
     borderRadius: "12px",
@@ -205,14 +195,8 @@ const styles = {
     cursor: "pointer",
     width: "100%",
   },
-  tableWrap: {
-    overflowX: "auto",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    minWidth: "860px",
-  },
+  tableWrap: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", minWidth: "860px" },
   th: {
     textAlign: "left",
     padding: "12px",

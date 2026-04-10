@@ -4,7 +4,7 @@ import useMonthlyBookings from "./useMonthlyBookings";
 import useFutureBookings from "./useFutureBookings";
 
 export default function useBookingDashboard() {
-  const [activeSection, setActiveSection] = useState("search");
+  const [activeSection, setActiveSection] = useState("book");
 
   const monthly = useMonthlyBookings();
   const future = useFutureBookings();
@@ -47,12 +47,14 @@ export default function useBookingDashboard() {
     monthlyBookingsCount: monthly.monthlyBookingsCount,
     monthlyBookings: monthly.monthlyBookings,
     monthlyAgents: monthly.monthlyAgents,
+    monthlyTherapists: monthly.monthlyTherapists,
     monthlyFilter: monthly.monthlyFilter,
     setMonthlyFilter: monthly.setMonthlyFilter,
 
     futureBookings: future.futureBookings,
     futureTherapistSummary: future.futureTherapistSummary,
     futureDaySummary: future.futureDaySummary,
+    futureAgents: future.futureAgents,
     futureFilter: future.futureFilter,
     setFutureFilter: future.setFutureFilter,
 

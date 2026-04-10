@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
@@ -29,8 +29,15 @@ def _can_use_callcenter(user):
 
 
 # =========================
-# HELPERS
+# BASIC HELPERS
 # =========================
+def _json_error(message, status=400, extra=None):
+    payload = {"error": message}
+    if extra:
+        payload.update(extra)
+    return JsonResponse(payload, status=status)
+
+
 def _parse_json(request):
     try:
         raw = request.body.decode("utf-8") if request.body else "{}"
@@ -57,15 +64,22 @@ def _validate_time(value):
         return None
 
 
-def _generate_time_slots():
-    slots = []
-    for hour in range(8, 22):
-        slots.append(f"{hour:02d}:00")
-        slots.append(f"{hour:02d}:30")
-    slots.append("22:00")
-    return slots
+def _today():
+    return date.today()
 
 
+def _tomorrow():
+    return _today() + timedelta(days=1)
+
+
+def _first_day_of_current_month():
+    today_value = _today()
+    return today_value.replace(day=1)
+
+
+# =========================
+# SERIALIZERS
+# =========================
 def _serialize_booking(booking):
     return {
         "id": booking.id,
@@ -82,20 +96,144 @@ def _serialize_booking(booking):
     }
 
 
+def _serialize_user(user):
+    return {
+        "id": user.id,
+        "name": user.username,
+    }
+
+
+# =========================
+# QUERY HELPERS
+# =========================
+def _booking_base_queryset():
+    return Appointment.objects.select_related("patient", "therapist", "created_by")
+
+
+def _get_therapists_queryset():
+    return User.objects.filter(role="physio").order_by("username")
+
+
+def _get_agents_queryset():
+    return User.objects.filter(
+        role__in=[
+            "callcenter",
+            "callcenter_supervisor",
+            "reception",
+            "reception_supervisor",
+        ]
+    ).order_by("username")
+
+
+def _generate_time_slots():
+    slots = []
+    for hour in range(8, 22):
+        slots.append(f"{hour:02d}:00")
+        slots.append(f"{hour:02d}:30")
+    slots.append("22:00")
+    return slots
+
+
+def _get_slot_count(therapist_id, appointment_date, appointment_time, exclude_booking_id=None):
+    qs = Appointment.objects.filter(
+        therapist_id=therapist_id,
+        appointment_date=appointment_date,
+        appointment_time=appointment_time,
+    )
+
+    if exclude_booking_id:
+        qs = qs.exclude(id=exclude_booking_id)
+
+    return qs.count()
+
+
+def _get_existing_patient_booking(patient_id, appointment_date, exclude_booking_id=None):
+    qs = (
+        _booking_base_queryset()
+        .filter(
+            patient_id=patient_id,
+            appointment_date=appointment_date,
+        )
+    )
+
+    if exclude_booking_id:
+        qs = qs.exclude(id=exclude_booking_id)
+
+    return qs.first()
+
+
+def _validate_booking_payload(data):
+    patient_id = data.get("patient_id")
+    therapist_id = data.get("therapist_id")
+    appointment_date = _validate_date(data.get("appointment_date"))
+    appointment_time = _validate_time(data.get("appointment_time"))
+    notes = (data.get("notes") or "").strip() or None
+
+    return {
+        "patient_id": patient_id,
+        "therapist_id": therapist_id,
+        "appointment_date": appointment_date,
+        "appointment_time": appointment_time,
+        "notes": notes,
+    }
+
+
+def _validate_booking_update_payload(data):
+    therapist_id = data.get("therapist_id")
+    appointment_date = _validate_date(data.get("appointment_date"))
+    appointment_time = _validate_time(data.get("appointment_time"))
+    notes = (data.get("notes") or "").strip() or None
+
+    return {
+        "therapist_id": therapist_id,
+        "appointment_date": appointment_date,
+        "appointment_time": appointment_time,
+        "notes": notes,
+    }
+
+
+def _ensure_booking_slot_available(therapist_id, appointment_date, appointment_time, exclude_booking_id=None):
+    slot_count = _get_slot_count(
+        therapist_id=therapist_id,
+        appointment_date=appointment_date,
+        appointment_time=appointment_time,
+        exclude_booking_id=exclude_booking_id,
+    )
+
+    if slot_count >= 2:
+        return _json_error("This slot is fully booked", status=400)
+
+    return None
+
+
+def _ensure_patient_has_no_booking_that_day(patient_id, appointment_date, exclude_booking_id=None):
+    existing_booking = _get_existing_patient_booking(
+        patient_id=patient_id,
+        appointment_date=appointment_date,
+        exclude_booking_id=exclude_booking_id,
+    )
+
+    if existing_booking:
+        return _json_error(
+            "Patient already has a booking on this day",
+            status=400,
+            extra={"existing_booking": _serialize_booking(existing_booking)},
+        )
+
+    return None
+
+
 # =========================
 # THERAPISTS
 # =========================
 def therapists_api(request):
     if not _can_use_callcenter(request.user):
-        return JsonResponse({"error": "Not authorized"}, status=403)
+        return _json_error("Not authorized", status=403)
 
-    therapists = User.objects.filter(role="physio").order_by("username")
+    therapists = _get_therapists_queryset()
 
     return JsonResponse({
-        "therapists": [
-            {"id": t.id, "name": t.username}
-            for t in therapists
-        ]
+        "therapists": [_serialize_user(t) for t in therapists]
     })
 
 
@@ -104,25 +242,23 @@ def therapists_api(request):
 # =========================
 def slots_api(request):
     if not _can_use_callcenter(request.user):
-        return JsonResponse({"error": "Not authorized"}, status=403)
+        return _json_error("Not authorized", status=403)
 
     therapist_id = request.GET.get("therapist_id")
-    appointment_date = request.GET.get("date")
+    appointment_date = _validate_date(request.GET.get("date"))
 
-    parsed_date = _validate_date(appointment_date)
-    if not therapist_id or not parsed_date:
+    if not therapist_id or not appointment_date:
         return JsonResponse({"slots": []})
 
     bookings = Appointment.objects.filter(
         therapist_id=therapist_id,
-        appointment_date=parsed_date,
+        appointment_date=appointment_date,
     )
 
     slots = []
     for time_str in _generate_time_slots():
-        count = bookings.filter(
-            appointment_time=_validate_time(time_str)
-        ).count()
+        booking_time = _validate_time(time_str)
+        count = bookings.filter(appointment_time=booking_time).count()
 
         status = "available"
         if count == 1:
@@ -145,58 +281,46 @@ def slots_api(request):
 @csrf_exempt
 def bookings_api(request):
     if not _can_use_callcenter(request.user):
-        return JsonResponse({"error": "Not authorized"}, status=403)
+        return _json_error("Not authorized", status=403)
 
     if request.method != "POST":
-        return JsonResponse({"error": "Method not allowed"}, status=405)
+        return _json_error("Method not allowed", status=405)
 
     data = _parse_json(request)
     if not data:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
+        return _json_error("Invalid JSON", status=400)
 
-    patient_id = data.get("patient_id")
-    therapist_id = data.get("therapist_id")
-    appointment_date = _validate_date(data.get("appointment_date"))
-    appointment_time = _validate_time(data.get("appointment_time"))
-    notes = (data.get("notes") or "").strip() or None
+    payload = _validate_booking_payload(data)
 
-    if not all([patient_id, therapist_id, appointment_date, appointment_time]):
-        return JsonResponse({"error": "Missing required fields"}, status=400)
+    if not all([
+        payload["patient_id"],
+        payload["therapist_id"],
+        payload["appointment_date"],
+        payload["appointment_time"],
+    ]):
+        return _json_error("Missing required fields", status=400)
 
-    slot_count = Appointment.objects.filter(
-        therapist_id=therapist_id,
-        appointment_date=appointment_date,
-        appointment_time=appointment_time,
-    ).count()
-
-    if slot_count >= 2:
-        return JsonResponse({"error": "This slot is fully booked"}, status=400)
-
-    existing_booking = (
-        Appointment.objects
-        .select_related("patient", "therapist", "created_by")
-        .filter(
-            patient_id=patient_id,
-            appointment_date=appointment_date,
-        )
-        .first()
+    slot_error = _ensure_booking_slot_available(
+        therapist_id=payload["therapist_id"],
+        appointment_date=payload["appointment_date"],
+        appointment_time=payload["appointment_time"],
     )
+    if slot_error:
+        return slot_error
 
-    if existing_booking:
-        return JsonResponse(
-            {
-                "error": "Patient already has a booking on this day",
-                "existing_booking": _serialize_booking(existing_booking),
-            },
-            status=400,
-        )
+    patient_booking_error = _ensure_patient_has_no_booking_that_day(
+        patient_id=payload["patient_id"],
+        appointment_date=payload["appointment_date"],
+    )
+    if patient_booking_error:
+        return patient_booking_error
 
     appointment = Appointment.objects.create(
-        patient_id=patient_id,
-        therapist_id=therapist_id,
-        appointment_date=appointment_date,
-        appointment_time=appointment_time,
-        notes=notes,
+        patient_id=payload["patient_id"],
+        therapist_id=payload["therapist_id"],
+        appointment_date=payload["appointment_date"],
+        appointment_time=payload["appointment_time"],
+        notes=payload["notes"],
         created_by=request.user,
     )
 
@@ -205,7 +329,7 @@ def bookings_api(request):
         "message": "Appointment booked successfully",
         "booking": {
             "id": appointment.id,
-        }
+        },
     })
 
 
@@ -215,61 +339,48 @@ def bookings_api(request):
 @csrf_exempt
 def booking_detail_api(request, booking_id):
     if not _can_use_callcenter(request.user):
-        return JsonResponse({"error": "Not authorized"}, status=403)
+        return _json_error("Not authorized", status=403)
 
     try:
-        appointment = Appointment.objects.select_related(
-            "patient", "therapist", "created_by"
-        ).get(id=booking_id)
+        appointment = _booking_base_queryset().get(id=booking_id)
     except Appointment.DoesNotExist:
-        return JsonResponse({"error": "Booking not found"}, status=404)
+        return _json_error("Booking not found", status=404)
 
     if request.method == "PUT":
         data = _parse_json(request)
         if not data:
-            return JsonResponse({"error": "Invalid JSON"}, status=400)
+            return _json_error("Invalid JSON", status=400)
 
-        therapist_id = data.get("therapist_id")
-        appointment_date = _validate_date(data.get("appointment_date"))
-        appointment_time = _validate_time(data.get("appointment_time"))
-        notes = (data.get("notes") or "").strip() or None
+        payload = _validate_booking_update_payload(data)
 
-        if not all([therapist_id, appointment_date, appointment_time]):
-            return JsonResponse({"error": "Missing required fields"}, status=400)
+        if not all([
+            payload["therapist_id"],
+            payload["appointment_date"],
+            payload["appointment_time"],
+        ]):
+            return _json_error("Missing required fields", status=400)
 
-        slot_count = Appointment.objects.filter(
-            therapist_id=therapist_id,
-            appointment_date=appointment_date,
-            appointment_time=appointment_time,
-        ).exclude(id=appointment.id).count()
-
-        if slot_count >= 2:
-            return JsonResponse({"error": "This slot is fully booked"}, status=400)
-
-        existing_booking = (
-            Appointment.objects
-            .select_related("patient", "therapist", "created_by")
-            .filter(
-                patient_id=appointment.patient_id,
-                appointment_date=appointment_date,
-            )
-            .exclude(id=appointment.id)
-            .first()
+        slot_error = _ensure_booking_slot_available(
+            therapist_id=payload["therapist_id"],
+            appointment_date=payload["appointment_date"],
+            appointment_time=payload["appointment_time"],
+            exclude_booking_id=appointment.id,
         )
+        if slot_error:
+            return slot_error
 
-        if existing_booking:
-            return JsonResponse(
-                {
-                    "error": "Patient already has a booking on this day",
-                    "existing_booking": _serialize_booking(existing_booking),
-                },
-                status=400,
-            )
+        patient_booking_error = _ensure_patient_has_no_booking_that_day(
+            patient_id=appointment.patient_id,
+            appointment_date=payload["appointment_date"],
+            exclude_booking_id=appointment.id,
+        )
+        if patient_booking_error:
+            return patient_booking_error
 
-        appointment.therapist_id = therapist_id
-        appointment.appointment_date = appointment_date
-        appointment.appointment_time = appointment_time
-        appointment.notes = notes
+        appointment.therapist_id = payload["therapist_id"]
+        appointment.appointment_date = payload["appointment_date"]
+        appointment.appointment_time = payload["appointment_time"]
+        appointment.notes = payload["notes"]
         appointment.save()
 
         return JsonResponse({
@@ -285,7 +396,7 @@ def booking_detail_api(request, booking_id):
             "message": "Booking deleted successfully",
         })
 
-    return JsonResponse({"error": "Method not allowed"}, status=405)
+    return _json_error("Method not allowed", status=405)
 
 
 # =========================
@@ -293,15 +404,18 @@ def booking_detail_api(request, booking_id):
 # =========================
 def today_bookings_api(request):
     if not _can_use_callcenter(request.user):
-        return JsonResponse({"error": "Not authorized"}, status=403)
+        return _json_error("Not authorized", status=403)
 
-    today_value = _validate_date(request.GET.get("date")) or date.today()
+    today_value = _today()
 
     qs = (
-        Appointment.objects
-        .select_related("patient", "therapist", "created_by")
-        .filter(created_by=request.user, appointment_date=today_value)
-        .order_by("appointment_time")
+        _booking_base_queryset()
+        .filter(
+            created_by=request.user,
+            created_at__date=today_value,
+            appointment_date__gte=today_value,
+        )
+        .order_by("appointment_date", "appointment_time", "created_at")
     )
 
     return JsonResponse({
@@ -311,34 +425,25 @@ def today_bookings_api(request):
 
 
 # =========================
-# MONTHLY BOOKINGS
+# BOOKING TRACKER (DATE RANGE)
 # =========================
 def monthly_bookings_api(request):
     if not _can_use_callcenter(request.user):
-        return JsonResponse({"error": "Not authorized"}, status=403)
+        return _json_error("Not authorized", status=403)
 
-    month_value = request.GET.get("month")
-    user_id = request.GET.get("user_id")
-    patient_search = request.GET.get("patient")
-    therapist_id = request.GET.get("therapist_id")
-
-    today_value = date.today()
-    year = today_value.year
-    month_num = today_value.month
-
-    if month_value:
-        try:
-            year, month_num = map(int, month_value.split("-"))
-        except Exception:
-            return JsonResponse({"error": "Invalid month"}, status=400)
+    from_date = _validate_date(request.GET.get("from_date")) or _first_day_of_current_month()
+    to_date = _validate_date(request.GET.get("to_date")) or _today()
+    user_id = (request.GET.get("user_id") or "").strip()
+    patient_search = (request.GET.get("patient") or "").strip()
+    therapist_id = (request.GET.get("therapist_id") or "").strip()
 
     qs = (
-        Appointment.objects
-        .select_related("patient", "therapist", "created_by")
+        _booking_base_queryset()
         .filter(
-            appointment_date__year=year,
-            appointment_date__month=month_num,
+            created_at__date__gte=from_date,
+            created_at__date__lte=to_date,
         )
+        .order_by("created_at", "appointment_date", "appointment_time")
     )
 
     if user_id and user_id != "all":
@@ -353,24 +458,16 @@ def monthly_bookings_api(request):
             Q(patient__patient_id__icontains=patient_search)
         )
 
-    qs = qs.order_by("appointment_date", "appointment_time")
-
-    agents = User.objects.filter(
-        role__in=[
-            "callcenter",
-            "callcenter_supervisor",
-            "reception",
-            "reception_supervisor",
-        ]
-    ).order_by("username")
-
-    therapists = User.objects.filter(role="physio").order_by("username")
+    agents = _get_agents_queryset()
+    therapists = _get_therapists_queryset()
 
     return JsonResponse({
         "count": qs.count(),
         "bookings": [_serialize_booking(b) for b in qs],
-        "agents": [{"id": a.id, "name": a.username} for a in agents],
-        "therapists": [{"id": t.id, "name": t.username} for t in therapists],
+        "agents": [_serialize_user(a) for a in agents],
+        "therapists": [_serialize_user(t) for t in therapists],
+        "from_date": str(from_date),
+        "to_date": str(to_date),
     })
 
 
@@ -379,20 +476,19 @@ def monthly_bookings_api(request):
 # =========================
 def future_bookings_api(request):
     if not _can_use_callcenter(request.user):
-        return JsonResponse({"error": "Not authorized"}, status=403)
+        return _json_error("Not authorized", status=403)
 
-    today_value = date.today()
+    tomorrow = _tomorrow()
 
-    from_date = _validate_date(request.GET.get("from_date")) or today_value
+    from_date = _validate_date(request.GET.get("from_date")) or tomorrow
     to_date = _validate_date(request.GET.get("to_date"))
-    therapist_id = request.GET.get("therapist_id")
+    therapist_id = (request.GET.get("therapist_id") or "").strip()
     day_value = _validate_date(request.GET.get("day"))
 
-    qs = (
-        Appointment.objects
-        .select_related("patient", "therapist", "created_by")
-        .filter(appointment_date__gte=from_date)
-    )
+    if from_date < tomorrow:
+        from_date = tomorrow
+
+    qs = _booking_base_queryset().filter(appointment_date__gte=from_date)
 
     if to_date:
         qs = qs.filter(appointment_date__lte=to_date)
@@ -400,7 +496,7 @@ def future_bookings_api(request):
     if therapist_id and therapist_id != "all":
         qs = qs.filter(therapist_id=therapist_id)
 
-    if day_value:
+    if day_value and day_value >= tomorrow:
         qs = qs.filter(appointment_date=day_value)
 
     qs = qs.order_by("appointment_date", "appointment_time")
@@ -417,7 +513,7 @@ def future_bookings_api(request):
         .order_by("appointment_date")
     )
 
-    therapists = User.objects.filter(role="physio").order_by("username")
+    therapists = _get_therapists_queryset()
 
     return JsonResponse({
         "count": qs.count(),
@@ -437,5 +533,6 @@ def future_bookings_api(request):
             }
             for row in day_summary_qs
         ],
-        "therapists": [{"id": t.id, "name": t.username} for t in therapists],
+        "therapists": [_serialize_user(t) for t in therapists],
+        "min_date": str(tomorrow),
     })

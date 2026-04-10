@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/api";
 
@@ -10,21 +10,15 @@ export default function UnifiedPatientSearch({
   onSelectPatient,
   actionLabel = "Select",
   getActionLabel,
-  showOpenFile = true,
+  secondaryActionLabel,
+  onSecondarySelectPatient,
+  showOpenFile = false,
   emptyText = "Start typing to search patients.",
   noResultsText = "No patients found.",
   initialValue = "",
   disabledPatientIds = [],
-  disabledActionLabel = "Already Assigned Today",
-  getExtraBadgeText,
+  disabledActionLabel = "Unavailable",
   onRegisterNew,
-
-  // NEW
-  onSecondarySelectPatient,
-  secondaryActionLabel = "Book Appointment",
-  getSecondaryActionLabel,
-  disabledSecondaryPatientIds = [],
-  disabledSecondaryActionLabel = "Already Booked",
 }) {
   const navigate = useNavigate();
 
@@ -60,7 +54,7 @@ export default function UnifiedPatientSearch({
 
         if (currentRequestId !== requestIdRef.current) return;
         setResults(res.data.patients || []);
-      } catch {
+      } catch (err) {
         if (currentRequestId !== requestIdRef.current) return;
         setResults([]);
       } finally {
@@ -100,92 +94,38 @@ export default function UnifiedPatientSearch({
         <div style={styles.noResultsCard}>
           <div style={styles.helperText}>{noResultsText}</div>
 
-          {onRegisterNew && (
+          {onRegisterNew ? (
             <button
               type="button"
               style={styles.registerButton}
               onClick={onRegisterNew}
             >
-              Register New Patient
+              Open New File
             </button>
-          )}
+          ) : null}
         </div>
       )}
 
       {results.length > 0 && (
         <div style={styles.resultsList}>
           {results.map((patient) => {
-            const isPrimaryDisabled = disabledPatientIds.includes(patient.id);
-            const isSecondaryDisabled =
-              disabledSecondaryPatientIds.includes(patient.id);
-
-            const extraBadgeText = getExtraBadgeText
-              ? getExtraBadgeText(patient)
-              : "";
+            const isDisabled = disabledPatientIds.includes(patient.id);
 
             return (
               <div
                 key={patient.id}
                 style={{
-                  ...styles.resultCard,
-                  ...(isPrimaryDisabled && isSecondaryDisabled
-                    ? styles.disabledCard
-                    : {}),
+                  ...styles.resultRow,
+                  ...(isDisabled ? styles.disabledRow : {}),
                 }}
               >
-                <div style={styles.infoBlock}>
-                  <div style={styles.resultTopRow}>
-                    <div style={styles.resultName}>{patient.name}</div>
-
-                    {extraBadgeText ? (
-                      <span style={{ ...styles.statusBadge, ...styles.badgeBlue }}>
-                        {extraBadgeText}
-                      </span>
-                    ) : null}
-
-                    {renderStatusBadge(patient)}
-                  </div>
-
-                  <div style={styles.resultMeta}>ID: {patient.patient_id}</div>
-
-                  {"current_approval_number" in patient && (
-                    <div style={styles.resultMeta}>
-                      Approval: {patient.current_approval_number || "-"}
-                    </div>
-                  )}
-
-                  {"approved_sessions" in patient && (
-                    <div style={styles.resultMeta}>
-                      Approved Sessions: {patient.approved_sessions ?? 0}
-                    </div>
-                  )}
-
-                  {"sessions_taken" in patient && (
-                    <div style={styles.resultMeta}>
-                      Utilized Sessions: {patient.sessions_taken ?? 0}
-                    </div>
-                  )}
-
-                  {"approved_sessions" in patient && "sessions_taken" in patient && (
-                    <div style={styles.resultMeta}>
-                      Remaining Sessions:{" "}
-                      {Math.max(
-                        Number(patient.approved_sessions || 0) -
-                          Number(patient.sessions_taken || 0),
-                        0
-                      )}
-                    </div>
-                  )}
-
-                  {"approval_expiry_date" in patient && (
-                    <div style={styles.resultMeta}>
-                      Expiry Date: {patient.approval_expiry_date || "-"}
-                    </div>
-                  )}
+                <div style={styles.patientInfo}>
+                  <div style={styles.patientName}>{patient.name}</div>
+                  <div style={styles.patientId}>ID: {patient.patient_id}</div>
                 </div>
 
                 <div style={styles.actionButtons}>
-                  {showOpenFile && (
+                  {showOpenFile ? (
                     <button
                       type="button"
                       style={styles.openButton}
@@ -193,28 +133,19 @@ export default function UnifiedPatientSearch({
                     >
                       Open File
                     </button>
-                  )}
+                  ) : null}
 
                   {onSecondarySelectPatient ? (
                     <button
                       type="button"
-                      style={{
-                        ...styles.secondaryButton,
-                        ...(isSecondaryDisabled
-                          ? styles.secondaryButtonDisabled
-                          : {}),
-                      }}
-                      disabled={isSecondaryDisabled}
+                      style={styles.secondaryButton}
+                      disabled={isDisabled}
                       onClick={() => {
-                        if (isSecondaryDisabled) return;
+                        if (isDisabled) return;
                         onSecondarySelectPatient(patient);
                       }}
                     >
-                      {isSecondaryDisabled
-                        ? disabledSecondaryActionLabel
-                        : getSecondaryActionLabel
-                        ? getSecondaryActionLabel(patient)
-                        : secondaryActionLabel}
+                      {secondaryActionLabel || "Secondary"}
                     </button>
                   ) : null}
 
@@ -222,15 +153,15 @@ export default function UnifiedPatientSearch({
                     type="button"
                     style={{
                       ...styles.selectButton,
-                      ...(isPrimaryDisabled ? styles.selectButtonDisabled : {}),
+                      ...(isDisabled ? styles.selectButtonDisabled : {}),
                     }}
-                    disabled={isPrimaryDisabled}
+                    disabled={isDisabled}
                     onClick={() => {
-                      if (isPrimaryDisabled) return;
+                      if (isDisabled) return;
                       onSelectPatient && onSelectPatient(patient);
                     }}
                   >
-                    {isPrimaryDisabled
+                    {isDisabled
                       ? disabledActionLabel
                       : getActionLabel
                       ? getActionLabel(patient)
@@ -243,34 +174,6 @@ export default function UnifiedPatientSearch({
         </div>
       )}
     </div>
-  );
-}
-
-function renderStatusBadge(patient) {
-  const today = new Date().toISOString().split("T")[0];
-  const approved = Number(patient.approved_sessions || 0);
-  const used = Number(patient.sessions_taken || 0);
-  const remaining = approved - used;
-
-  const expired =
-    patient.approval_expiry_date && patient.approval_expiry_date < today;
-
-  const status =
-    expired ? "expired" : remaining <= 2 && approved > 0 ? "low" : "ok";
-
-  return (
-    <span
-      style={{
-        ...styles.statusBadge,
-        ...(status === "expired"
-          ? styles.badgeRed
-          : status === "low"
-          ? styles.badgeYellow
-          : styles.badgeGreen),
-      }}
-    >
-      {status.toUpperCase()}
-    </span>
   );
 }
 
@@ -313,7 +216,7 @@ const styles = {
   },
   registerButton: {
     width: "fit-content",
-    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+    background: "#2563eb",
     color: "#fff",
     border: "none",
     borderRadius: "10px",
@@ -326,45 +229,38 @@ const styles = {
     gap: "12px",
     marginTop: "10px",
   },
-  resultCard: {
+  resultRow: {
     border: "1px solid #e2e8f0",
     borderRadius: "14px",
-    padding: "16px",
+    padding: "14px 16px",
     display: "flex",
     justifyContent: "space-between",
     gap: "16px",
     flexWrap: "wrap",
-    alignItems: "flex-start",
+    alignItems: "center",
     background: "#fff",
   },
-  disabledCard: {
+  disabledRow: {
     background: "#f8fafc",
-    borderColor: "#bfdbfe",
+    borderColor: "#cbd5e1",
   },
-  infoBlock: {
-    flex: 1,
-    minWidth: "240px",
+  patientInfo: {
+    display: "grid",
+    gap: "4px",
   },
-  resultTopRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    flexWrap: "wrap",
-    marginBottom: "6px",
-  },
-  resultName: {
-    fontSize: "18px",
+  patientName: {
+    fontSize: "16px",
     fontWeight: "800",
     color: "#0f172a",
   },
-  resultMeta: {
+  patientId: {
+    fontSize: "13px",
     color: "#64748b",
-    fontSize: "14px",
-    marginBottom: "4px",
+    fontWeight: "600",
   },
   actionButtons: {
     display: "flex",
-    gap: "10px",
+    gap: "8px",
     alignItems: "center",
     flexWrap: "wrap",
   },
@@ -386,10 +282,6 @@ const styles = {
     fontWeight: "700",
     cursor: "pointer",
   },
-  secondaryButtonDisabled: {
-    background: "#94a3b8",
-    cursor: "not-allowed",
-  },
   selectButton: {
     background: "#16a34a",
     color: "#fff",
@@ -402,28 +294,5 @@ const styles = {
   selectButtonDisabled: {
     background: "#94a3b8",
     cursor: "not-allowed",
-  },
-  statusBadge: {
-    padding: "4px 10px",
-    borderRadius: "999px",
-    fontSize: "12px",
-    fontWeight: "800",
-    display: "inline-block",
-  },
-  badgeGreen: {
-    background: "#dcfce7",
-    color: "#166534",
-  },
-  badgeYellow: {
-    background: "#fef3c7",
-    color: "#92400e",
-  },
-  badgeRed: {
-    background: "#fee2e2",
-    color: "#b91c1c",
-  },
-  badgeBlue: {
-    background: "#dbeafe",
-    color: "#1d4ed8",
   },
 };

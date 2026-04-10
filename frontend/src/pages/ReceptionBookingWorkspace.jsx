@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
@@ -39,11 +39,13 @@ export default function ReceptionBookingWorkspace({
     todayBookings,
     monthlyBookings,
     monthlyAgents,
+    monthlyTherapists,
     monthlyFilter,
     setMonthlyFilter,
     futureBookings,
     futureTherapistSummary,
     futureDaySummary,
+    futureAgents,
     futureFilter,
     setFutureFilter,
     handleSelectPatient,
@@ -57,6 +59,10 @@ export default function ReceptionBookingWorkspace({
     handleEditBooking,
     handleDeleteBooking,
   } = useBookingDashboard();
+
+  useEffect(() => {
+    setActiveSection("book");
+  }, [setActiveSection]);
 
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
@@ -136,8 +142,7 @@ export default function ReceptionBookingWorkspace({
           ) : (
             <div style={styles.helperCard}>
               Search for a patient above, then book the appointment below.
-              If patient is not found, use the <strong>Open New File</strong>{" "}
-              button.
+              If patient is not found, use the <strong>Open New File</strong> button.
             </div>
           )}
         </div>
@@ -162,20 +167,12 @@ export default function ReceptionBookingWorkspace({
             onDeleteBooking={handleDeleteBooking}
           />
 
-          <MonthlyBookingsSection
-            bookings={monthlyBookings}
-            agents={monthlyAgents}
-            therapists={therapists}
-            monthlyFilter={monthlyFilter}
-            setMonthlyFilter={setMonthlyFilter}
-            onApplyFilters={handleApplyMonthlyFilters}
-          />
-
           <FutureBookingsSection
             futureBookings={futureBookings}
             therapistSummary={futureTherapistSummary}
             daySummary={futureDaySummary}
             therapists={therapists}
+            agents={futureAgents}
             futureFilter={futureFilter}
             setFutureFilter={setFutureFilter}
             onApplyFilters={handleApplyFutureFilters}
@@ -184,6 +181,16 @@ export default function ReceptionBookingWorkspace({
               setActiveSection("book");
             }}
             onDeleteBooking={handleDeleteBooking}
+            defaultOpen={true}
+          />
+
+          <MonthlyBookingsSection
+            bookings={monthlyBookings}
+            agents={monthlyAgents}
+            therapists={monthlyTherapists.length ? monthlyTherapists : therapists}
+            monthlyFilter={monthlyFilter}
+            setMonthlyFilter={setMonthlyFilter}
+            onApplyFilters={handleApplyMonthlyFilters}
           />
         </div>
       )}

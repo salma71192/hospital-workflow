@@ -1,21 +1,34 @@
 import { useState } from "react";
 import api from "../../api/api";
-import { getMonthString } from "./bookingUtils";
+
+function getTodayString() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getFirstDayOfMonthString() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString()
+    .split("T")[0];
+}
 
 export default function useMonthlyBookings() {
   const [monthlyBookingsCount, setMonthlyBookingsCount] = useState(0);
   const [monthlyBookings, setMonthlyBookings] = useState([]);
   const [monthlyAgents, setMonthlyAgents] = useState([]);
+  const [monthlyTherapists, setMonthlyTherapists] = useState([]);
 
   const [monthlyFilter, setMonthlyFilter] = useState({
-    month: getMonthString(),
+    from_date: getFirstDayOfMonthString(),
+    to_date: getTodayString(),
     user_id: "all",
     patient: "",
     therapist_id: "all",
   });
 
   const loadMonthlyBookings = async (
-    monthValue = monthlyFilter.month,
+    fromDateValue = monthlyFilter.from_date,
+    toDateValue = monthlyFilter.to_date,
     userIdValue = monthlyFilter.user_id,
     patientValue = monthlyFilter.patient,
     therapistIdValue = monthlyFilter.therapist_id
@@ -23,7 +36,8 @@ export default function useMonthlyBookings() {
     try {
       const params = new URLSearchParams();
 
-      if (monthValue) params.append("month", monthValue);
+      if (fromDateValue) params.append("from_date", fromDateValue);
+      if (toDateValue) params.append("to_date", toDateValue);
       if (userIdValue && userIdValue !== "all") {
         params.append("user_id", userIdValue);
       }
@@ -44,17 +58,25 @@ export default function useMonthlyBookings() {
       setMonthlyBookingsCount(res.data.count || 0);
       setMonthlyBookings(res.data.bookings || []);
       setMonthlyAgents(res.data.agents || []);
+      setMonthlyTherapists(res.data.therapists || []);
+      setMonthlyFilter((prev) => ({
+        ...prev,
+        from_date: res.data.from_date || fromDateValue,
+        to_date: res.data.to_date || toDateValue,
+      }));
     } catch (err) {
       console.error("Failed to load monthly bookings", err);
       setMonthlyBookingsCount(0);
       setMonthlyBookings([]);
       setMonthlyAgents([]);
+      setMonthlyTherapists([]);
     }
   };
 
   const handleApplyMonthlyFilters = async () => {
     await loadMonthlyBookings(
-      monthlyFilter.month,
+      monthlyFilter.from_date,
+      monthlyFilter.to_date,
       monthlyFilter.user_id,
       monthlyFilter.patient,
       monthlyFilter.therapist_id
@@ -65,6 +87,7 @@ export default function useMonthlyBookings() {
     monthlyBookingsCount,
     monthlyBookings,
     monthlyAgents,
+    monthlyTherapists,
     monthlyFilter,
     setMonthlyFilter,
     loadMonthlyBookings,

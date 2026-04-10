@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function ReceptionHome({
@@ -15,6 +15,21 @@ export default function ReceptionHome({
     onStopImpersonation?.();
     navigate("/admin");
   };
+
+  const dailyMessage = useMemo(() => {
+    const messages = [
+      "A smooth front desk creates a calm patient experience.",
+      "Every organized task supports better care.",
+      "Small details today make the whole clinic stronger.",
+      "Clear workflow helps every patient feel confident.",
+      "Consistency at the front desk builds trust every day.",
+      "A well-managed schedule is part of excellent care.",
+      "Good coordination turns busy days into successful ones.",
+    ];
+
+    const index = new Date().getDate() % messages.length;
+    return messages[index];
+  }, []);
 
   return (
     <div style={styles.page}>
@@ -52,14 +67,9 @@ export default function ReceptionHome({
           </button>
         </div>
 
-        <div style={styles.heroCard}>
-          <div style={styles.heroBadge}>Quick Access</div>
-          <div style={styles.heroTitle}>Two clean workspaces for reception</div>
-          <div style={styles.heroText}>
-            Open the registration workspace for patient files and assignments,
-            or open the booking workspace for appointment scheduling and
-            tracking.
-          </div>
+        <div style={styles.messageCard}>
+          <div style={styles.messageLabel}>Today&apos;s Message</div>
+          <div style={styles.messageText}>“{dailyMessage}”</div>
         </div>
 
         <div style={styles.grid}>
@@ -69,6 +79,7 @@ export default function ReceptionHome({
             onClick={() => navigate("/reception/registration")}
           >
             <div style={styles.cardAccentBlue} />
+
             <div style={styles.cardInner}>
               <div style={styles.cardTop}>
                 <div>
@@ -82,13 +93,8 @@ export default function ReceptionHome({
               </div>
 
               <div style={styles.cardDescription}>
-                Search patients, open new files, and manage registration tasks.
-              </div>
-
-              <div style={styles.featurePills}>
-                <span style={styles.featurePillBlue}>Register</span>
-                <span style={styles.featurePillBlue}>Open New File</span>
-                <span style={styles.featurePillBlue}>Tracker</span>
+                Open the registration workspace for patient files and
+                assignments.
               </div>
 
               <div style={styles.cardFooter}>
@@ -104,6 +110,7 @@ export default function ReceptionHome({
             onClick={() => navigate("/reception/booking")}
           >
             <div style={styles.cardAccentPink} />
+
             <div style={styles.cardInner}>
               <div style={styles.cardTop}>
                 <div>
@@ -117,13 +124,8 @@ export default function ReceptionHome({
               </div>
 
               <div style={styles.cardDescription}>
-                Book appointments, manage slots, and review booking trackers.
-              </div>
-
-              <div style={styles.featurePills}>
-                <span style={styles.featurePillPink}>Book</span>
-                <span style={styles.featurePillPink}>Open New File</span>
-                <span style={styles.featurePillPink}>Tracker</span>
+                Open the booking workspace for appointments and booking
+                trackers.
               </div>
 
               <div style={styles.cardFooter}>
@@ -244,7 +246,7 @@ const styles = {
     cursor: "pointer",
     boxShadow: "0 10px 24px rgba(239, 68, 68, 0.22)",
   },
-  heroCard: {
+  messageCard: {
     background: "rgba(255, 255, 255, 0.82)",
     backdropFilter: "blur(8px)",
     WebkitBackdropFilter: "blur(8px)",
@@ -255,10 +257,10 @@ const styles = {
     display: "grid",
     gap: "12px",
   },
-  heroBadge: {
+  messageLabel: {
     width: "fit-content",
-    background: "#e0ecff",
-    color: "#1d4ed8",
+    background: "#eef2ff",
+    color: "#4338ca",
     borderRadius: "999px",
     padding: "7px 12px",
     fontSize: "12px",
@@ -266,17 +268,12 @@ const styles = {
     textTransform: "uppercase",
     letterSpacing: "0.08em",
   },
-  heroTitle: {
-    fontSize: "30px",
-    fontWeight: "900",
-    color: "#0f172a",
-  },
-  heroText: {
+  messageText: {
     maxWidth: "760px",
-    fontSize: "16px",
+    fontSize: "24px",
     lineHeight: 1.6,
-    color: "#64748b",
-    fontWeight: "600",
+    color: "#0f172a",
+    fontWeight: "800",
   },
   grid: {
     display: "grid",
@@ -368,29 +365,6 @@ const styles = {
     lineHeight: 1.6,
     color: "#64748b",
     fontWeight: "600",
-  },
-  featurePills: {
-    display: "flex",
-    gap: "10px",
-    flexWrap: "wrap",
-  },
-  featurePillBlue: {
-    background: "#eff6ff",
-    color: "#1d4ed8",
-    border: "1px solid #bfdbfe",
-    borderRadius: "999px",
-    padding: "7px 12px",
-    fontSize: "12px",
-    fontWeight: "800",
-  },
-  featurePillPink: {
-    background: "#fdf2f8",
-    color: "#be185d",
-    border: "1px solid #fbcfe8",
-    borderRadius: "999px",
-    padding: "7px 12px",
-    fontSize: "12px",
-    fontWeight: "800",
   },
   cardFooter: {
     display: "flex",

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "../../api/api";
-import { generateTimeSlots, getTodayString, getWeekDates } from "./bookingUtils";
+import {
+  generateTimeSlots,
+  getTodayString,
+  getWeekDates,
+} from "./bookingUtils";
 
 export default function useBookingCore({
-  onReloadTodayBookings,
   onReloadMonthlyBookings,
   onReloadFutureBookings,
 }) {
@@ -62,8 +65,7 @@ export default function useBookingCore({
 
   const loadTodayBookings = async () => {
     try {
-      const today = getTodayString();
-      const res = await api.get(`callcenter/bookings/today/?date=${today}`);
+      const res = await api.get("callcenter/bookings/today/");
       setTodayBookingsCount(res.data.count || 0);
       setTodayBookings(res.data.bookings || []);
     } catch (err) {
@@ -86,6 +88,7 @@ export default function useBookingCore({
 
       const mergedSlots = allTimes.map((time) => {
         const existing = backendSlots.find((slot) => slot.time === time);
+
         return (
           existing || {
             time,
@@ -192,7 +195,7 @@ export default function useBookingCore({
     setError("");
   };
 
-  function handleEditBooking(booking) {
+  const handleEditBooking = (booking) => {
     setMessage("");
     setError("");
 
@@ -209,9 +212,9 @@ export default function useBookingCore({
       appointment_time: booking.appointment_time || "",
       notes: booking.notes || "",
     });
-  }
+  };
 
-  async function handleDeleteBooking(bookingId) {
+  const handleDeleteBooking = async (bookingId) => {
     const confirmed = window.confirm("Delete this booking?");
     if (!confirmed) return;
 
@@ -235,7 +238,7 @@ export default function useBookingCore({
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to delete booking");
     }
-  }
+  };
 
   const handleConfirmBooking = async () => {
     setMessage("");
@@ -322,21 +325,30 @@ export default function useBookingCore({
     setMessage,
     error,
     setError,
+
     selectedPatient,
     setSelectedPatient,
+
     patientForm,
     setPatientForm,
+
     bookingForm,
     setBookingForm,
+
     therapists,
     selectedTherapist,
+
     weekDates,
     setWeekDates,
+
     slots,
     setSlots,
+
     todayBookingsCount,
     todayBookings,
+
     loadTodayBookings,
+
     handleSelectPatient,
     handleCreatePatientFile,
     handleSelectTherapist,

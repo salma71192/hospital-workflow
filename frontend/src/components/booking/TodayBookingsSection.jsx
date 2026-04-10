@@ -5,13 +5,15 @@ export default function TodayBookingsSection({
   onEditBooking,
   onDeleteBooking,
 }) {
+  const today = new Date().toISOString().split("T")[0];
+
   return (
     <div style={styles.card}>
       <div style={styles.header}>
-        <div style={styles.eyebrow}>Daily Booking</div>
-        <h2 style={styles.title}>Today's Bookings</h2>
+        <div style={styles.eyebrow}>Today&apos;s Bookings</div>
+        <h2 style={styles.title}>Bookings Created Today</h2>
         <div style={styles.subtext}>
-          Bookings created today by this agent.
+          Shows bookings created today by the logged-in user for today or future appointments.
         </div>
       </div>
 
@@ -19,56 +21,64 @@ export default function TodayBookingsSection({
         <div style={styles.emptyState}>No bookings found for today.</div>
       ) : (
         <div style={styles.list}>
-          {bookings.map((item) => (
-            <div key={item.id} style={styles.bookingCard}>
-              <div style={styles.topRow}>
-                <div style={styles.patientName}>{item.patient_name}</div>
+          {bookings.map((item) => {
+            const isPastAppointment = item.appointment_date < today;
 
-                <div style={styles.rightActions}>
-                  <div style={styles.timeBadge}>{item.appointment_time}</div>
+            return (
+              <div key={item.id} style={styles.bookingCard}>
+                <div style={styles.topRow}>
+                  <div style={styles.patientName}>{item.patient_name}</div>
 
-                  <div style={styles.actions}>
-                    <button
-                      style={styles.editBtn}
-                      onClick={() => onEditBooking && onEditBooking(item)}
-                    >
-                      Edit
-                    </button>
+                  <div style={styles.rightActions}>
+                    <div style={styles.timeBadge}>{item.appointment_time}</div>
 
-                    <button
-                      style={styles.deleteBtn}
-                      onClick={() =>
-                        onDeleteBooking && onDeleteBooking(item.id)
-                      }
-                    >
-                      Delete
-                    </button>
+                    {!isPastAppointment ? (
+                      <div style={styles.actions}>
+                        <button
+                          style={styles.editBtn}
+                          onClick={() => onEditBooking && onEditBooking(item)}
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          style={styles.deleteBtn}
+                          onClick={() =>
+                            onDeleteBooking && onDeleteBooking(item.id)
+                          }
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={styles.lockedBadge}>Locked</div>
+                    )}
                   </div>
                 </div>
+
+                <div style={styles.metaGrid}>
+                  <div style={styles.metaItem}>
+                    <span style={styles.metaLabel}>File Number</span>
+                    <span style={styles.metaValue}>{item.patient_id}</span>
+                  </div>
+
+                  <div style={styles.metaItem}>
+                    <span style={styles.metaLabel}>Therapist</span>
+                    <span style={styles.metaValue}>{item.therapist_name}</span>
+                  </div>
+
+                  <div style={styles.metaItem}>
+                    <span style={styles.metaLabel}>Appointment Date</span>
+                    <span style={styles.metaValue}>{item.appointment_date}</span>
+                  </div>
+                </div>
+
+                {item.notes ? (
+                  <div style={styles.notesBox}>{item.notes}</div>
+                ) : null}
               </div>
-
-              <div style={styles.metaGrid}>
-                <div style={styles.metaItem}>
-                  <span style={styles.metaLabel}>File Number</span>
-                  <span style={styles.metaValue}>{item.patient_id}</span>
-                </div>
-
-                <div style={styles.metaItem}>
-                  <span style={styles.metaLabel}>Therapist</span>
-                  <span style={styles.metaValue}>{item.therapist_name}</span>
-                </div>
-
-                <div style={styles.metaItem}>
-                  <span style={styles.metaLabel}>Date</span>
-                  <span style={styles.metaValue}>{item.appointment_date}</span>
-                </div>
-              </div>
-
-              {item.notes ? (
-                <div style={styles.notesBox}>{item.notes}</div>
-              ) : null}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -85,10 +95,7 @@ const styles = {
     display: "grid",
     gap: "16px",
   },
-  header: {
-    display: "grid",
-    gap: "6px",
-  },
+  header: { display: "grid", gap: "6px" },
   eyebrow: {
     fontSize: "12px",
     fontWeight: "800",
@@ -96,20 +103,9 @@ const styles = {
     letterSpacing: "0.08em",
     color: "#be185d",
   },
-  title: {
-    margin: 0,
-    fontSize: "24px",
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  subtext: {
-    fontSize: "14px",
-    color: "#64748b",
-  },
-  list: {
-    display: "grid",
-    gap: "12px",
-  },
+  title: { margin: 0, fontSize: "24px", fontWeight: "800", color: "#0f172a" },
+  subtext: { fontSize: "14px", color: "#64748b" },
+  list: { display: "grid", gap: "12px" },
   bookingCard: {
     border: "1px solid #e2e8f0",
     borderRadius: "14px",
@@ -129,12 +125,9 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: "10px",
+    flexWrap: "wrap",
   },
-  patientName: {
-    fontSize: "16px",
-    fontWeight: "800",
-    color: "#0f172a",
-  },
+  patientName: { fontSize: "16px", fontWeight: "800", color: "#0f172a" },
   timeBadge: {
     background: "#fdf2f8",
     color: "#be185d",
@@ -143,10 +136,15 @@ const styles = {
     fontSize: "12px",
     fontWeight: "800",
   },
-  actions: {
-    display: "flex",
-    gap: "6px",
+  lockedBadge: {
+    background: "#e2e8f0",
+    color: "#475569",
+    padding: "6px 10px",
+    borderRadius: "999px",
+    fontSize: "12px",
+    fontWeight: "800",
   },
+  actions: { display: "flex", gap: "6px" },
   editBtn: {
     background: "#0ea5e9",
     color: "#fff",
@@ -172,10 +170,7 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
     gap: "10px",
   },
-  metaItem: {
-    display: "grid",
-    gap: "4px",
-  },
+  metaItem: { display: "grid", gap: "4px" },
   metaLabel: {
     fontSize: "12px",
     fontWeight: "700",
