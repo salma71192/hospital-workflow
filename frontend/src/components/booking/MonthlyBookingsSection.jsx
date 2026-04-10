@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
+import PatientAutocompleteFilter from "./PatientAutocompleteFilter";
 
 export default function MonthlyBookingsSection({
   bookings = [],
@@ -7,148 +8,180 @@ export default function MonthlyBookingsSection({
   monthlyFilter,
   setMonthlyFilter,
   onApplyFilters,
+  defaultOpen = false,
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  const filteredBookings = useMemo(() => bookings, [bookings]);
+
   return (
-    <div style={styles.card}>
-      <div style={styles.header}>
-        <div style={styles.eyebrow}>Monthly Bookings</div>
-        <h2 style={styles.title}>Monthly Booking Tracker</h2>
-        <div style={styles.subtext}>
-          Filter bookings by date range, user, patient, or physio.
+    <div style={styles.wrap}>
+      <button
+        type="button"
+        style={styles.collapseHeader}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <div>
+          <div style={styles.eyebrow}>Monthly Bookings</div>
+          <div style={styles.title}>Monthly Booking Tracker</div>
         </div>
-      </div>
+        <div style={styles.chevron}>{open ? "−" : "+"}</div>
+      </button>
 
-      <div style={styles.filterGrid}>
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>From Date</label>
-          <input
-            type="date"
-            value={monthlyFilter.from_date}
-            onChange={(e) =>
-              setMonthlyFilter((prev) => ({
-                ...prev,
-                from_date: e.target.value,
-              }))
-            }
-            style={styles.input}
-          />
-        </div>
+      {open ? (
+        <div style={styles.card}>
+          <div style={styles.subtext}>
+            Filter bookings by date range, user, patient, or physio.
+          </div>
 
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>To Date</label>
-          <input
-            type="date"
-            value={monthlyFilter.to_date}
-            onChange={(e) =>
-              setMonthlyFilter((prev) => ({
-                ...prev,
-                to_date: e.target.value,
-              }))
-            }
-            style={styles.input}
-          />
-        </div>
+          <div style={styles.filterGrid}>
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>From Date</label>
+              <input
+                type="date"
+                value={monthlyFilter.from_date}
+                onChange={(e) =>
+                  setMonthlyFilter((prev) => ({
+                    ...prev,
+                    from_date: e.target.value,
+                  }))
+                }
+                style={styles.input}
+              />
+            </div>
 
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>User</label>
-          <select
-            value={monthlyFilter.user_id}
-            onChange={(e) =>
-              setMonthlyFilter((prev) => ({
-                ...prev,
-                user_id: e.target.value,
-              }))
-            }
-            style={styles.input}
-          >
-            <option value="all">All</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>To Date</label>
+              <input
+                type="date"
+                value={monthlyFilter.to_date}
+                onChange={(e) =>
+                  setMonthlyFilter((prev) => ({
+                    ...prev,
+                    to_date: e.target.value,
+                  }))
+                }
+                style={styles.input}
+              />
+            </div>
 
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Physio</label>
-          <select
-            value={monthlyFilter.therapist_id}
-            onChange={(e) =>
-              setMonthlyFilter((prev) => ({
-                ...prev,
-                therapist_id: e.target.value,
-              }))
-            }
-            style={styles.input}
-          >
-            <option value="all">All</option>
-            {therapists.map((therapist) => (
-              <option key={therapist.id} value={therapist.id}>
-                {therapist.name}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>User</label>
+              <select
+                value={monthlyFilter.user_id}
+                onChange={(e) =>
+                  setMonthlyFilter((prev) => ({
+                    ...prev,
+                    user_id: e.target.value,
+                  }))
+                }
+                style={styles.input}
+              >
+                <option value="all">All</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Patient</label>
-          <input
-            type="text"
-            placeholder="Patient name or file number"
-            value={monthlyFilter.patient}
-            onChange={(e) =>
-              setMonthlyFilter((prev) => ({
-                ...prev,
-                patient: e.target.value,
-              }))
-            }
-            style={styles.input}
-          />
-        </div>
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Physio</label>
+              <select
+                value={monthlyFilter.therapist_id}
+                onChange={(e) =>
+                  setMonthlyFilter((prev) => ({
+                    ...prev,
+                    therapist_id: e.target.value,
+                  }))
+                }
+                style={styles.input}
+              >
+                <option value="all">All</option>
+                {therapists.map((therapist) => (
+                  <option key={therapist.id} value={therapist.id}>
+                    {therapist.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div style={styles.fieldGroupEnd}>
-          <button type="button" style={styles.primaryButton} onClick={onApplyFilters}>
-            Apply Filters
-          </button>
-        </div>
-      </div>
+            <PatientAutocompleteFilter
+              value={monthlyFilter.patient}
+              onChange={(value) =>
+                setMonthlyFilter((prev) => ({
+                  ...prev,
+                  patient: value,
+                }))
+              }
+              label="Patient"
+            />
 
-      {bookings.length === 0 ? (
-        <div style={styles.emptyState}>No bookings found for this range.</div>
-      ) : (
-        <div style={styles.tableWrap}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Patient</th>
-                <th style={styles.th}>File Number</th>
-                <th style={styles.th}>Physio</th>
-                <th style={styles.th}>Appointment Date</th>
-                <th style={styles.th}>Time</th>
-                <th style={styles.th}>Booked By</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bookings.map((item) => (
-                <tr key={item.id}>
-                  <td style={styles.td}>{item.patient_name}</td>
-                  <td style={styles.td}>{item.patient_id}</td>
-                  <td style={styles.td}>{item.therapist_name}</td>
-                  <td style={styles.td}>{item.appointment_date}</td>
-                  <td style={styles.td}>{item.appointment_time}</td>
-                  <td style={styles.td}>{item.created_by_name || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            <div style={styles.fieldGroupEnd}>
+              <button type="button" style={styles.primaryButton} onClick={onApplyFilters}>
+                Apply Filters
+              </button>
+            </div>
+          </div>
+
+          {filteredBookings.length === 0 ? (
+            <div style={styles.emptyState}>No bookings found for this range.</div>
+          ) : (
+            <div style={styles.tableWrap}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Patient</th>
+                    <th style={styles.th}>File Number</th>
+                    <th style={styles.th}>Physio</th>
+                    <th style={styles.th}>Appointment Date</th>
+                    <th style={styles.th}>Time</th>
+                    <th style={styles.th}>Booked By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredBookings.map((item) => (
+                    <tr key={item.id}>
+                      <td style={styles.td}>{item.patient_name}</td>
+                      <td style={styles.td}>{item.patient_id}</td>
+                      <td style={styles.td}>{item.therapist_name}</td>
+                      <td style={styles.td}>{item.appointment_date}</td>
+                      <td style={styles.td}>{item.appointment_time}</td>
+                      <td style={styles.td}>{item.created_by_name || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
 const styles = {
+  wrap: { display: "grid", gap: "12px" },
+  collapseHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    textAlign: "left",
+    background: "#fff",
+    border: "1px solid #e2e8f0",
+    borderRadius: "18px",
+    padding: "18px 22px",
+    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+    cursor: "pointer",
+  },
+  chevron: {
+    fontSize: "26px",
+    fontWeight: "800",
+    color: "#0f172a",
+    lineHeight: 1,
+  },
   card: {
     background: "#fff",
     borderRadius: "18px",
@@ -158,7 +191,6 @@ const styles = {
     display: "grid",
     gap: "16px",
   },
-  header: { display: "grid", gap: "6px" },
   eyebrow: {
     fontSize: "12px",
     fontWeight: "800",
@@ -166,7 +198,7 @@ const styles = {
     letterSpacing: "0.08em",
     color: "#be185d",
   },
-  title: { margin: 0, fontSize: "24px", fontWeight: "800", color: "#0f172a" },
+  title: { fontSize: "24px", fontWeight: "800", color: "#0f172a" },
   subtext: { fontSize: "14px", color: "#64748b" },
   filterGrid: {
     display: "grid",
