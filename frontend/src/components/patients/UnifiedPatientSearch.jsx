@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/api";
 
@@ -19,6 +19,7 @@ export default function UnifiedPatientSearch({
   disabledPatientIds = [],
   disabledActionLabel = "Unavailable",
   onRegisterNew,
+  registerButtonLabel = "Open New File",
 }) {
   const navigate = useNavigate();
 
@@ -100,7 +101,7 @@ export default function UnifiedPatientSearch({
               style={styles.registerButton}
               onClick={onRegisterNew}
             >
-              Open New File
+              {registerButtonLabel}
             </button>
           ) : null}
         </div>

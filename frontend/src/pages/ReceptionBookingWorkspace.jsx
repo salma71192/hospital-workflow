@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
@@ -20,6 +20,7 @@ export default function ReceptionBookingWorkspace({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
+  const bookingRef = useRef(null);
 
   const {
     activeSection,
@@ -34,9 +35,8 @@ export default function ReceptionBookingWorkspace({
     therapists,
     weekDates,
     slots,
-    todayBookingsCount,
-    monthlyBookingsCount,
     todayBookings,
+    todayBookingsCount,
     monthlyBookings,
     monthlyAgents,
     monthlyTherapists,
@@ -69,14 +69,28 @@ export default function ReceptionBookingWorkspace({
     navigate("/admin");
   };
 
-  const handleSelectPatientForBook = (patient) => {
-    handleSelectPatient(patient);
+  const handleSelectPatientForBook = async (patient) => {
+    await handleSelectPatient(patient);
     setActiveSection("book");
+
+    setTimeout(() => {
+      bookingRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 200);
   };
 
   const handleCreatePatientThenBook = async (e) => {
     await handleCreatePatientFile(e);
     setActiveSection("book");
+
+    setTimeout(() => {
+      bookingRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 250);
   };
 
   return (
@@ -91,7 +105,7 @@ export default function ReceptionBookingWorkspace({
         { key: "home", label: "Home" },
         { key: "book", label: "Book" },
         { key: "open_file", label: "Open New File" },
-        { key: "tracker", label: "Booking Tracker" },
+        { key: "tracker", label: `Booking Tracker (${todayBookingsCount || 0})` },
       ]}
       activeSection={activeSection}
       setActiveSection={(key) => {
@@ -117,34 +131,37 @@ export default function ReceptionBookingWorkspace({
       {activeSection === "book" && (
         <div style={styles.stack}>
           <UnifiedPatientSearch
-            title="Book"
+            title="Book Appointment"
             placeholder="Search patient name or ID"
             actionLabel="Book Appointment"
             onSelectPatient={handleSelectPatientForBook}
             emptyText="Start typing to search patients."
             noResultsText="No patients found. Open a new file if needed."
             onRegisterNew={() => setActiveSection("open_file")}
+            registerButtonLabel="Open New File"
           />
 
-          {selectedPatient ? (
-            <BookingSection
-              selectedPatient={selectedPatient}
-              bookingForm={bookingForm}
-              setBookingForm={setBookingForm}
-              therapists={therapists}
-              weekDates={weekDates}
-              slots={slots}
-              onSelectTherapist={handleSelectTherapist}
-              onSelectDate={handleSelectDate}
-              onSelectSlot={handleSelectSlot}
-              onConfirmBooking={handleConfirmBooking}
-            />
-          ) : (
-            <div style={styles.helperCard}>
-              Search for a patient above, then book the appointment below.
-              If patient is not found, use the <strong>Open New File</strong> button.
-            </div>
-          )}
+          <div ref={bookingRef}>
+            {selectedPatient ? (
+              <BookingSection
+                selectedPatient={selectedPatient}
+                bookingForm={bookingForm}
+                setBookingForm={setBookingForm}
+                therapists={therapists}
+                weekDates={weekDates}
+                slots={slots}
+                onSelectTherapist={handleSelectTherapist}
+                onSelectDate={handleSelectDate}
+                onSelectSlot={handleSelectSlot}
+                onConfirmBooking={handleConfirmBooking}
+              />
+            ) : (
+              <div style={styles.helperCard}>
+                Search for a patient above, then continue to the booking section.
+                If the patient is not found, use <strong>Open New File</strong>.
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -163,8 +180,16 @@ export default function ReceptionBookingWorkspace({
             onEditBooking={(booking) => {
               handleEditBooking(booking);
               setActiveSection("book");
+
+              setTimeout(() => {
+                bookingRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }, 200);
             }}
             onDeleteBooking={handleDeleteBooking}
+            defaultOpen={true}
           />
 
           <FutureBookingsSection
@@ -179,6 +204,13 @@ export default function ReceptionBookingWorkspace({
             onEditBooking={(booking) => {
               handleEditBooking(booking);
               setActiveSection("book");
+
+              setTimeout(() => {
+                bookingRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }, 200);
             }}
             onDeleteBooking={handleDeleteBooking}
             defaultOpen={true}
@@ -187,10 +219,13 @@ export default function ReceptionBookingWorkspace({
           <MonthlyBookingsSection
             bookings={monthlyBookings}
             agents={monthlyAgents}
-            therapists={monthlyTherapists.length ? monthlyTherapists : therapists}
+            therapists={
+              monthlyTherapists?.length ? monthlyTherapists : therapists
+            }
             monthlyFilter={monthlyFilter}
             setMonthlyFilter={setMonthlyFilter}
             onApplyFilters={handleApplyMonthlyFilters}
+            defaultOpen={false}
           />
         </div>
       )}

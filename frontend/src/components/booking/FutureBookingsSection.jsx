@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import PatientAutocompleteFilter from "./PatientAutocompleteFilter";
 
 function getTomorrowString() {
   const next = new Date();
@@ -117,6 +118,18 @@ export default function FutureBookingsSection({
                   ))}
                 </select>
               </div>
+
+              <PatientAutocompleteFilter
+                value={futureFilter.patient || ""}
+                onChange={(value) =>
+                  setFutureFilter((prev) => ({
+                    ...prev,
+                    patient: value,
+                  }))
+                }
+                label="Patient"
+                placeholder="Search patient name or file number"
+              />
 
               <div style={styles.fieldGroupEnd}>
                 <button

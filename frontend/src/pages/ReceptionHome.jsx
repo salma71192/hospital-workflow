@@ -32,6 +32,9 @@ export default function ReceptionHome({
 
   return (
     <div style={styles.page}>
+      <div style={styles.softGlowBlue} />
+      <div style={styles.softGlowPink} />
+
       <div style={styles.container}>
         {actingAs ? (
           <div style={styles.banner}>
@@ -50,11 +53,11 @@ export default function ReceptionHome({
         ) : null}
 
         <div style={styles.topBar}>
-          <div>
+          <div style={styles.titleBlock}>
             <div style={styles.eyebrow}>Reception</div>
             <h1 style={styles.title}>Welcome back, {displayName}</h1>
             <p style={styles.subtitle}>
-              Choose where you want to continue your work.
+              Choose the workspace you want to continue with today.
             </p>
           </div>
 
@@ -74,19 +77,22 @@ export default function ReceptionHome({
             style={styles.card}
             onClick={() => navigate("/reception/registration")}
           >
-            <div style={styles.cardHeader}>
-              <div>
-                <div style={styles.cardEyebrowBlue}>Workspace</div>
-                <div style={styles.cardTitle}>Registration</div>
+            <div style={styles.cardContent}>
+              <div style={styles.cardHeader}>
+                <div>
+                  <div style={styles.cardEyebrowBlue}>Workspace</div>
+                  <div style={styles.cardTitle}>Registration</div>
+                </div>
+
+                <div style={styles.badgeBlue}>R</div>
               </div>
-              <div style={styles.badgeBlue}>R</div>
-            </div>
 
-            <div style={styles.cardText}>
-              Search patients, open new files, and manage registration tasks.
-            </div>
+              <div style={styles.cardText}>
+                Search patients, open new files, and manage registration tasks.
+              </div>
 
-            <div style={styles.cardActionBlue}>Open Registration →</div>
+              <div style={styles.cardActionBlue}>Open Registration →</div>
+            </div>
           </button>
 
           <button
@@ -94,19 +100,22 @@ export default function ReceptionHome({
             style={styles.card}
             onClick={() => navigate("/reception/booking")}
           >
-            <div style={styles.cardHeader}>
-              <div>
-                <div style={styles.cardEyebrowPink}>Workspace</div>
-                <div style={styles.cardTitle}>Booking</div>
+            <div style={styles.cardContent}>
+              <div style={styles.cardHeader}>
+                <div>
+                  <div style={styles.cardEyebrowPink}>Workspace</div>
+                  <div style={styles.cardTitle}>Booking</div>
+                </div>
+
+                <div style={styles.badgePink}>B</div>
               </div>
-              <div style={styles.badgePink}>B</div>
-            </div>
 
-            <div style={styles.cardText}>
-              Book appointments, manage schedules, and review booking trackers.
-            </div>
+              <div style={styles.cardText}>
+                Book appointments, manage schedules, and review booking trackers.
+              </div>
 
-            <div style={styles.cardActionPink}>Open Booking →</div>
+              <div style={styles.cardActionPink}>Open Booking →</div>
+            </div>
           </button>
         </div>
       </div>
@@ -117,20 +126,46 @@ export default function ReceptionHome({
 const styles = {
   page: {
     minHeight: "100vh",
+    position: "relative",
+    overflow: "hidden",
     background: "#f8fafc",
-    padding: "36px 20px",
+    padding: "56px 24px 72px",
+  },
+  softGlowBlue: {
+    position: "absolute",
+    top: "-140px",
+    left: "-120px",
+    width: "360px",
+    height: "360px",
+    borderRadius: "999px",
+    background: "rgba(59, 130, 246, 0.07)",
+    filter: "blur(70px)",
+    pointerEvents: "none",
+  },
+  softGlowPink: {
+    position: "absolute",
+    bottom: "-160px",
+    right: "-100px",
+    width: "360px",
+    height: "360px",
+    borderRadius: "999px",
+    background: "rgba(236, 72, 153, 0.06)",
+    filter: "blur(70px)",
+    pointerEvents: "none",
   },
   container: {
-    maxWidth: "1100px",
+    position: "relative",
+    zIndex: 1,
+    maxWidth: "1080px",
     margin: "0 auto",
     display: "grid",
-    gap: "20px",
+    gap: "28px",
   },
   banner: {
     background: "#fff7ed",
-    border: "1px solid #fdba74",
-    borderRadius: "14px",
-    padding: "12px 16px",
+    border: "1px solid #fed7aa",
+    borderRadius: "16px",
+    padding: "14px 18px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
@@ -155,81 +190,97 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: "16px",
+    gap: "20px",
     flexWrap: "wrap",
+  },
+  titleBlock: {
+    display: "grid",
+    gap: "10px",
   },
   eyebrow: {
     fontSize: "12px",
     fontWeight: "800",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
-    color: "#475569",
-    marginBottom: "8px",
+    color: "#64748b",
   },
   title: {
     margin: 0,
-    fontSize: "32px",
-    fontWeight: "800",
+    fontSize: "34px",
+    lineHeight: 1.2,
+    fontWeight: "700",
     color: "#0f172a",
   },
   subtitle: {
-    margin: "8px 0 0 0",
-    fontSize: "15px",
+    margin: 0,
+    fontSize: "16px",
     color: "#64748b",
     fontWeight: "500",
+    lineHeight: 1.7,
+    maxWidth: "620px",
   },
   logoutButton: {
-    background: "#ef4444",
-    color: "#fff",
-    border: "none",
-    borderRadius: "12px",
+    background: "#ffffff",
+    color: "#dc2626",
+    border: "1px solid #fecaca",
+    borderRadius: "14px",
     padding: "12px 16px",
     fontWeight: "700",
     cursor: "pointer",
   },
   messageCard: {
-    background: "#ffffff",
+    background: "rgba(255, 255, 255, 0.88)",
     border: "1px solid #e2e8f0",
-    borderRadius: "18px",
-    padding: "20px",
+    borderRadius: "24px",
+    padding: "26px 28px",
     display: "grid",
-    gap: "8px",
-    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
+    gap: "10px",
+    boxShadow: "0 8px 30px rgba(15, 23, 42, 0.04)",
   },
   messageLabel: {
+    width: "fit-content",
     fontSize: "12px",
     fontWeight: "800",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
     color: "#64748b",
+    background: "#f1f5f9",
+    borderRadius: "999px",
+    padding: "6px 12px",
   },
   messageText: {
-    fontSize: "18px",
-    lineHeight: 1.6,
-    fontWeight: "600",
+    fontSize: "20px",
+    lineHeight: 1.8,
     color: "#0f172a",
+    fontWeight: "600",
+    maxWidth: "760px",
   },
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "18px",
+    gap: "22px",
+    marginTop: "6px",
   },
   card: {
-    background: "#fff",
+    background: "rgba(255, 255, 255, 0.92)",
     border: "1px solid #e2e8f0",
-    borderRadius: "20px",
-    padding: "22px",
-    display: "grid",
-    gap: "18px",
+    borderRadius: "24px",
     textAlign: "left",
     cursor: "pointer",
-    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
+    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+    transition: "all 0.2s ease",
+  },
+  cardContent: {
+    padding: "28px",
+    display: "grid",
+    gap: "22px",
+    minHeight: "220px",
   },
   cardHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: "12px",
+    gap: "14px",
   },
   cardEyebrowBlue: {
     fontSize: "12px",
@@ -237,7 +288,7 @@ const styles = {
     textTransform: "uppercase",
     letterSpacing: "0.08em",
     color: "#2563eb",
-    marginBottom: "6px",
+    marginBottom: "8px",
   },
   cardEyebrowPink: {
     fontSize: "12px",
@@ -245,49 +296,57 @@ const styles = {
     textTransform: "uppercase",
     letterSpacing: "0.08em",
     color: "#db2777",
-    marginBottom: "6px",
+    marginBottom: "8px",
   },
   cardTitle: {
-    fontSize: "24px",
-    fontWeight: "800",
+    fontSize: "26px",
+    fontWeight: "700",
     color: "#0f172a",
+    lineHeight: 1.25,
   },
   badgeBlue: {
-    width: "42px",
-    height: "42px",
-    borderRadius: "12px",
-    background: "#dbeafe",
-    color: "#1d4ed8",
+    width: "44px",
+    height: "44px",
+    borderRadius: "14px",
+    background: "#eff6ff",
+    color: "#2563eb",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontWeight: "800",
+    fontSize: "16px",
+    flexShrink: 0,
   },
   badgePink: {
-    width: "42px",
-    height: "42px",
-    borderRadius: "12px",
-    background: "#fce7f3",
-    color: "#be185d",
+    width: "44px",
+    height: "44px",
+    borderRadius: "14px",
+    background: "#fdf2f8",
+    color: "#db2777",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontWeight: "800",
+    fontSize: "16px",
+    flexShrink: 0,
   },
   cardText: {
-    fontSize: "14px",
-    lineHeight: 1.6,
+    fontSize: "15px",
+    lineHeight: 1.8,
     color: "#64748b",
     fontWeight: "500",
+    maxWidth: "420px",
   },
   cardActionBlue: {
     fontSize: "14px",
     fontWeight: "800",
     color: "#2563eb",
+    marginTop: "6px",
   },
   cardActionPink: {
     fontSize: "14px",
     fontWeight: "800",
     color: "#db2777",
+    marginTop: "6px",
   },
 };

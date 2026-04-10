@@ -13,13 +13,17 @@ export default function TodayBookingsSection({
 
   const filteredBookings = useMemo(() => {
     const term = patientSearch.trim().toLowerCase();
-    if (!term) return bookings;
 
-    return bookings.filter(
-      (item) =>
-        item.patient_name?.toLowerCase().includes(term) ||
-        item.patient_id?.toLowerCase().includes(term)
-    );
+    if (!term) {
+      return bookings;
+    }
+
+    return bookings.filter((item) => {
+      const patientName = (item.patient_name || "").toLowerCase();
+      const patientId = (item.patient_id || "").toLowerCase();
+
+      return patientName.includes(term) || patientId.includes(term);
+    });
   }, [bookings, patientSearch]);
 
   return (
@@ -46,6 +50,7 @@ export default function TodayBookingsSection({
             value={patientSearch}
             onChange={setPatientSearch}
             label="Patient"
+            placeholder="Search patient name or file number"
           />
 
           {filteredBookings.length === 0 ? (
@@ -66,6 +71,7 @@ export default function TodayBookingsSection({
                         {!isPastAppointment ? (
                           <div style={styles.actions}>
                             <button
+                              type="button"
                               style={styles.editBtn}
                               onClick={() => onEditBooking && onEditBooking(item)}
                             >
@@ -73,6 +79,7 @@ export default function TodayBookingsSection({
                             </button>
 
                             <button
+                              type="button"
                               style={styles.deleteBtn}
                               onClick={() =>
                                 onDeleteBooking && onDeleteBooking(item.id)
@@ -119,7 +126,10 @@ export default function TodayBookingsSection({
 }
 
 const styles = {
-  wrap: { display: "grid", gap: "12px" },
+  wrap: {
+    display: "grid",
+    gap: "12px",
+  },
   collapseHeader: {
     display: "flex",
     justifyContent: "space-between",
@@ -155,9 +165,19 @@ const styles = {
     letterSpacing: "0.08em",
     color: "#be185d",
   },
-  title: { fontSize: "24px", fontWeight: "800", color: "#0f172a" },
-  subtext: { fontSize: "14px", color: "#64748b" },
-  list: { display: "grid", gap: "12px" },
+  title: {
+    fontSize: "24px",
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  subtext: {
+    fontSize: "14px",
+    color: "#64748b",
+  },
+  list: {
+    display: "grid",
+    gap: "12px",
+  },
   bookingCard: {
     border: "1px solid #e2e8f0",
     borderRadius: "14px",
@@ -179,7 +199,11 @@ const styles = {
     gap: "10px",
     flexWrap: "wrap",
   },
-  patientName: { fontSize: "16px", fontWeight: "800", color: "#0f172a" },
+  patientName: {
+    fontSize: "16px",
+    fontWeight: "800",
+    color: "#0f172a",
+  },
   timeBadge: {
     background: "#fdf2f8",
     color: "#be185d",
@@ -196,7 +220,10 @@ const styles = {
     fontSize: "12px",
     fontWeight: "800",
   },
-  actions: { display: "flex", gap: "6px" },
+  actions: {
+    display: "flex",
+    gap: "6px",
+  },
   editBtn: {
     background: "#0ea5e9",
     color: "#fff",
@@ -222,7 +249,10 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
     gap: "10px",
   },
-  metaItem: { display: "grid", gap: "4px" },
+  metaItem: {
+    display: "grid",
+    gap: "4px",
+  },
   metaLabel: {
     fontSize: "12px",
     fontWeight: "700",

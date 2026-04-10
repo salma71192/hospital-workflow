@@ -18,30 +18,42 @@ export default function useFutureBookings() {
     to_date: "",
     therapist_id: "all",
     user_id: "all",
+    patient: "",
   });
 
   const loadFutureBookings = async (
     fromDateValue = futureFilter.from_date,
     toDateValue = futureFilter.to_date,
     therapistIdValue = futureFilter.therapist_id,
-    userIdValue = futureFilter.user_id
+    userIdValue = futureFilter.user_id,
+    patientValue = futureFilter.patient
   ) => {
     try {
       const tomorrow = getTomorrowString();
+
       const safeFromDate =
         !fromDateValue || fromDateValue < tomorrow ? tomorrow : fromDateValue;
+
+      const safeToDate =
+        toDateValue && toDateValue < tomorrow ? tomorrow : toDateValue;
 
       const params = new URLSearchParams();
       params.append("from_date", safeFromDate);
 
-      if (toDateValue && toDateValue >= tomorrow) {
-        params.append("to_date", toDateValue);
+      if (safeToDate) {
+        params.append("to_date", safeToDate);
       }
+
       if (therapistIdValue && therapistIdValue !== "all") {
         params.append("therapist_id", therapistIdValue);
       }
+
       if (userIdValue && userIdValue !== "all") {
         params.append("user_id", userIdValue);
+      }
+
+      if (patientValue?.trim()) {
+        params.append("patient", patientValue.trim());
       }
 
       const query = params.toString();
@@ -55,9 +67,11 @@ export default function useFutureBookings() {
       setFutureTherapistSummary(res.data.therapist_summary || []);
       setFutureDaySummary(res.data.day_summary || []);
       setFutureAgents(res.data.agents || []);
+
       setFutureFilter((prev) => ({
         ...prev,
         from_date: safeFromDate,
+        to_date: safeToDate || prev.to_date,
       }));
     } catch (err) {
       console.error("Failed to load future bookings", err);
@@ -73,7 +87,8 @@ export default function useFutureBookings() {
       futureFilter.from_date,
       futureFilter.to_date,
       futureFilter.therapist_id,
-      futureFilter.user_id
+      futureFilter.user_id,
+      futureFilter.patient
     );
   };
 

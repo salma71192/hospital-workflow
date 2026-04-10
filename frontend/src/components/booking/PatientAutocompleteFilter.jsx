@@ -33,13 +33,16 @@ export default function PatientAutocompleteFilter({
 
     if (!term) {
       setResults([]);
+      setOpen(false);
       return;
     }
 
     debounceRef.current = setTimeout(async () => {
       try {
         setLoading(true);
-        const res = await api.get(`patients/?search=${encodeURIComponent(term)}`);
+        const res = await api.get(
+          `patients/?search=${encodeURIComponent(term)}`
+        );
         setResults(res.data.patients || []);
         setOpen(true);
       } catch (err) {
@@ -59,6 +62,7 @@ export default function PatientAutocompleteFilter({
   return (
     <div style={styles.fieldGroup} ref={wrapperRef}>
       <label style={styles.label}>{label}</label>
+
       <input
         type="text"
         value={value}
@@ -81,7 +85,7 @@ export default function PatientAutocompleteFilter({
                 key={patient.id}
                 style={styles.item}
                 onClick={() => {
-                  onChange(`${patient.name} (${patient.patient_id})`);
+                  onChange(patient.patient_id);
                   setOpen(false);
                 }}
               >
