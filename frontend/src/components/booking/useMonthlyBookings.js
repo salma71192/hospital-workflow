@@ -79,6 +79,9 @@ export default function useMonthlyBookings() {
         ...prev,
         from_date: res.data.from_date || fromDateValue,
         to_date: res.data.to_date || toDateValue,
+        user_id: userIdValue || "all",
+        patient: patientValue || "",
+        therapist_id: therapistIdValue || "all",
       }));
     } catch (err) {
       console.error("Failed to load monthly bookings", err);

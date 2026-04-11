@@ -21,6 +21,13 @@ export default function useFutureBookings() {
     patient: "",
   });
 
+  const resetFutureState = () => {
+    setFutureBookings([]);
+    setFutureTherapistSummary([]);
+    setFutureDaySummary([]);
+    setFutureAgents([]);
+  };
+
   const loadFutureBookings = async (
     fromDateValue = futureFilter.from_date,
     toDateValue = futureFilter.to_date,
@@ -71,14 +78,14 @@ export default function useFutureBookings() {
       setFutureFilter((prev) => ({
         ...prev,
         from_date: safeFromDate,
-        to_date: safeToDate || prev.to_date,
+        to_date: safeToDate || "",
+        therapist_id: therapistIdValue || "all",
+        user_id: userIdValue || "all",
+        patient: patientValue || "",
       }));
     } catch (err) {
       console.error("Failed to load future bookings", err);
-      setFutureBookings([]);
-      setFutureTherapistSummary([]);
-      setFutureDaySummary([]);
-      setFutureAgents([]);
+      resetFutureState();
     }
   };
 

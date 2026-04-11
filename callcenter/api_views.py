@@ -115,15 +115,20 @@ def _get_therapists_queryset():
     return User.objects.filter(role="physio").order_by("username")
 
 
-def _get_agents_queryset():
-    return User.objects.filter(
-        role__in=[
-            "callcenter",
-            "callcenter_supervisor",
-            "reception",
-            "reception_supervisor",
-        ]
-    ).order_by("username")
+def _get_agents_queryset(request_user=None):
+    base_roles = [
+        "callcenter",
+        "callcenter_supervisor",
+        "reception",
+        "reception_supervisor",
+    ]
+
+    if request_user and (getattr(request_user, "role", "") or "").strip().lower() == "physio":
+        return User.objects.filter(
+            Q(role__in=base_roles) | Q(id=request_user.id)
+        ).order_by("username")
+
+    return User.objects.filter(role__in=base_roles).order_by("username")
 
 
 def _generate_time_slots():
@@ -256,8 +261,9 @@ def slots_api(request):
     if not therapist_id or not appointment_date:
         return JsonResponse({"slots": []})
 
-    if getattr(request.user, "role", "") == "physio" and str(therapist_id) != str(request.user.id):
-        return _json_error("Not authorized", status=403)
+    if (getattr(request.user, "role", "") or "").strip().lower() == "physio":
+        if str(therapist_id) != str(request.user.id):
+            return _json_error("Not authorized", status=403)
 
     bookings = Appointment.objects.filter(
         therapist_id=therapist_id,
@@ -309,7 +315,7 @@ def bookings_api(request):
     ]):
         return _json_error("Missing required fields", status=400)
 
-    if getattr(request.user, "role", "") == "physio":
+    if (getattr(request.user, "role", "") or "").strip().lower() == "physio":
         if str(payload["therapist_id"]) != str(request.user.id):
             return _json_error("You can only book under your own name", status=403)
 
@@ -359,7 +365,7 @@ def booking_detail_api(request, booking_id):
     except Appointment.DoesNotExist:
         return _json_error("Booking not found", status=404)
 
-    if getattr(request.user, "role", "") == "physio":
+    if (getattr(request.user, "role", "") or "").strip().lower() == "physio":
         if appointment.therapist_id != request.user.id:
             return _json_error("Not authorized", status=403)
 
@@ -377,7 +383,7 @@ def booking_detail_api(request, booking_id):
         ]):
             return _json_error("Missing required fields", status=400)
 
-        if getattr(request.user, "role", "") == "physio":
+        if (getattr(request.user, "role", "") or "").strip().lower() == "physio":
             if str(payload["therapist_id"]) != str(request.user.id):
                 return _json_error("You can only book under your own name", status=403)
 
@@ -430,15 +436,12 @@ def today_bookings_api(request):
     today_value = _today()
     patient_search = (request.GET.get("patient") or "").strip()
 
-    qs = _booking_base_queryset().filter(appointment_date__gte=today_value)
-
-    if getattr(request.user, "role", "") == "physio":
-        qs = qs.filter(therapist_id=request.user.id)
-    else:
-        qs = qs.filter(
-            created_by=request.user,
-            created_at__date=today_value,
-        )
+    # Today's bookings = bookings CREATED today for today or future appointments
+    qs = _booking_base_queryset().filter(
+        created_at__date=today_value,
+        appointment_date__gte=today_value,
+        created_by=request.user,
+    )
 
     if patient_search:
         qs = qs.filter(
@@ -470,23 +473,19 @@ def monthly_bookings_api(request):
     if from_date and to_date and from_date > to_date:
         return _json_error("From date cannot be after to date", status=400)
 
-    if getattr(request.user, "role", "") == "physio":
-        qs = _booking_base_queryset().filter(
-            therapist_id=request.user.id,
-            appointment_date__gte=from_date,
-            appointment_date__lte=to_date,
-        )
-    else:
-        qs = _booking_base_queryset().filter(
-            created_at__date__gte=from_date,
-            created_at__date__lte=to_date,
-        )
+    qs = _booking_base_queryset().filter(
+        created_at__date__gte=from_date,
+        created_at__date__lte=to_date,
+    )
 
-        if user_id and user_id != "all":
-            qs = qs.filter(created_by_id=user_id)
+    if user_id and user_id != "all":
+        qs = qs.filter(created_by_id=user_id)
 
-        if therapist_id and therapist_id != "all":
-            qs = qs.filter(therapist_id=therapist_id)
+    if (getattr(request.user, "role", "") or "").strip().lower() == "physio":
+        qs = qs.filter(therapist_id=request.user.id)
+
+    if therapist_id and therapist_id != "all":
+        qs = qs.filter(therapist_id=therapist_id)
 
     if patient_search:
         qs = qs.filter(
@@ -496,7 +495,7 @@ def monthly_bookings_api(request):
 
     qs = qs.order_by("appointment_date", "appointment_time", "created_at")
 
-    agents = _get_agents_queryset()
+    agents = _get_agents_queryset(request.user)
     therapists = _get_therapists_queryset()
 
     return JsonResponse({
@@ -538,14 +537,14 @@ def future_bookings_api(request):
     if to_date:
         qs = qs.filter(appointment_date__lte=to_date)
 
-    if getattr(request.user, "role", "") == "physio":
-        qs = qs.filter(therapist_id=request.user.id)
-    else:
-        if therapist_id and therapist_id != "all":
-            qs = qs.filter(therapist_id=therapist_id)
+    if user_id and user_id != "all":
+        qs = qs.filter(created_by_id=user_id)
 
-        if user_id and user_id != "all":
-            qs = qs.filter(created_by_id=user_id)
+    if (getattr(request.user, "role", "") or "").strip().lower() == "physio":
+        qs = qs.filter(therapist_id=request.user.id)
+
+    if therapist_id and therapist_id != "all":
+        qs = qs.filter(therapist_id=therapist_id)
 
     if patient_search:
         qs = qs.filter(
@@ -568,7 +567,7 @@ def future_bookings_api(request):
     )
 
     therapists = _get_therapists_queryset()
-    agents = _get_agents_queryset()
+    agents = _get_agents_queryset(request.user)
 
     return JsonResponse({
         "count": qs.count(),

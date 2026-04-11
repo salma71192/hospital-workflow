@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "../../api/api";
-import {
-  generateTimeSlots,
-  getTodayString,
-  getWeekDates,
-} from "./bookingUtils";
+import { generateTimeSlots, getTodayString, getWeekDates } from "./bookingUtils";
 
 export default function useBookingCore({
+  onReloadTodayBookings,
   onReloadMonthlyBookings,
   onReloadFutureBookings,
 }) {
@@ -65,7 +62,8 @@ export default function useBookingCore({
 
   const loadTodayBookings = async () => {
     try {
-      const res = await api.get("callcenter/bookings/today/");
+      const today = getTodayString();
+      const res = await api.get(`callcenter/bookings/today/?date=${today}`);
       setTodayBookingsCount(res.data.count || 0);
       setTodayBookings(res.data.bookings || []);
     } catch (err) {
@@ -88,7 +86,6 @@ export default function useBookingCore({
 
       const mergedSlots = allTimes.map((time) => {
         const existing = backendSlots.find((slot) => slot.time === time);
-
         return (
           existing || {
             time,
@@ -125,6 +122,31 @@ export default function useBookingCore({
       appointment_time: "",
       notes: "",
     }));
+
+    try {
+      const res = await api.get(`reception/last-therapist/${patient.id}/`);
+      const therapist = res.data?.therapist;
+
+      if (therapist) {
+        setBookingForm((prev) => ({
+          ...prev,
+          booking_id: "",
+          therapist_id: String(therapist.id),
+          appointment_date: getTodayString(),
+          appointment_time: "",
+          notes: "",
+        }));
+
+        setMessage(
+          `Selected ${patient.name} (Last registered with ${therapist.name})`
+        );
+      } else {
+        setMessage(`Selected ${patient.name} for booking`);
+      }
+    } catch (err) {
+      console.error("Failed to load last therapist", err);
+      setMessage(`Selected ${patient.name} for booking`);
+    }
   };
 
   const handleCreatePatientFile = async (e) => {
@@ -195,7 +217,7 @@ export default function useBookingCore({
     setError("");
   };
 
-  const handleEditBooking = (booking) => {
+  function handleEditBooking(booking) {
     setMessage("");
     setError("");
 
@@ -212,9 +234,9 @@ export default function useBookingCore({
       appointment_time: booking.appointment_time || "",
       notes: booking.notes || "",
     });
-  };
+  }
 
-  const handleDeleteBooking = async (bookingId) => {
+  async function handleDeleteBooking(bookingId) {
     const confirmed = window.confirm("Delete this booking?");
     if (!confirmed) return;
 
@@ -238,7 +260,7 @@ export default function useBookingCore({
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to delete booking");
     }
-  };
+  }
 
   const handleConfirmBooking = async () => {
     setMessage("");
@@ -325,30 +347,21 @@ export default function useBookingCore({
     setMessage,
     error,
     setError,
-
     selectedPatient,
     setSelectedPatient,
-
     patientForm,
     setPatientForm,
-
     bookingForm,
     setBookingForm,
-
     therapists,
     selectedTherapist,
-
     weekDates,
     setWeekDates,
-
     slots,
     setSlots,
-
     todayBookingsCount,
     todayBookings,
-
     loadTodayBookings,
-
     handleSelectPatient,
     handleCreatePatientFile,
     handleSelectTherapist,
