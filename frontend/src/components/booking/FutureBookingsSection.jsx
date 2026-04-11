@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import PatientAutocompleteFilter from "./PatientAutocompleteFilter";
+import BookingTargetStats from "./BookingTargetStats";
 
 function getTomorrowString() {
   const next = new Date();
@@ -19,6 +20,8 @@ export default function FutureBookingsSection({
   onEditBooking,
   onDeleteBooking,
   defaultOpen = true,
+  target = 0,
+  onChangeTarget,
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const tomorrow = getTomorrowString();
@@ -143,6 +146,13 @@ export default function FutureBookingsSection({
             </div>
           </div>
 
+          <BookingTargetStats
+            title="Future Booking Target"
+            target={target}
+            actual={futureBookings.length}
+            onChangeTarget={onChangeTarget}
+          />
+
           <div style={styles.summaryGrid}>
             <div style={styles.card}>
               <div style={styles.sectionTitle}>Per Physio</div>
@@ -152,8 +162,12 @@ export default function FutureBookingsSection({
                 <div style={styles.list}>
                   {therapistSummary.map((item) => (
                     <div key={item.therapist_id} style={styles.summaryRow}>
-                      <span style={styles.summaryName}>{item.therapist_name}</span>
-                      <span style={styles.summaryBadge}>{item.booked_slots}</span>
+                      <span style={styles.summaryName}>
+                        {item.therapist_name}
+                      </span>
+                      <span style={styles.summaryBadge}>
+                        {item.booked_slots}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -169,7 +183,9 @@ export default function FutureBookingsSection({
                   {daySummary.map((item) => (
                     <div key={item.date} style={styles.summaryRow}>
                       <span style={styles.summaryName}>{item.date}</span>
-                      <span style={styles.summaryBadge}>{item.booked_slots}</span>
+                      <span style={styles.summaryBadge}>
+                        {item.booked_slots}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -239,7 +255,10 @@ export default function FutureBookingsSection({
 }
 
 const styles = {
-  wrap: { display: "grid", gap: "12px" },
+  wrap: {
+    display: "grid",
+    gap: "12px",
+  },
   collapseHeader: {
     display: "flex",
     justifyContent: "space-between",
@@ -259,7 +278,10 @@ const styles = {
     color: "#0f172a",
     lineHeight: 1,
   },
-  page: { display: "grid", gap: "16px" },
+  page: {
+    display: "grid",
+    gap: "16px",
+  },
   card: {
     background: "#fff",
     borderRadius: "18px",
@@ -276,17 +298,34 @@ const styles = {
     letterSpacing: "0.08em",
     color: "#be185d",
   },
-  title: { fontSize: "24px", fontWeight: "800", color: "#0f172a" },
-  subtext: { fontSize: "14px", color: "#64748b" },
+  title: {
+    fontSize: "24px",
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  subtext: {
+    fontSize: "14px",
+    color: "#64748b",
+  },
   filterGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     gap: "12px",
     alignItems: "end",
   },
-  fieldGroup: { display: "grid", gap: "8px" },
-  fieldGroupEnd: { display: "flex", alignItems: "end" },
-  label: { fontSize: "13px", fontWeight: "700", color: "#475569" },
+  fieldGroup: {
+    display: "grid",
+    gap: "8px",
+  },
+  fieldGroupEnd: {
+    display: "flex",
+    alignItems: "end",
+  },
+  label: {
+    fontSize: "13px",
+    fontWeight: "700",
+    color: "#475569",
+  },
   input: {
     padding: "12px 14px",
     borderRadius: "12px",
@@ -310,8 +349,15 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: "16px",
   },
-  sectionTitle: { fontSize: "16px", fontWeight: "800", color: "#0f172a" },
-  list: { display: "grid", gap: "10px" },
+  sectionTitle: {
+    fontSize: "16px",
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  list: {
+    display: "grid",
+    gap: "10px",
+  },
   summaryRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -322,7 +368,11 @@ const styles = {
     borderRadius: "12px",
     padding: "12px 14px",
   },
-  summaryName: { fontSize: "14px", fontWeight: "700", color: "#0f172a" },
+  summaryName: {
+    fontSize: "14px",
+    fontWeight: "700",
+    color: "#0f172a",
+  },
   summaryBadge: {
     background: "#fdf2f8",
     color: "#be185d",
@@ -333,8 +383,14 @@ const styles = {
     minWidth: "36px",
     textAlign: "center",
   },
-  tableWrap: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", minWidth: "980px" },
+  tableWrap: {
+    overflowX: "auto",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: "980px",
+  },
   th: {
     textAlign: "left",
     padding: "12px",
@@ -350,7 +406,11 @@ const styles = {
     color: "#0f172a",
     verticalAlign: "top",
   },
-  actions: { display: "flex", gap: "8px", flexWrap: "wrap" },
+  actions: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
   editBtn: {
     background: "#0ea5e9",
     color: "#fff",

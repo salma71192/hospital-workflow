@@ -418,6 +418,13 @@ def today_bookings_api(request):
         .order_by("appointment_date", "appointment_time", "created_at")
     )
 
+    patient_search = (request.GET.get("patient") or "").strip()
+    if patient_search:
+        qs = qs.filter(
+            Q(patient__name__icontains=patient_search) |
+            Q(patient__patient_id__icontains=patient_search)
+        )
+
     return JsonResponse({
         "count": qs.count(),
         "bookings": [_serialize_booking(b) for b in qs],
@@ -483,10 +490,14 @@ def future_bookings_api(request):
     from_date = _validate_date(request.GET.get("from_date")) or tomorrow
     to_date = _validate_date(request.GET.get("to_date"))
     therapist_id = (request.GET.get("therapist_id") or "").strip()
-    day_value = _validate_date(request.GET.get("day"))
+    user_id = (request.GET.get("user_id") or "").strip()
+    patient_search = (request.GET.get("patient") or "").strip()
 
     if from_date < tomorrow:
         from_date = tomorrow
+
+    if to_date and to_date < tomorrow:
+        to_date = tomorrow
 
     qs = _booking_base_queryset().filter(appointment_date__gte=from_date)
 
@@ -496,8 +507,14 @@ def future_bookings_api(request):
     if therapist_id and therapist_id != "all":
         qs = qs.filter(therapist_id=therapist_id)
 
-    if day_value and day_value >= tomorrow:
-        qs = qs.filter(appointment_date=day_value)
+    if user_id and user_id != "all":
+        qs = qs.filter(created_by_id=user_id)
+
+    if patient_search:
+        qs = qs.filter(
+            Q(patient__name__icontains=patient_search) |
+            Q(patient__patient_id__icontains=patient_search)
+        )
 
     qs = qs.order_by("appointment_date", "appointment_time")
 
@@ -514,6 +531,7 @@ def future_bookings_api(request):
     )
 
     therapists = _get_therapists_queryset()
+    agents = _get_agents_queryset()
 
     return JsonResponse({
         "count": qs.count(),
@@ -534,5 +552,6 @@ def future_bookings_api(request):
             for row in day_summary_qs
         ],
         "therapists": [_serialize_user(t) for t in therapists],
+        "agents": [_serialize_user(a) for a in agents],
         "min_date": str(tomorrow),
     })

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../api/api";
 
 export default function PatientAutocompleteFilter({
@@ -10,6 +10,8 @@ export default function PatientAutocompleteFilter({
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+
   const wrapperRef = useRef(null);
   const debounceRef = useRef(null);
 
@@ -17,6 +19,7 @@ export default function PatientAutocompleteFilter({
     const handleClickOutside = (event) => {
       if (!wrapperRef.current?.contains(event.target)) {
         setOpen(false);
+        setHighlightedIndex(-1);
       }
     };
 
@@ -34,6 +37,7 @@ export default function PatientAutocompleteFilter({
     if (!term) {
       setResults([]);
       setOpen(false);
+      setHighlightedIndex(-1);
       return;
     }
 
@@ -43,10 +47,14 @@ export default function PatientAutocompleteFilter({
         const res = await api.get(
           `patients/?search=${encodeURIComponent(term)}`
         );
-        setResults(res.data.patients || []);
+
+        const patients = res.data.patients || [];
+        setResults(patients);
         setOpen(true);
+        setHighlightedIndex(patients.length ? 0 : -1);
       } catch (err) {
         setResults([]);
+        setHighlightedIndex(-1);
       } finally {
         setLoading(false);
       }
@@ -59,6 +67,54 @@ export default function PatientAutocompleteFilter({
     };
   }, [value]);
 
+  const hasResults = useMemo(() => results.length > 0, [results]);
+
+  const selectPatient = (patient) => {
+    onChange(patient.patient_id);
+    setOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      if (hasResults) {
+        setOpen(true);
+        setHighlightedIndex(0);
+      }
+      return;
+    }
+
+    if (!open) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!hasResults) return;
+      setHighlightedIndex((prev) =>
+        prev < results.length - 1 ? prev + 1 : 0
+      );
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!hasResults) return;
+      setHighlightedIndex((prev) =>
+        prev > 0 ? prev - 1 : results.length - 1
+      );
+    }
+
+    if (e.key === "Enter") {
+      if (highlightedIndex >= 0 && results[highlightedIndex]) {
+        e.preventDefault();
+        selectPatient(results[highlightedIndex]);
+      }
+    }
+
+    if (e.key === "Escape") {
+      setOpen(false);
+      setHighlightedIndex(-1);
+    }
+  };
+
   return (
     <div style={styles.fieldGroup} ref={wrapperRef}>
       <label style={styles.label}>{label}</label>
@@ -69,8 +125,12 @@ export default function PatientAutocompleteFilter({
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => {
-          if (results.length) setOpen(true);
+          if (results.length) {
+            setOpen(true);
+            setHighlightedIndex(0);
+          }
         }}
+        onKeyDown={handleKeyDown}
         style={styles.input}
       />
 
@@ -79,20 +139,25 @@ export default function PatientAutocompleteFilter({
           {loading ? (
             <div style={styles.itemMuted}>Searching...</div>
           ) : (
-            results.map((patient) => (
-              <button
-                type="button"
-                key={patient.id}
-                style={styles.item}
-                onClick={() => {
-                  onChange(patient.patient_id);
-                  setOpen(false);
-                }}
-              >
-                <div style={styles.itemName}>{patient.name}</div>
-                <div style={styles.itemId}>ID: {patient.patient_id}</div>
-              </button>
-            ))
+            results.map((patient, index) => {
+              const isActive = index === highlightedIndex;
+
+              return (
+                <button
+                  type="button"
+                  key={patient.id}
+                  style={{
+                    ...styles.item,
+                    ...(isActive ? styles.itemActive : {}),
+                  }}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  onClick={() => selectPatient(patient)}
+                >
+                  <div style={styles.itemName}>{patient.name}</div>
+                  <div style={styles.itemId}>ID: {patient.patient_id}</div>
+                </button>
+              );
+            })
           )}
         </div>
       ) : null}
@@ -142,6 +207,9 @@ const styles = {
     padding: "12px 14px",
     cursor: "pointer",
     borderBottom: "1px solid #f1f5f9",
+  },
+  itemActive: {
+    background: "#fdf2f8",
   },
   itemName: {
     fontSize: "14px",

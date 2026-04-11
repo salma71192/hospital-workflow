@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import PatientAutocompleteFilter from "./PatientAutocompleteFilter";
+import BookingTargetStats from "./BookingTargetStats";
 
 export default function MonthlyBookingsSection({
   bookings = [],
@@ -9,6 +10,8 @@ export default function MonthlyBookingsSection({
   setMonthlyFilter,
   onApplyFilters,
   defaultOpen = false,
+  target = 0,
+  onChangeTarget,
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -108,7 +111,7 @@ export default function MonthlyBookingsSection({
             </div>
 
             <PatientAutocompleteFilter
-              value={monthlyFilter.patient}
+              value={monthlyFilter.patient || ""}
               onChange={(value) =>
                 setMonthlyFilter((prev) => ({
                   ...prev,
@@ -116,14 +119,26 @@ export default function MonthlyBookingsSection({
                 }))
               }
               label="Patient"
+              placeholder="Search patient name or file number"
             />
 
             <div style={styles.fieldGroupEnd}>
-              <button type="button" style={styles.primaryButton} onClick={onApplyFilters}>
+              <button
+                type="button"
+                style={styles.primaryButton}
+                onClick={onApplyFilters}
+              >
                 Apply Filters
               </button>
             </div>
           </div>
+
+          <BookingTargetStats
+            title="Monthly Booking Target"
+            target={target}
+            actual={filteredBookings.length}
+            onChangeTarget={onChangeTarget}
+          />
 
           {filteredBookings.length === 0 ? (
             <div style={styles.emptyState}>No bookings found for this range.</div>
@@ -162,7 +177,10 @@ export default function MonthlyBookingsSection({
 }
 
 const styles = {
-  wrap: { display: "grid", gap: "12px" },
+  wrap: {
+    display: "grid",
+    gap: "12px",
+  },
   collapseHeader: {
     display: "flex",
     justifyContent: "space-between",
@@ -198,17 +216,34 @@ const styles = {
     letterSpacing: "0.08em",
     color: "#be185d",
   },
-  title: { fontSize: "24px", fontWeight: "800", color: "#0f172a" },
-  subtext: { fontSize: "14px", color: "#64748b" },
+  title: {
+    fontSize: "24px",
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  subtext: {
+    fontSize: "14px",
+    color: "#64748b",
+  },
   filterGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     gap: "12px",
     alignItems: "end",
   },
-  fieldGroup: { display: "grid", gap: "8px" },
-  fieldGroupEnd: { display: "flex", alignItems: "end" },
-  label: { fontSize: "13px", fontWeight: "700", color: "#475569" },
+  fieldGroup: {
+    display: "grid",
+    gap: "8px",
+  },
+  fieldGroupEnd: {
+    display: "flex",
+    alignItems: "end",
+  },
+  label: {
+    fontSize: "13px",
+    fontWeight: "700",
+    color: "#475569",
+  },
   input: {
     padding: "12px 14px",
     borderRadius: "12px",
@@ -227,8 +262,14 @@ const styles = {
     cursor: "pointer",
     width: "100%",
   },
-  tableWrap: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", minWidth: "860px" },
+  tableWrap: {
+    overflowX: "auto",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: "860px",
+  },
   th: {
     textAlign: "left",
     padding: "12px",

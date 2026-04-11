@@ -26,6 +26,13 @@ export default function useMonthlyBookings() {
     therapist_id: "all",
   });
 
+  const resetMonthlyState = () => {
+    setMonthlyBookingsCount(0);
+    setMonthlyBookings([]);
+    setMonthlyAgents([]);
+    setMonthlyTherapists([]);
+  };
+
   const loadMonthlyBookings = async (
     fromDateValue = monthlyFilter.from_date,
     toDateValue = monthlyFilter.to_date,
@@ -36,14 +43,22 @@ export default function useMonthlyBookings() {
     try {
       const params = new URLSearchParams();
 
-      if (fromDateValue) params.append("from_date", fromDateValue);
-      if (toDateValue) params.append("to_date", toDateValue);
+      if (fromDateValue) {
+        params.append("from_date", fromDateValue);
+      }
+
+      if (toDateValue) {
+        params.append("to_date", toDateValue);
+      }
+
       if (userIdValue && userIdValue !== "all") {
         params.append("user_id", userIdValue);
       }
+
       if (patientValue?.trim()) {
         params.append("patient", patientValue.trim());
       }
+
       if (therapistIdValue && therapistIdValue !== "all") {
         params.append("therapist_id", therapistIdValue);
       }
@@ -59,6 +74,7 @@ export default function useMonthlyBookings() {
       setMonthlyBookings(res.data.bookings || []);
       setMonthlyAgents(res.data.agents || []);
       setMonthlyTherapists(res.data.therapists || []);
+
       setMonthlyFilter((prev) => ({
         ...prev,
         from_date: res.data.from_date || fromDateValue,
@@ -66,10 +82,7 @@ export default function useMonthlyBookings() {
       }));
     } catch (err) {
       console.error("Failed to load monthly bookings", err);
-      setMonthlyBookingsCount(0);
-      setMonthlyBookings([]);
-      setMonthlyAgents([]);
-      setMonthlyTherapists([]);
+      resetMonthlyState();
     }
   };
 

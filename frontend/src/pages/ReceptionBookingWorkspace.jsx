@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
@@ -21,6 +21,10 @@ export default function ReceptionBookingWorkspace({
 }) {
   const navigate = useNavigate();
   const bookingRef = useRef(null);
+
+  const [todayTarget, setTodayTarget] = useState(10);
+  const [futureTarget, setFutureTarget] = useState(30);
+  const [monthlyTarget, setMonthlyTarget] = useState(50);
 
   const {
     activeSection,
@@ -69,28 +73,31 @@ export default function ReceptionBookingWorkspace({
     navigate("/admin");
   };
 
-  const handleSelectPatientForBook = async (patient) => {
-    await handleSelectPatient(patient);
-    setActiveSection("book");
-
+  const scrollToBookingSection = (delay = 200) => {
     setTimeout(() => {
       bookingRef.current?.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
-    }, 200);
+    }, delay);
+  };
+
+  const handleSelectPatientForBook = async (patient) => {
+    await handleSelectPatient(patient);
+    setActiveSection("book");
+    scrollToBookingSection(200);
   };
 
   const handleCreatePatientThenBook = async (e) => {
     await handleCreatePatientFile(e);
     setActiveSection("book");
+    scrollToBookingSection(250);
+  };
 
-    setTimeout(() => {
-      bookingRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 250);
+  const handleEditBookingAndOpenForm = (booking) => {
+    handleEditBooking(booking);
+    setActiveSection("book");
+    scrollToBookingSection(200);
   };
 
   return (
@@ -105,7 +112,10 @@ export default function ReceptionBookingWorkspace({
         { key: "home", label: "Home" },
         { key: "book", label: "Book" },
         { key: "open_file", label: "Open New File" },
-        { key: "tracker", label: `Booking Tracker (${todayBookingsCount || 0})` },
+        {
+          key: "tracker",
+          label: `Booking Tracker (${todayBookingsCount || 0})`,
+        },
       ]}
       activeSection={activeSection}
       setActiveSection={(key) => {
@@ -157,8 +167,9 @@ export default function ReceptionBookingWorkspace({
               />
             ) : (
               <div style={styles.helperCard}>
-                Search for a patient above, then continue to the booking section.
-                If the patient is not found, use <strong>Open New File</strong>.
+                Search for a patient above, then continue to the booking
+                section. If the patient is not found, use{" "}
+                <strong>Open New File</strong>.
               </div>
             )}
           </div>
@@ -177,19 +188,11 @@ export default function ReceptionBookingWorkspace({
         <div style={styles.stack}>
           <TodayBookingsSection
             bookings={todayBookings}
-            onEditBooking={(booking) => {
-              handleEditBooking(booking);
-              setActiveSection("book");
-
-              setTimeout(() => {
-                bookingRef.current?.scrollIntoView({
-                  behavior: "smooth",
-                  block: "start",
-                });
-              }, 200);
-            }}
+            onEditBooking={handleEditBookingAndOpenForm}
             onDeleteBooking={handleDeleteBooking}
             defaultOpen={true}
+            target={todayTarget}
+            onChangeTarget={setTodayTarget}
           />
 
           <FutureBookingsSection
@@ -201,19 +204,11 @@ export default function ReceptionBookingWorkspace({
             futureFilter={futureFilter}
             setFutureFilter={setFutureFilter}
             onApplyFilters={handleApplyFutureFilters}
-            onEditBooking={(booking) => {
-              handleEditBooking(booking);
-              setActiveSection("book");
-
-              setTimeout(() => {
-                bookingRef.current?.scrollIntoView({
-                  behavior: "smooth",
-                  block: "start",
-                });
-              }, 200);
-            }}
+            onEditBooking={handleEditBookingAndOpenForm}
             onDeleteBooking={handleDeleteBooking}
             defaultOpen={true}
+            target={futureTarget}
+            onChangeTarget={setFutureTarget}
           />
 
           <MonthlyBookingsSection
@@ -226,6 +221,8 @@ export default function ReceptionBookingWorkspace({
             setMonthlyFilter={setMonthlyFilter}
             onApplyFilters={handleApplyMonthlyFilters}
             defaultOpen={false}
+            target={monthlyTarget}
+            onChangeTarget={setMonthlyTarget}
           />
         </div>
       )}

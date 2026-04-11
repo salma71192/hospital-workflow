@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from "react";
 import PatientAutocompleteFilter from "./PatientAutocompleteFilter";
+import BookingTargetStats from "./BookingTargetStats";
 
 export default function TodayBookingsSection({
   bookings = [],
   onEditBooking,
   onDeleteBooking,
   defaultOpen = true,
+  target = 0,
+  onChangeTarget,
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [patientSearch, setPatientSearch] = useState("");
@@ -53,6 +56,13 @@ export default function TodayBookingsSection({
             placeholder="Search patient name or file number"
           />
 
+          <BookingTargetStats
+            title="Today's Booking Target"
+            target={target}
+            actual={filteredBookings.length}
+            onChangeTarget={onChangeTarget}
+          />
+
           {filteredBookings.length === 0 ? (
             <div style={styles.emptyState}>No bookings found for today.</div>
           ) : (
@@ -66,7 +76,9 @@ export default function TodayBookingsSection({
                       <div style={styles.patientName}>{item.patient_name}</div>
 
                       <div style={styles.rightActions}>
-                        <div style={styles.timeBadge}>{item.appointment_time}</div>
+                        <div style={styles.timeBadge}>
+                          {item.appointment_time}
+                        </div>
 
                         {!isPastAppointment ? (
                           <div style={styles.actions}>
@@ -107,7 +119,9 @@ export default function TodayBookingsSection({
 
                       <div style={styles.metaItem}>
                         <span style={styles.metaLabel}>Appointment Date</span>
-                        <span style={styles.metaValue}>{item.appointment_date}</span>
+                        <span style={styles.metaValue}>
+                          {item.appointment_date}
+                        </span>
                       </div>
                     </div>
 
