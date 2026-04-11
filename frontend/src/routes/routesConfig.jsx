@@ -4,7 +4,13 @@ const AdminDashboard = lazy(() => import("../pages/AdminDashboard"));
 const ReceptionSupervisorDashboard = lazy(() =>
   import("../pages/ReceptionSupervisorDashboard")
 );
-const PhysioDashboard = lazy(() => import("../pages/PhysioDashboard"));
+const PhysioHome = lazy(() => import("../pages/PhysioHome"));
+const PhysioBookingWorkspace = lazy(() =>
+  import("../pages/PhysioBookingWorkspace")
+);
+const PhysioFollowupWorkspace = lazy(() =>
+  import("../pages/PhysioFollowupWorkspace")
+);
 const DoctorDashboard = lazy(() => import("../pages/DoctorDashboard"));
 const RcmDashboard = lazy(() => import("../pages/RcmDashboard"));
 
@@ -47,15 +53,24 @@ export const dashboardRoutes = [
     roles: ["approvals"],
   },
 
-  // reception removed from here
-
   {
     path: "/reception-supervisor",
     component: ReceptionSupervisorDashboard,
     roles: ["reception_supervisor"],
   },
 
-  { path: "/physio", component: PhysioDashboard, roles: ["physio"] },
+  { path: "/physio", component: PhysioHome, roles: ["physio"] },
+  {
+    path: "/physio/booking",
+    component: PhysioBookingWorkspace,
+    roles: ["physio"],
+  },
+  {
+    path: "/physio/followup",
+    component: PhysioFollowupWorkspace,
+    roles: ["physio"],
+  },
+
   { path: "/doctor", component: DoctorDashboard, roles: ["doctor"] },
   { path: "/rcm", component: RcmDashboard, roles: ["rcm"] },
 
