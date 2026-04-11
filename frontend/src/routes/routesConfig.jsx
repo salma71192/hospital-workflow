@@ -16,6 +16,14 @@ const CallCenterAlertsWorkspace = lazy(() =>
   import("../pages/CallCenterAlertsWorkspace")
 );
 
+const ApprovalsHome = lazy(() => import("../pages/ApprovalsHome"));
+const ApprovalsWorkspace = lazy(() =>
+  import("../pages/ApprovalsWorkspace")
+);
+const ApprovalsAlertsWorkspace = lazy(() =>
+  import("../pages/ApprovalsAlertsWorkspace")
+);
+
 const CallCenterSupervisorDashboard = lazy(() =>
   import("../pages/CallCenterSupervisorDashboard")
 );
@@ -23,11 +31,21 @@ const VisitorsDashboard = lazy(() => import("../pages/VisitorsDashboard"));
 const VisitorCeoDashboard = lazy(() =>
   import("../pages/VisitorCeoDashboard")
 );
-const ApprovalsDashboard = lazy(() => import("../pages/ApprovalsDashboard"));
 
 export const dashboardRoutes = [
   { path: "/admin", component: AdminDashboard, adminOnly: true },
-  { path: "/approvals", component: ApprovalsDashboard, roles: ["approvals"] },
+
+  { path: "/approvals", component: ApprovalsHome, roles: ["approvals"] },
+  {
+    path: "/approvals/workspace",
+    component: ApprovalsWorkspace,
+    roles: ["approvals"],
+  },
+  {
+    path: "/approvals/alerts",
+    component: ApprovalsAlertsWorkspace,
+    roles: ["approvals"],
+  },
 
   // reception removed from here
 
