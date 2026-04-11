@@ -5,11 +5,23 @@ import api from "../api/api";
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 
-import AssignmentHistory from "../components/AssignmentHistory";
-
 import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 import PatientAssignmentForm from "../components/patients/PatientAssignmentForm";
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
+
+import TodayRegistrationsSection from "../components/assignments/TodayRegistrationsSection";
+import MonthlyRegistrationsSection from "../components/assignments/MonthlyRegistrationsSection";
+
+function getTodayString() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getFirstDayOfMonthString() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString()
+    .split("T")[0];
+}
 
 export default function ReceptionRegistrationWorkspace({
   user,
@@ -41,8 +53,25 @@ export default function ReceptionRegistrationWorkspace({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  const [todayAssignments, setTodayAssignments] = useState([]);
+  const [monthlyAssignments, setMonthlyAssignments] = useState([]);
+  const [monthlyAgents, setMonthlyAgents] = useState([]);
+
+  const [monthlyFilter, setMonthlyFilter] = useState({
+    from_date: getFirstDayOfMonthString(),
+    to_date: getTodayString(),
+    user_id: "all",
+    patient: "",
+    therapist_id: "all",
+  });
+
+  const [todayRegistrationTarget, setTodayRegistrationTarget] = useState(10);
+  const [monthlyRegistrationTarget, setMonthlyRegistrationTarget] = useState(50);
+
   useEffect(() => {
     loadTherapists();
+    loadTodayAssignments();
+    loadMonthlyAssignments();
   }, [actingAs, user]);
 
   const handleBackToAdmin = () => {
@@ -69,6 +98,75 @@ export default function ReceptionRegistrationWorkspace({
       console.error("Failed to load therapists", err);
       setTherapists([]);
     }
+  };
+
+  const loadTodayAssignments = async () => {
+    try {
+      const today = getTodayString();
+      const params = new URLSearchParams({
+        start_date: today,
+        end_date: today,
+      });
+
+      if (actingAs && (user?.is_superuser || user?.role === "admin")) {
+        params.append("viewed_user_id", String(actingAs.id));
+        params.append("viewed_user_role", String(actingAs.role || ""));
+      }
+
+      const res = await api.get(`reception/assignments/?${params.toString()}`);
+      setTodayAssignments(res.data.assignments || []);
+    } catch (err) {
+      console.error("Failed to load today assignments", err);
+      setTodayAssignments([]);
+    }
+  };
+
+  const loadMonthlyAssignments = async (
+    fromDateValue = monthlyFilter.from_date,
+    toDateValue = monthlyFilter.to_date,
+    userIdValue = monthlyFilter.user_id,
+    patientValue = monthlyFilter.patient,
+    therapistIdValue = monthlyFilter.therapist_id
+  ) => {
+    try {
+      const params = new URLSearchParams();
+
+      if (fromDateValue) params.append("start_date", fromDateValue);
+      if (toDateValue) params.append("end_date", toDateValue);
+      if (userIdValue && userIdValue !== "all") {
+        params.append("user_id", userIdValue);
+      }
+      if (patientValue?.trim()) {
+        params.append("patient", patientValue.trim());
+      }
+      if (therapistIdValue && therapistIdValue !== "all") {
+        params.append("therapist_id", therapistIdValue);
+      }
+
+      if (actingAs && (user?.is_superuser || user?.role === "admin")) {
+        params.append("viewed_user_id", String(actingAs.id));
+        params.append("viewed_user_role", String(actingAs.role || ""));
+      }
+
+      const res = await api.get(`reception/assignments/?${params.toString()}`);
+
+      setMonthlyAssignments(res.data.assignments || []);
+      setMonthlyAgents(res.data.agents || []);
+    } catch (err) {
+      console.error("Failed to load monthly assignments", err);
+      setMonthlyAssignments([]);
+      setMonthlyAgents([]);
+    }
+  };
+
+  const handleApplyMonthlyFilters = async () => {
+    await loadMonthlyAssignments(
+      monthlyFilter.from_date,
+      monthlyFilter.to_date,
+      monthlyFilter.user_id,
+      monthlyFilter.patient,
+      monthlyFilter.therapist_id
+    );
   };
 
   const handleSelectPatient = async (patient) => {
@@ -163,6 +261,7 @@ export default function ReceptionRegistrationWorkspace({
       }
 
       resetAssignmentForm();
+      await Promise.all([loadTodayAssignments(), loadMonthlyAssignments()]);
       setActiveSection("tracker");
     } catch (err) {
       console.error(err);
@@ -209,6 +308,7 @@ export default function ReceptionRegistrationWorkspace({
       const res = await api.delete(`reception/assignments/${assignment.id}/`);
       setMessage(res.data.message || "Assignment cancelled successfully");
       setError("");
+      await Promise.all([loadTodayAssignments(), loadMonthlyAssignments()]);
     } catch (err) {
       console.error(err);
       setError(err?.response?.data?.error || "Failed to cancel assignment");
@@ -261,6 +361,7 @@ export default function ReceptionRegistrationWorkspace({
             emptyText="Start typing to search patients."
             noResultsText="No patients found. Open a new file if needed."
             onRegisterNew={() => setActiveSection("open_file")}
+            registerButtonLabel="Open New File"
           />
 
           {selectedPatient ? (
@@ -291,13 +392,28 @@ export default function ReceptionRegistrationWorkspace({
       )}
 
       {activeSection === "tracker" && (
-        <AssignmentHistory
-          title="Registration Tracker"
-          currentUser={user}
-          actingAs={actingAs}
-          onEditAssignment={handleEditAssignment}
-          onCancelAssignment={handleCancelAssignment}
-        />
+        <div style={styles.stack}>
+          <TodayRegistrationsSection
+            assignments={todayAssignments}
+            onEditAssignment={handleEditAssignment}
+            onCancelAssignment={handleCancelAssignment}
+            defaultOpen={true}
+            target={todayRegistrationTarget}
+            onChangeTarget={setTodayRegistrationTarget}
+          />
+
+          <MonthlyRegistrationsSection
+            assignments={monthlyAssignments}
+            agents={monthlyAgents}
+            therapists={therapists}
+            filter={monthlyFilter}
+            setFilter={setMonthlyFilter}
+            onApplyFilters={handleApplyMonthlyFilters}
+            defaultOpen={false}
+            target={monthlyRegistrationTarget}
+            onChangeTarget={setMonthlyRegistrationTarget}
+          />
+        </div>
       )}
     </DashboardLayout>
   );
