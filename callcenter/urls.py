@@ -1,3 +1,5 @@
+from django.urls import path
+
 from .api_views import (
     therapists_api,
     slots_api,

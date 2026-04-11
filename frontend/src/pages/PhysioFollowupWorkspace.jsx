@@ -1,11 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../api/api";
 
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
-import TodayBookingsSection from "../components/booking/TodayBookingsSection";
-import MonthlyBookingsSection from "../components/booking/MonthlyBookingsSection";
-import useBookingDashboard from "../components/booking/useBookingDashboard";
+import TodayAppointmentsSection from "../components/booking/TodayAppointmentsSection";
+import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 
 export default function PhysioFollowupWorkspace({
   user,
@@ -15,48 +15,73 @@ export default function PhysioFollowupWorkspace({
 }) {
   const navigate = useNavigate();
 
-  const [activeSection, setActiveSection] = useState("today");
+  const [activeSection, setActiveSection] = useState("today_appointmt");
   const [todayTarget, setTodayTarget] = useState(10);
-  const [monthlyTarget, setMonthlyTarget] = useState(50);
 
-  const {
-    message,
-    error,
-    todayBookings,
-    monthlyBookings,
-    monthlyAgents,
-    monthlyTherapists,
-    monthlyFilter,
-    setMonthlyFilter,
-    handleApplyMonthlyFilters,
-  } = useBookingDashboard();
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const [todayAppointments, setTodayAppointments] = useState([]);
+  const [patientTrackerRows, setPatientTrackerRows] = useState([]);
+
+  useEffect(() => {
+    loadTodayAppointments();
+    loadPatientTracker();
+  }, []);
 
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
     navigate("/admin");
   };
 
-  const physioTodayBookings = todayBookings.filter(
-    (item) => String(item.therapist_id) === String(user?.id)
-  );
+  const loadTodayAppointments = async () => {
+    try {
+      const res = await api.get("callcenter/bookings/today-appointments/");
+      setTodayAppointments(res.data.bookings || []);
+    } catch (err) {
+      console.error("Failed to load today appointments", err);
+      setTodayAppointments([]);
+      setError("Failed to load today's appointments");
+    }
+  };
 
-  const physioMonthlyBookings = monthlyBookings.filter(
-    (item) => String(item.therapist_id) === String(user?.id)
-  );
+  const loadPatientTracker = async () => {
+    try {
+      const res = await api.get("patients/tracker/");
+      setPatientTrackerRows(res.data.patients || []);
+    } catch (err) {
+      console.error("Failed to load patient tracker", err);
+      setPatientTrackerRows([]);
+      setError("Failed to load patient tracker");
+    }
+  };
 
-  const physioMonthlyTherapists = (monthlyTherapists || []).filter(
-    (item) => String(item.id) === String(user?.id)
-  );
+  const physioTodayAppointments = useMemo(() => {
+    return (todayAppointments || []).filter(
+      (item) => String(item.therapist_id) === String(user?.id)
+    );
+  }, [todayAppointments, user]);
+
+  const physioPatientTrackerRows = useMemo(() => {
+    return (patientTrackerRows || []).filter(
+      (item) => String(item.therapist_id) === String(user?.id)
+    );
+  }, [patientTrackerRows, user]);
 
   return (
     <DashboardLayout
       title="Patient Workflow"
-      subtitle={`Welcome, ${actingAs?.username || user?.username || "Physio User"}`}
+      subtitle={`Welcome, ${
+        actingAs?.username || user?.username || "Physio User"
+      }`}
       accent="#059669"
       sidebarTitle="Patient Workflow"
       sidebarItems={[
         { key: "home", label: "Home" },
-        { key: "today", label: `Today's Bookings (${physioTodayBookings.length})` },
+        {
+          key: "today_appointmt",
+          label: `Today's Appointmt (${physioTodayAppointments.length})`,
+        },
         { key: "tracker", label: "Patient Tracker" },
       ]}
       activeSection={activeSection}
@@ -72,29 +97,22 @@ export default function PhysioFollowupWorkspace({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message ? <DashboardNotice type="success">{message}</DashboardNotice> : null}
+      {message ? <DashboardNotice type="error">{message}</DashboardNotice> : null}
       {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
 
-      {activeSection === "today" && (
-        <TodayBookingsSection
-          bookings={physioTodayBookings}
-          defaultOpen={true}
+      {activeSection === "today_appointmt" && (
+        <TodayAppointmentsSection
+          bookings={physioTodayAppointments}
+          title="Today's Appointmt"
           target={todayTarget}
           onChangeTarget={setTodayTarget}
         />
       )}
 
       {activeSection === "tracker" && (
-        <MonthlyBookingsSection
-          bookings={physioMonthlyBookings}
-          agents={monthlyAgents}
-          therapists={physioMonthlyTherapists}
-          monthlyFilter={monthlyFilter}
-          setMonthlyFilter={setMonthlyFilter}
-          onApplyFilters={handleApplyMonthlyFilters}
-          defaultOpen={true}
-          target={monthlyTarget}
-          onChangeTarget={setMonthlyTarget}
+        <PatientTrackerTable
+          patients={physioPatientTrackerRows}
+          title="Patient Tracker"
         />
       )}
     </DashboardLayout>

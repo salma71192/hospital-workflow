@@ -1,9 +1,12 @@
+import json
+from datetime import date
+
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q
-import json
 
 from .models import Patient
+from callcenter.models import Appointment
 
 
 def _can_create_patient(user):
@@ -36,6 +39,47 @@ def _can_edit_patient(user):
         "callcenter",
         "callcenter_supervisor",
     ]
+
+
+def _can_view_patient_tracker(user):
+    if not user.is_authenticated:
+        return False
+
+    role = (getattr(user, "role", "") or "").strip().lower()
+
+    return user.is_superuser or role in [
+        "admin",
+        "physio",
+        "reception",
+        "reception_supervisor",
+        "callcenter",
+        "callcenter_supervisor",
+        "approvals",
+    ]
+
+
+def _get_patient_status(patient, latest_seen_date):
+    today_value = date.today()
+
+    expiry_date = getattr(patient, "approval_expiry_date", None)
+    approved_sessions = int(getattr(patient, "approved_sessions", 0) or 0)
+    sessions_taken = int(getattr(patient, "sessions_taken", 0) or 0)
+    remaining_sessions = max(approved_sessions - sessions_taken, 0)
+
+    if expiry_date and expiry_date < today_value:
+        return "expired"
+
+    if latest_seen_date:
+        days_since_seen = (today_value - latest_seen_date).days
+        if days_since_seen > 30:
+            return "inactive"
+        if days_since_seen > 14:
+            return "irregular"
+
+    if remaining_sessions <= 0:
+        return "inactive"
+
+    return "active"
 
 
 @csrf_exempt
@@ -259,3 +303,69 @@ def patient_detail_api(request, patient_id):
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+def patient_tracker_api(request):
+    if not _can_view_patient_tracker(request.user):
+        return JsonResponse({"error": "Not authorized"}, status=403)
+
+    today_value = date.today()
+    role = (getattr(request.user, "role", "") or "").strip().lower()
+
+    search = (request.GET.get("search") or "").strip()
+
+    patients_qs = Patient.objects.all().order_by("name")
+
+    if search:
+        patients_qs = patients_qs.filter(
+            Q(name__icontains=search) | Q(patient_id__icontains=search)
+        )
+
+    patient_rows = []
+
+    for patient in patients_qs:
+        appointments_qs = Appointment.objects.filter(patient_id=patient.id)
+
+        if role == "physio":
+            appointments_qs = appointments_qs.filter(therapist_id=request.user.id)
+
+        latest_seen = (
+            appointments_qs.filter(appointment_date__lte=today_value)
+            .order_by("-appointment_date", "-appointment_time")
+            .values_list("appointment_date", flat=True)
+            .first()
+        )
+
+        future_count = appointments_qs.filter(
+            appointment_date__gte=today_value
+        ).count()
+
+        latest_therapist_id = (
+            appointments_qs.order_by("-appointment_date", "-appointment_time")
+            .values_list("therapist_id", flat=True)
+            .first()
+        )
+
+        if role == "physio" and not latest_therapist_id:
+            continue
+
+        approved_sessions = int(getattr(patient, "approved_sessions", 0) or 0)
+        sessions_taken = int(getattr(patient, "sessions_taken", 0) or 0)
+        remaining_sessions = max(approved_sessions - sessions_taken, 0)
+
+        patient_rows.append({
+            "id": patient.id,
+            "name": patient.name,
+            "patient_id": patient.patient_id,
+            "approved_sessions": approved_sessions,
+            "sessions_taken": sessions_taken,
+            "remaining_sessions": remaining_sessions,
+            "status": _get_patient_status(patient, latest_seen),
+            "latest_seen_date": str(latest_seen) if latest_seen else None,
+            "current_future_appointments": future_count,
+            "therapist_id": latest_therapist_id,
+        })
+
+    return JsonResponse({"patients": patient_rows})
+
