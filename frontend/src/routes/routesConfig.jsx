@@ -7,7 +7,15 @@ const ReceptionSupervisorDashboard = lazy(() =>
 const PhysioDashboard = lazy(() => import("../pages/PhysioDashboard"));
 const DoctorDashboard = lazy(() => import("../pages/DoctorDashboard"));
 const RcmDashboard = lazy(() => import("../pages/RcmDashboard"));
-const CallCenterDashboard = lazy(() => import("../pages/CallCenterDashboard"));
+
+const CallCenterHome = lazy(() => import("../pages/CallCenterHome"));
+const CallCenterBookingWorkspace = lazy(() =>
+  import("../pages/CallCenterBookingWorkspace")
+);
+const CallCenterAlertsWorkspace = lazy(() =>
+  import("../pages/CallCenterAlertsWorkspace")
+);
+
 const CallCenterSupervisorDashboard = lazy(() =>
   import("../pages/CallCenterSupervisorDashboard")
 );
@@ -21,22 +29,36 @@ export const dashboardRoutes = [
   { path: "/admin", component: AdminDashboard, adminOnly: true },
   { path: "/approvals", component: ApprovalsDashboard, roles: ["approvals"] },
 
-  // ❌ REMOVED reception from here
+  // reception removed from here
 
   {
     path: "/reception-supervisor",
     component: ReceptionSupervisorDashboard,
     roles: ["reception_supervisor"],
   },
+
   { path: "/physio", component: PhysioDashboard, roles: ["physio"] },
   { path: "/doctor", component: DoctorDashboard, roles: ["doctor"] },
   { path: "/rcm", component: RcmDashboard, roles: ["rcm"] },
-  { path: "/callcenter", component: CallCenterDashboard, roles: ["callcenter"] },
+
+  { path: "/callcenter", component: CallCenterHome, roles: ["callcenter"] },
+  {
+    path: "/callcenter/booking",
+    component: CallCenterBookingWorkspace,
+    roles: ["callcenter"],
+  },
+  {
+    path: "/callcenter/alerts",
+    component: CallCenterAlertsWorkspace,
+    roles: ["callcenter"],
+  },
+
   {
     path: "/callcenter-supervisor",
     component: CallCenterSupervisorDashboard,
     roles: ["callcenter_supervisor"],
   },
+
   { path: "/visitors", component: VisitorsDashboard, roles: ["visitor"] },
   {
     path: "/visitor-ceo",
