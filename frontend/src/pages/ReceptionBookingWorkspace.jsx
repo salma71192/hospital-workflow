@@ -70,17 +70,45 @@ export default function ReceptionBookingWorkspace({
   }, [setActiveSection]);
 
   useEffect(() => {
-    if (isPhysio && user?.id) {
-      setBookingForm((prev) => ({
-        ...prev,
-        therapist_id: String(user.id),
-      }));
-    }
-  }, [isPhysio, user, setBookingForm]);
+    if (!isPhysio || !user?.id) return;
+
+    const physioId = String(user.id);
+
+    setBookingForm((prev) => ({
+      ...prev,
+      therapist_id: physioId,
+    }));
+
+    setMonthlyFilter((prev) => ({
+      ...prev,
+      therapist_id: physioId,
+      user_id: "all",
+    }));
+
+    setFutureFilter((prev) => ({
+      ...prev,
+      therapist_id: physioId,
+      user_id: "all",
+    }));
+  }, [
+    isPhysio,
+    user,
+    setBookingForm,
+    setMonthlyFilter,
+    setFutureFilter,
+  ]);
 
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
     navigate("/admin");
+  };
+
+  const getHomeRoute = () => {
+    if (isPhysio) return "/physio";
+    if (user?.role === "callcenter" || actingAs?.role === "callcenter") {
+      return "/callcenter";
+    }
+    return "/reception";
   };
 
   const scrollToBookingSection = (delay = 200) => {
@@ -122,6 +150,14 @@ export default function ReceptionBookingWorkspace({
 
   const handleEditBookingAndOpenForm = (booking) => {
     handleEditBooking(booking);
+
+    if (isPhysio && user?.id) {
+      setBookingForm((prev) => ({
+        ...prev,
+        therapist_id: String(user.id),
+      }));
+    }
+
     setActiveSection("book");
     scrollToBookingSection(200);
   };
@@ -165,6 +201,8 @@ export default function ReceptionBookingWorkspace({
     );
   }, [isPhysio, futureTherapistSummary, user]);
 
+  const showOpenFile = !isPhysio;
+
   return (
     <DashboardLayout
       title="Booking Workspace"
@@ -176,7 +214,7 @@ export default function ReceptionBookingWorkspace({
       sidebarItems={[
         { key: "home", label: "Home" },
         { key: "book", label: "Book" },
-        ...(isPhysio ? [] : [{ key: "open_file", label: "Open New File" }]),
+        ...(showOpenFile ? [{ key: "open_file", label: "Open New File" }] : []),
         {
           key: "tracker",
           label: `Booking Tracker (${
@@ -187,7 +225,7 @@ export default function ReceptionBookingWorkspace({
       activeSection={activeSection}
       setActiveSection={(key) => {
         if (key === "home") {
-          navigate(isPhysio ? "/physio" : "/reception");
+          navigate(getHomeRoute());
           return;
         }
         setActiveSection(key);
@@ -214,12 +252,12 @@ export default function ReceptionBookingWorkspace({
             onSelectPatient={handleSelectPatientForBook}
             emptyText="Start typing to search patients."
             noResultsText={
-              isPhysio
-                ? "No patients found."
-                : "No patients found. Open a new file if needed."
+              showOpenFile
+                ? "No patients found. Open a new file if needed."
+                : "No patients found."
             }
             onRegisterNew={
-              isPhysio ? undefined : () => setActiveSection("open_file")
+              showOpenFile ? () => setActiveSection("open_file") : undefined
             }
             registerButtonLabel="Open New File"
           />
@@ -243,7 +281,7 @@ export default function ReceptionBookingWorkspace({
               <div style={styles.helperCard}>
                 Search for a patient above, then continue to the booking
                 section.
-                {!isPhysio ? (
+                {showOpenFile ? (
                   <>
                     {" "}
                     If the patient is not found, use{" "}
@@ -256,7 +294,7 @@ export default function ReceptionBookingWorkspace({
         </div>
       )}
 
-      {!isPhysio && activeSection === "open_file" && (
+      {showOpenFile && activeSection === "open_file" && (
         <PatientRegisterForm
           patientForm={patientForm}
           setPatientForm={setPatientForm}

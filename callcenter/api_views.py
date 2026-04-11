@@ -25,6 +25,7 @@ def _can_use_callcenter(user):
         "callcenter_supervisor",
         "reception",
         "reception_supervisor",
+        "physio",
     ]
 
 
@@ -192,7 +193,12 @@ def _validate_booking_update_payload(data):
     }
 
 
-def _ensure_booking_slot_available(therapist_id, appointment_date, appointment_time, exclude_booking_id=None):
+def _ensure_booking_slot_available(
+    therapist_id,
+    appointment_date,
+    appointment_time,
+    exclude_booking_id=None,
+):
     slot_count = _get_slot_count(
         therapist_id=therapist_id,
         appointment_date=appointment_date,
@@ -250,6 +256,9 @@ def slots_api(request):
     if not therapist_id or not appointment_date:
         return JsonResponse({"slots": []})
 
+    if getattr(request.user, "role", "") == "physio" and str(therapist_id) != str(request.user.id):
+        return _json_error("Not authorized", status=403)
+
     bookings = Appointment.objects.filter(
         therapist_id=therapist_id,
         appointment_date=appointment_date,
@@ -300,6 +309,10 @@ def bookings_api(request):
     ]):
         return _json_error("Missing required fields", status=400)
 
+    if getattr(request.user, "role", "") == "physio":
+        if str(payload["therapist_id"]) != str(request.user.id):
+            return _json_error("You can only book under your own name", status=403)
+
     slot_error = _ensure_booking_slot_available(
         therapist_id=payload["therapist_id"],
         appointment_date=payload["appointment_date"],
@@ -346,6 +359,10 @@ def booking_detail_api(request, booking_id):
     except Appointment.DoesNotExist:
         return _json_error("Booking not found", status=404)
 
+    if getattr(request.user, "role", "") == "physio":
+        if appointment.therapist_id != request.user.id:
+            return _json_error("Not authorized", status=403)
+
     if request.method == "PUT":
         data = _parse_json(request)
         if not data:
@@ -359,6 +376,10 @@ def booking_detail_api(request, booking_id):
             payload["appointment_time"],
         ]):
             return _json_error("Missing required fields", status=400)
+
+        if getattr(request.user, "role", "") == "physio":
+            if str(payload["therapist_id"]) != str(request.user.id):
+                return _json_error("You can only book under your own name", status=403)
 
         slot_error = _ensure_booking_slot_available(
             therapist_id=payload["therapist_id"],
@@ -407,23 +428,25 @@ def today_bookings_api(request):
         return _json_error("Not authorized", status=403)
 
     today_value = _today()
+    patient_search = (request.GET.get("patient") or "").strip()
 
-    qs = (
-        _booking_base_queryset()
-        .filter(
+    qs = _booking_base_queryset().filter(appointment_date__gte=today_value)
+
+    if getattr(request.user, "role", "") == "physio":
+        qs = qs.filter(therapist_id=request.user.id)
+    else:
+        qs = qs.filter(
             created_by=request.user,
             created_at__date=today_value,
-            appointment_date__gte=today_value,
         )
-        .order_by("appointment_date", "appointment_time", "created_at")
-    )
 
-    patient_search = (request.GET.get("patient") or "").strip()
     if patient_search:
         qs = qs.filter(
             Q(patient__name__icontains=patient_search) |
             Q(patient__patient_id__icontains=patient_search)
         )
+
+    qs = qs.order_by("appointment_date", "appointment_time", "created_at")
 
     return JsonResponse({
         "count": qs.count(),
@@ -444,26 +467,34 @@ def monthly_bookings_api(request):
     patient_search = (request.GET.get("patient") or "").strip()
     therapist_id = (request.GET.get("therapist_id") or "").strip()
 
-    qs = (
-        _booking_base_queryset()
-        .filter(
+    if from_date and to_date and from_date > to_date:
+        return _json_error("From date cannot be after to date", status=400)
+
+    if getattr(request.user, "role", "") == "physio":
+        qs = _booking_base_queryset().filter(
+            therapist_id=request.user.id,
+            appointment_date__gte=from_date,
+            appointment_date__lte=to_date,
+        )
+    else:
+        qs = _booking_base_queryset().filter(
             created_at__date__gte=from_date,
             created_at__date__lte=to_date,
         )
-        .order_by("created_at", "appointment_date", "appointment_time")
-    )
 
-    if user_id and user_id != "all":
-        qs = qs.filter(created_by_id=user_id)
+        if user_id and user_id != "all":
+            qs = qs.filter(created_by_id=user_id)
 
-    if therapist_id and therapist_id != "all":
-        qs = qs.filter(therapist_id=therapist_id)
+        if therapist_id and therapist_id != "all":
+            qs = qs.filter(therapist_id=therapist_id)
 
     if patient_search:
         qs = qs.filter(
             Q(patient__name__icontains=patient_search) |
             Q(patient__patient_id__icontains=patient_search)
         )
+
+    qs = qs.order_by("appointment_date", "appointment_time", "created_at")
 
     agents = _get_agents_queryset()
     therapists = _get_therapists_queryset()
@@ -499,16 +530,22 @@ def future_bookings_api(request):
     if to_date and to_date < tomorrow:
         to_date = tomorrow
 
+    if to_date and from_date > to_date:
+        return _json_error("From date cannot be after to date", status=400)
+
     qs = _booking_base_queryset().filter(appointment_date__gte=from_date)
 
     if to_date:
         qs = qs.filter(appointment_date__lte=to_date)
 
-    if therapist_id and therapist_id != "all":
-        qs = qs.filter(therapist_id=therapist_id)
+    if getattr(request.user, "role", "") == "physio":
+        qs = qs.filter(therapist_id=request.user.id)
+    else:
+        if therapist_id and therapist_id != "all":
+            qs = qs.filter(therapist_id=therapist_id)
 
-    if user_id and user_id != "all":
-        qs = qs.filter(created_by_id=user_id)
+        if user_id and user_id != "all":
+            qs = qs.filter(created_by_id=user_id)
 
     if patient_search:
         qs = qs.filter(
