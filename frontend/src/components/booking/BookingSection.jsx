@@ -13,6 +13,7 @@ export default function BookingSection({
   onSelectDate,
   onSelectSlot,
   onConfirmBooking,
+  isPhysio = false,
 }) {
   if (!selectedPatient) {
     return (
@@ -45,7 +46,11 @@ export default function BookingSection({
           <select
             value={bookingForm.therapist_id || ""}
             onChange={(e) => onSelectTherapist(e.target.value || "")}
-            style={styles.input}
+            style={{
+              ...styles.input,
+              ...(isPhysio ? styles.inputDisabled : {}),
+            }}
+            disabled={isPhysio}
           >
             <option value="">Select physio</option>
             {therapists.map((therapist) => (
@@ -215,6 +220,11 @@ const styles = {
     fontSize: "14px",
     background: "#fff",
     outline: "none",
+  },
+  inputDisabled: {
+    background: "#f8fafc",
+    color: "#475569",
+    cursor: "not-allowed",
   },
   selectionRow: {
     display: "grid",
