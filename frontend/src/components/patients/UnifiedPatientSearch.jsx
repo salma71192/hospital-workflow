@@ -12,7 +12,7 @@ export default function UnifiedPatientSearch({
   getActionLabel,
   secondaryActionLabel,
   onSecondarySelectPatient,
-  showOpenFile = false,
+  showOpenFile = true,
   emptyText = "Start typing to search patients.",
   noResultsText = "No patients found.",
   initialValue = "",
@@ -139,7 +139,10 @@ export default function UnifiedPatientSearch({
                   {onSecondarySelectPatient ? (
                     <button
                       type="button"
-                      style={styles.secondaryButton}
+                      style={{
+                        ...styles.secondaryButton,
+                        ...(isDisabled ? styles.selectButtonDisabled : {}),
+                      }}
                       disabled={isDisabled}
                       onClick={() => {
                         if (isDisabled) return;

@@ -458,6 +458,37 @@ def today_bookings_api(request):
 
 
 # =========================
+# TODAY APPOINTMENTS
+# =========================
+def today_appointments_api(request):
+    if not _can_use_callcenter(request.user):
+        return _json_error("Not authorized", status=403)
+
+    today_value = _today()
+    patient_search = (request.GET.get("patient") or "").strip()
+
+    qs = _booking_base_queryset().filter(
+        appointment_date=today_value
+    )
+
+    if (getattr(request.user, "role", "") or "").strip().lower() == "physio":
+        qs = qs.filter(therapist_id=request.user.id)
+
+    if patient_search:
+        qs = qs.filter(
+            Q(patient__name__icontains=patient_search) |
+            Q(patient__patient_id__icontains=patient_search)
+        )
+
+    qs = qs.order_by("appointment_time", "created_at")
+
+    return JsonResponse({
+        "count": qs.count(),
+        "bookings": [_serialize_booking(b) for b in qs],
+    })
+
+
+# =========================
 # BOOKING TRACKER (DATE RANGE)
 # =========================
 def monthly_bookings_api(request):
