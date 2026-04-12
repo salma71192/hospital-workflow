@@ -1,10 +1,12 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 
 export default function BookingWeekStrip({
   weekDates = [],
   selectedDate,
   onSelectDate,
 }) {
+  const [page, setPage] = useState(0);
+
   const formatDayName = (dateString) => {
     try {
       return new Date(dateString).toLocaleDateString(undefined, {
@@ -35,23 +37,56 @@ export default function BookingWeekStrip({
     }
   };
 
+  const firstWeekDates = weekDates.slice(0, 7);
+  const secondWeekDates = weekDates.slice(7, 14);
+
+  const visibleDates = useMemo(() => {
+    return page === 0 ? firstWeekDates : secondWeekDates;
+  }, [page, firstWeekDates, secondWeekDates]);
+
+  const hasSecondWeek = secondWeekDates.length > 0;
+
   if (!weekDates.length) {
-    return (
-      <div style={styles.emptyState}>
-        No available dates.
-      </div>
-    );
+    return <div style={styles.emptyState}>No available dates.</div>;
   }
 
   return (
     <div style={styles.card}>
-      <div style={styles.header}>
-        <div style={styles.eyebrow}>Week Schedule</div>
-        <div style={styles.title}>Choose Day</div>
+      <div style={styles.headerRow}>
+        <div style={styles.header}>
+          <div style={styles.eyebrow}>Week Schedule</div>
+          <div style={styles.title}>Choose Day</div>
+        </div>
+
+        <div style={styles.toggleWrap}>
+          <button
+            type="button"
+            onClick={() => setPage(0)}
+            style={{
+              ...styles.toggleButton,
+              ...(page === 0 ? styles.toggleButtonActive : {}),
+            }}
+          >
+            This Week
+          </button>
+
+          <button
+            type="button"
+            onClick={() => hasSecondWeek && setPage(1)}
+            disabled={!hasSecondWeek}
+            style={{
+              ...styles.toggleButton,
+              ...(page === 1 ? styles.toggleButtonActive : {}),
+              ...(!hasSecondWeek ? styles.toggleButtonDisabled : {}),
+            }}
+          >
+            Next Week
+          </button>
+        </div>
       </div>
 
       <div style={styles.grid}>
-        {weekDates.map((date) => {
+        {visibleDates.map((date) => {
           const isActive = selectedDate === date;
 
           return (
@@ -108,6 +143,13 @@ const styles = {
     display: "grid",
     gap: "16px",
   },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "12px",
+    flexWrap: "wrap",
+  },
   header: {
     display: "grid",
     gap: "6px",
@@ -123,6 +165,29 @@ const styles = {
     fontSize: "18px",
     fontWeight: "800",
     color: "#0f172a",
+  },
+  toggleWrap: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+  toggleButton: {
+    border: "1px solid #cbd5e1",
+    background: "#fff",
+    color: "#0f172a",
+    borderRadius: "10px",
+    padding: "10px 14px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+  toggleButtonActive: {
+    background: "#fdf2f8",
+    color: "#be185d",
+    borderColor: "#be185d",
+  },
+  toggleButtonDisabled: {
+    opacity: 0.5,
+    cursor: "not-allowed",
   },
   grid: {
     display: "grid",

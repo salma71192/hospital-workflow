@@ -4,6 +4,7 @@ import api from "../api/api";
 
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
+import TodayBookingsSection from "../components/booking/TodayBookingsSection";
 import TodayAppointmentsSection from "../components/booking/TodayAppointmentsSection";
 import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 
@@ -15,16 +16,18 @@ export default function PhysioFollowupWorkspace({
 }) {
   const navigate = useNavigate();
 
-  const [activeSection, setActiveSection] = useState("today_appointmt");
-  const [todayTarget, setTodayTarget] = useState(10);
+  const [activeSection, setActiveSection] = useState("today_bookings");
+  const [todayBookingTarget, setTodayBookingTarget] = useState(10);
 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  const [todayBookings, setTodayBookings] = useState([]);
   const [todayAppointments, setTodayAppointments] = useState([]);
   const [patientTrackerRows, setPatientTrackerRows] = useState([]);
 
   useEffect(() => {
+    loadTodayBookings();
     loadTodayAppointments();
     loadPatientTracker();
   }, []);
@@ -32,6 +35,18 @@ export default function PhysioFollowupWorkspace({
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
     navigate("/admin");
+  };
+
+  const loadTodayBookings = async () => {
+    try {
+      setError("");
+      const res = await api.get("callcenter/bookings/today/");
+      setTodayBookings(res.data.bookings || []);
+    } catch (err) {
+      console.error("Failed to load today bookings", err);
+      setTodayBookings([]);
+      setError("Failed to load today's bookings");
+    }
   };
 
   const loadTodayAppointments = async () => {
@@ -42,7 +57,7 @@ export default function PhysioFollowupWorkspace({
     } catch (err) {
       console.error("Failed to load today appointments", err);
       setTodayAppointments([]);
-      setError("Failed to load today's appointmt");
+      setError("Failed to load today's appointments");
     }
   };
 
@@ -57,6 +72,12 @@ export default function PhysioFollowupWorkspace({
       setError("Failed to load patient tracker");
     }
   };
+
+  const physioTodayBookings = useMemo(() => {
+    return (todayBookings || []).filter(
+      (item) => String(item.created_by_id) === String(user?.id)
+    );
+  }, [todayBookings, user]);
 
   const physioTodayAppointments = useMemo(() => {
     return (todayAppointments || []).filter(
@@ -81,8 +102,12 @@ export default function PhysioFollowupWorkspace({
       sidebarItems={[
         { key: "home", label: "Home" },
         {
-          key: "today_appointmt",
-          label: `Today's Appointmt (${physioTodayAppointments.length})`,
+          key: "today_bookings",
+          label: `Today's Bookings (${physioTodayBookings.length})`,
+        },
+        {
+          key: "today_appointments",
+          label: `Today's Appointments (${physioTodayAppointments.length})`,
         },
         { key: "tracker", label: "Patient Tracker" },
       ]}
@@ -107,12 +132,19 @@ export default function PhysioFollowupWorkspace({
         <DashboardNotice type="error">{error}</DashboardNotice>
       ) : null}
 
-      {activeSection === "today_appointmt" && (
+      {activeSection === "today_bookings" && (
+        <TodayBookingsSection
+          bookings={physioTodayBookings}
+          defaultOpen={true}
+          target={todayBookingTarget}
+          onChangeTarget={setTodayBookingTarget}
+        />
+      )}
+
+      {activeSection === "today_appointments" && (
         <TodayAppointmentsSection
           bookings={physioTodayAppointments}
-          title="Today's Appointmt"
-          target={todayTarget}
-          onChangeTarget={setTodayTarget}
+          title="Today's Appointments"
         />
       )}
 

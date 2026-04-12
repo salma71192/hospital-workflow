@@ -23,6 +23,13 @@ function getFirstDayOfMonthString() {
     .split("T")[0];
 }
 
+function getLastDayOfMonthString() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    .toISOString()
+    .split("T")[0];
+}
+
 export default function ReceptionRegistrationWorkspace({
   user,
   onLogout,
@@ -59,7 +66,7 @@ export default function ReceptionRegistrationWorkspace({
 
   const [monthlyFilter, setMonthlyFilter] = useState({
     from_date: getFirstDayOfMonthString(),
-    to_date: getTodayString(),
+    to_date: getLastDayOfMonthString(),
     user_id: "all",
     patient: "",
     therapist_id: "all",
@@ -152,6 +159,14 @@ export default function ReceptionRegistrationWorkspace({
 
       setMonthlyAssignments(res.data.assignments || []);
       setMonthlyAgents(res.data.agents || []);
+
+      if (res.data.start_date || res.data.end_date) {
+        setMonthlyFilter((prev) => ({
+          ...prev,
+          from_date: res.data.start_date || prev.from_date,
+          to_date: res.data.end_date || prev.to_date,
+        }));
+      }
     } catch (err) {
       console.error("Failed to load monthly assignments", err);
       setMonthlyAssignments([]);

@@ -59,6 +59,12 @@ export default function BookingSection({
               </option>
             ))}
           </select>
+
+          {!isPhysio && bookingForm.therapist_id ? (
+            <div style={styles.helperText}>
+              Physio auto-filled from previous visit. You can still change it.
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -77,7 +83,7 @@ export default function BookingSection({
           </div>
         ) : slots.length === 0 ? (
           <div style={styles.emptyState}>
-            Loading slots or no availability...
+            No slots available for the selected physio and date.
           </div>
         ) : (
           <BookingSlotsBoard
@@ -225,6 +231,11 @@ const styles = {
     background: "#f8fafc",
     color: "#475569",
     cursor: "not-allowed",
+  },
+  helperText: {
+    fontSize: "12px",
+    fontWeight: "600",
+    color: "#64748b",
   },
   selectionRow: {
     display: "grid",

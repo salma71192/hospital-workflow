@@ -1,10 +1,11 @@
 import json
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 
 from .models import Appointment
 
@@ -66,7 +67,7 @@ def _validate_time(value):
 
 
 def _today():
-    return date.today()
+    return timezone.localdate()
 
 
 def _tomorrow():
@@ -76,6 +77,26 @@ def _tomorrow():
 def _first_day_of_current_month():
     today_value = _today()
     return today_value.replace(day=1)
+
+
+def _now_time():
+    return timezone.localtime().time().replace(second=0, microsecond=0)
+
+
+def _is_past_booking_datetime(appointment_date, appointment_time):
+    if not appointment_date or not appointment_time:
+        return False
+
+    today_value = _today()
+    now_time = _now_time()
+
+    if appointment_date < today_value:
+        return True
+
+    if appointment_date == today_value and appointment_time < now_time:
+        return True
+
+    return False
 
 
 # =========================
@@ -272,13 +293,19 @@ def slots_api(request):
         appointment_date=appointment_date,
     )
 
+    local_now = timezone.localtime()
+    today_value = local_now.date()
+    now_time = local_now.time().replace(second=0, microsecond=0)
+
     slots = []
     for time_str in _generate_time_slots():
         booking_time = _validate_time(time_str)
         count = bookings.filter(appointment_time=booking_time).count()
 
         status = "available"
-        if count == 1:
+        if appointment_date == today_value and booking_time < now_time:
+            status = "past"
+        elif count == 1:
             status = "partial"
         elif count >= 2:
             status = "blocked"
@@ -317,6 +344,12 @@ def bookings_api(request):
     ]):
         return _json_error("Missing required fields", status=400)
 
+    if _is_past_booking_datetime(
+        payload["appointment_date"],
+        payload["appointment_time"],
+    ):
+        return _json_error("Booking cannot be made in the past", status=400)
+
     if (getattr(request.user, "role", "") or "").strip().lower() == "physio":
         if str(payload["therapist_id"]) != str(request.user.id):
             return _json_error("You can only book under your own name", status=403)
@@ -343,6 +376,7 @@ def bookings_api(request):
         appointment_time=payload["appointment_time"],
         notes=payload["notes"],
         created_by=request.user,
+        attendance_status="no_show",
     )
 
     return JsonResponse({
@@ -384,6 +418,12 @@ def booking_detail_api(request, booking_id):
             payload["appointment_time"],
         ]):
             return _json_error("Missing required fields", status=400)
+
+        if _is_past_booking_datetime(
+            payload["appointment_date"],
+            payload["appointment_time"],
+        ):
+            return _json_error("Booking cannot be changed to a past date or time", status=400)
 
         if (getattr(request.user, "role", "") or "").strip().lower() == "physio":
             if str(payload["therapist_id"]) != str(request.user.id):
@@ -483,8 +523,17 @@ def today_appointments_api(request):
 
     qs = qs.order_by("appointment_time", "created_at")
 
+    total = qs.count()
+    attended = qs.filter(attendance_status="attended").count()
+    no_show = qs.filter(attendance_status="no_show").count()
+
     return JsonResponse({
-        "count": qs.count(),
+        "count": total,
+        "stats": {
+            "total": total,
+            "attended": attended,
+            "no_show": no_show,
+        },
         "bookings": [_serialize_booking(b) for b in qs],
     })
 

@@ -3,16 +3,21 @@ import React from "react";
 export default function BookingSlotCard({
   slot,
   isSelected = false,
+  isDisabled = false,
   onClick,
 }) {
   const bookingsCount = Number(slot?.bookings_count || 0);
   const status = slot?.status || "available";
 
+  const isPast = status === "past";
   const isBlocked = status === "blocked" || bookingsCount >= 2;
   const isBookedOnce = !isBlocked && bookingsCount === 1;
   const isAvailable = !isBlocked && bookingsCount === 0;
 
+  const finalDisabled = isDisabled || isBlocked || isPast;
+
   const getLabel = () => {
+    if (isPast) return "Past";
     if (isBlocked) return "Full";
     if (isBookedOnce) return "1 / 2 booked";
     return "Available";
@@ -21,13 +26,14 @@ export default function BookingSlotCard({
   return (
     <button
       type="button"
-      onClick={() => !isBlocked && onClick?.(slot)}
-      disabled={isBlocked}
+      onClick={() => !finalDisabled && onClick?.(slot.time)}
+      disabled={finalDisabled}
       style={{
         ...styles.card,
         ...(isAvailable ? styles.available : {}),
         ...(isBookedOnce ? styles.bookedOnce : {}),
         ...(isBlocked ? styles.blocked : {}),
+        ...(isPast ? styles.past : {}),
         ...(isSelected ? styles.selected : {}),
       }}
     >
@@ -58,6 +64,8 @@ const styles = {
     fontSize: "12px",
     fontWeight: "700",
   },
+
+  // STATES
   available: {
     background: "#f0fdf4",
     borderColor: "#86efac",
@@ -74,6 +82,16 @@ const styles = {
     color: "#64748b",
     cursor: "not-allowed",
   },
+
+  // 🔥 NEW: PAST STYLE
+  past: {
+    background: "#e2e8f0",
+    borderColor: "#94a3b8",
+    color: "#475569",
+    cursor: "not-allowed",
+    opacity: 0.7,
+  },
+
   selected: {
     outline: "2px solid #be185d",
     outlineOffset: "1px",

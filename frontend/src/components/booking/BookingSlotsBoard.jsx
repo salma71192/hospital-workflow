@@ -59,14 +59,23 @@ function SlotSection({ title, slots, selectedTime, onSelectSlot }) {
         <div style={styles.emptyState}>No slots available.</div>
       ) : (
         <div style={styles.grid}>
-          {slots.map((slot) => (
-            <BookingSlotCard
-              key={slot.time}
-              slot={slot}
-              isSelected={selectedTime === slot.time}
-              onClick={onSelectSlot}
-            />
-          ))}
+          {slots.map((slot) => {
+            const isDisabled =
+              slot.status === "blocked" || slot.status === "past";
+
+            return (
+              <BookingSlotCard
+                key={slot.time}
+                slot={slot}
+                isSelected={selectedTime === slot.time}
+                isDisabled={isDisabled}
+                onClick={(time) => {
+                  if (isDisabled) return;
+                  onSelectSlot?.(time);
+                }}
+              />
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,9 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import api from "../../api/api";
-import { generateTimeSlots, getTodayString, getWeekDates } from "./bookingUtils";
+
+function getTodayString() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getTwoWeekDates() {
+  const dates = [];
+  const today = new Date();
+
+  for (let i = 0; i < 14; i += 1) {
+    const next = new Date(today);
+    next.setDate(today.getDate() + i);
+    dates.push(next.toISOString().split("T")[0]);
+  }
+
+  return dates;
+}
 
 export default function useBookingCore({
-  onReloadTodayBookings,
   onReloadMonthlyBookings,
   onReloadFutureBookings,
 }) {
@@ -18,37 +33,27 @@ export default function useBookingCore({
   });
 
   const [bookingForm, setBookingForm] = useState({
-    booking_id: "",
+    patient_id: "",
     therapist_id: "",
     appointment_date: getTodayString(),
     appointment_time: "",
     notes: "",
+    booking_id: null,
   });
 
   const [therapists, setTherapists] = useState([]);
-  const [weekDates, setWeekDates] = useState(getWeekDates());
+  const [selectedTherapist, setSelectedTherapist] = useState("");
+
+  const [weekDates, setWeekDates] = useState(getTwoWeekDates());
   const [slots, setSlots] = useState([]);
+
   const [todayBookingsCount, setTodayBookingsCount] = useState(0);
   const [todayBookings, setTodayBookings] = useState([]);
-
-  const selectedTherapist = useMemo(() => {
-    return therapists.find(
-      (item) => String(item.id) === String(bookingForm.therapist_id)
-    );
-  }, [therapists, bookingForm.therapist_id]);
 
   useEffect(() => {
     loadTherapists();
     loadTodayBookings();
   }, []);
-
-  useEffect(() => {
-    if (bookingForm.therapist_id && bookingForm.appointment_date) {
-      loadSlots(bookingForm.therapist_id, bookingForm.appointment_date);
-    } else {
-      setSlots([]);
-    }
-  }, [bookingForm.therapist_id, bookingForm.appointment_date]);
 
   const loadTherapists = async () => {
     try {
@@ -62,8 +67,7 @@ export default function useBookingCore({
 
   const loadTodayBookings = async () => {
     try {
-      const today = getTodayString();
-      const res = await api.get(`callcenter/bookings/today/?date=${today}`);
+      const res = await api.get("callcenter/bookings/today/");
       setTodayBookingsCount(res.data.count || 0);
       setTodayBookings(res.data.bookings || []);
     } catch (err) {
@@ -74,38 +78,21 @@ export default function useBookingCore({
   };
 
   const loadSlots = async (therapistId, appointmentDate) => {
+    if (!therapistId || !appointmentDate) {
+      setSlots([]);
+      return;
+    }
+
     try {
-      setError("");
-
       const res = await api.get(
-        `callcenter/slots/?therapist_id=${therapistId}&date=${appointmentDate}`
+        `callcenter/slots/?therapist_id=${encodeURIComponent(
+          therapistId
+        )}&date=${encodeURIComponent(appointmentDate)}`
       );
-
-      const backendSlots = res.data.slots || [];
-      const allTimes = generateTimeSlots();
-
-      const mergedSlots = allTimes.map((time) => {
-        const existing = backendSlots.find((slot) => slot.time === time);
-        return (
-          existing || {
-            time,
-            bookings_count: 0,
-            status: "available",
-          }
-        );
-      });
-
-      setSlots(mergedSlots);
+      setSlots(res.data.slots || []);
     } catch (err) {
       console.error("Failed to load slots", err);
-
-      setSlots(
-        generateTimeSlots().map((time) => ({
-          time,
-          bookings_count: 0,
-          status: "available",
-        }))
-      );
+      setSlots([]);
     }
   };
 
@@ -114,38 +101,61 @@ export default function useBookingCore({
     setError("");
     setSelectedPatient(patient);
 
+    const today = bookingForm.appointment_date || getTodayString();
+
     setBookingForm((prev) => ({
       ...prev,
-      booking_id: "",
-      therapist_id: "",
-      appointment_date: getTodayString(),
+      patient_id: patient.id,
       appointment_time: "",
-      notes: "",
+      notes: prev.booking_id ? prev.notes : "",
+      booking_id: null,
     }));
 
     try {
       const res = await api.get(`reception/last-therapist/${patient.id}/`);
       const therapist = res.data?.therapist;
 
-      if (therapist) {
+      if (therapist?.id) {
+        const therapistId = String(therapist.id);
+
+        setSelectedTherapist(therapistId);
         setBookingForm((prev) => ({
           ...prev,
-          booking_id: "",
-          therapist_id: String(therapist.id),
-          appointment_date: getTodayString(),
+          patient_id: patient.id,
+          therapist_id: therapistId,
+          appointment_date: today,
           appointment_time: "",
-          notes: "",
+          booking_id: null,
         }));
 
-        setMessage(
-          `Selected ${patient.name} (Last registered with ${therapist.name})`
-        );
+        await loadSlots(therapistId, today);
+        setMessage(`Selected ${patient.name} (Previously with ${therapist.name})`);
       } else {
-        setMessage(`Selected ${patient.name} for booking`);
+        setSelectedTherapist("");
+        setBookingForm((prev) => ({
+          ...prev,
+          patient_id: patient.id,
+          therapist_id: "",
+          appointment_date: today,
+          appointment_time: "",
+          booking_id: null,
+        }));
+        setSlots([]);
+        setMessage(`Selected ${patient.name} for booking.`);
       }
     } catch (err) {
       console.error("Failed to load last therapist", err);
-      setMessage(`Selected ${patient.name} for booking`);
+      setSelectedTherapist("");
+      setBookingForm((prev) => ({
+        ...prev,
+        patient_id: patient.id,
+        therapist_id: "",
+        appointment_date: today,
+        appointment_time: "",
+        booking_id: null,
+      }));
+      setSlots([]);
+      setMessage(`Selected ${patient.name} for booking.`);
     }
   };
 
@@ -155,12 +165,11 @@ export default function useBookingCore({
     setError("");
 
     try {
-      const payload = {
+      const res = await api.post("patients/", {
         name: patientForm.name,
         patient_id: patientForm.patient_id,
-      };
+      });
 
-      const res = await api.post("patients/", payload);
       const patient = res.data.patient;
 
       setPatientForm({
@@ -170,175 +179,139 @@ export default function useBookingCore({
 
       if (patient) {
         await handleSelectPatient(patient);
+        setMessage("Patient created successfully");
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err?.response?.data?.error || "Create failed");
+    }
+  };
+
+  const handleSelectTherapist = async (therapistId) => {
+    const safeTherapistId = therapistId ? String(therapistId) : "";
+
+    setSelectedTherapist(safeTherapistId);
+    setBookingForm((prev) => ({
+      ...prev,
+      therapist_id: safeTherapistId,
+      appointment_time: "",
+    }));
+
+    await loadSlots(safeTherapistId, bookingForm.appointment_date);
+  };
+
+  const handleSelectDate = async (appointmentDate) => {
+    setBookingForm((prev) => ({
+      ...prev,
+      appointment_date: appointmentDate,
+      appointment_time: "",
+    }));
+
+    await loadSlots(bookingForm.therapist_id || selectedTherapist, appointmentDate);
+  };
+
+  const handleSelectSlot = (time) => {
+    const safeTime = typeof time === "string" ? time : time?.time || "";
+    if (!safeTime) return;
+
+    setBookingForm((prev) => ({
+      ...prev,
+      appointment_time: safeTime,
+    }));
+  };
+
+  const handleConfirmBooking = async () => {
+    setMessage("");
+    setError("");
+
+    try {
+      if (bookingForm.booking_id) {
+        const res = await api.put(
+          `callcenter/bookings/${bookingForm.booking_id}/`,
+          {
+            therapist_id: bookingForm.therapist_id,
+            appointment_date: bookingForm.appointment_date,
+            appointment_time: bookingForm.appointment_time,
+            notes: bookingForm.notes,
+          }
+        );
+
+        setMessage(res.data.message || "Booking updated successfully");
+      } else {
+        const res = await api.post("callcenter/bookings/", {
+          patient_id: bookingForm.patient_id,
+          therapist_id: bookingForm.therapist_id,
+          appointment_date: bookingForm.appointment_date,
+          appointment_time: bookingForm.appointment_time,
+          notes: bookingForm.notes,
+        });
+
+        setMessage(res.data.message || "Appointment booked successfully");
       }
 
-      setMessage("Patient created successfully");
+      await Promise.all([
+        loadTodayBookings(),
+        onReloadMonthlyBookings?.(),
+        onReloadFutureBookings?.(),
+      ]);
+
+      await loadSlots(bookingForm.therapist_id, bookingForm.appointment_date);
+
+      setBookingForm((prev) => ({
+        ...prev,
+        appointment_time: "",
+        notes: "",
+        booking_id: null,
+      }));
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to create patient");
+      console.error(err);
+      setError(err?.response?.data?.error || "Booking failed");
     }
   };
 
-  const handleSelectTherapist = (therapistId) => {
+  const handleEditBooking = async (booking) => {
     setMessage("");
     setError("");
 
-    setBookingForm((prev) => ({
-      ...prev,
-      therapist_id: String(therapistId || ""),
-      appointment_time: "",
-    }));
-  };
+    setBookingForm({
+      patient_id: booking.patient_db_id,
+      therapist_id: String(booking.therapist_id || ""),
+      appointment_date: booking.appointment_date || getTodayString(),
+      appointment_time: booking.appointment_time || "",
+      notes: booking.notes || "",
+      booking_id: booking.id,
+    });
 
-  const handleSelectDate = (date) => {
-    setMessage("");
-    setError("");
-
-    setBookingForm((prev) => ({
-      ...prev,
-      appointment_date: date,
-      appointment_time: "",
-    }));
-  };
-
-  const handleSelectSlot = (slot) => {
-    const status = slot?.status || "available";
-    const bookingsCount = Number(slot?.bookings_count || 0);
-
-    if (status === "blocked" || bookingsCount >= 2) {
-      return;
-    }
-
-    setBookingForm((prev) => ({
-      ...prev,
-      appointment_time: slot.time,
-    }));
-
-    setMessage("");
-    setError("");
-  };
-
-  function handleEditBooking(booking) {
-    setMessage("");
-    setError("");
-
+    setSelectedTherapist(String(booking.therapist_id || ""));
     setSelectedPatient({
       id: booking.patient_db_id,
       name: booking.patient_name,
       patient_id: booking.patient_id,
     });
 
-    setBookingForm({
-      booking_id: booking.id,
-      therapist_id: String(booking.therapist_id || ""),
-      appointment_date: booking.appointment_date || getTodayString(),
-      appointment_time: booking.appointment_time || "",
-      notes: booking.notes || "",
-    });
-  }
+    await loadSlots(
+      String(booking.therapist_id || ""),
+      booking.appointment_date || getTodayString()
+    );
 
-  async function handleDeleteBooking(bookingId) {
-    const confirmed = window.confirm("Delete this booking?");
-    if (!confirmed) return;
+    setMessage(`Editing booking for ${booking.patient_name}`);
+  };
 
+  const handleDeleteBooking = async (bookingId) => {
     try {
-      setMessage("");
+      const res = await api.delete(`callcenter/bookings/${bookingId}/`);
+      setMessage(res.data.message || "Booking deleted successfully");
       setError("");
 
-      await api.delete(`callcenter/bookings/${bookingId}/`);
-
-      setMessage("Booking deleted successfully");
-
       await Promise.all([
         loadTodayBookings(),
         onReloadMonthlyBookings?.(),
         onReloadFutureBookings?.(),
       ]);
-
-      if (bookingForm.therapist_id && bookingForm.appointment_date) {
-        await loadSlots(bookingForm.therapist_id, bookingForm.appointment_date);
-      }
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to delete booking");
-    }
-  }
-
-  const handleConfirmBooking = async () => {
-    setMessage("");
-    setError("");
-
-    if (!selectedPatient) {
-      setError("Select a patient first");
-      return;
-    }
-
-    if (!bookingForm.therapist_id) {
-      setError("Select a therapist");
-      return;
-    }
-
-    if (!bookingForm.appointment_date) {
-      setError("Select a date");
-      return;
-    }
-
-    if (!bookingForm.appointment_time) {
-      setError("Select a time slot");
-      return;
-    }
-
-    try {
-      const payload = {
-        patient_id: selectedPatient.id,
-        therapist_id: bookingForm.therapist_id,
-        appointment_date: bookingForm.appointment_date,
-        appointment_time: bookingForm.appointment_time,
-        notes: bookingForm.notes || "",
-      };
-
-      if (bookingForm.booking_id) {
-        await api.put(`callcenter/bookings/${bookingForm.booking_id}/`, payload);
-        setMessage("Appointment updated successfully");
-      } else {
-        await api.post("callcenter/bookings/", payload);
-        setMessage("Appointment booked successfully");
-      }
-
-      await Promise.all([
-        loadSlots(bookingForm.therapist_id, bookingForm.appointment_date),
-        loadTodayBookings(),
-        onReloadMonthlyBookings?.(),
-        onReloadFutureBookings?.(),
-      ]);
-
-      setBookingForm((prev) => ({
-        ...prev,
-        booking_id: "",
-        appointment_time: "",
-        notes: "",
-      }));
-    } catch (err) {
-      const apiError = err?.response?.data;
-      const existingBooking = apiError?.existing_booking;
-
-      if (existingBooking) {
-        const openBooking = window.confirm(
-          `Patient already has a booking on this day.\n\n` +
-            `Physio: ${existingBooking.therapist_name}\n` +
-            `Date: ${existingBooking.appointment_date}\n` +
-            `Time: ${existingBooking.appointment_time}\n\n` +
-            `Press OK to open this booking.`
-        );
-
-        if (openBooking) {
-          handleEditBooking(existingBooking);
-          return;
-        }
-
-        setError(apiError?.error || "Patient already has a booking on this day");
-        return;
-      }
-
-      setError(apiError?.error || "Failed to save appointment");
+      console.error(err);
+      setError(err?.response?.data?.error || "Delete failed");
+      setMessage("");
     }
   };
 
@@ -347,21 +320,28 @@ export default function useBookingCore({
     setMessage,
     error,
     setError,
+
     selectedPatient,
     setSelectedPatient,
+
     patientForm,
     setPatientForm,
+
     bookingForm,
     setBookingForm,
+
     therapists,
     selectedTherapist,
+
     weekDates,
     setWeekDates,
+
     slots,
     setSlots,
+
     todayBookingsCount,
     todayBookings,
-    loadTodayBookings,
+
     handleSelectPatient,
     handleCreatePatientFile,
     handleSelectTherapist,

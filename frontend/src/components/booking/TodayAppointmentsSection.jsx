@@ -3,9 +3,7 @@ import PatientAutocompleteFilter from "./PatientAutocompleteFilter";
 
 export default function TodayAppointmentsSection({
   bookings = [],
-  title = "Today's Appointmt",
-  target = 0,
-  onChangeTarget,
+  title = "Today's Appointments",
 }) {
   const [patientSearch, setPatientSearch] = useState("");
 
@@ -21,11 +19,19 @@ export default function TodayAppointmentsSection({
     });
   }, [bookings, patientSearch]);
 
-  const safeTarget = Number(target || 0);
-  const actual = filteredBookings.length;
-  const remaining = Math.max(safeTarget - actual, 0);
-  const progress =
-    safeTarget > 0 ? Math.min((actual / safeTarget) * 100, 100) : 0;
+  const totalBooked = filteredBookings.length;
+  const attendedCount = filteredBookings.filter(
+    (item) => (item.attendance_status || "no_show") === "attended"
+  ).length;
+  const noShowCount = filteredBookings.filter(
+    (item) => (item.attendance_status || "no_show") !== "attended"
+  ).length;
+
+  const attendedPercent =
+    totalBooked > 0 ? Math.round((attendedCount / totalBooked) * 100) : 0;
+
+  const noShowPercent =
+    totalBooked > 0 ? Math.round((noShowCount / totalBooked) * 100) : 0;
 
   return (
     <div style={styles.card}>
@@ -35,39 +41,46 @@ export default function TodayAppointmentsSection({
 
       <div style={styles.statsGrid}>
         <div style={styles.statCard}>
-          <div style={styles.statLabel}>Appointments</div>
-          <div style={styles.statValue}>{actual}</div>
+          <div style={styles.statTopRow}>
+            <div style={styles.statLabel}>Total Booked</div>
+            <div style={styles.statPercent}>100%</div>
+          </div>
+          <div style={styles.statValue}>{totalBooked}</div>
+          <div style={styles.progressTrack}>
+            <div style={{ ...styles.progressBarTotal, width: "100%" }} />
+          </div>
         </div>
 
         <div style={styles.statCard}>
-          <div style={styles.statLabel}>Target</div>
-          <input
-            type="number"
-            min="0"
-            value={target}
-            onChange={(e) =>
-              onChangeTarget && onChangeTarget(Number(e.target.value || 0))
-            }
-            style={styles.targetInput}
-          />
+          <div style={styles.statTopRow}>
+            <div style={styles.statLabel}>Attended</div>
+            <div style={styles.statPercent}>{attendedPercent}%</div>
+          </div>
+          <div style={styles.statValue}>{attendedCount}</div>
+          <div style={styles.progressTrack}>
+            <div
+              style={{
+                ...styles.progressBarAttended,
+                width: `${attendedPercent}%`,
+              }}
+            />
+          </div>
         </div>
 
         <div style={styles.statCard}>
-          <div style={styles.statLabel}>Remaining</div>
-          <div style={styles.statValue}>{remaining}</div>
-        </div>
-      </div>
-
-      <div style={styles.progressWrap}>
-        <div style={styles.progressTop}>
-          <span style={styles.progressLabel}>Progress</span>
-          <span style={styles.progressValue}>
-            {safeTarget > 0 ? `${Math.round(progress)}%` : "No target"}
-          </span>
-        </div>
-
-        <div style={styles.progressTrack}>
-          <div style={{ ...styles.progressBar, width: `${progress}%` }} />
+          <div style={styles.statTopRow}>
+            <div style={styles.statLabel}>No Show</div>
+            <div style={styles.statPercent}>{noShowPercent}%</div>
+          </div>
+          <div style={styles.statValue}>{noShowCount}</div>
+          <div style={styles.progressTrack}>
+            <div
+              style={{
+                ...styles.progressBarNoShow,
+                width: `${noShowPercent}%`,
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -149,7 +162,7 @@ const styles = {
   },
   statsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     gap: "12px",
   },
   statCard: {
@@ -158,7 +171,13 @@ const styles = {
     borderRadius: "14px",
     padding: "14px",
     display: "grid",
-    gap: "8px",
+    gap: "10px",
+  },
+  statTopRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "12px",
   },
   statLabel: {
     fontSize: "12px",
@@ -166,42 +185,13 @@ const styles = {
     color: "#64748b",
     textTransform: "uppercase",
   },
-  statValue: {
-    fontSize: "24px",
+  statPercent: {
+    fontSize: "12px",
     fontWeight: "800",
     color: "#0f172a",
   },
-  targetInput: {
-    padding: "10px 12px",
-    borderRadius: "10px",
-    border: "1px solid #cbd5e1",
-    fontSize: "14px",
-    background: "#fff",
-    outline: "none",
-    width: "100%",
-    boxSizing: "border-box",
-  },
-  progressWrap: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: "14px",
-    padding: "14px",
-    display: "grid",
-    gap: "10px",
-  },
-  progressTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px",
-  },
-  progressLabel: {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#475569",
-  },
-  progressValue: {
-    fontSize: "13px",
+  statValue: {
+    fontSize: "24px",
     fontWeight: "800",
     color: "#0f172a",
   },
@@ -212,11 +202,20 @@ const styles = {
     borderRadius: "999px",
     overflow: "hidden",
   },
-  progressBar: {
+  progressBarTotal: {
+    height: "100%",
+    background: "#2563eb",
+    borderRadius: "999px",
+  },
+  progressBarAttended: {
     height: "100%",
     background: "#059669",
     borderRadius: "999px",
-    transition: "width 0.25s ease",
+  },
+  progressBarNoShow: {
+    height: "100%",
+    background: "#dc2626",
+    borderRadius: "999px",
   },
   tableWrap: {
     width: "100%",
