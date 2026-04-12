@@ -3,8 +3,11 @@ import json
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
+from django.utils import timezone
 
 from patients.models import Patient
+from callcenter.models import Appointment
 from .models import PatientAssignment
 from .api_helpers import User, is_admin, parse_date
 
@@ -25,6 +28,54 @@ def staff_filters_api(request):
         "id", "username", "role"
     )
     return JsonResponse({"users": list(users)})
+
+
+def _mark_today_appointment_attended(patient, therapist, marked_by):
+    today_value = timezone.localdate()
+
+    appointment = (
+        Appointment.objects
+        .select_related("patient")
+        .filter(
+            patient=patient,
+            appointment_date=today_value,
+        )
+        .order_by("appointment_time", "id")
+        .first()
+    )
+
+    if not appointment:
+        return None
+
+    therapist_changed = str(appointment.therapist_id) != str(therapist.id)
+    already_attended = getattr(appointment, "attendance_status", "") == "attended"
+
+    updated_fields = []
+
+    if therapist_changed:
+        appointment.therapist = therapist
+        updated_fields.append("therapist")
+
+    if hasattr(appointment, "attendance_status") and hasattr(appointment, "attended_at"):
+        if not already_attended:
+            appointment.attendance_status = "attended"
+            appointment.attended_at = timezone.now()
+            updated_fields.extend(["attendance_status", "attended_at"])
+
+            patient.sessions_taken = int(patient.sessions_taken or 0) + 1
+            patient.taken_with = therapist.username
+            patient.save(update_fields=["sessions_taken", "taken_with"])
+        else:
+            patient.taken_with = therapist.username
+            patient.save(update_fields=["taken_with"])
+    else:
+        patient.taken_with = therapist.username
+        patient.save(update_fields=["taken_with"])
+
+    if updated_fields:
+        appointment.save(update_fields=updated_fields)
+
+    return appointment
 
 
 @csrf_exempt
@@ -115,14 +166,21 @@ def assignments_api(request, assignment_id=None):
                 status=400,
             )
 
-        assignment = PatientAssignment.objects.create(
-            patient=patient,
-            therapist=therapist,
-            assignment_date=today,
-            category=category,
-            notes=notes,
-            created_by=request.user,
-        )
+        with transaction.atomic():
+            assignment = PatientAssignment.objects.create(
+                patient=patient,
+                therapist=therapist,
+                assignment_date=today,
+                category=category,
+                notes=notes,
+                created_by=request.user,
+            )
+
+            _mark_today_appointment_attended(
+                patient=patient,
+                therapist=therapist,
+                marked_by=request.user,
+            )
 
         return JsonResponse({
             "success": True,
@@ -132,14 +190,19 @@ def assignments_api(request, assignment_id=None):
 
     if request.method == "PUT":
         try:
-            assignment = PatientAssignment.objects.get(id=assignment_id)
+            assignment = PatientAssignment.objects.select_related("patient", "therapist").get(id=assignment_id)
         except PatientAssignment.DoesNotExist:
             return JsonResponse({"error": "Not found"}, status=404)
 
-        if not admin and assignment.assignment_date != date.today():
+        if assignment.assignment_date != date.today() and not admin:
             return JsonResponse({"error": "You can only edit today's assignments"}, status=403)
 
-        if not admin and assignment.created_by != request.user:
+        can_edit_assignment = admin or role in [
+            "reception",
+            "reception_supervisor",
+        ]
+
+        if not can_edit_assignment:
             return JsonResponse({"error": "Not allowed"}, status=403)
 
         try:
@@ -151,15 +214,24 @@ def assignments_api(request, assignment_id=None):
         category = data.get("category", assignment.category)
         notes = data.get("notes", "")
 
+        new_therapist = assignment.therapist
         if therapist_id:
             try:
-                assignment.therapist = User.objects.get(id=therapist_id, role="physio")
+                new_therapist = User.objects.get(id=therapist_id, role="physio")
             except Exception:
                 return JsonResponse({"error": "Invalid therapist"}, status=400)
 
-        assignment.category = category
-        assignment.notes = notes
-        assignment.save()
+        with transaction.atomic():
+            assignment.therapist = new_therapist
+            assignment.category = category
+            assignment.notes = notes
+            assignment.save()
+
+            _mark_today_appointment_attended(
+                patient=assignment.patient,
+                therapist=new_therapist,
+                marked_by=request.user,
+            )
 
         return JsonResponse({
             "success": True,
@@ -175,7 +247,12 @@ def assignments_api(request, assignment_id=None):
         if not admin and assignment.assignment_date != date.today():
             return JsonResponse({"error": "Cannot delete past assignments"}, status=403)
 
-        if not admin and assignment.created_by != request.user:
+        can_delete_assignment = admin or role in [
+            "reception",
+            "reception_supervisor",
+        ]
+
+        if not can_delete_assignment:
             return JsonResponse({"error": "Not allowed"}, status=403)
 
         assignment.delete()

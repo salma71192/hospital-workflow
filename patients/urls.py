@@ -1,7 +1,12 @@
 from django.urls import path
-from . import views
+from .api_views import (
+    patients_api,
+    patient_detail_api,
+    patient_tracker_api,
+)
 
 urlpatterns = [
-    path('search/', views.search_patient, name='search_patient'),
-    path("<int:patient_id>/", views.patient_profile, name="patient_profile"),
+    path("", patients_api, name="patients_api"),
+    path("tracker/", patient_tracker_api, name="patient_tracker_api"),
+    path("<int:patient_id>/", patient_detail_api, name="patient_detail_api"),
 ]

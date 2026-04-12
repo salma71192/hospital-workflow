@@ -86,6 +86,7 @@ export default function TodayAppointmentsSection({
                 <th style={styles.th}>Patient Name</th>
                 <th style={styles.th}>Patient ID</th>
                 <th style={styles.th}>Time</th>
+                <th style={styles.th}>Status</th>
                 <th style={styles.th}>Booked By</th>
                 <th style={styles.th}>Notes</th>
               </tr>
@@ -97,6 +98,18 @@ export default function TodayAppointmentsSection({
                   <td style={styles.tdBold}>{row.patient_name}</td>
                   <td style={styles.td}>{row.patient_id}</td>
                   <td style={styles.td}>{row.appointment_time}</td>
+                  <td style={styles.td}>
+                    <span
+                      style={{
+                        ...styles.statusBadge,
+                        ...((row.attendance_status || "no_show") === "attended"
+                          ? styles.statusAttended
+                          : styles.statusNoShow),
+                      }}
+                    >
+                      {row.attendance_status || "no_show"}
+                    </span>
+                  </td>
                   <td style={styles.td}>{row.created_by_name || "-"}</td>
                   <td style={styles.td}>{row.notes || "-"}</td>
                 </tr>
@@ -214,7 +227,7 @@ const styles = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "760px",
+    minWidth: "860px",
     background: "#fff",
   },
   th: {
@@ -238,6 +251,22 @@ const styles = {
     fontSize: "14px",
     fontWeight: "700",
     borderBottom: "1px solid #eef2f7",
+  },
+  statusBadge: {
+    padding: "6px 10px",
+    borderRadius: "999px",
+    fontSize: "12px",
+    fontWeight: "800",
+    textTransform: "capitalize",
+    display: "inline-block",
+  },
+  statusAttended: {
+    background: "#dcfce7",
+    color: "#166534",
+  },
+  statusNoShow: {
+    background: "#fee2e2",
+    color: "#b91c1c",
   },
   emptyState: {
     padding: "18px",

@@ -36,17 +36,19 @@ export default function PhysioFollowupWorkspace({
 
   const loadTodayAppointments = async () => {
     try {
+      setError("");
       const res = await api.get("callcenter/bookings/today-appointments/");
       setTodayAppointments(res.data.bookings || []);
     } catch (err) {
       console.error("Failed to load today appointments", err);
       setTodayAppointments([]);
-      setError("Failed to load today's appointments");
+      setError("Failed to load today's appointmt");
     }
   };
 
   const loadPatientTracker = async () => {
     try {
+      setError("");
       const res = await api.get("patients/tracker/");
       setPatientTrackerRows(res.data.patients || []);
     } catch (err) {
@@ -97,8 +99,13 @@ export default function PhysioFollowupWorkspace({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message ? <DashboardNotice type="error">{message}</DashboardNotice> : null}
-      {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
+      {message ? (
+        <DashboardNotice type="success">{message}</DashboardNotice>
+      ) : null}
+
+      {error ? (
+        <DashboardNotice type="error">{error}</DashboardNotice>
+      ) : null}
 
       {activeSection === "today_appointmt" && (
         <TodayAppointmentsSection

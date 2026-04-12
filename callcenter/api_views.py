@@ -94,6 +94,8 @@ def _serialize_booking(booking):
         "notes": booking.notes or "",
         "created_by_name": booking.created_by.username if booking.created_by else "",
         "created_by_id": booking.created_by.id if booking.created_by else None,
+        "attendance_status": getattr(booking, "attendance_status", "no_show"),
+        "attended_at": booking.attended_at.isoformat() if getattr(booking, "attended_at", None) else None,
     }
 
 
@@ -436,7 +438,6 @@ def today_bookings_api(request):
     today_value = _today()
     patient_search = (request.GET.get("patient") or "").strip()
 
-    # Today's bookings = bookings CREATED today for today or future appointments
     qs = _booking_base_queryset().filter(
         created_at__date=today_value,
         appointment_date__gte=today_value,

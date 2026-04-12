@@ -26,6 +26,16 @@ class Appointment(models.Model):
         related_name="created_callcenter_appointments",
     )
 
+    attendance_status = models.CharField(
+        max_length=20,
+        choices=[
+            ("no_show", "No Show"),
+            ("attended", "Attended"),
+        ],
+        default="no_show",
+    )
+    attended_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
