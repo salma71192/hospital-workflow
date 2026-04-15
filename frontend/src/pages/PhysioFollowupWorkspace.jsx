@@ -39,7 +39,6 @@ export default function PhysioFollowupWorkspace({
 
   const loadTodayAppointments = async () => {
     try {
-      setError("");
       const res = await api.get("callcenter/bookings/today-appointments/");
       setTodayAppointments(res.data.bookings || []);
     } catch (err) {
@@ -51,7 +50,6 @@ export default function PhysioFollowupWorkspace({
 
   const loadTodayStatistics = async () => {
     try {
-      setError("");
       const res = await api.get("callcenter/bookings/today-statistics/");
       setTodayStats({
         rows: res.data.rows || [],
@@ -66,7 +64,6 @@ export default function PhysioFollowupWorkspace({
 
   const loadPatientTracker = async () => {
     try {
-      setError("");
       const res = await api.get("patients/tracker/");
       setPatientTrackerRows(res.data.patients || []);
     } catch (err) {
@@ -78,7 +75,6 @@ export default function PhysioFollowupWorkspace({
 
   const loadTodayAssignments = async () => {
     try {
-      setError("");
       const today = new Date().toLocaleDateString("en-CA");
       const res = await api.get(
         `reception/assignments/?start_date=${today}&end_date=${today}`
@@ -129,6 +125,8 @@ export default function PhysioFollowupWorkspace({
     );
   }, [physioAssignments]);
 
+  const statisticsCount = todayStats?.rows?.length || 0;
+
   return (
     <DashboardLayout
       title="Patient Workflow"
@@ -141,7 +139,7 @@ export default function PhysioFollowupWorkspace({
         { key: "home", label: "Home" },
         {
           key: "statistics",
-          label: `Statistics (${physioTodayAppointments.length})`,
+          label: `Statistics (${statisticsCount})`,
         },
         { key: "tracker", label: "Patient Tracker" },
       ]}
@@ -158,32 +156,35 @@ export default function PhysioFollowupWorkspace({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message ? <DashboardNotice type="success">{message}</DashboardNotice> : null}
-      {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
+      {message ? (
+        <DashboardNotice type="success">{message}</DashboardNotice>
+      ) : null}
+
+      {error ? (
+        <DashboardNotice type="error">{error}</DashboardNotice>
+      ) : null}
 
       {activeSection === "statistics" && (
         <div style={styles.stack}>
-          <StatisticsSection
-            stats={todayStats}
-            walkInCount={walkInAssignments.length}
-            initialEvalCount={initialEvalAssignments.length}
-            taskWithoutEligibilityCount={taskWithoutEligibilityAssignments.length}
-          />
+          <StatisticsSection stats={todayStats} />
 
           <TodayAppointmentsSection
             bookings={physioTodayAppointments}
             title="Today's Appointments"
           />
 
-          <AssignmentListSection title="Walk In" assignments={walkInAssignments} />
+          <AssignmentListSection
+            title={`Walk In (${walkInAssignments.length})`}
+            assignments={walkInAssignments}
+          />
 
           <AssignmentListSection
-            title="Initial Eval"
+            title={`Initial Eval (${initialEvalAssignments.length})`}
             assignments={initialEvalAssignments}
           />
 
           <AssignmentListSection
-            title="Task Without Eligibility"
+            title={`Task Without Eligibility (${taskWithoutEligibilityAssignments.length})`}
             assignments={taskWithoutEligibilityAssignments}
           />
         </div>

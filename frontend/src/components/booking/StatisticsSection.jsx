@@ -1,56 +1,63 @@
 import React from "react";
 
-export default function StatisticsSection({
-  stats,
-  walkInCount = 0,
-  initialEvalCount = 0,
-  taskWithoutEligibilityCount = 0,
-}) {
-  if (!stats) return null;
+export default function StatisticsSection({ stats }) {
+  const rows = stats?.rows || [];
+  const totals = stats?.totals || null;
 
-  const appointments = stats.appointments || {};
-  const totalSeen =
-    Number(appointments.attended || 0) +
-    Number(walkInCount || 0) +
-    Number(initialEvalCount || 0);
+  if (!rows.length) {
+    return (
+      <div style={styles.card}>
+        <div style={styles.title}>Today Statistics</div>
+        <div style={styles.emptyState}>No statistics available for today.</div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.card}>
       <div style={styles.title}>Today Statistics</div>
 
-      <div style={styles.section}>
-        <div style={styles.subtitle}>Appointments</div>
-        <div style={styles.row}>
-          <Stat label="Total" value={appointments.total || 0} />
-          <Stat label="Attended" value={appointments.attended || 0} />
-          <Stat label="No Show" value={appointments.no_show || 0} />
-        </div>
-      </div>
+      <div style={styles.tableWrap}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.th}>Therapist</th>
+              <th style={styles.th}>Available Slots</th>
+              <th style={styles.th}>Booked</th>
+              <th style={styles.th}>Walk In</th>
+              <th style={styles.th}>Seen</th>
+              <th style={styles.th}>Initial Eval</th>
+              <th style={styles.th}>No Show</th>
+            </tr>
+          </thead>
 
-      <div style={styles.section}>
-        <div style={styles.subtitle}>Other Sections</div>
-        <div style={styles.row}>
-          <Stat label="Walk In" value={walkInCount} />
-          <Stat label="Initial Eval" value={initialEvalCount} />
-          <Stat
-            label="Task Without Eligibility"
-            value={taskWithoutEligibilityCount}
-          />
-        </div>
-      </div>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.therapist_id}>
+                <td style={styles.tdBold}>{row.therapist_name}</td>
+                <td style={styles.td}>{row.available_slots ?? 0}</td>
+                <td style={styles.td}>{row.booked ?? 0}</td>
+                <td style={styles.td}>{row.walk_in ?? 0}</td>
+                <td style={styles.td}>{row.seen ?? 0}</td>
+                <td style={styles.td}>{row.initial_eval ?? 0}</td>
+                <td style={styles.td}>{row.no_show ?? 0}</td>
+              </tr>
+            ))}
 
-      <div style={styles.totalBox}>
-        Total Seen Today: <strong>{totalSeen}</strong>
+            {totals ? (
+              <tr style={styles.totalRow}>
+                <td style={styles.tdBold}>Total</td>
+                <td style={styles.tdBold}>{totals.available_slots ?? 0}</td>
+                <td style={styles.tdBold}>{totals.booked ?? 0}</td>
+                <td style={styles.tdBold}>{totals.walk_in ?? 0}</td>
+                <td style={styles.tdBold}>{totals.seen ?? 0}</td>
+                <td style={styles.tdBold}>{totals.initial_eval ?? 0}</td>
+                <td style={styles.tdBold}>{totals.no_show ?? 0}</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }) {
-  return (
-    <div style={styles.stat}>
-      <div style={styles.statLabel}>{label}</div>
-      <div style={styles.statValue}>{value}</div>
     </div>
   );
 }
@@ -70,45 +77,48 @@ const styles = {
     fontWeight: "800",
     color: "#0f172a",
   },
-  section: {
-    display: "grid",
-    gap: "10px",
+  tableWrap: {
+    width: "100%",
+    overflowX: "auto",
+    border: "1px solid #e2e8f0",
+    borderRadius: "14px",
   },
-  subtitle: {
+  table: {
+    width: "100%",
+    minWidth: "900px",
+    borderCollapse: "collapse",
+    background: "#fff",
+  },
+  th: {
+    textAlign: "left",
+    padding: "14px 16px",
+    background: "#f8fafc",
+    color: "#334155",
+    fontSize: "14px",
+    fontWeight: "800",
+    borderBottom: "1px solid #e2e8f0",
+  },
+  td: {
+    padding: "14px 16px",
+    color: "#475569",
+    fontSize: "14px",
+    borderBottom: "1px solid #eef2f7",
+  },
+  tdBold: {
+    padding: "14px 16px",
+    color: "#0f172a",
     fontSize: "14px",
     fontWeight: "700",
-    color: "#475569",
+    borderBottom: "1px solid #eef2f7",
   },
-  row: {
-    display: "flex",
-    gap: "12px",
-    flexWrap: "wrap",
-  },
-  stat: {
-    flex: "1",
-    minWidth: "140px",
+  totalRow: {
     background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: "12px",
-    padding: "12px",
-    textAlign: "center",
   },
-  statLabel: {
-    fontSize: "12px",
+  emptyState: {
+    padding: "18px",
+    borderRadius: "12px",
+    background: "#f8fafc",
     color: "#64748b",
-  },
-  statValue: {
-    fontSize: "20px",
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  totalBox: {
-    background: "#ecfdf5",
-    border: "1px solid #10b981",
-    color: "#065f46",
-    padding: "14px",
-    borderRadius: "12px",
-    fontWeight: "800",
-    textAlign: "center",
+    border: "1px dashed #cbd5e1",
   },
 };
