@@ -4,11 +4,11 @@ import api from "../api/api";
 
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
-import AssignmentHistory from "../components/AssignmentHistory";
 
 import AdminCreateSection from "../components/admin/AdminCreateSection";
 import AdminManageSection from "../components/admin/AdminManageSection";
 import AdminStatisticsSection from "../components/admin/AdminStatisticsSection";
+import AdminRegistrationTrackerSection from "../components/admin/AdminRegistrationTrackerSection";
 
 export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const navigate = useNavigate();
@@ -88,6 +88,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setTodayStats({
         rows: res.data.rows || [],
         totals: res.data.totals || null,
+        date: res.data.date || "",
       });
     } catch (err) {
       console.error("Failed to load today statistics", err);
@@ -222,14 +223,19 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         { key: "create", label: "Create New User" },
         { key: "manage", label: "Manage Users" },
         { key: "statistics", label: "Statistics Tracker" },
-        { key: "history", label: "History" },
+        { key: "registration_tracker", label: "Registration Tracker" },
       ]}
       activeSection={activeSection}
       setActiveSection={setActiveSection}
       onLogout={onLogout}
     >
-      {message ? <DashboardNotice type="success">{message}</DashboardNotice> : null}
-      {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
+      {message ? (
+        <DashboardNotice type="success">{message}</DashboardNotice>
+      ) : null}
+
+      {error ? (
+        <DashboardNotice type="error">{error}</DashboardNotice>
+      ) : null}
 
       {activeSection === "create" && (
         <AdminCreateSection
@@ -261,11 +267,8 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         <AdminStatisticsSection stats={todayStats} />
       )}
 
-      {activeSection === "history" && (
-        <AssignmentHistory
-          title="Admin Assignment History"
-          currentUser={user}
-        />
+      {activeSection === "registration_tracker" && (
+        <AdminRegistrationTrackerSection />
       )}
     </DashboardLayout>
   );

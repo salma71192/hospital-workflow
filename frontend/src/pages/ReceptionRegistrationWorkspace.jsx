@@ -10,20 +10,25 @@ import PatientAssignmentForm from "../components/patients/PatientAssignmentForm"
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import RegistrationTrackerSection from "../components/assignments/RegistrationTrackerSection";
 
+function formatLocalDate(date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function getTodayString() {
-  return new Date().toLocaleDateString("en-CA");
+  return formatLocalDate(new Date());
 }
 
 function getFirstDayOfMonthString() {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1)
-    .toLocaleDateString("en-CA");
+  return formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
 }
 
 function getLastDayOfMonthString() {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    .toLocaleDateString("en-CA");
+  return formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
 }
 
 export default function ReceptionRegistrationWorkspace({
@@ -67,27 +72,14 @@ export default function ReceptionRegistrationWorkspace({
   const [error, setError] = useState("");
   const [trackerAssignments, setTrackerAssignments] = useState([]);
   const [trackerAgents, setTrackerAgents] = useState([]);
+  const [trackerTarget, setTrackerTarget] = useState(50);
 
   useEffect(() => {
     loadTherapists();
-    handleApplyTrackerFilters();
   }, [actingAs, user]);
 
   useEffect(() => {
-    if (trackerMode === "today") {
-      setTrackerFilter((prev) => ({
-        ...prev,
-        date: prev.date || getTodayString(),
-      }));
-    }
-
-    if (trackerMode === "monthly") {
-      setTrackerFilter((prev) => ({
-        ...prev,
-        from_date: prev.from_date || getFirstDayOfMonthString(),
-        to_date: prev.to_date || getLastDayOfMonthString(),
-      }));
-    }
+    handleApplyTrackerFilters();
   }, [trackerMode]);
 
   const handleBackToAdmin = () => {
@@ -152,9 +144,11 @@ export default function ReceptionRegistrationWorkspace({
 
   const handleApplyTrackerFilters = async () => {
     if (trackerMode === "today") {
+      const safeDate = trackerFilter.date || getTodayString();
+
       await loadAssignments({
-        start_date: trackerFilter.date,
-        end_date: trackerFilter.date,
+        start_date: safeDate,
+        end_date: safeDate,
         user_id: trackerFilter.user_id,
         patient: trackerFilter.patient,
         therapist_id: trackerFilter.therapist_id,
@@ -330,7 +324,10 @@ export default function ReceptionRegistrationWorkspace({
         { key: "home", label: "Home" },
         { key: "register", label: "Register" },
         { key: "open_file", label: "Open New File" },
-        { key: "tracker", label: `Registration Tracker (${trackerAssignments.length})` },
+        {
+          key: "tracker",
+          label: `Registration Tracker (${trackerAssignments.length})`,
+        },
       ]}
       activeSection={activeSection}
       setActiveSection={(key) => {
@@ -403,6 +400,8 @@ export default function ReceptionRegistrationWorkspace({
           filter={trackerFilter}
           setFilter={setTrackerFilter}
           onApplyFilters={handleApplyTrackerFilters}
+          target={trackerTarget}
+          onChangeTarget={setTrackerTarget}
           onEditAssignment={handleEditAssignment}
           onCancelAssignment={handleCancelAssignment}
         />

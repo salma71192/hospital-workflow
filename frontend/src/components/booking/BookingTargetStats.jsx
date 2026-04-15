@@ -12,14 +12,6 @@ export default function BookingTargetStats({
   const percentage =
     safeTarget > 0 ? Math.min((safeActual / safeTarget) * 100, 100) : 0;
 
-  const chartBars = [
-    { label: "Actual", value: safeActual },
-    { label: "Remaining", value: remaining },
-    { label: "Target", value: safeTarget },
-  ];
-
-  const maxValue = Math.max(...chartBars.map((item) => item.value), 1);
-
   return (
     <div style={styles.card}>
       <div style={styles.header}>
@@ -61,7 +53,7 @@ export default function BookingTargetStats({
         <div style={styles.progressTop}>
           <span style={styles.progressLabel}>Progress</span>
           <span style={styles.progressValue}>
-            {safeActual} / {safeTarget || 0}
+            {safeActual} / {safeTarget}
           </span>
         </div>
 
@@ -74,32 +66,6 @@ export default function BookingTargetStats({
           />
         </div>
       </div>
-
-      <div style={styles.chartWrap}>
-        {chartBars.map((item) => {
-          const height = `${(item.value / maxValue) * 100}%`;
-
-          return (
-            <div key={item.label} style={styles.chartItem}>
-              <div style={styles.chartValue}>{item.value}</div>
-              <div style={styles.chartBarArea}>
-                <div
-                  style={{
-                    ...styles.chartBar,
-                    height,
-                    ...(item.label === "Actual"
-                      ? styles.chartBarActual
-                      : item.label === "Remaining"
-                      ? styles.chartBarRemaining
-                      : styles.chartBarTarget),
-                  }}
-                />
-              </div>
-              <div style={styles.chartLabel}>{item.label}</div>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -108,11 +74,11 @@ const styles = {
   card: {
     background: "#fff",
     borderRadius: "18px",
-    padding: "20px",
+    padding: "16px",
     border: "1px solid #e2e8f0",
     boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
     display: "grid",
-    gap: "18px",
+    gap: "14px",
   },
   header: {
     display: "flex",
@@ -199,52 +165,8 @@ const styles = {
   },
   progressFill: {
     height: "100%",
-    background: "#be185d",
+    background: "#1e3a8a",
     borderRadius: "999px",
     transition: "width 0.25s ease",
-  },
-  chartWrap: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(70px, 1fr))",
-    gap: "16px",
-    alignItems: "end",
-    minHeight: "160px",
-  },
-  chartItem: {
-    display: "grid",
-    gap: "8px",
-    justifyItems: "center",
-    height: "100%",
-  },
-  chartValue: {
-    fontSize: "13px",
-    fontWeight: "800",
-    color: "#334155",
-  },
-  chartBarArea: {
-    height: "100px",
-    width: "100%",
-    display: "flex",
-    alignItems: "end",
-    justifyContent: "center",
-  },
-  chartBar: {
-    width: "40px",
-    borderRadius: "12px 12px 6px 6px",
-    minHeight: "8px",
-  },
-  chartBarActual: {
-    background: "#be185d",
-  },
-  chartBarRemaining: {
-    background: "#cbd5e1",
-  },
-  chartBarTarget: {
-    background: "#0ea5e9",
-  },
-  chartLabel: {
-    fontSize: "12px",
-    fontWeight: "700",
-    color: "#64748b",
   },
 };
