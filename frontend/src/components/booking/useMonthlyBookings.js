@@ -12,6 +12,13 @@ function getFirstDayOfMonthString() {
     .split("T")[0];
 }
 
+function getLastDayOfMonthString() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    .toISOString()
+    .split("T")[0];
+}
+
 export default function useMonthlyBookings() {
   const [monthlyBookingsCount, setMonthlyBookingsCount] = useState(0);
   const [monthlyBookings, setMonthlyBookings] = useState([]);
@@ -20,7 +27,7 @@ export default function useMonthlyBookings() {
 
   const [monthlyFilter, setMonthlyFilter] = useState({
     from_date: getFirstDayOfMonthString(),
-    to_date: getTodayString(),
+    to_date: getLastDayOfMonthString(),
     user_id: "all",
     patient: "",
     therapist_id: "all",
@@ -41,15 +48,13 @@ export default function useMonthlyBookings() {
     therapistIdValue = monthlyFilter.therapist_id
   ) => {
     try {
+      const safeFromDate = fromDateValue || getFirstDayOfMonthString();
+      const safeToDate = toDateValue || safeFromDate || getTodayString();
+
       const params = new URLSearchParams();
 
-      if (fromDateValue) {
-        params.append("from_date", fromDateValue);
-      }
-
-      if (toDateValue) {
-        params.append("to_date", toDateValue);
-      }
+      params.append("from_date", safeFromDate);
+      params.append("to_date", safeToDate);
 
       if (userIdValue && userIdValue !== "all") {
         params.append("user_id", userIdValue);
@@ -63,11 +68,7 @@ export default function useMonthlyBookings() {
         params.append("therapist_id", therapistIdValue);
       }
 
-      const query = params.toString();
-      const url = query
-        ? `callcenter/bookings/monthly/?${query}`
-        : "callcenter/bookings/monthly/";
-
+      const url = `callcenter/bookings/monthly/?${params.toString()}`;
       const res = await api.get(url);
 
       setMonthlyBookingsCount(res.data.count || 0);
@@ -77,8 +78,8 @@ export default function useMonthlyBookings() {
 
       setMonthlyFilter((prev) => ({
         ...prev,
-        from_date: res.data.from_date || fromDateValue,
-        to_date: res.data.to_date || toDateValue,
+        from_date: res.data.from_date || safeFromDate,
+        to_date: res.data.to_date || safeToDate,
         user_id: userIdValue || "all",
         patient: patientValue || "",
         therapist_id: therapistIdValue || "all",

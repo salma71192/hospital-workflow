@@ -15,14 +15,17 @@ export default function useBookingDashboard() {
   });
 
   return {
+    // layout
     activeSection,
     setActiveSection,
 
+    // messages
     message: core.message,
     setMessage: core.setMessage,
     error: core.error,
     setError: core.setError,
 
+    // patient + booking form
     selectedPatient: core.selectedPatient,
     setSelectedPatient: core.setSelectedPatient,
 
@@ -32,32 +35,39 @@ export default function useBookingDashboard() {
     bookingForm: core.bookingForm,
     setBookingForm: core.setBookingForm,
 
+    // booking setup
     therapists: core.therapists,
     selectedTherapist: core.selectedTherapist,
-
     weekDates: core.weekDates,
     setWeekDates: core.setWeekDates,
-
     slots: core.slots,
     setSlots: core.setSlots,
 
+    // same-day bookings
     todayBookingsCount: core.todayBookingsCount,
     todayBookings: core.todayBookings,
 
+    // tracker data - monthly / same-day
     monthlyBookingsCount: monthly.monthlyBookingsCount,
     monthlyBookings: monthly.monthlyBookings,
     monthlyAgents: monthly.monthlyAgents,
     monthlyTherapists: monthly.monthlyTherapists,
     monthlyFilter: monthly.monthlyFilter,
     setMonthlyFilter: monthly.setMonthlyFilter,
+    loadMonthlyBookings: monthly.loadMonthlyBookings,
+    handleApplyMonthlyFilters: monthly.handleApplyMonthlyFilters,
 
+    // tracker data - future
     futureBookings: future.futureBookings,
     futureTherapistSummary: future.futureTherapistSummary,
     futureDaySummary: future.futureDaySummary,
     futureAgents: future.futureAgents,
     futureFilter: future.futureFilter,
     setFutureFilter: future.setFutureFilter,
+    loadFutureBookings: future.loadFutureBookings,
+    handleApplyFutureFilters: future.handleApplyFutureFilters,
 
+    // booking actions
     handleSelectPatient: core.handleSelectPatient,
     handleCreatePatientFile: core.handleCreatePatientFile,
     handleSelectTherapist: core.handleSelectTherapist,
@@ -66,8 +76,5 @@ export default function useBookingDashboard() {
     handleConfirmBooking: core.handleConfirmBooking,
     handleEditBooking: core.handleEditBooking,
     handleDeleteBooking: core.handleDeleteBooking,
-
-    handleApplyMonthlyFilters: monthly.handleApplyMonthlyFilters,
-    handleApplyFutureFilters: future.handleApplyFutureFilters,
   };
 }

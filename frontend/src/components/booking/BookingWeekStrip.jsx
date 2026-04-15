@@ -1,4 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+
+function formatLocalDate(date) {
+  return date.toLocaleDateString("en-CA");
+}
+
+function getTodayString() {
+  return formatLocalDate(new Date());
+}
 
 export default function BookingWeekStrip({
   weekDates = [],
@@ -7,9 +15,12 @@ export default function BookingWeekStrip({
 }) {
   const [page, setPage] = useState(0);
 
+  const todayString = getTodayString();
+
   const formatDayName = (dateString) => {
     try {
-      return new Date(dateString).toLocaleDateString(undefined, {
+      const [year, month, day] = dateString.split("-").map(Number);
+      return new Date(year, month - 1, day).toLocaleDateString(undefined, {
         weekday: "short",
       });
     } catch {
@@ -19,7 +30,8 @@ export default function BookingWeekStrip({
 
   const formatDayNumber = (dateString) => {
     try {
-      return new Date(dateString).toLocaleDateString(undefined, {
+      const [year, month, day] = dateString.split("-").map(Number);
+      return new Date(year, month - 1, day).toLocaleDateString(undefined, {
         day: "2-digit",
       });
     } catch {
@@ -29,7 +41,8 @@ export default function BookingWeekStrip({
 
   const formatMonth = (dateString) => {
     try {
-      return new Date(dateString).toLocaleDateString(undefined, {
+      const [year, month, day] = dateString.split("-").map(Number);
+      return new Date(year, month - 1, day).toLocaleDateString(undefined, {
         month: "short",
       });
     } catch {
@@ -37,14 +50,27 @@ export default function BookingWeekStrip({
     }
   };
 
-  const firstWeekDates = weekDates.slice(0, 7);
-  const secondWeekDates = weekDates.slice(7, 14);
+  const firstWeekDates = useMemo(() => weekDates.slice(0, 7), [weekDates]);
+  const secondWeekDates = useMemo(() => weekDates.slice(7, 14), [weekDates]);
 
   const visibleDates = useMemo(() => {
     return page === 0 ? firstWeekDates : secondWeekDates;
   }, [page, firstWeekDates, secondWeekDates]);
 
   const hasSecondWeek = secondWeekDates.length > 0;
+
+  useEffect(() => {
+    if (!selectedDate) return;
+
+    if (firstWeekDates.includes(selectedDate)) {
+      setPage(0);
+      return;
+    }
+
+    if (secondWeekDates.includes(selectedDate)) {
+      setPage(1);
+    }
+  }, [selectedDate, firstWeekDates, secondWeekDates]);
 
   if (!weekDates.length) {
     return <div style={styles.emptyState}>No available dates.</div>;
@@ -88,6 +114,7 @@ export default function BookingWeekStrip({
       <div style={styles.grid}>
         {visibleDates.map((date) => {
           const isActive = selectedDate === date;
+          const isToday = date === todayString;
 
           return (
             <button
@@ -96,16 +123,30 @@ export default function BookingWeekStrip({
               onClick={() => onSelectDate(date)}
               style={{
                 ...styles.dayButton,
+                ...(isToday ? styles.dayButtonToday : {}),
                 ...(isActive ? styles.dayButtonActive : {}),
               }}
             >
-              <div
-                style={{
-                  ...styles.dayName,
-                  ...(isActive ? styles.dayNameActive : {}),
-                }}
-              >
-                {formatDayName(date)}
+              <div style={styles.topRow}>
+                <div
+                  style={{
+                    ...styles.dayName,
+                    ...(isActive ? styles.dayNameActive : {}),
+                  }}
+                >
+                  {formatDayName(date)}
+                </div>
+
+                {isToday ? (
+                  <span
+                    style={{
+                      ...styles.todayBadge,
+                      ...(isActive ? styles.todayBadgeActive : {}),
+                    }}
+                  >
+                    Today
+                  </span>
+                ) : null}
               </div>
 
               <div
@@ -201,13 +242,24 @@ const styles = {
     padding: "14px 10px",
     cursor: "pointer",
     display: "grid",
-    gap: "4px",
+    gap: "6px",
     justifyItems: "center",
     textAlign: "center",
+    minHeight: "110px",
+  },
+  dayButtonToday: {
+    borderColor: "#f9a8d4",
+    background: "#fffafc",
   },
   dayButtonActive: {
     background: "#fdf2f8",
     borderColor: "#be185d",
+    boxShadow: "0 0 0 3px rgba(190, 24, 93, 0.08)",
+  },
+  topRow: {
+    display: "grid",
+    gap: "4px",
+    justifyItems: "center",
   },
   dayName: {
     fontSize: "12px",
@@ -218,6 +270,20 @@ const styles = {
   },
   dayNameActive: {
     color: "#be185d",
+  },
+  todayBadge: {
+    fontSize: "10px",
+    fontWeight: "800",
+    color: "#be185d",
+    background: "#fce7f3",
+    border: "1px solid #f9a8d4",
+    borderRadius: "999px",
+    padding: "2px 8px",
+  },
+  todayBadgeActive: {
+    background: "#be185d",
+    color: "#fff",
+    borderColor: "#be185d",
   },
   dayNumber: {
     fontSize: "22px",

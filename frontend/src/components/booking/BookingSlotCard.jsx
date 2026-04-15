@@ -11,8 +11,8 @@ export default function BookingSlotCard({
 
   const isPast = status === "past";
   const isBlocked = status === "blocked" || bookingsCount >= 2;
-  const isBookedOnce = !isBlocked && bookingsCount === 1;
-  const isAvailable = !isBlocked && bookingsCount === 0;
+  const isBookedOnce = !isPast && !isBlocked && bookingsCount === 1;
+  const isAvailable = !isPast && !isBlocked && bookingsCount === 0;
 
   const finalDisabled = isDisabled || isBlocked || isPast;
 
@@ -34,7 +34,7 @@ export default function BookingSlotCard({
         ...(isBookedOnce ? styles.bookedOnce : {}),
         ...(isBlocked ? styles.blocked : {}),
         ...(isPast ? styles.past : {}),
-        ...(isSelected ? styles.selected : {}),
+        ...(isSelected && !finalDisabled ? styles.selected : {}),
       }}
     >
       <div style={styles.time}>{slot?.time || "-"}</div>
@@ -64,8 +64,6 @@ const styles = {
     fontSize: "12px",
     fontWeight: "700",
   },
-
-  // STATES
   available: {
     background: "#f0fdf4",
     borderColor: "#86efac",
@@ -82,8 +80,6 @@ const styles = {
     color: "#64748b",
     cursor: "not-allowed",
   },
-
-  // 🔥 NEW: PAST STYLE
   past: {
     background: "#e2e8f0",
     borderColor: "#94a3b8",
@@ -91,7 +87,6 @@ const styles = {
     cursor: "not-allowed",
     opacity: 0.7,
   },
-
   selected: {
     outline: "2px solid #be185d",
     outlineOffset: "1px",

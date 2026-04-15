@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .api_views import (
+from callcenter.api.booking_views import (
     therapists_api,
     slots_api,
     bookings_api,

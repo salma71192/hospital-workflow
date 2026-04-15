@@ -1,10 +1,20 @@
 import { useState } from "react";
 import api from "../../api/api";
 
+function formatLocalDate(date) {
+  return date.toLocaleDateString("en-CA");
+}
+
 function getTomorrowString() {
   const next = new Date();
   next.setDate(next.getDate() + 1);
-  return next.toISOString().split("T")[0];
+  return formatLocalDate(next);
+}
+
+function getTwoWeeksForwardString() {
+  const next = new Date();
+  next.setDate(next.getDate() + 14);
+  return formatLocalDate(next);
 }
 
 export default function useFutureBookings() {
@@ -12,10 +22,11 @@ export default function useFutureBookings() {
   const [futureTherapistSummary, setFutureTherapistSummary] = useState([]);
   const [futureDaySummary, setFutureDaySummary] = useState([]);
   const [futureAgents, setFutureAgents] = useState([]);
+  const [futureTherapists, setFutureTherapists] = useState([]);
 
   const [futureFilter, setFutureFilter] = useState({
     from_date: getTomorrowString(),
-    to_date: "",
+    to_date: getTwoWeeksForwardString(),
     therapist_id: "all",
     user_id: "all",
     patient: "",
@@ -26,6 +37,7 @@ export default function useFutureBookings() {
     setFutureTherapistSummary([]);
     setFutureDaySummary([]);
     setFutureAgents([]);
+    setFutureTherapists([]);
   };
 
   const loadFutureBookings = async (
@@ -36,20 +48,25 @@ export default function useFutureBookings() {
     patientValue = futureFilter.patient
   ) => {
     try {
-      const tomorrow = getTomorrowString();
+      const minDate = getTomorrowString();
+      const maxDate = getTwoWeeksForwardString();
 
-      const safeFromDate =
-        !fromDateValue || fromDateValue < tomorrow ? tomorrow : fromDateValue;
+      let safeFromDate = fromDateValue || minDate;
+      let safeToDate = toDateValue || maxDate;
 
-      const safeToDate =
-        toDateValue && toDateValue < tomorrow ? tomorrow : toDateValue;
+      if (safeFromDate < minDate) safeFromDate = minDate;
+      if (safeFromDate > maxDate) safeFromDate = maxDate;
+
+      if (safeToDate < minDate) safeToDate = minDate;
+      if (safeToDate > maxDate) safeToDate = maxDate;
+
+      if (safeFromDate > safeToDate) {
+        safeToDate = safeFromDate;
+      }
 
       const params = new URLSearchParams();
       params.append("from_date", safeFromDate);
-
-      if (safeToDate) {
-        params.append("to_date", safeToDate);
-      }
+      params.append("to_date", safeToDate);
 
       if (therapistIdValue && therapistIdValue !== "all") {
         params.append("therapist_id", therapistIdValue);
@@ -63,22 +80,18 @@ export default function useFutureBookings() {
         params.append("patient", patientValue.trim());
       }
 
-      const query = params.toString();
-      const url = query
-        ? `callcenter/bookings/future/?${query}`
-        : "callcenter/bookings/future/";
-
-      const res = await api.get(url);
+      const res = await api.get(`callcenter/bookings/future/?${params.toString()}`);
 
       setFutureBookings(res.data.bookings || []);
       setFutureTherapistSummary(res.data.therapist_summary || []);
       setFutureDaySummary(res.data.day_summary || []);
       setFutureAgents(res.data.agents || []);
+      setFutureTherapists(res.data.therapists || []);
 
       setFutureFilter((prev) => ({
         ...prev,
-        from_date: safeFromDate,
-        to_date: safeToDate || "",
+        from_date: res.data.from_date || safeFromDate,
+        to_date: res.data.to_date || safeToDate,
         therapist_id: therapistIdValue || "all",
         user_id: userIdValue || "all",
         patient: patientValue || "",
@@ -104,6 +117,7 @@ export default function useFutureBookings() {
     futureTherapistSummary,
     futureDaySummary,
     futureAgents,
+    futureTherapists,
     futureFilter,
     setFutureFilter,
     loadFutureBookings,

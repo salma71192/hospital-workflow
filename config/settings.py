@@ -33,7 +33,7 @@ INSTALLED_APPS = [
 # Middleware
 # -------------------
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",   # MUST be first
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -87,7 +87,10 @@ AUTH_PASSWORD_VALIDATORS = []
 # Internationalization
 # -------------------
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+
+# UAE timezone
+TIME_ZONE = "Asia/Dubai"
+
 USE_I18N = True
 USE_TZ = True
 
@@ -107,10 +110,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "users.User"
 
 # ===========================
-# 🚨 CORS + CSRF (CRITICAL)
+# CORS + CSRF
 # ===========================
-
-# 🔴 IMPORTANT: Replace with YOUR exact Codespaces URL
 FRONTEND_URL = "https://miniature-train-4qrjjq6wvwhqwwr-3000.app.github.dev"
 
 CORS_ALLOWED_ORIGINS = [
@@ -126,15 +127,13 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # ===========================
-# 🍪 COOKIES (REQUIRED FOR LOGIN)
+# COOKIES
 # ===========================
-
 SESSION_COOKIE_SAMESITE = "None"
 SESSION_COOKIE_SECURE = True
 
 CSRF_COOKIE_SAMESITE = "None"
 CSRF_COOKIE_SECURE = True
 
-# Optional but helpful
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False

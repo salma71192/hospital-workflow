@@ -8,26 +8,22 @@ import DashboardNotice from "../components/common/DashboardNotice";
 import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 import PatientAssignmentForm from "../components/patients/PatientAssignmentForm";
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
-
-import TodayRegistrationsSection from "../components/assignments/TodayRegistrationsSection";
-import MonthlyRegistrationsSection from "../components/assignments/MonthlyRegistrationsSection";
+import RegistrationTrackerSection from "../components/assignments/RegistrationTrackerSection";
 
 function getTodayString() {
-  return new Date().toISOString().split("T")[0];
+  return new Date().toLocaleDateString("en-CA");
 }
 
 function getFirstDayOfMonthString() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1)
-    .toISOString()
-    .split("T")[0];
+    .toLocaleDateString("en-CA");
 }
 
 function getLastDayOfMonthString() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    .toISOString()
-    .split("T")[0];
+    .toLocaleDateString("en-CA");
 }
 
 export default function ReceptionRegistrationWorkspace({
@@ -41,6 +37,7 @@ export default function ReceptionRegistrationWorkspace({
 
   const [activeSection, setActiveSection] = useState("register");
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
+  const [trackerMode, setTrackerMode] = useState("today");
 
   const [selectedPatient, setSelectedPatient] = useState(null);
 
@@ -56,15 +53,8 @@ export default function ReceptionRegistrationWorkspace({
     notes: "",
   });
 
-  const [therapists, setTherapists] = useState([]);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  const [todayAssignments, setTodayAssignments] = useState([]);
-  const [monthlyAssignments, setMonthlyAssignments] = useState([]);
-  const [monthlyAgents, setMonthlyAgents] = useState([]);
-
-  const [monthlyFilter, setMonthlyFilter] = useState({
+  const [trackerFilter, setTrackerFilter] = useState({
+    date: getTodayString(),
     from_date: getFirstDayOfMonthString(),
     to_date: getLastDayOfMonthString(),
     user_id: "all",
@@ -72,14 +62,33 @@ export default function ReceptionRegistrationWorkspace({
     therapist_id: "all",
   });
 
-  const [todayRegistrationTarget, setTodayRegistrationTarget] = useState(10);
-  const [monthlyRegistrationTarget, setMonthlyRegistrationTarget] = useState(50);
+  const [therapists, setTherapists] = useState([]);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [trackerAssignments, setTrackerAssignments] = useState([]);
+  const [trackerAgents, setTrackerAgents] = useState([]);
 
   useEffect(() => {
     loadTherapists();
-    loadTodayAssignments();
-    loadMonthlyAssignments();
+    handleApplyTrackerFilters();
   }, [actingAs, user]);
+
+  useEffect(() => {
+    if (trackerMode === "today") {
+      setTrackerFilter((prev) => ({
+        ...prev,
+        date: prev.date || getTodayString(),
+      }));
+    }
+
+    if (trackerMode === "monthly") {
+      setTrackerFilter((prev) => ({
+        ...prev,
+        from_date: prev.from_date || getFirstDayOfMonthString(),
+        to_date: prev.to_date || getLastDayOfMonthString(),
+      }));
+    }
+  }, [trackerMode]);
 
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
@@ -107,47 +116,22 @@ export default function ReceptionRegistrationWorkspace({
     }
   };
 
-  const loadTodayAssignments = async () => {
-    try {
-      const today = getTodayString();
-      const params = new URLSearchParams({
-        start_date: today,
-        end_date: today,
-      });
-
-      if (actingAs && (user?.is_superuser || user?.role === "admin")) {
-        params.append("viewed_user_id", String(actingAs.id));
-        params.append("viewed_user_role", String(actingAs.role || ""));
-      }
-
-      const res = await api.get(`reception/assignments/?${params.toString()}`);
-      setTodayAssignments(res.data.assignments || []);
-    } catch (err) {
-      console.error("Failed to load today assignments", err);
-      setTodayAssignments([]);
-    }
-  };
-
-  const loadMonthlyAssignments = async (
-    fromDateValue = monthlyFilter.from_date,
-    toDateValue = monthlyFilter.to_date,
-    userIdValue = monthlyFilter.user_id,
-    patientValue = monthlyFilter.patient,
-    therapistIdValue = monthlyFilter.therapist_id
-  ) => {
+  const loadAssignments = async ({
+    start_date = "",
+    end_date = "",
+    user_id = "all",
+    patient = "",
+    therapist_id = "all",
+  }) => {
     try {
       const params = new URLSearchParams();
 
-      if (fromDateValue) params.append("start_date", fromDateValue);
-      if (toDateValue) params.append("end_date", toDateValue);
-      if (userIdValue && userIdValue !== "all") {
-        params.append("user_id", userIdValue);
-      }
-      if (patientValue?.trim()) {
-        params.append("patient", patientValue.trim());
-      }
-      if (therapistIdValue && therapistIdValue !== "all") {
-        params.append("therapist_id", therapistIdValue);
+      if (start_date) params.append("start_date", start_date);
+      if (end_date) params.append("end_date", end_date);
+      if (user_id && user_id !== "all") params.append("user_id", user_id);
+      if (patient?.trim()) params.append("patient", patient.trim());
+      if (therapist_id && therapist_id !== "all") {
+        params.append("therapist_id", therapist_id);
       }
 
       if (actingAs && (user?.is_superuser || user?.role === "admin")) {
@@ -157,31 +141,34 @@ export default function ReceptionRegistrationWorkspace({
 
       const res = await api.get(`reception/assignments/?${params.toString()}`);
 
-      setMonthlyAssignments(res.data.assignments || []);
-      setMonthlyAgents(res.data.agents || []);
-
-      if (res.data.start_date || res.data.end_date) {
-        setMonthlyFilter((prev) => ({
-          ...prev,
-          from_date: res.data.start_date || prev.from_date,
-          to_date: res.data.end_date || prev.to_date,
-        }));
-      }
+      setTrackerAssignments(res.data.assignments || []);
+      setTrackerAgents(res.data.agents || []);
     } catch (err) {
-      console.error("Failed to load monthly assignments", err);
-      setMonthlyAssignments([]);
-      setMonthlyAgents([]);
+      console.error("Failed to load assignments", err);
+      setTrackerAssignments([]);
+      setTrackerAgents([]);
     }
   };
 
-  const handleApplyMonthlyFilters = async () => {
-    await loadMonthlyAssignments(
-      monthlyFilter.from_date,
-      monthlyFilter.to_date,
-      monthlyFilter.user_id,
-      monthlyFilter.patient,
-      monthlyFilter.therapist_id
-    );
+  const handleApplyTrackerFilters = async () => {
+    if (trackerMode === "today") {
+      await loadAssignments({
+        start_date: trackerFilter.date,
+        end_date: trackerFilter.date,
+        user_id: trackerFilter.user_id,
+        patient: trackerFilter.patient,
+        therapist_id: trackerFilter.therapist_id,
+      });
+      return;
+    }
+
+    await loadAssignments({
+      start_date: trackerFilter.from_date,
+      end_date: trackerFilter.to_date,
+      user_id: trackerFilter.user_id,
+      patient: trackerFilter.patient,
+      therapist_id: trackerFilter.therapist_id,
+    });
   };
 
   const handleSelectPatient = async (patient) => {
@@ -276,7 +263,7 @@ export default function ReceptionRegistrationWorkspace({
       }
 
       resetAssignmentForm();
-      await Promise.all([loadTodayAssignments(), loadMonthlyAssignments()]);
+      await handleApplyTrackerFilters();
       setActiveSection("tracker");
     } catch (err) {
       console.error(err);
@@ -323,7 +310,7 @@ export default function ReceptionRegistrationWorkspace({
       const res = await api.delete(`reception/assignments/${assignment.id}/`);
       setMessage(res.data.message || "Assignment cancelled successfully");
       setError("");
-      await Promise.all([loadTodayAssignments(), loadMonthlyAssignments()]);
+      await handleApplyTrackerFilters();
     } catch (err) {
       console.error(err);
       setError(err?.response?.data?.error || "Failed to cancel assignment");
@@ -343,7 +330,7 @@ export default function ReceptionRegistrationWorkspace({
         { key: "home", label: "Home" },
         { key: "register", label: "Register" },
         { key: "open_file", label: "Open New File" },
-        { key: "tracker", label: "Registration Tracker" },
+        { key: "tracker", label: `Registration Tracker (${trackerAssignments.length})` },
       ]}
       activeSection={activeSection}
       setActiveSection={(key) => {
@@ -407,28 +394,18 @@ export default function ReceptionRegistrationWorkspace({
       )}
 
       {activeSection === "tracker" && (
-        <div style={styles.stack}>
-          <TodayRegistrationsSection
-            assignments={todayAssignments}
-            onEditAssignment={handleEditAssignment}
-            onCancelAssignment={handleCancelAssignment}
-            defaultOpen={true}
-            target={todayRegistrationTarget}
-            onChangeTarget={setTodayRegistrationTarget}
-          />
-
-          <MonthlyRegistrationsSection
-            assignments={monthlyAssignments}
-            agents={monthlyAgents}
-            therapists={therapists}
-            filter={monthlyFilter}
-            setFilter={setMonthlyFilter}
-            onApplyFilters={handleApplyMonthlyFilters}
-            defaultOpen={false}
-            target={monthlyRegistrationTarget}
-            onChangeTarget={setMonthlyRegistrationTarget}
-          />
-        </div>
+        <RegistrationTrackerSection
+          mode={trackerMode}
+          onChangeMode={setTrackerMode}
+          assignments={trackerAssignments}
+          agents={trackerAgents}
+          therapists={therapists}
+          filter={trackerFilter}
+          setFilter={setTrackerFilter}
+          onApplyFilters={handleApplyTrackerFilters}
+          onEditAssignment={handleEditAssignment}
+          onCancelAssignment={handleCancelAssignment}
+        />
       )}
     </DashboardLayout>
   );

@@ -88,12 +88,17 @@ def assignments_api(request, assignment_id=None):
     admin = is_admin(request.user)
     today_value = timezone.localdate()
 
+    # =========================
+    # GET
+    # =========================
     if request.method == "GET":
         start_date = parse_date(request.GET.get("start_date"))
         end_date = parse_date(request.GET.get("end_date"))
 
+        # Default tracker = current month
         if not start_date and not end_date:
             start_date = today_value.replace(day=1)
+
             if start_date.month == 12:
                 next_month = start_date.replace(
                     year=start_date.year + 1,
@@ -105,9 +110,12 @@ def assignments_api(request, assignment_id=None):
                     month=start_date.month + 1,
                     day=1,
                 )
+
             end_date = next_month - timedelta(days=1)
+
         elif start_date and not end_date:
             end_date = start_date
+
         elif end_date and not start_date:
             start_date = end_date
 
@@ -119,6 +127,7 @@ def assignments_api(request, assignment_id=None):
 
         if start_date:
             qs = qs.filter(assignment_date__gte=start_date)
+
         if end_date:
             qs = qs.filter(assignment_date__lte=end_date)
 
@@ -138,7 +147,7 @@ def assignments_api(request, assignment_id=None):
                 Q(patient__patient_id__icontains=patient_search)
             )
 
-        viewed_user_id = request.GET.get("viewed_user_id")
+        viewed_user_id = (request.GET.get("viewed_user_id") or "").strip()
         viewed_user_role = (request.GET.get("viewed_user_role") or "").strip().lower()
 
         if admin:
@@ -146,9 +155,11 @@ def assignments_api(request, assignment_id=None):
                 qs = qs.filter(therapist_id=viewed_user_id)
             elif viewed_user_id and viewed_user_role in ["reception", "reception_supervisor"]:
                 qs = qs.filter(created_by_id=viewed_user_id)
+
         elif role == "physio":
             qs = qs.filter(therapist=request.user)
-        elif role == "reception":
+
+        elif role in ["reception", "reception_supervisor"]:
             qs = qs.filter(created_by=request.user)
 
         assignments = [
@@ -189,6 +200,9 @@ def assignments_api(request, assignment_id=None):
             "end_date": str(end_date) if end_date else "",
         })
 
+    # =========================
+    # POST
+    # =========================
     if request.method == "POST":
         if role not in ["reception", "admin", "reception_supervisor"] and not admin:
             return JsonResponse({"error": "Not allowed"}, status=403)
@@ -243,6 +257,9 @@ def assignments_api(request, assignment_id=None):
             "id": assignment.id,
         })
 
+    # =========================
+    # PUT
+    # =========================
     if request.method == "PUT":
         try:
             assignment = PatientAssignment.objects.select_related(
@@ -296,6 +313,9 @@ def assignments_api(request, assignment_id=None):
             "message": "Assignment updated successfully",
         })
 
+    # =========================
+    # DELETE
+    # =========================
     if request.method == "DELETE":
         try:
             assignment = PatientAssignment.objects.get(id=assignment_id)
@@ -314,6 +334,9 @@ def assignments_api(request, assignment_id=None):
             return JsonResponse({"error": "Not allowed"}, status=403)
 
         assignment.delete()
-        return JsonResponse({"success": True, "message": "Assignment cancelled successfully"})
+        return JsonResponse({
+            "success": True,
+            "message": "Assignment cancelled successfully",
+        })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)

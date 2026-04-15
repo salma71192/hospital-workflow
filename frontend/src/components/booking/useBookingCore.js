@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import api from "../../api/api";
 
+function formatLocalDate(date) {
+  return date.toLocaleDateString("en-CA");
+}
+
 function getTodayString() {
-  return new Date().toISOString().split("T")[0];
+  return formatLocalDate(new Date());
 }
 
 function getTwoWeekDates() {
@@ -12,10 +16,16 @@ function getTwoWeekDates() {
   for (let i = 0; i < 14; i += 1) {
     const next = new Date(today);
     next.setDate(today.getDate() + i);
-    dates.push(next.toISOString().split("T")[0]);
+    dates.push(formatLocalDate(next));
   }
 
   return dates;
+}
+
+function getNextDateString(dateString) {
+  const next = new Date(dateString);
+  next.setDate(next.getDate() + 1);
+  return formatLocalDate(next);
 }
 
 export default function useBookingCore({
@@ -77,10 +87,14 @@ export default function useBookingCore({
     }
   };
 
-  const loadSlots = async (therapistId, appointmentDate) => {
+  const loadSlots = async (
+    therapistId,
+    appointmentDate,
+    options = { autoShiftIfFullDay: true }
+  ) => {
     if (!therapistId || !appointmentDate) {
       setSlots([]);
-      return;
+      return { slots: [], shifted: false };
     }
 
     try {
@@ -89,10 +103,45 @@ export default function useBookingCore({
           therapistId
         )}&date=${encodeURIComponent(appointmentDate)}`
       );
-      setSlots(res.data.slots || []);
+
+      const fetchedSlots = res.data.slots || [];
+      const hasSelectableSlot = fetchedSlots.some(
+        (slot) => slot.status !== "past" && slot.status !== "blocked"
+      );
+
+      if (options.autoShiftIfFullDay && !hasSelectableSlot) {
+        const lastVisibleDate = weekDates[weekDates.length - 1] || appointmentDate;
+
+        if (appointmentDate < lastVisibleDate) {
+          const nextDate = getNextDateString(appointmentDate);
+
+          setBookingForm((prev) => ({
+            ...prev,
+            appointment_date: nextDate,
+            appointment_time: "",
+          }));
+
+          const nextRes = await api.get(
+            `callcenter/slots/?therapist_id=${encodeURIComponent(
+              therapistId
+            )}&date=${encodeURIComponent(nextDate)}`
+          );
+
+          const nextSlots = nextRes.data.slots || [];
+          setSlots(nextSlots);
+
+          setMessage("No more available slots for this day. Moved to the next available day.");
+
+          return { slots: nextSlots, shifted: true, shiftedTo: nextDate };
+        }
+      }
+
+      setSlots(fetchedSlots);
+      return { slots: fetchedSlots, shifted: false };
     } catch (err) {
       console.error("Failed to load slots", err);
       setSlots([]);
+      return { slots: [], shifted: false };
     }
   };
 
@@ -101,7 +150,7 @@ export default function useBookingCore({
     setError("");
     setSelectedPatient(patient);
 
-    const today = bookingForm.appointment_date || getTodayString();
+    const currentDate = bookingForm.appointment_date || getTodayString();
 
     setBookingForm((prev) => ({
       ...prev,
@@ -123,12 +172,15 @@ export default function useBookingCore({
           ...prev,
           patient_id: patient.id,
           therapist_id: therapistId,
-          appointment_date: today,
+          appointment_date: currentDate,
           appointment_time: "",
           booking_id: null,
         }));
 
-        await loadSlots(therapistId, today);
+        await loadSlots(therapistId, currentDate, {
+          autoShiftIfFullDay: true,
+        });
+
         setMessage(`Selected ${patient.name} (Previously with ${therapist.name})`);
       } else {
         setSelectedTherapist("");
@@ -136,7 +188,7 @@ export default function useBookingCore({
           ...prev,
           patient_id: patient.id,
           therapist_id: "",
-          appointment_date: today,
+          appointment_date: currentDate,
           appointment_time: "",
           booking_id: null,
         }));
@@ -150,7 +202,7 @@ export default function useBookingCore({
         ...prev,
         patient_id: patient.id,
         therapist_id: "",
-        appointment_date: today,
+        appointment_date: currentDate,
         appointment_time: "",
         booking_id: null,
       }));
@@ -190,6 +242,7 @@ export default function useBookingCore({
   const handleSelectTherapist = async (therapistId) => {
     const safeTherapistId = therapistId ? String(therapistId) : "";
 
+    setMessage("");
     setSelectedTherapist(safeTherapistId);
     setBookingForm((prev) => ({
       ...prev,
@@ -197,17 +250,22 @@ export default function useBookingCore({
       appointment_time: "",
     }));
 
-    await loadSlots(safeTherapistId, bookingForm.appointment_date);
+    await loadSlots(safeTherapistId, bookingForm.appointment_date, {
+      autoShiftIfFullDay: true,
+    });
   };
 
   const handleSelectDate = async (appointmentDate) => {
+    setMessage("");
     setBookingForm((prev) => ({
       ...prev,
       appointment_date: appointmentDate,
       appointment_time: "",
     }));
 
-    await loadSlots(bookingForm.therapist_id || selectedTherapist, appointmentDate);
+    await loadSlots(bookingForm.therapist_id || selectedTherapist, appointmentDate, {
+      autoShiftIfFullDay: true,
+    });
   };
 
   const handleSelectSlot = (time) => {
@@ -255,7 +313,9 @@ export default function useBookingCore({
         onReloadFutureBookings?.(),
       ]);
 
-      await loadSlots(bookingForm.therapist_id, bookingForm.appointment_date);
+      await loadSlots(bookingForm.therapist_id, bookingForm.appointment_date, {
+        autoShiftIfFullDay: true,
+      });
 
       setBookingForm((prev) => ({
         ...prev,
@@ -265,7 +325,10 @@ export default function useBookingCore({
       }));
     } catch (err) {
       console.error(err);
-      setError(err?.response?.data?.error || "Booking failed");
+      setError(
+        err?.response?.data?.error ||
+          "Could not complete booking. Please choose another available slot."
+      );
     }
   };
 
@@ -273,26 +336,28 @@ export default function useBookingCore({
     setMessage("");
     setError("");
 
+    const therapistId = String(booking.therapist_id || "");
+    const appointmentDate = booking.appointment_date || getTodayString();
+
     setBookingForm({
       patient_id: booking.patient_db_id,
-      therapist_id: String(booking.therapist_id || ""),
-      appointment_date: booking.appointment_date || getTodayString(),
+      therapist_id: therapistId,
+      appointment_date: appointmentDate,
       appointment_time: booking.appointment_time || "",
       notes: booking.notes || "",
       booking_id: booking.id,
     });
 
-    setSelectedTherapist(String(booking.therapist_id || ""));
+    setSelectedTherapist(therapistId);
     setSelectedPatient({
       id: booking.patient_db_id,
       name: booking.patient_name,
       patient_id: booking.patient_id,
     });
 
-    await loadSlots(
-      String(booking.therapist_id || ""),
-      booking.appointment_date || getTodayString()
-    );
+    await loadSlots(therapistId, appointmentDate, {
+      autoShiftIfFullDay: false,
+    });
 
     setMessage(`Editing booking for ${booking.patient_name}`);
   };

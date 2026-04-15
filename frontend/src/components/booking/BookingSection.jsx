@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import BookingWeekStrip from "./BookingWeekStrip";
 import BookingSlotsBoard from "./BookingSlotsBoard";
 
@@ -28,6 +28,16 @@ export default function BookingSection({
       (item) => String(item.id) === String(bookingForm.therapist_id)
     ) || null;
 
+  const selectedTherapistName =
+    selectedTherapist?.name || selectedTherapist?.username || "-";
+
+  const allSlotsUnavailable = useMemo(() => {
+    if (!Array.isArray(slots) || slots.length === 0) return false;
+    return slots.every(
+      (slot) => slot.status === "past" || slot.status === "blocked"
+    );
+  }, [slots]);
+
   return (
     <div style={styles.page}>
       <div style={styles.patientCard}>
@@ -55,7 +65,7 @@ export default function BookingSection({
             <option value="">Select physio</option>
             {therapists.map((therapist) => (
               <option key={therapist.id} value={String(therapist.id)}>
-                {therapist.name}
+                {therapist.name || therapist.username}
               </option>
             ))}
           </select>
@@ -85,6 +95,10 @@ export default function BookingSection({
           <div style={styles.emptyState}>
             No slots available for the selected physio and date.
           </div>
+        ) : allSlotsUnavailable ? (
+          <div style={styles.emptyState}>
+            All slots for this day are unavailable. Please choose another day.
+          </div>
         ) : (
           <BookingSlotsBoard
             slots={slots}
@@ -98,9 +112,7 @@ export default function BookingSection({
         <div style={styles.selectionRow}>
           <div style={styles.selectionItem}>
             <span style={styles.selectionLabel}>Physio</span>
-            <span style={styles.selectionValue}>
-              {selectedTherapist?.name || "-"}
-            </span>
+            <span style={styles.selectionValue}>{selectedTherapistName}</span>
           </div>
 
           <div style={styles.selectionItem}>
