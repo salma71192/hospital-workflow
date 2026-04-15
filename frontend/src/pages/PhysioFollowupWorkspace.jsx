@@ -17,7 +17,6 @@ export default function PhysioFollowupWorkspace({
   const navigate = useNavigate();
 
   const [activeSection, setActiveSection] = useState("statistics");
-
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -28,6 +27,7 @@ export default function PhysioFollowupWorkspace({
 
   useEffect(() => {
     loadTodayAppointments();
+    loadTodayStatistics();
     loadPatientTracker();
     loadTodayAssignments();
   }, []);
@@ -42,12 +42,25 @@ export default function PhysioFollowupWorkspace({
       setError("");
       const res = await api.get("callcenter/bookings/today-appointments/");
       setTodayAppointments(res.data.bookings || []);
-      setTodayStats(res.data.stats || null);
     } catch (err) {
       console.error("Failed to load today appointments", err);
       setTodayAppointments([]);
-      setTodayStats(null);
       setError("Failed to load today's appointments");
+    }
+  };
+
+  const loadTodayStatistics = async () => {
+    try {
+      setError("");
+      const res = await api.get("callcenter/bookings/today-statistics/");
+      setTodayStats({
+        rows: res.data.rows || [],
+        totals: res.data.totals || null,
+      });
+    } catch (err) {
+      console.error("Failed to load today statistics", err);
+      setTodayStats(null);
+      setError("Failed to load today's statistics");
     }
   };
 
@@ -125,18 +138,12 @@ export default function PhysioFollowupWorkspace({
       accent="#059669"
       sidebarTitle="Patient Workflow"
       sidebarItems={[
-        {
-          key: "home",
-          label: "Home",
-        },
+        { key: "home", label: "Home" },
         {
           key: "statistics",
           label: `Statistics (${physioTodayAppointments.length})`,
         },
-        {
-          key: "tracker",
-          label: "Patient Tracker",
-        },
+        { key: "tracker", label: "Patient Tracker" },
       ]}
       activeSection={activeSection}
       setActiveSection={(key) => {
@@ -151,13 +158,8 @@ export default function PhysioFollowupWorkspace({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message ? (
-        <DashboardNotice type="success">{message}</DashboardNotice>
-      ) : null}
-
-      {error ? (
-        <DashboardNotice type="error">{error}</DashboardNotice>
-      ) : null}
+      {message ? <DashboardNotice type="success">{message}</DashboardNotice> : null}
+      {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
 
       {activeSection === "statistics" && (
         <div style={styles.stack}>
@@ -173,10 +175,7 @@ export default function PhysioFollowupWorkspace({
             title="Today's Appointments"
           />
 
-          <AssignmentListSection
-            title="Walk In"
-            assignments={walkInAssignments}
-          />
+          <AssignmentListSection title="Walk In" assignments={walkInAssignments} />
 
           <AssignmentListSection
             title="Initial Eval"

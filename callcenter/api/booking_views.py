@@ -12,6 +12,7 @@ from .serializers import serialize_booking
 from .permissions import can_use_callcenter
 
 from callcenter.models import Appointment
+from reception.models import PatientAssignment
 
 User = get_user_model()
 
@@ -41,13 +42,7 @@ def get_therapists_queryset():
 
 def get_agents_queryset():
     return User.objects.filter(
-        role__in=[
-            "admin",
-            "callcenter",
-            "callcenter_supervisor",
-            "reception",
-            "reception_supervisor",
-        ]
+        role__in=["reception_supervisor"]
     ).order_by("username")
 
 
@@ -446,6 +441,84 @@ def today_appointments_api(request):
             }
         },
         "bookings": [serialize_booking(b) for b in qs],
+    })
+
+
+def today_statistics_api(request):
+    if not can_use_callcenter(request.user):
+        return json_error("Not authorized", 403)
+
+    role = (getattr(request.user, "role", "") or "").strip().lower()
+    allowed_roles = [
+        "admin",
+        "callcenter",
+        "callcenter_supervisor",
+        "reception_supervisor",
+        "physio",
+    ]
+
+    if role not in allowed_roles and not request.user.is_superuser:
+        return json_error("Not authorized", 403)
+
+    today_value = today_local()
+
+    appointments_qs = Appointment.objects.filter(
+        appointment_date=today_value
+    )
+
+    assignments_qs = PatientAssignment.objects.filter(
+        assignment_date=today_value
+    )
+
+    therapists = get_therapists_queryset()
+
+    rows = []
+    for therapist in therapists:
+        therapist_appointments = appointments_qs.filter(therapist_id=therapist.id)
+        therapist_assignments = assignments_qs.filter(therapist_id=therapist.id)
+
+        booked = therapist_appointments.count()
+        attended = therapist_appointments.filter(attendance_status="attended").count()
+        no_show = therapist_appointments.filter(attendance_status="no_show").count()
+
+        walk_in = therapist_assignments.filter(category="walk_in").count()
+        initial_eval = therapist_assignments.filter(
+            Q(category="initial_evaluation") | Q(category="initial_eval")
+        ).count()
+
+        seen = attended + walk_in + initial_eval
+
+        row = {
+            "therapist_id": therapist.id,
+            "therapist_name": therapist.username,
+            "available_slots": 20,
+            "booked": booked,
+            "walk_in": walk_in,
+            "seen": seen,
+            "initial_eval": initial_eval,
+            "no_show": no_show,
+        }
+        rows.append(row)
+
+    if role == "physio" and not request.user.is_superuser:
+        rows = [
+            row for row in rows
+            if str(row["therapist_id"]) == str(request.user.id)
+        ]
+
+    totals = {
+        "available_slots": sum(row["available_slots"] for row in rows),
+        "booked": sum(row["booked"] for row in rows),
+        "walk_in": sum(row["walk_in"] for row in rows),
+        "seen": sum(row["seen"] for row in rows),
+        "initial_eval": sum(row["initial_eval"] for row in rows),
+        "no_show": sum(row["no_show"] for row in rows),
+    }
+
+    return JsonResponse({
+        "date": str(today_value),
+        "rows": rows,
+        "totals": totals,
     })
 
 
