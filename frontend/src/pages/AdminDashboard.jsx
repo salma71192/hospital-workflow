@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
+
 import DashboardLayout from "../components/DashboardLayout";
-import AssignmentHistory from "../components/AssignmentHistory";
-import CreateUserForm from "../components/users/CreateUserForm";
-import ManageUsersPanel from "../components/users/ManageUsersPanel";
 import DashboardNotice from "../components/common/DashboardNotice";
+import AssignmentHistory from "../components/AssignmentHistory";
+
+import AdminCreateSection from "../components/admin/AdminCreateSection";
+import AdminManageSection from "../components/admin/AdminManageSection";
+import AdminStatisticsSection from "../components/admin/AdminStatisticsSection";
 
 export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const navigate = useNavigate();
@@ -18,6 +21,8 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   });
 
   const [users, setUsers] = useState([]);
+  const [todayStats, setTodayStats] = useState(null);
+
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [activeSection, setActiveSection] = useState("manage");
@@ -77,8 +82,22 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     }
   };
 
+  const loadTodayStatistics = async () => {
+    try {
+      const res = await api.get("callcenter/bookings/today-statistics/");
+      setTodayStats({
+        rows: res.data.rows || [],
+        totals: res.data.totals || null,
+      });
+    } catch (err) {
+      console.error("Failed to load today statistics", err);
+      setTodayStats(null);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    loadTodayStatistics();
   }, []);
 
   const groupedUsers = useMemo(() => {
@@ -134,16 +153,20 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       const res = await api.post("users/create-user/", formData);
       setMessage(res.data.message || "User created successfully");
       setError("");
+
+      const createdRole = formData.role;
+
       setFormData({
         username: "",
         password: "",
         role: "admin",
         is_superuser: false,
       });
+
       await fetchUsers();
       setActiveSection("manage");
-      setActiveCategory(formData.role);
-      localStorage.setItem("activeCategory", formData.role);
+      setActiveCategory(createdRole);
+      localStorage.setItem("activeCategory", createdRole);
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to create user");
       setMessage("");
@@ -198,17 +221,18 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       sidebarItems={[
         { key: "create", label: "Create New User" },
         { key: "manage", label: "Manage Users" },
+        { key: "statistics", label: "Statistics Tracker" },
         { key: "history", label: "History" },
       ]}
       activeSection={activeSection}
       setActiveSection={setActiveSection}
       onLogout={onLogout}
     >
-      {message && <DashboardNotice type="success">{message}</DashboardNotice>}
-      {error && <DashboardNotice type="error">{error}</DashboardNotice>}
+      {message ? <DashboardNotice type="success">{message}</DashboardNotice> : null}
+      {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
 
       {activeSection === "create" && (
-        <CreateUserForm
+        <AdminCreateSection
           formData={formData}
           setFormData={setFormData}
           roles={roles}
@@ -218,7 +242,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       )}
 
       {activeSection === "manage" && (
-        <ManageUsersPanel
+        <AdminManageSection
           users={users}
           activeCategory={activeCategory}
           onCategoryChange={handleCategoryChange}
@@ -231,6 +255,10 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
           onDeleteUser={handleDeleteUser}
           onActAsUser={handleActAsUser}
         />
+      )}
+
+      {activeSection === "statistics" && (
+        <AdminStatisticsSection stats={todayStats} />
       )}
 
       {activeSection === "history" && (
