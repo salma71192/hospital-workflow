@@ -2,7 +2,10 @@ import { useState } from "react";
 import api from "../../api/api";
 
 function formatLocalDate(date) {
-  return date.toLocaleDateString("en-CA");
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getTomorrowString() {
@@ -80,7 +83,9 @@ export default function useFutureBookings() {
         params.append("patient", patientValue.trim());
       }
 
-      const res = await api.get(`callcenter/bookings/future/?${params.toString()}`);
+      const res = await api.get(
+        `callcenter/bookings/future/?${params.toString()}`
+      );
 
       setFutureBookings(res.data.bookings || []);
       setFutureTherapistSummary(res.data.therapist_summary || []);

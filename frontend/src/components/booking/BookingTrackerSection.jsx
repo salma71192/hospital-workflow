@@ -39,9 +39,18 @@ export default function BookingTrackerSection({
   target = 0,
   onChangeTarget,
   isAdmin = false,
+  isPhysio = false,
+  currentUserId = "",
 }) {
   const today = getTodayString();
   const tomorrow = getTomorrowString();
+
+  const visibleTherapists = useMemo(() => {
+    if (!isPhysio) return therapists;
+    return therapists.filter(
+      (therapist) => String(therapist.id) === String(currentUserId)
+    );
+  }, [therapists, isPhysio, currentUserId]);
 
   const title = useMemo(() => {
     if (mode === "future") return "Future Booking Tracker";
@@ -158,31 +167,33 @@ export default function BookingTrackerSection({
             </>
           )}
 
-          <div style={styles.fieldGroup}>
-            <label style={styles.label}>User</label>
-            <select
-              value={filter.user_id || "all"}
-              onChange={(e) =>
-                setFilter((prev) => ({
-                  ...prev,
-                  user_id: e.target.value,
-                }))
-              }
-              style={styles.input}
-            >
-              <option value="all">All</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {!isPhysio ? (
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>User</label>
+              <select
+                value={filter.user_id || "all"}
+                onChange={(e) =>
+                  setFilter((prev) => ({
+                    ...prev,
+                    user_id: e.target.value,
+                  }))
+                }
+                style={styles.input}
+              >
+                <option value="all">All</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           <div style={styles.fieldGroup}>
             <label style={styles.label}>Physio</label>
             <select
-              value={filter.therapist_id || "all"}
+              value={filter.therapist_id || (isPhysio ? String(currentUserId) : "all")}
               onChange={(e) =>
                 setFilter((prev) => ({
                   ...prev,
@@ -190,9 +201,10 @@ export default function BookingTrackerSection({
                 }))
               }
               style={styles.input}
+              disabled={isPhysio}
             >
-              <option value="all">All</option>
-              {therapists.map((therapist) => (
+              {!isPhysio && <option value="all">All</option>}
+              {visibleTherapists.map((therapist) => (
                 <option key={therapist.id} value={therapist.id}>
                   {therapist.name}
                 </option>
