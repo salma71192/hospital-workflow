@@ -35,7 +35,7 @@ export default function RegistrationTrackerSection({
   const subtitle = useMemo(() => {
     return mode === "monthly"
       ? "View monthly registrations using shared filters."
-      : "View same day registrations using shared filters.";
+      : "View same day registrations.";
   }, [mode]);
 
   const stats = useMemo(() => {
@@ -62,23 +62,17 @@ export default function RegistrationTrackerSection({
         a.category === "no_eligibility"
     ).length;
 
-    const other = Math.max(
-      total - walkIn - appointment - initialEval - noEligibility,
-      0
-    );
-
     return {
       total,
       walkIn,
       appointment,
       initialEval,
       noEligibility,
-      other,
+
       walkInPct: getPercent(walkIn, total),
       appointmentPct: getPercent(appointment, total),
       initialEvalPct: getPercent(initialEval, total),
       noEligibilityPct: getPercent(noEligibility, total),
-      otherPct: getPercent(other, total),
     };
   }, [assignments]);
 
@@ -97,7 +91,8 @@ export default function RegistrationTrackerSection({
         onApplyFilters={onApplyFilters}
       />
 
-      <RegistrationMixSection stats={stats} />
+      {/* ✅ ONLY SHOW IF DATA EXISTS */}
+      {stats.total > 0 && <RegistrationMixSection stats={stats} />}
 
       <RegistrationListSection
         assignments={assignments}
