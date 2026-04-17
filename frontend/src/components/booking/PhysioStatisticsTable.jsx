@@ -276,7 +276,14 @@ export default function PhysioStatisticsTable({
 
       {filteredTotals ? (
         <div style={styles.totalCard}>
-          <div style={styles.totalTitle}>Total</div>
+          <div style={styles.totalTop}>
+            <div>
+              <div style={styles.totalTitle}>Total</div>
+              <div style={styles.totalSubtitle}>
+                Summary for current filters
+              </div>
+            </div>
+          </div>
 
           <div style={styles.statsGrid}>
             <MiniStat label="Available" value={filteredTotals.available_slots} />
@@ -322,7 +329,13 @@ export default function PhysioStatisticsTable({
                   style={styles.rowToggle}
                 >
                   <div style={styles.rowLeft}>
-                    <div style={styles.name}>{row?.therapist_name || "-"}</div>
+                    <div style={styles.rowTitleLine}>
+                      <div style={styles.name}>{row?.therapist_name || "-"}</div>
+
+                      {capacityWarning ? (
+                        <div style={styles.warningBadge}>Near Full</div>
+                      ) : null}
+                    </div>
 
                     <div style={styles.metaRow}>
                       <div style={styles.meta}>
@@ -340,10 +353,6 @@ export default function PhysioStatisticsTable({
                         <span style={styles.trendArrow}>{trend.arrow}</span>
                         <span>{trend.label} vs previous</span>
                       </div>
-
-                      {capacityWarning ? (
-                        <div style={styles.warningBadge}>Near Full</div>
-                      ) : null}
                     </div>
                   </div>
 
@@ -359,13 +368,11 @@ export default function PhysioStatisticsTable({
 
                     <div
                       style={{
-                        ...styles.chevron,
-                        transform: isCollapsed
-                          ? "rotate(0deg)"
-                          : "rotate(90deg)",
+                        ...styles.chevronWrap,
+                        ...(isCollapsed ? {} : styles.chevronWrapOpen),
                       }}
                     >
-                      ▶
+                      <div style={styles.chevron}>❯</div>
                     </div>
                   </div>
                 </button>
@@ -414,7 +421,7 @@ const styles = {
   card: {
     background: "#fff",
     borderRadius: "18px",
-    padding: "16px",
+    padding: "18px",
     border: "1px solid #e5e7eb",
     boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)",
     display: "grid",
@@ -517,7 +524,7 @@ const styles = {
   },
   rowCard: {
     background: "#fcfcfd",
-    border: "1px solid #eef2f7",
+    border: "1px solid #e2e8f0",
     borderRadius: "16px",
     padding: "14px",
     display: "grid",
@@ -526,7 +533,7 @@ const styles = {
   rowToggle: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: "12px",
     flexWrap: "wrap",
     background: "transparent",
@@ -538,12 +545,20 @@ const styles = {
   },
   rowLeft: {
     display: "grid",
-    gap: "6px",
+    gap: "8px",
+    flex: 1,
+    minWidth: "240px",
+  },
+  rowTitleLine: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: "wrap",
   },
   rowTopRight: {
     display: "flex",
     alignItems: "center",
-    gap: "10px",
+    gap: "12px",
   },
   name: {
     fontSize: "16px",
@@ -587,9 +602,9 @@ const styles = {
     fontWeight: "800",
   },
   percentPill: {
-    minWidth: "56px",
-    height: "30px",
-    padding: "0 10px",
+    minWidth: "60px",
+    height: "32px",
+    padding: "0 12px",
     borderRadius: "999px",
     fontSize: "14px",
     fontWeight: "800",
@@ -597,23 +612,33 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
   },
-  chevron: {
-    width: "34px",
-    height: "34px",
+  chevronWrap: {
+    width: "42px",
+    height: "42px",
     borderRadius: "999px",
-    background: "#eef2f7",
-    border: "1px solid #e2e8f0",
-    color: "#0f172a",
+    background: "#e2e8f0",
+    border: "1px solid #cbd5e1",
+    boxShadow: "0 2px 6px rgba(15, 23, 42, 0.08)",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "14px",
+    transition: "transform 0.2s ease, background 0.2s ease",
+    flexShrink: 0,
+  },
+  chevronWrapOpen: {
+    transform: "rotate(90deg)",
+    background: "#cbd5e1",
+  },
+  chevron: {
+    color: "#0f172a",
+    fontSize: "20px",
     fontWeight: "900",
-    transition: "transform 0.2s ease",
+    lineHeight: 1,
+    marginLeft: "2px",
   },
   progressTrack: {
     width: "100%",
-    height: "10px",
+    height: "12px",
     borderRadius: "999px",
     background: "#e2e8f0",
     overflow: "hidden",
@@ -656,10 +681,23 @@ const styles = {
     display: "grid",
     gap: "12px",
   },
+  totalTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap",
+  },
   totalTitle: {
-    fontSize: "15px",
+    fontSize: "16px",
     fontWeight: "800",
     color: "#0f172a",
+  },
+  totalSubtitle: {
+    marginTop: "4px",
+    fontSize: "13px",
+    color: "#64748b",
+    fontWeight: "600",
   },
   emptyState: {
     padding: "18px",
