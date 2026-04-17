@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
@@ -164,6 +164,107 @@ def ensure_patient_has_no_booking_that_day(
         )
 
     return None
+
+
+def _get_month_range(month_value):
+    try:
+        year, month_num = map(int, str(month_value).split("-"))
+        start_date = date(year, month_num, 1)
+
+        if month_num == 12:
+            end_date = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end_date = date(year, month_num + 1, 1) - timedelta(days=1)
+
+        return start_date, end_date
+    except Exception:
+        return None, None
+
+
+def _get_previous_day_range(selected_date):
+    previous_day = selected_date - timedelta(days=1)
+    return previous_day, previous_day
+
+
+def _get_previous_month_range(start_date):
+    if start_date.month == 1:
+        prev_year = start_date.year - 1
+        prev_month = 12
+    else:
+        prev_year = start_date.year
+        prev_month = start_date.month - 1
+
+    prev_start = date(prev_year, prev_month, 1)
+
+    if prev_month == 12:
+        prev_end = date(prev_year + 1, 1, 1) - timedelta(days=1)
+    else:
+        prev_end = date(prev_year, prev_month + 1, 1) - timedelta(days=1)
+
+    return prev_start, prev_end
+
+
+def _build_statistics_rows(start_date, end_date, therapist_id=None):
+    appointments_qs = Appointment.objects.filter(
+        appointment_date__gte=start_date,
+        appointment_date__lte=end_date,
+    )
+
+    assignments_qs = PatientAssignment.objects.filter(
+        assignment_date__gte=start_date,
+        assignment_date__lte=end_date,
+    )
+
+    if therapist_id and str(therapist_id) != "all":
+        appointments_qs = appointments_qs.filter(therapist_id=therapist_id)
+        assignments_qs = assignments_qs.filter(therapist_id=therapist_id)
+
+    therapists = get_therapists_queryset()
+
+    period_days = (end_date - start_date).days + 1
+    available_per_therapist = period_days * 20
+
+    rows = []
+    for therapist in therapists:
+        if therapist_id and str(therapist_id) != "all":
+            if str(therapist.id) != str(therapist_id):
+                continue
+
+        therapist_appointments = appointments_qs.filter(therapist_id=therapist.id)
+        therapist_assignments = assignments_qs.filter(therapist_id=therapist.id)
+
+        booked = therapist_appointments.count()
+        attended = therapist_appointments.filter(attendance_status="attended").count()
+        no_show = therapist_appointments.filter(attendance_status="no_show").count()
+
+        walk_in = therapist_assignments.filter(category="walk_in").count()
+        initial_eval = therapist_assignments.filter(
+            Q(category="initial_evaluation") | Q(category="initial_eval")
+        ).count()
+
+        seen = attended + walk_in + initial_eval
+
+        rows.append({
+            "therapist_id": therapist.id,
+            "therapist_name": therapist.username,
+            "available_slots": available_per_therapist,
+            "booked": booked,
+            "walk_in": walk_in,
+            "seen": seen,
+            "initial_eval": initial_eval,
+            "no_show": no_show,
+        })
+
+    totals = {
+        "available_slots": sum(row["available_slots"] for row in rows),
+        "booked": sum(row["booked"] for row in rows),
+        "walk_in": sum(row["walk_in"] for row in rows),
+        "seen": sum(row["seen"] for row in rows),
+        "initial_eval": sum(row["initial_eval"] for row in rows),
+        "no_show": sum(row["no_show"] for row in rows),
+    }
+
+    return rows, totals
 
 
 def therapists_api(request):
@@ -460,65 +561,97 @@ def today_statistics_api(request):
     if role not in allowed_roles and not request.user.is_superuser:
         return json_error("Not authorized", 403)
 
-    today_value = today_local()
-
-    appointments_qs = Appointment.objects.filter(
-        appointment_date=today_value
-    )
-
-    assignments_qs = PatientAssignment.objects.filter(
-        assignment_date=today_value
-    )
-
-    therapists = get_therapists_queryset()
-
-    rows = []
-    for therapist in therapists:
-        therapist_appointments = appointments_qs.filter(therapist_id=therapist.id)
-        therapist_assignments = assignments_qs.filter(therapist_id=therapist.id)
-
-        booked = therapist_appointments.count()
-        attended = therapist_appointments.filter(attendance_status="attended").count()
-        no_show = therapist_appointments.filter(attendance_status="no_show").count()
-
-        walk_in = therapist_assignments.filter(category="walk_in").count()
-        initial_eval = therapist_assignments.filter(
-            Q(category="initial_evaluation") | Q(category="initial_eval")
-        ).count()
-
-        seen = attended + walk_in + initial_eval
-
-        row = {
-            "therapist_id": therapist.id,
-            "therapist_name": therapist.username,
-            "available_slots": 20,
-            "booked": booked,
-            "walk_in": walk_in,
-            "seen": seen,
-            "initial_eval": initial_eval,
-            "no_show": no_show,
-        }
-        rows.append(row)
+    selected_date = validate_date(request.GET.get("date")) or today_local()
+    therapist_id = (request.GET.get("therapist_id") or "").strip() or None
 
     if role == "physio" and not request.user.is_superuser:
-        rows = [
-            row for row in rows
-            if str(row["therapist_id"]) == str(request.user.id)
-        ]
+        therapist_id = request.user.id
 
-    totals = {
-        "available_slots": sum(row["available_slots"] for row in rows),
-        "booked": sum(row["booked"] for row in rows),
-        "walk_in": sum(row["walk_in"] for row in rows),
-        "seen": sum(row["seen"] for row in rows),
-        "initial_eval": sum(row["initial_eval"] for row in rows),
-        "no_show": sum(row["no_show"] for row in rows),
+    rows, totals = _build_statistics_rows(
+        start_date=selected_date,
+        end_date=selected_date,
+        therapist_id=therapist_id,
+    )
+
+    prev_start, prev_end = _get_previous_day_range(selected_date)
+    previous_rows, _ = _build_statistics_rows(
+        start_date=prev_start,
+        end_date=prev_end,
+        therapist_id=therapist_id,
+    )
+
+    previous_map = {
+        str(row["therapist_id"]): row for row in previous_rows
     }
 
+    for row in rows:
+        prev_row = previous_map.get(str(row["therapist_id"]), {})
+        row["previous_booked"] = prev_row.get("booked", 0)
+        row["trend_booked"] = row["booked"] - row["previous_booked"]
+        row["capacity_warning"] = row["booked"] >= row["available_slots"] * 0.9
+
     return JsonResponse({
-        "date": str(today_value),
+        "date": str(selected_date),
         "rows": rows,
         "totals": totals,
+        "mode": "day",
+    })
+
+
+def monthly_statistics_api(request):
+    if not can_use_callcenter(request.user):
+        return json_error("Not authorized", 403)
+
+    role = (getattr(request.user, "role", "") or "").strip().lower()
+    allowed_roles = [
+        "admin",
+        "callcenter",
+        "callcenter_supervisor",
+        "reception_supervisor",
+        "physio",
+    ]
+
+    if role not in allowed_roles and not request.user.is_superuser:
+        return json_error("Not authorized", 403)
+
+    month_value = request.GET.get("month")
+    therapist_id = (request.GET.get("therapist_id") or "").strip() or None
+
+    start_date, end_date = _get_month_range(month_value)
+    if not start_date or not end_date:
+        return json_error("Invalid month format. Use YYYY-MM", 400)
+
+    if role == "physio" and not request.user.is_superuser:
+        therapist_id = request.user.id
+
+    rows, totals = _build_statistics_rows(
+        start_date=start_date,
+        end_date=end_date,
+        therapist_id=therapist_id,
+    )
+
+    prev_start, prev_end = _get_previous_month_range(start_date)
+    previous_rows, _ = _build_statistics_rows(
+        start_date=prev_start,
+        end_date=prev_end,
+        therapist_id=therapist_id,
+    )
+
+    previous_map = {
+        str(row["therapist_id"]): row for row in previous_rows
+    }
+
+    for row in rows:
+        prev_row = previous_map.get(str(row["therapist_id"]), {})
+        row["previous_booked"] = prev_row.get("booked", 0)
+        row["trend_booked"] = row["booked"] - row["previous_booked"]
+        row["capacity_warning"] = row["booked"] >= row["available_slots"] * 0.9
+
+    return JsonResponse({
+        "date": str(month_value),
+        "rows": rows,
+        "totals": totals,
+        "mode": "month",
     })
 
 

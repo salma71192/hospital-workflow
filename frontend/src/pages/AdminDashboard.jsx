@@ -21,7 +21,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   });
 
   const [users, setUsers] = useState([]);
-  const [todayStats, setTodayStats] = useState(null);
 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -82,23 +81,8 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     }
   };
 
-  const loadTodayStatistics = async () => {
-    try {
-      const res = await api.get("callcenter/bookings/today-statistics/");
-      setTodayStats({
-        rows: res.data.rows || [],
-        totals: res.data.totals || null,
-        date: res.data.date || "",
-      });
-    } catch (err) {
-      console.error("Failed to load today statistics", err);
-      setTodayStats(null);
-    }
-  };
-
   useEffect(() => {
     fetchUsers();
-    loadTodayStatistics();
   }, []);
 
   const groupedUsers = useMemo(() => {
@@ -118,8 +102,11 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     };
 
     users.forEach((item) => {
-      if (groups[item.role]) groups[item.role].push(item);
-      else groups.no_role.push(item);
+      if (groups[item.role]) {
+        groups[item.role].push(item);
+      } else {
+        groups.no_role.push(item);
+      }
     });
 
     return groups;
@@ -263,9 +250,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         />
       )}
 
-      {activeSection === "statistics" && (
-        <AdminStatisticsSection stats={todayStats} />
-      )}
+      {activeSection === "statistics" && <AdminStatisticsSection />}
 
       {activeSection === "registration_tracker" && (
         <AdminRegistrationTrackerSection />
