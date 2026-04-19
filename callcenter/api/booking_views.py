@@ -42,7 +42,13 @@ def get_therapists_queryset():
 
 def get_agents_queryset():
     return User.objects.filter(
-        role__in=["reception_supervisor"]
+        role__in=[
+            "admin",
+            "callcenter",
+            "callcenter_supervisor",
+            "reception",
+            "reception_supervisor",
+        ]
     ).order_by("username")
 
 
@@ -482,14 +488,24 @@ def today_bookings_api(request):
     if not can_use_callcenter(request.user):
         return json_error("Not authorized", 403)
 
-    today_value = today_local()
+    selected_date = validate_date(request.GET.get("date")) or today_local()
+    therapist_id = (request.GET.get("therapist_id") or "").strip()
+    user_id = (request.GET.get("user_id") or "").strip()
     patient_search = (request.GET.get("patient") or "").strip()
 
     qs = booking_base_queryset().filter(
-        created_at__date=today_value,
-        appointment_date__gte=today_value,
-        created_by=request.user,
+        appointment_date=selected_date,
     )
+
+    role = (getattr(request.user, "role", "") or "").strip().lower()
+    if role == "physio":
+        qs = qs.filter(therapist_id=request.user.id)
+
+    if user_id and user_id != "all":
+        qs = qs.filter(created_by_id=user_id)
+
+    if therapist_id and therapist_id != "all":
+        qs = qs.filter(therapist_id=therapist_id)
 
     if patient_search:
         qs = qs.filter(
@@ -502,6 +518,8 @@ def today_bookings_api(request):
     return JsonResponse({
         "count": qs.count(),
         "bookings": [serialize_booking(b) for b in qs],
+        "agents": [serialize_user(a) for a in get_agents_queryset()],
+        "therapists": [serialize_user(t) for t in get_therapists_queryset()],
     })
 
 
