@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
@@ -8,9 +8,7 @@ import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 
 import BookingSection from "../components/booking/BookingSection";
-import TodayBookingsSection from "../components/booking/TodayBookingsSection";
-import MonthlyBookingsSection from "../components/booking/MonthlyBookingsSection";
-import FutureBookingsSection from "../components/booking/FutureBookingsSection";
+import BookingTrackerSection from "../components/booking/BookingTrackerSection";
 import useBookingDashboard from "../components/booking/useBookingDashboard";
 
 export default function CallCenterBookingWorkspace({
@@ -22,13 +20,11 @@ export default function CallCenterBookingWorkspace({
   const navigate = useNavigate();
   const bookingRef = useRef(null);
 
-  const [todayTarget, setTodayTarget] = useState(10);
-  const [futureTarget, setFutureTarget] = useState(30);
-  const [monthlyTarget, setMonthlyTarget] = useState(50);
-
   const {
     activeSection,
     setActiveSection,
+    trackerMode,
+    setTrackerMode,
     message,
     error,
     selectedPatient,
@@ -60,6 +56,7 @@ export default function CallCenterBookingWorkspace({
     handleConfirmBooking,
     handleApplyMonthlyFilters,
     handleApplyFutureFilters,
+    handleApplyTodayFilters,
     handleEditBooking,
     handleDeleteBooking,
   } = useBookingDashboard();
@@ -98,6 +95,60 @@ export default function CallCenterBookingWorkspace({
     handleEditBooking(booking);
     setActiveSection("book");
     scrollToBookingSection(200);
+  };
+
+  const trackerBookings =
+    trackerMode === "future"
+      ? futureBookings
+      : trackerMode === "monthly"
+      ? monthlyBookings
+      : todayBookings;
+
+  const trackerAgents =
+    trackerMode === "future"
+      ? futureAgents
+      : trackerMode === "monthly"
+      ? monthlyAgents
+      : [];
+
+  const trackerTherapists =
+    trackerMode === "monthly"
+      ? monthlyTherapists?.length
+        ? monthlyTherapists
+        : therapists
+      : therapists;
+
+  const trackerFilter =
+    trackerMode === "future"
+      ? futureFilter
+      : trackerMode === "monthly"
+      ? monthlyFilter
+      : {
+          date: "",
+          therapist_id: "all",
+          user_id: "all",
+          patient: "",
+        };
+
+  const setTrackerFilter =
+    trackerMode === "future"
+      ? setFutureFilter
+      : trackerMode === "monthly"
+      ? setMonthlyFilter
+      : () => {};
+
+  const handleApplyTrackerFilters = async () => {
+    if (trackerMode === "future") {
+      await handleApplyFutureFilters();
+      return;
+    }
+
+    if (trackerMode === "monthly") {
+      await handleApplyMonthlyFilters();
+      return;
+    }
+
+    await handleApplyTodayFilters?.();
   };
 
   return (
@@ -185,46 +236,21 @@ export default function CallCenterBookingWorkspace({
       )}
 
       {activeSection === "tracker" && (
-        <div style={styles.stack}>
-          <TodayBookingsSection
-            bookings={todayBookings}
-            onEditBooking={handleEditBookingAndOpenForm}
-            onDeleteBooking={handleDeleteBooking}
-            defaultOpen={true}
-            target={todayTarget}
-            onChangeTarget={setTodayTarget}
-          />
-
-          <FutureBookingsSection
-            futureBookings={futureBookings}
-            therapistSummary={futureTherapistSummary}
-            daySummary={futureDaySummary}
-            therapists={therapists}
-            agents={futureAgents}
-            futureFilter={futureFilter}
-            setFutureFilter={setFutureFilter}
-            onApplyFilters={handleApplyFutureFilters}
-            onEditBooking={handleEditBookingAndOpenForm}
-            onDeleteBooking={handleDeleteBooking}
-            defaultOpen={true}
-            target={futureTarget}
-            onChangeTarget={setFutureTarget}
-          />
-
-          <MonthlyBookingsSection
-            bookings={monthlyBookings}
-            agents={monthlyAgents}
-            therapists={
-              monthlyTherapists?.length ? monthlyTherapists : therapists
-            }
-            monthlyFilter={monthlyFilter}
-            setMonthlyFilter={setMonthlyFilter}
-            onApplyFilters={handleApplyMonthlyFilters}
-            defaultOpen={false}
-            target={monthlyTarget}
-            onChangeTarget={setMonthlyTarget}
-          />
-        </div>
+        <BookingTrackerSection
+          mode={trackerMode}
+          onChangeMode={setTrackerMode}
+          bookings={trackerBookings}
+          therapistSummary={futureTherapistSummary}
+          daySummary={futureDaySummary}
+          therapists={trackerTherapists}
+          agents={trackerAgents}
+          filter={trackerFilter}
+          setFilter={setTrackerFilter}
+          onApplyFilters={handleApplyTrackerFilters}
+          onEditBooking={handleEditBookingAndOpenForm}
+          onDeleteBooking={handleDeleteBooking}
+          isAdmin={Boolean(user?.is_superuser || user?.role === "admin")}
+        />
       )}
     </DashboardLayout>
   );
