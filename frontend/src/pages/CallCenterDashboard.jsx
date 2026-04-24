@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
@@ -6,6 +6,7 @@ import DashboardNotice from "../components/common/DashboardNotice";
 
 import CallCenterSearchSection from "../components/callcenter/CallCenterSearchSection";
 import CallCenterRegisterSection from "../components/callcenter/CallCenterRegisterSection";
+import WaitingListSection from "../components/callcenter/WaitingListSection";
 
 import BookingSection from "../components/booking/BookingSection";
 import TodayBookingsSection from "../components/booking/TodayBookingsSection";
@@ -20,6 +21,8 @@ export default function CallCenterDashboard({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
+
+  const [waitingList, setWaitingList] = useState([]);
 
   const {
     activeSection,
@@ -72,6 +75,7 @@ export default function CallCenterDashboard({
         { key: "search", label: "Search Patient" },
         { key: "register", label: "Register Patient" },
         { key: "booking", label: "Book Appointment" },
+        { key: "waiting_list", label: `Waiting List (${waitingList.length})` },
         { key: "today", label: `Daily Booking (${todayBookingsCount || 0})` },
         {
           key: "monthly",
@@ -122,6 +126,13 @@ export default function CallCenterDashboard({
           onSelectDate={handleSelectDate}
           onSelectSlot={handleSelectSlot}
           onConfirmBooking={handleConfirmBooking}
+        />
+      )}
+
+      {activeSection === "waiting_list" && (
+        <WaitingListSection
+          waitingList={waitingList}
+          onOpenWaitingList={() => setActiveSection("waiting_list")}
         />
       )}
 

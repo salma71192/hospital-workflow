@@ -11,6 +11,9 @@ import BookingSection from "../components/booking/BookingSection";
 import BookingTrackerSection from "../components/booking/BookingTrackerSection";
 import useBookingDashboard from "../components/booking/useBookingDashboard";
 
+import WaitingListSection from "../components/callcenter/WaitingListSection";
+import useWaitingList from "../components/callcenter/useWaitingList";
+
 export default function CallCenterBookingWorkspace({
   user,
   onLogout,
@@ -20,6 +23,12 @@ export default function CallCenterBookingWorkspace({
   const navigate = useNavigate();
   const bookingRef = useRef(null);
   const trackerInitRef = useRef(false);
+
+  const {
+    waitingList,
+    waitingListCount,
+    deleteWaitingListEntry,
+  } = useWaitingList();
 
   const {
     activeSection,
@@ -38,7 +47,6 @@ export default function CallCenterBookingWorkspace({
     slots,
 
     todayBookings,
-    todayBookingsCount,
     todayAgents,
     todayTherapists,
     todayFilter,
@@ -203,7 +211,11 @@ export default function CallCenterBookingWorkspace({
         { key: "open_file", label: "Open New File" },
         {
           key: "tracker",
-          label: `Booking Tracker (${todayBookingsCount || 0})`,
+          label: `Tracker (${trackerBookings.length || 0})`,
+        },
+        {
+          key: "waiting_list",
+          label: `Waiting List (${waitingListCount || 0})`,
         },
       ]}
       activeSection={activeSection}
@@ -212,6 +224,7 @@ export default function CallCenterBookingWorkspace({
           navigate("/callcenter");
           return;
         }
+
         setActiveSection(key);
       }}
       onLogout={onLogout}
@@ -256,9 +269,8 @@ export default function CallCenterBookingWorkspace({
               />
             ) : (
               <div style={styles.helperCard}>
-                Search for a patient above, then continue to the booking
-                section. If the patient is not found, use{" "}
-                <strong>Open New File</strong>.
+                Search for a patient above, then continue to booking. If not
+                found, use <strong>Open New File</strong>.
               </div>
             )}
           </div>
@@ -290,6 +302,13 @@ export default function CallCenterBookingWorkspace({
           isAdmin={Boolean(user?.is_superuser || user?.role === "admin")}
           isPhysio={false}
           currentUserId={user?.id}
+        />
+      )}
+
+      {activeSection === "waiting_list" && (
+        <WaitingListSection
+          waitingList={waitingList}
+          onDeleteEntry={deleteWaitingListEntry}
         />
       )}
     </DashboardLayout>
