@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
@@ -19,6 +19,7 @@ export default function CallCenterBookingWorkspace({
 }) {
   const navigate = useNavigate();
   const bookingRef = useRef(null);
+  const trackerInitRef = useRef(false);
 
   const {
     activeSection,
@@ -35,28 +36,37 @@ export default function CallCenterBookingWorkspace({
     therapists,
     weekDates,
     slots,
+
     todayBookings,
     todayBookingsCount,
+    todayAgents,
+    todayTherapists,
+    todayFilter,
+    setTodayFilter,
+    handleApplyTodayFilters,
+
     monthlyBookings,
     monthlyAgents,
     monthlyTherapists,
     monthlyFilter,
     setMonthlyFilter,
+    handleApplyMonthlyFilters,
+
     futureBookings,
     futureTherapistSummary,
     futureDaySummary,
     futureAgents,
+    futureTherapists,
     futureFilter,
     setFutureFilter,
+    handleApplyFutureFilters,
+
     handleSelectPatient,
     handleCreatePatientFile,
     handleSelectTherapist,
     handleSelectDate,
     handleSelectSlot,
     handleConfirmBooking,
-    handleApplyMonthlyFilters,
-    handleApplyFutureFilters,
-    handleApplyTodayFilters,
     handleEditBooking,
     handleDeleteBooking,
   } = useBookingDashboard();
@@ -64,6 +74,14 @@ export default function CallCenterBookingWorkspace({
   useEffect(() => {
     setActiveSection("book");
   }, [setActiveSection]);
+
+  useEffect(() => {
+    if (activeSection !== "tracker") return;
+    if (trackerInitRef.current) return;
+
+    trackerInitRef.current = true;
+    handleApplyTodayFilters?.();
+  }, [activeSection, handleApplyTodayFilters]);
 
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
@@ -97,58 +115,78 @@ export default function CallCenterBookingWorkspace({
     scrollToBookingSection(200);
   };
 
-  const trackerBookings =
-    trackerMode === "future"
-      ? futureBookings
-      : trackerMode === "monthly"
-      ? monthlyBookings
-      : todayBookings;
+  const trackerBookings = useMemo(() => {
+    if (trackerMode === "future") return futureBookings;
+    if (trackerMode === "monthly") return monthlyBookings;
+    return todayBookings;
+  }, [trackerMode, futureBookings, monthlyBookings, todayBookings]);
 
-  const trackerAgents =
-    trackerMode === "future"
-      ? futureAgents
-      : trackerMode === "monthly"
-      ? monthlyAgents
-      : [];
+  const trackerAgents = useMemo(() => {
+    if (trackerMode === "future") return futureAgents;
+    if (trackerMode === "monthly") return monthlyAgents;
+    return todayAgents;
+  }, [trackerMode, futureAgents, monthlyAgents, todayAgents]);
 
-  const trackerTherapists =
-    trackerMode === "monthly"
-      ? monthlyTherapists?.length
-        ? monthlyTherapists
-        : therapists
-      : therapists;
+  const trackerTherapists = useMemo(() => {
+    if (trackerMode === "future") {
+      return futureTherapists?.length ? futureTherapists : therapists;
+    }
 
-  const trackerFilter =
-    trackerMode === "future"
-      ? futureFilter
-      : trackerMode === "monthly"
-      ? monthlyFilter
-      : {
-          date: "",
-          therapist_id: "all",
-          user_id: "all",
-          patient: "",
-        };
+    if (trackerMode === "monthly") {
+      return monthlyTherapists?.length ? monthlyTherapists : therapists;
+    }
 
-  const setTrackerFilter =
-    trackerMode === "future"
-      ? setFutureFilter
-      : trackerMode === "monthly"
-      ? setMonthlyFilter
-      : () => {};
+    return todayTherapists?.length ? todayTherapists : therapists;
+  }, [
+    trackerMode,
+    futureTherapists,
+    monthlyTherapists,
+    todayTherapists,
+    therapists,
+  ]);
+
+  const trackerFilter = useMemo(() => {
+    if (trackerMode === "future") return futureFilter;
+    if (trackerMode === "monthly") return monthlyFilter;
+    return todayFilter;
+  }, [trackerMode, futureFilter, monthlyFilter, todayFilter]);
+
+  const setTrackerFilter = useMemo(() => {
+    if (trackerMode === "future") return setFutureFilter;
+    if (trackerMode === "monthly") return setMonthlyFilter;
+    return setTodayFilter;
+  }, [trackerMode, setFutureFilter, setMonthlyFilter, setTodayFilter]);
 
   const handleApplyTrackerFilters = async () => {
     if (trackerMode === "future") {
-      await handleApplyFutureFilters();
+      await handleApplyFutureFilters?.();
       return;
     }
 
     if (trackerMode === "monthly") {
-      await handleApplyMonthlyFilters();
+      await handleApplyMonthlyFilters?.();
       return;
     }
 
     await handleApplyTodayFilters?.();
+  };
+
+  const handleTrackerModeChange = (nextMode) => {
+    setTrackerMode(nextMode);
+
+    if (nextMode === "today") {
+      handleApplyTodayFilters?.();
+      return;
+    }
+
+    if (nextMode === "monthly") {
+      handleApplyMonthlyFilters?.();
+      return;
+    }
+
+    if (nextMode === "future") {
+      handleApplyFutureFilters?.();
+    }
   };
 
   return (
@@ -238,10 +276,10 @@ export default function CallCenterBookingWorkspace({
       {activeSection === "tracker" && (
         <BookingTrackerSection
           mode={trackerMode}
-          onChangeMode={setTrackerMode}
+          onChangeMode={handleTrackerModeChange}
           bookings={trackerBookings}
-          therapistSummary={futureTherapistSummary}
-          daySummary={futureDaySummary}
+          therapistSummary={trackerMode === "future" ? futureTherapistSummary : []}
+          daySummary={trackerMode === "future" ? futureDaySummary : []}
           therapists={trackerTherapists}
           agents={trackerAgents}
           filter={trackerFilter}
@@ -250,6 +288,8 @@ export default function CallCenterBookingWorkspace({
           onEditBooking={handleEditBookingAndOpenForm}
           onDeleteBooking={handleDeleteBooking}
           isAdmin={Boolean(user?.is_superuser || user?.role === "admin")}
+          isPhysio={false}
+          currentUserId={user?.id}
         />
       )}
     </DashboardLayout>

@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from .helpers import validate_date, validate_time, is_past_datetime
-from .serializers import serialize_booking
+from .serializers import serialize_booking, serialize_user
 from .permissions import can_use_callcenter
 
 from callcenter.models import Appointment
@@ -48,15 +48,68 @@ def get_agents_queryset():
             "callcenter_supervisor",
             "reception",
             "reception_supervisor",
+            "physio",
         ]
     ).order_by("username")
 
 
-def serialize_user(user):
-    return {
-        "id": user.id,
-        "name": user.username,
-    }
+def get_request_role(request):
+    return (getattr(request.user, "role", "") or "").strip().lower()
+
+
+def get_visible_agents_queryset(request):
+    role = get_request_role(request)
+
+    if role == "physio" and not request.user.is_superuser:
+        return User.objects.filter(
+            Q(role__in=[
+                "admin",
+                "callcenter",
+                "callcenter_supervisor",
+                "reception",
+                "reception_supervisor",
+            ]) |
+            Q(id=request.user.id)
+        ).order_by("username")
+
+    return get_agents_queryset()
+
+
+def get_visible_therapists_queryset(request):
+    role = get_request_role(request)
+
+    if role == "physio" and not request.user.is_superuser:
+        return User.objects.filter(id=request.user.id).order_by("username")
+
+    return get_therapists_queryset()
+
+
+def apply_booking_tracker_filters(request, qs):
+    role = get_request_role(request)
+
+    therapist_id = (request.GET.get("therapist_id") or "").strip()
+    user_id = (request.GET.get("user_id") or "").strip()
+    patient_search = (request.GET.get("patient") or "").strip()
+
+    if role == "physio" and not request.user.is_superuser:
+        qs = qs.filter(therapist_id=request.user.id)
+
+        if user_id and user_id != "all":
+            qs = qs.filter(created_by_id=user_id)
+    else:
+        if therapist_id and therapist_id != "all":
+            qs = qs.filter(therapist_id=therapist_id)
+
+        if user_id and user_id != "all":
+            qs = qs.filter(created_by_id=user_id)
+
+    if patient_search:
+        qs = qs.filter(
+            Q(patient__name__icontains=patient_search) |
+            Q(patient__patient_id__icontains=patient_search)
+        )
+
+    return qs
 
 
 def today_local():
@@ -294,7 +347,7 @@ def slots_api(request):
     if not therapist_id or not appointment_date:
         return JsonResponse({"slots": []})
 
-    role = (getattr(request.user, "role", "") or "").strip().lower()
+    role = get_request_role(request)
     if role == "physio" and str(therapist_id) != str(request.user.id):
         return json_error("Not authorized", 403)
 
@@ -351,7 +404,7 @@ def bookings_api(request):
     if not all([patient_id, therapist_id, appointment_date, appointment_time]):
         return json_error("Missing required fields", 400)
 
-    role = (getattr(request.user, "role", "") or "").strip().lower()
+    role = get_request_role(request)
     if role == "physio" and str(therapist_id) != str(request.user.id):
         return json_error("You can only book under your own name", 403)
 
@@ -405,7 +458,7 @@ def booking_detail_api(request, booking_id):
     except Appointment.DoesNotExist:
         return json_error("Booking not found", 404)
 
-    role = (getattr(request.user, "role", "") or "").strip().lower()
+    role = get_request_role(request)
     is_admin = request.user.is_superuser or role == "admin"
 
     if role == "physio" and appointment.therapist_id != request.user.id:
@@ -484,43 +537,127 @@ def booking_detail_api(request, booking_id):
     return json_error("Method not allowed", 405)
 
 
-def today_bookings_api(request):
+def booking_tracker_api(request):
     if not can_use_callcenter(request.user):
         return json_error("Not authorized", 403)
 
-    selected_date = validate_date(request.GET.get("date")) or today_local()
-    therapist_id = (request.GET.get("therapist_id") or "").strip()
-    user_id = (request.GET.get("user_id") or "").strip()
-    patient_search = (request.GET.get("patient") or "").strip()
+    mode = (request.GET.get("mode") or "today").strip().lower()
 
-    qs = booking_base_queryset().filter(
-        appointment_date=selected_date,
-    )
+    if mode == "today":
+        selected_date = validate_date(request.GET.get("date")) or today_local()
 
-    role = (getattr(request.user, "role", "") or "").strip().lower()
-    if role == "physio":
-        qs = qs.filter(therapist_id=request.user.id)
-
-    if user_id and user_id != "all":
-        qs = qs.filter(created_by_id=user_id)
-
-    if therapist_id and therapist_id != "all":
-        qs = qs.filter(therapist_id=therapist_id)
-
-    if patient_search:
-        qs = qs.filter(
-            Q(patient__name__icontains=patient_search) |
-            Q(patient__patient_id__icontains=patient_search)
+        qs = booking_base_queryset().filter(
+            appointment_date=selected_date,
         )
 
-    qs = qs.order_by("appointment_date", "appointment_time", "created_at")
+        qs = apply_booking_tracker_filters(request, qs)
+        qs = qs.order_by("appointment_date", "appointment_time", "created_at")
 
-    return JsonResponse({
-        "count": qs.count(),
-        "bookings": [serialize_booking(b) for b in qs],
-        "agents": [serialize_user(a) for a in get_agents_queryset()],
-        "therapists": [serialize_user(t) for t in get_therapists_queryset()],
-    })
+        return JsonResponse({
+            "mode": "today",
+            "date": str(selected_date),
+            "count": qs.count(),
+            "bookings": [serialize_booking(b) for b in qs],
+            "agents": [serialize_user(a) for a in get_visible_agents_queryset(request)],
+            "therapists": [serialize_user(t) for t in get_visible_therapists_queryset(request)],
+            "therapist_summary": [],
+            "day_summary": [],
+        })
+
+    if mode == "future":
+        min_date = tomorrow_local()
+        max_date = two_weeks_forward()
+
+        from_date = validate_date(request.GET.get("from_date")) or min_date
+        to_date = validate_date(request.GET.get("to_date")) or max_date
+
+        if from_date < min_date:
+            from_date = min_date
+        if to_date > max_date:
+            to_date = max_date
+        if from_date > to_date:
+            return json_error("From date cannot be after to date", 400)
+
+        qs = booking_base_queryset().filter(
+            appointment_date__gte=from_date,
+            appointment_date__lte=to_date,
+        )
+
+        qs = apply_booking_tracker_filters(request, qs)
+        qs = qs.order_by("appointment_date", "appointment_time")
+
+        therapist_summary_qs = (
+            qs.values("therapist_id", "therapist__username")
+            .annotate(booked_slots=Count("id"))
+            .order_by("therapist__username")
+        )
+
+        day_summary_qs = (
+            qs.values("appointment_date")
+            .annotate(booked_slots=Count("id"))
+            .order_by("appointment_date")
+        )
+
+        return JsonResponse({
+            "mode": "future",
+            "from_date": str(from_date),
+            "to_date": str(to_date),
+            "count": qs.count(),
+            "bookings": [serialize_booking(b) for b in qs],
+            "agents": [serialize_user(a) for a in get_visible_agents_queryset(request)],
+            "therapists": [serialize_user(t) for t in get_visible_therapists_queryset(request)],
+            "therapist_summary": [
+                {
+                    "therapist_id": row["therapist_id"],
+                    "therapist_name": row["therapist__username"],
+                    "booked_slots": row["booked_slots"],
+                }
+                for row in therapist_summary_qs
+            ],
+            "day_summary": [
+                {
+                    "date": str(row["appointment_date"]),
+                    "booked_slots": row["booked_slots"],
+                }
+                for row in day_summary_qs
+            ],
+        })
+
+    if mode == "monthly":
+        month_start = first_day_of_current_month()
+        month_end = last_day_of_current_month()
+
+        from_date = validate_date(request.GET.get("from_date")) or month_start
+        to_date = validate_date(request.GET.get("to_date")) or month_end
+
+        if from_date < month_start:
+            from_date = month_start
+        if to_date > month_end:
+            to_date = month_end
+        if from_date > to_date:
+            return json_error("From date cannot be after to date", 400)
+
+        qs = booking_base_queryset().filter(
+            appointment_date__gte=from_date,
+            appointment_date__lte=to_date,
+        )
+
+        qs = apply_booking_tracker_filters(request, qs)
+        qs = qs.order_by("appointment_date", "appointment_time", "created_at")
+
+        return JsonResponse({
+            "mode": "monthly",
+            "from_date": str(from_date),
+            "to_date": str(to_date),
+            "count": qs.count(),
+            "bookings": [serialize_booking(b) for b in qs],
+            "agents": [serialize_user(a) for a in get_visible_agents_queryset(request)],
+            "therapists": [serialize_user(t) for t in get_visible_therapists_queryset(request)],
+            "therapist_summary": [],
+            "day_summary": [],
+        })
+
+    return json_error("Invalid mode", 400)
 
 
 def today_appointments_api(request):
@@ -534,7 +671,7 @@ def today_appointments_api(request):
         appointment_date=today_value
     )
 
-    role = (getattr(request.user, "role", "") or "").strip().lower()
+    role = get_request_role(request)
     if role == "physio":
         qs = qs.filter(therapist_id=request.user.id)
 
@@ -567,7 +704,7 @@ def today_statistics_api(request):
     if not can_use_callcenter(request.user):
         return json_error("Not authorized", 403)
 
-    role = (getattr(request.user, "role", "") or "").strip().lower()
+    role = get_request_role(request)
     allowed_roles = [
         "admin",
         "callcenter",
@@ -620,7 +757,7 @@ def monthly_statistics_api(request):
     if not can_use_callcenter(request.user):
         return json_error("Not authorized", 403)
 
-    role = (getattr(request.user, "role", "") or "").strip().lower()
+    role = get_request_role(request)
     allowed_roles = [
         "admin",
         "callcenter",
@@ -670,145 +807,4 @@ def monthly_statistics_api(request):
         "rows": rows,
         "totals": totals,
         "mode": "month",
-    })
-
-
-def monthly_bookings_api(request):
-    if not can_use_callcenter(request.user):
-        return json_error("Not authorized", 403)
-
-    month_start = first_day_of_current_month()
-    month_end = last_day_of_current_month()
-
-    from_date = validate_date(request.GET.get("from_date")) or month_start
-    to_date = validate_date(request.GET.get("to_date")) or month_end
-    user_id = (request.GET.get("user_id") or "").strip()
-    patient_search = (request.GET.get("patient") or "").strip()
-    therapist_id = (request.GET.get("therapist_id") or "").strip()
-
-    if from_date < month_start:
-        from_date = month_start
-    if to_date > month_end:
-        to_date = month_end
-
-    if from_date > to_date:
-        return json_error("From date cannot be after to date", 400)
-
-    qs = booking_base_queryset().filter(
-        appointment_date__gte=from_date,
-        appointment_date__lte=to_date,
-    )
-
-    if user_id and user_id != "all":
-        qs = qs.filter(created_by_id=user_id)
-
-    role = (getattr(request.user, "role", "") or "").strip().lower()
-    if role == "physio":
-        qs = qs.filter(therapist_id=request.user.id)
-
-    if therapist_id and therapist_id != "all":
-        qs = qs.filter(therapist_id=therapist_id)
-
-    if patient_search:
-        qs = qs.filter(
-            Q(patient__name__icontains=patient_search) |
-            Q(patient__patient_id__icontains=patient_search)
-        )
-
-    qs = qs.order_by("appointment_date", "appointment_time", "created_at")
-
-    agents = get_agents_queryset()
-    therapists = get_therapists_queryset()
-
-    return JsonResponse({
-        "count": qs.count(),
-        "bookings": [serialize_booking(b) for b in qs],
-        "agents": [serialize_user(a) for a in agents],
-        "therapists": [serialize_user(t) for t in therapists],
-        "from_date": str(from_date),
-        "to_date": str(to_date),
-    })
-
-
-def future_bookings_api(request):
-    if not can_use_callcenter(request.user):
-        return json_error("Not authorized", 403)
-
-    min_date = tomorrow_local()
-    max_date = two_weeks_forward()
-
-    from_date = validate_date(request.GET.get("from_date")) or min_date
-    to_date = validate_date(request.GET.get("to_date")) or max_date
-    therapist_id = (request.GET.get("therapist_id") or "").strip()
-    user_id = (request.GET.get("user_id") or "").strip()
-    patient_search = (request.GET.get("patient") or "").strip()
-
-    if from_date < min_date:
-        from_date = min_date
-    if to_date > max_date:
-        to_date = max_date
-
-    if from_date > to_date:
-        return json_error("From date cannot be after to date", 400)
-
-    qs = booking_base_queryset().filter(
-        appointment_date__gte=from_date,
-        appointment_date__lte=to_date,
-    )
-
-    if user_id and user_id != "all":
-        qs = qs.filter(created_by_id=user_id)
-
-    role = (getattr(request.user, "role", "") or "").strip().lower()
-    if role == "physio":
-        qs = qs.filter(therapist_id=request.user.id)
-
-    if therapist_id and therapist_id != "all":
-        qs = qs.filter(therapist_id=therapist_id)
-
-    if patient_search:
-        qs = qs.filter(
-            Q(patient__name__icontains=patient_search) |
-            Q(patient__patient_id__icontains=patient_search)
-        )
-
-    qs = qs.order_by("appointment_date", "appointment_time")
-
-    therapist_summary_qs = (
-        qs.values("therapist_id", "therapist__username")
-        .annotate(booked_slots=Count("id"))
-        .order_by("therapist__username")
-    )
-
-    day_summary_qs = (
-        qs.values("appointment_date")
-        .annotate(booked_slots=Count("id"))
-        .order_by("appointment_date")
-    )
-
-    therapists = get_therapists_queryset()
-    agents = get_agents_queryset()
-
-    return JsonResponse({
-        "count": qs.count(),
-        "bookings": [serialize_booking(b) for b in qs],
-        "therapist_summary": [
-            {
-                "therapist_id": row["therapist_id"],
-                "therapist_name": row["therapist__username"],
-                "booked_slots": row["booked_slots"],
-            }
-            for row in therapist_summary_qs
-        ],
-        "day_summary": [
-            {
-                "date": str(row["appointment_date"]),
-                "booked_slots": row["booked_slots"],
-            }
-            for row in day_summary_qs
-        ],
-        "therapists": [serialize_user(t) for t in therapists],
-        "agents": [serialize_user(a) for a in agents],
-        "from_date": str(from_date),
-        "to_date": str(to_date),
     })

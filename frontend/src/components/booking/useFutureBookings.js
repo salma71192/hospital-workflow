@@ -68,6 +68,7 @@ export default function useFutureBookings() {
       }
 
       const params = new URLSearchParams();
+      params.append("mode", "future");
       params.append("from_date", safeFromDate);
       params.append("to_date", safeToDate);
 
@@ -84,7 +85,7 @@ export default function useFutureBookings() {
       }
 
       const res = await api.get(
-        `callcenter/bookings/future/?${params.toString()}`
+        `callcenter/bookings/tracker/?${params.toString()}`
       );
 
       setFutureBookings(res.data.bookings || []);
@@ -99,7 +100,7 @@ export default function useFutureBookings() {
         to_date: res.data.to_date || safeToDate,
         therapist_id: therapistIdValue || "all",
         user_id: userIdValue || "all",
-        patient: patientValue || "",
+        patient: patientValue?.trim() || "",
       }));
     } catch (err) {
       console.error("Failed to load future bookings", err);

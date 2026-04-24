@@ -59,10 +59,20 @@ export default function useBookingCore({
 
   const [todayBookingsCount, setTodayBookingsCount] = useState(0);
   const [todayBookings, setTodayBookings] = useState([]);
+  const [todayAgents, setTodayAgents] = useState([]);
+  const [todayTherapists, setTodayTherapists] = useState([]);
+
+  const [lastTodayFilters, setLastTodayFilters] = useState({
+    date: getTodayString(),
+    therapist_id: "all",
+    user_id: "all",
+    patient: "",
+  });
 
   useEffect(() => {
     loadTherapists();
-    loadTodayBookings();
+    loadTodayBookings(getTodayString(), "all", "all", "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadTherapists = async () => {
@@ -75,16 +85,64 @@ export default function useBookingCore({
     }
   };
 
-  const loadTodayBookings = async () => {
+  const loadTodayBookings = async (
+    dateValue = getTodayString(),
+    therapistIdValue = "all",
+    userIdValue = "all",
+    patientValue = ""
+  ) => {
     try {
-      const res = await api.get("callcenter/bookings/today/");
+      const params = new URLSearchParams();
+
+      params.append("mode", "today");
+
+      if (dateValue) {
+        params.append("date", dateValue);
+      }
+
+      if (therapistIdValue && therapistIdValue !== "all") {
+        params.append("therapist_id", therapistIdValue);
+      }
+
+      if (userIdValue && userIdValue !== "all") {
+        params.append("user_id", userIdValue);
+      }
+
+      if (patientValue?.trim()) {
+        params.append("patient", patientValue.trim());
+      }
+
+      const res = await api.get(
+        `callcenter/bookings/tracker/?${params.toString()}`
+      );
+
       setTodayBookingsCount(res.data.count || 0);
       setTodayBookings(res.data.bookings || []);
+      setTodayAgents(res.data.agents || []);
+      setTodayTherapists(res.data.therapists || []);
+
+      setLastTodayFilters({
+        date: dateValue || getTodayString(),
+        therapist_id: therapistIdValue || "all",
+        user_id: userIdValue || "all",
+        patient: patientValue?.trim() || "",
+      });
     } catch (err) {
       console.error("Failed to load today bookings", err);
       setTodayBookingsCount(0);
       setTodayBookings([]);
+      setTodayAgents([]);
+      setTodayTherapists([]);
     }
+  };
+
+  const reloadTodayBookingsWithLastFilters = async () => {
+    await loadTodayBookings(
+      lastTodayFilters.date,
+      lastTodayFilters.therapist_id,
+      lastTodayFilters.user_id,
+      lastTodayFilters.patient
+    );
   };
 
   const loadSlots = async (
@@ -110,7 +168,8 @@ export default function useBookingCore({
       );
 
       if (options.autoShiftIfFullDay && !hasSelectableSlot) {
-        const lastVisibleDate = weekDates[weekDates.length - 1] || appointmentDate;
+        const lastVisibleDate =
+          weekDates[weekDates.length - 1] || appointmentDate;
 
         if (appointmentDate < lastVisibleDate) {
           const nextDate = getNextDateString(appointmentDate);
@@ -130,7 +189,9 @@ export default function useBookingCore({
           const nextSlots = nextRes.data.slots || [];
           setSlots(nextSlots);
 
-          setMessage("No more available slots for this day. Moved to the next available day.");
+          setMessage(
+            "No more available slots for this day. Moved to the next available day."
+          );
 
           return { slots: nextSlots, shifted: true, shiftedTo: nextDate };
         }
@@ -181,7 +242,9 @@ export default function useBookingCore({
           autoShiftIfFullDay: true,
         });
 
-        setMessage(`Selected ${patient.name} (Previously with ${therapist.name})`);
+        setMessage(
+          `Selected ${patient.name} (Previously with ${therapist.name})`
+        );
       } else {
         setSelectedTherapist("");
         setBookingForm((prev) => ({
@@ -263,9 +326,13 @@ export default function useBookingCore({
       appointment_time: "",
     }));
 
-    await loadSlots(bookingForm.therapist_id || selectedTherapist, appointmentDate, {
-      autoShiftIfFullDay: true,
-    });
+    await loadSlots(
+      bookingForm.therapist_id || selectedTherapist,
+      appointmentDate,
+      {
+        autoShiftIfFullDay: true,
+      }
+    );
   };
 
   const handleSelectSlot = (time) => {
@@ -308,7 +375,7 @@ export default function useBookingCore({
       }
 
       await Promise.all([
-        loadTodayBookings(),
+        reloadTodayBookingsWithLastFilters(),
         onReloadMonthlyBookings?.(),
         onReloadFutureBookings?.(),
       ]);
@@ -369,7 +436,7 @@ export default function useBookingCore({
       setError("");
 
       await Promise.all([
-        loadTodayBookings(),
+        reloadTodayBookingsWithLastFilters(),
         onReloadMonthlyBookings?.(),
         onReloadFutureBookings?.(),
       ]);
@@ -406,6 +473,9 @@ export default function useBookingCore({
 
     todayBookingsCount,
     todayBookings,
+    todayAgents,
+    todayTherapists,
+    loadTodayBookings,
 
     handleSelectPatient,
     handleCreatePatientFile,

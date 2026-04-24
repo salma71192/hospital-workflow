@@ -3,6 +3,10 @@ import useBookingCore from "./useBookingCore";
 import useMonthlyBookings from "./useMonthlyBookings";
 import useFutureBookings from "./useFutureBookings";
 
+function getTodayString() {
+  return new Date().toISOString().split("T")[0];
+}
+
 export default function useBookingDashboard() {
   const [activeSection, setActiveSection] = useState("book");
 
@@ -14,10 +18,32 @@ export default function useBookingDashboard() {
     onReloadFutureBookings: future.loadFutureBookings,
   });
 
+  const [trackerMode, setTrackerMode] = useState("today");
+
+  const [todayFilter, setTodayFilter] = useState({
+    date: getTodayString(),
+    therapist_id: "all",
+    user_id: "all",
+    patient: "",
+  });
+
+  const handleApplyTodayFilters = async () => {
+    if (typeof core.loadTodayBookings === "function") {
+      await core.loadTodayBookings(
+        todayFilter.date,
+        todayFilter.therapist_id,
+        todayFilter.user_id,
+        todayFilter.patient
+      );
+    }
+  };
+
   return {
     // layout
     activeSection,
     setActiveSection,
+    trackerMode,
+    setTrackerMode,
 
     // messages
     message: core.message,
@@ -46,8 +72,14 @@ export default function useBookingDashboard() {
     // same-day bookings
     todayBookingsCount: core.todayBookingsCount,
     todayBookings: core.todayBookings,
+    todayAgents: core.todayAgents || [],
+    todayTherapists: core.todayTherapists || [],
+    todayFilter,
+    setTodayFilter,
+    loadTodayBookings: core.loadTodayBookings,
+    handleApplyTodayFilters,
 
-    // tracker data - monthly / same-day
+    // tracker data - monthly
     monthlyBookingsCount: monthly.monthlyBookingsCount,
     monthlyBookings: monthly.monthlyBookings,
     monthlyAgents: monthly.monthlyAgents,
@@ -62,6 +94,7 @@ export default function useBookingDashboard() {
     futureTherapistSummary: future.futureTherapistSummary,
     futureDaySummary: future.futureDaySummary,
     futureAgents: future.futureAgents,
+    futureTherapists: future.futureTherapists || [],
     futureFilter: future.futureFilter,
     setFutureFilter: future.setFutureFilter,
     loadFutureBookings: future.loadFutureBookings,

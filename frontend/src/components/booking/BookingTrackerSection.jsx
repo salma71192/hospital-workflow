@@ -1,6 +1,5 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import PatientAutocompleteFilter from "./PatientAutocompleteFilter";
-import BookingTargetStats from "./BookingTargetStats";
 
 function getTodayString() {
   return new Date().toISOString().split("T")[0];
@@ -9,6 +8,12 @@ function getTodayString() {
 function getTomorrowString() {
   const next = new Date();
   next.setDate(next.getDate() + 1);
+  return next.toISOString().split("T")[0];
+}
+
+function getTwoWeeksForwardString() {
+  const next = new Date();
+  next.setDate(next.getDate() + 14);
   return next.toISOString().split("T")[0];
 }
 
@@ -36,17 +41,20 @@ export default function BookingTrackerSection({
   onApplyFilters,
   onEditBooking,
   onDeleteBooking,
-  target = 0,
-  onChangeTarget,
   isAdmin = false,
   isPhysio = false,
   currentUserId = "",
 }) {
   const today = getTodayString();
   const tomorrow = getTomorrowString();
+  const twoWeeksForward = getTwoWeeksForwardString();
+
+  const firstRenderRef = useRef(true);
+  const patientDebounceRef = useRef(null);
 
   const visibleTherapists = useMemo(() => {
     if (!isPhysio) return therapists;
+
     return therapists.filter(
       (therapist) => String(therapist.id) === String(currentUserId)
     );
@@ -60,13 +68,75 @@ export default function BookingTrackerSection({
 
   const subtitle = useMemo(() => {
     if (mode === "future") {
-      return "View future bookings with therapist and day summaries.";
+      return "View future bookings with shared filters.";
     }
+
     if (mode === "monthly") {
-      return "View whole month bookings using the same shared filters.";
+      return "View whole month bookings using shared filters.";
     }
-    return "View same day bookings using the same shared filters.";
+
+    return "View same day bookings using shared filters.";
   }, [mode]);
+
+  useEffect(() => {
+    if (firstRenderRef.current) {
+      firstRenderRef.current = false;
+      return;
+    }
+
+    if (!onApplyFilters) return;
+
+    if (patientDebounceRef.current) {
+      clearTimeout(patientDebounceRef.current);
+    }
+
+    patientDebounceRef.current = setTimeout(() => {
+      onApplyFilters();
+    }, 250);
+
+    return () => {
+      if (patientDebounceRef.current) {
+        clearTimeout(patientDebounceRef.current);
+      }
+    };
+  }, [
+    mode,
+    filter.date,
+    filter.from_date,
+    filter.to_date,
+    filter.user_id,
+    filter.therapist_id,
+    filter.patient,
+    onApplyFilters,
+  ]);
+
+  const handleModeChange = (nextMode) => {
+    onChangeMode?.(nextMode);
+
+    setFilter((prev) => {
+      if (nextMode === "today") {
+        return {
+          ...prev,
+          mode: "today",
+          date: prev.date || today,
+        };
+      }
+
+      if (nextMode === "future") {
+        return {
+          ...prev,
+          mode: "future",
+          from_date: tomorrow,
+          to_date: twoWeeksForward,
+        };
+      }
+
+      return {
+        ...prev,
+        mode: "monthly",
+      };
+    });
+  };
 
   return (
     <div style={styles.page}>
@@ -84,7 +154,7 @@ export default function BookingTrackerSection({
                 ...styles.modeBtn,
                 ...(mode === "today" ? styles.modeBtnActive : {}),
               }}
-              onClick={() => onChangeMode?.("today")}
+              onClick={() => handleModeChange("today")}
             >
               Same Day
             </button>
@@ -95,7 +165,7 @@ export default function BookingTrackerSection({
                 ...styles.modeBtn,
                 ...(mode === "future" ? styles.modeBtnActive : {}),
               }}
-              onClick={() => onChangeMode?.("future")}
+              onClick={() => handleModeChange("future")}
             >
               Future
             </button>
@@ -106,7 +176,7 @@ export default function BookingTrackerSection({
                 ...styles.modeBtn,
                 ...(mode === "monthly" ? styles.modeBtnActive : {}),
               }}
-              onClick={() => onChangeMode?.("monthly")}
+              onClick={() => handleModeChange("monthly")}
             >
               Whole Month
             </button>
@@ -140,10 +210,19 @@ export default function BookingTrackerSection({
                   min={mode === "future" ? tomorrow : undefined}
                   value={filter.from_date || ""}
                   onChange={(e) =>
-                    setFilter((prev) => ({
-                      ...prev,
-                      from_date: e.target.value,
-                    }))
+                    setFilter((prev) => {
+                      const nextFromDate = e.target.value;
+                      const currentToDate = prev.to_date || "";
+
+                      return {
+                        ...prev,
+                        from_date: nextFromDate,
+                        to_date:
+                          currentToDate && currentToDate < nextFromDate
+                            ? nextFromDate
+                            : currentToDate,
+                      };
+                    })
                   }
                   style={styles.input}
                 />
@@ -153,7 +232,7 @@ export default function BookingTrackerSection({
                 <label style={styles.label}>To Date</label>
                 <input
                   type="date"
-                  min={mode === "future" ? tomorrow : undefined}
+                  min={mode === "future" ? filter.from_date || tomorrow : undefined}
                   value={filter.to_date || ""}
                   onChange={(e) =>
                     setFilter((prev) => ({
@@ -167,33 +246,34 @@ export default function BookingTrackerSection({
             </>
           )}
 
-          {!isPhysio ? (
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>User</label>
-              <select
-                value={filter.user_id || "all"}
-                onChange={(e) =>
-                  setFilter((prev) => ({
-                    ...prev,
-                    user_id: e.target.value,
-                  }))
-                }
-                style={styles.input}
-              >
-                <option value="all">All</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>User</label>
+            <select
+              value={filter.user_id || "all"}
+              onChange={(e) =>
+                setFilter((prev) => ({
+                  ...prev,
+                  user_id: e.target.value,
+                }))
+              }
+              style={styles.input}
+            >
+              <option value="all">All</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div style={styles.fieldGroup}>
             <label style={styles.label}>Physio</label>
             <select
-              value={filter.therapist_id || (isPhysio ? String(currentUserId) : "all")}
+              value={
+                filter.therapist_id ||
+                (isPhysio ? String(currentUserId) : "all")
+              }
               onChange={(e) =>
                 setFilter((prev) => ({
                   ...prev,
@@ -206,7 +286,7 @@ export default function BookingTrackerSection({
               {!isPhysio && <option value="all">All</option>}
               {visibleTherapists.map((therapist) => (
                 <option key={therapist.id} value={therapist.id}>
-                  {therapist.name}
+                  {therapist.name || therapist.username}
                 </option>
               ))}
             </select>
@@ -223,30 +303,14 @@ export default function BookingTrackerSection({
             label="Patient"
             placeholder="Search patient name or file number"
           />
-
-          <div style={styles.fieldGroupEnd}>
-            <button
-              type="button"
-              style={styles.primaryButton}
-              onClick={onApplyFilters}
-            >
-              Apply Filters
-            </button>
-          </div>
         </div>
       </div>
-
-      <BookingTargetStats
-        title={title}
-        target={target}
-        actual={bookings.length}
-        onChangeTarget={onChangeTarget}
-      />
 
       {mode === "future" && (
         <div style={styles.summaryGrid}>
           <div style={styles.card}>
             <div style={styles.sectionTitle}>Per Physio</div>
+
             {therapistSummary.length === 0 ? (
               <div style={styles.emptyState}>No physio summary found.</div>
             ) : (
@@ -263,6 +327,7 @@ export default function BookingTrackerSection({
 
           <div style={styles.card}>
             <div style={styles.sectionTitle}>Per Day</div>
+
             {daySummary.length === 0 ? (
               <div style={styles.emptyState}>No day summary found.</div>
             ) : (
@@ -320,7 +385,7 @@ export default function BookingTrackerSection({
                             <button
                               type="button"
                               style={styles.editBtn}
-                              onClick={() => onEditBooking && onEditBooking(b)}
+                              onClick={() => onEditBooking?.(b)}
                             >
                               Edit
                             </button>
@@ -338,7 +403,7 @@ export default function BookingTrackerSection({
                             <button
                               type="button"
                               style={styles.deleteBtn}
-                              onClick={() => onDeleteBooking && onDeleteBooking(b.id)}
+                              onClick={() => onDeleteBooking?.(b.id)}
                             >
                               Delete
                             </button>
@@ -431,10 +496,6 @@ const styles = {
     display: "grid",
     gap: "8px",
   },
-  fieldGroupEnd: {
-    display: "flex",
-    alignItems: "end",
-  },
   label: {
     fontSize: "13px",
     fontWeight: "700",
@@ -447,16 +508,6 @@ const styles = {
     fontSize: "14px",
     background: "#fff",
     outline: "none",
-  },
-  primaryButton: {
-    background: "#be185d",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "12px 18px",
-    fontWeight: "800",
-    cursor: "pointer",
-    width: "100%",
   },
   summaryGrid: {
     display: "grid",

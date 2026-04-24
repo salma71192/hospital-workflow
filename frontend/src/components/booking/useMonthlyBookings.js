@@ -1,10 +1,6 @@
 import { useState } from "react";
 import api from "../../api/api";
 
-function getTodayString() {
-  return new Date().toISOString().split("T")[0];
-}
-
 function getFirstDayOfMonthString() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -48,11 +44,15 @@ export default function useMonthlyBookings() {
     therapistIdValue = monthlyFilter.therapist_id
   ) => {
     try {
-      const safeFromDate = fromDateValue || getFirstDayOfMonthString();
-      const safeToDate = toDateValue || safeFromDate || getTodayString();
+      let safeFromDate = fromDateValue || getFirstDayOfMonthString();
+      let safeToDate = toDateValue || getLastDayOfMonthString();
+
+      if (safeFromDate > safeToDate) {
+        safeToDate = safeFromDate;
+      }
 
       const params = new URLSearchParams();
-
+      params.append("mode", "monthly");
       params.append("from_date", safeFromDate);
       params.append("to_date", safeToDate);
 
@@ -68,8 +68,9 @@ export default function useMonthlyBookings() {
         params.append("therapist_id", therapistIdValue);
       }
 
-      const url = `callcenter/bookings/monthly/?${params.toString()}`;
-      const res = await api.get(url);
+      const res = await api.get(
+        `callcenter/bookings/tracker/?${params.toString()}`
+      );
 
       setMonthlyBookingsCount(res.data.count || 0);
       setMonthlyBookings(res.data.bookings || []);
@@ -81,7 +82,7 @@ export default function useMonthlyBookings() {
         from_date: res.data.from_date || safeFromDate,
         to_date: res.data.to_date || safeToDate,
         user_id: userIdValue || "all",
-        patient: patientValue || "",
+        patient: patientValue?.trim() || "",
         therapist_id: therapistIdValue || "all",
       }));
     } catch (err) {
