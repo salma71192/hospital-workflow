@@ -7,11 +7,10 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
-from .helpers import validate_date, validate_time, is_past_datetime
-from .serializers import serialize_booking, serialize_user
-from .permissions import can_use_callcenter
-
-from callcenter.models import Appointment
+from callcenter.helpers import validate_date, validate_time, is_past_datetime
+from callcenter.permissions import can_use_callcenter
+from callcenter.serializers import serialize_booking, serialize_user
+from callcenter.models import Appointment, WaitingListEntry
 from reception.models import PatientAssignment
 
 User = get_user_model()
@@ -30,6 +29,37 @@ def parse_json(request):
         return json.loads(raw)
     except Exception:
         return None
+
+
+def today_local():
+    return timezone.localdate()
+
+
+def now_local_time():
+    return timezone.localtime().time().replace(second=0, microsecond=0)
+
+
+def tomorrow_local():
+    return today_local() + timedelta(days=1)
+
+
+def two_weeks_forward():
+    return today_local() + timedelta(days=14)
+
+
+def first_day_of_current_month():
+    return today_local().replace(day=1)
+
+
+def last_day_of_current_month():
+    first_day = first_day_of_current_month()
+
+    if first_day.month == 12:
+        next_month = first_day.replace(year=first_day.year + 1, month=1, day=1)
+    else:
+        next_month = first_day.replace(month=first_day.month + 1, day=1)
+
+    return next_month - timedelta(days=1)
 
 
 def booking_base_queryset():
@@ -62,14 +92,16 @@ def get_visible_agents_queryset(request):
 
     if role == "physio" and not request.user.is_superuser:
         return User.objects.filter(
-            Q(role__in=[
-                "admin",
-                "callcenter",
-                "callcenter_supervisor",
-                "reception",
-                "reception_supervisor",
-            ]) |
-            Q(id=request.user.id)
+            Q(
+                role__in=[
+                    "admin",
+                    "callcenter",
+                    "callcenter_supervisor",
+                    "reception",
+                    "reception_supervisor",
+                ]
+            )
+            | Q(id=request.user.id)
         ).order_by("username")
 
     return get_agents_queryset()
@@ -105,50 +137,22 @@ def apply_booking_tracker_filters(request, qs):
 
     if patient_search:
         qs = qs.filter(
-            Q(patient__name__icontains=patient_search) |
-            Q(patient__patient_id__icontains=patient_search)
+            Q(patient__name__icontains=patient_search)
+            | Q(patient__patient_id__icontains=patient_search)
         )
 
     return qs
 
 
-def today_local():
-    return timezone.localdate()
-
-
-def now_local_time():
-    return timezone.localtime().time().replace(second=0, microsecond=0)
-
-
-def tomorrow_local():
-    return today_local() + timedelta(days=1)
-
-
-def two_weeks_forward():
-    return today_local() + timedelta(days=14)
-
-
-def first_day_of_current_month():
-    today_value = today_local()
-    return today_value.replace(day=1)
-
-
-def last_day_of_current_month():
-    first_day = first_day_of_current_month()
-    if first_day.month == 12:
-        next_month = first_day.replace(year=first_day.year + 1, month=1, day=1)
-    else:
-        next_month = first_day.replace(month=first_day.month + 1, day=1)
-    return next_month - timedelta(days=1)
-
-
 def generate_time_strings():
-    time_strings = []
+    times = []
+
     for hour in range(8, 22):
-        time_strings.append(f"{hour:02d}:00")
-        time_strings.append(f"{hour:02d}:30")
-    time_strings.append("22:00")
-    return time_strings
+        times.append(f"{hour:02d}:00")
+        times.append(f"{hour:02d}:30")
+
+    times.append("22:00")
+    return times
 
 
 def get_slot_count(
@@ -169,22 +173,6 @@ def get_slot_count(
     return qs.count()
 
 
-def get_existing_patient_booking(
-    patient_id,
-    appointment_date,
-    exclude_booking_id=None,
-):
-    qs = booking_base_queryset().filter(
-        patient_id=patient_id,
-        appointment_date=appointment_date,
-    )
-
-    if exclude_booking_id:
-        qs = qs.exclude(id=exclude_booking_id)
-
-    return qs.first()
-
-
 def ensure_booking_slot_available(
     therapist_id,
     appointment_date,
@@ -199,9 +187,25 @@ def ensure_booking_slot_available(
     )
 
     if slot_count >= 2:
-        return json_error("This slot is fully booked", status=400)
+        return json_error(
+            "This slot is fully booked",
+            400,
+            extra={"slot_full": True},
+        )
 
     return None
+
+
+def get_existing_patient_booking(patient_id, appointment_date, exclude_booking_id=None):
+    qs = booking_base_queryset().filter(
+        patient_id=patient_id,
+        appointment_date=appointment_date,
+    )
+
+    if exclude_booking_id:
+        qs = qs.exclude(id=exclude_booking_id)
+
+    return qs.first()
 
 
 def ensure_patient_has_no_booking_that_day(
@@ -218,11 +222,77 @@ def ensure_patient_has_no_booking_that_day(
     if existing_booking:
         return json_error(
             "Patient already has a booking on this day",
-            status=400,
+            400,
             extra={"existing_booking": serialize_booking(existing_booking)},
         )
 
     return None
+
+
+def get_time_period_for_time(appointment_time):
+    if not appointment_time:
+        return ""
+
+    hour = appointment_time.hour
+
+    if 8 <= hour < 12:
+        return "morning"
+
+    if 12 <= hour < 17:
+        return "afternoon"
+
+    return "evening"
+
+
+def notify_waiting_list_for_free_slot(therapist_id, appointment_date, appointment_time):
+    period = get_time_period_for_time(appointment_time)
+
+    matches = WaitingListEntry.objects.filter(status="waiting").filter(
+        Q(preferred_therapist_id=therapist_id)
+        | Q(preferred_therapist__isnull=True)
+    ).filter(
+        Q(preferred_date=appointment_date)
+        | Q(preferred_date__isnull=True)
+    )
+
+    if period:
+        matches = matches.filter(
+            Q(preferred_time_period=period)
+            | Q(preferred_time_period="")
+        )
+
+    matched_ids = list(matches.values_list("id", flat=True))
+
+    matches.update(
+        status="notified",
+        status_changed_at=timezone.now(),
+    )
+
+    return matched_ids
+
+
+def move_waiting_list_to_booked(patient_id, therapist_id=None, appointment_date=None):
+    qs = WaitingListEntry.objects.filter(
+        patient_id=patient_id,
+        status__in=["waiting", "notified"],
+    )
+
+    if therapist_id:
+        qs = qs.filter(
+            Q(preferred_therapist_id=therapist_id)
+            | Q(preferred_therapist__isnull=True)
+        )
+
+    if appointment_date:
+        qs = qs.filter(
+            Q(preferred_date=appointment_date)
+            | Q(preferred_date__isnull=True)
+        )
+
+    qs.update(
+        status="booked",
+        status_changed_at=timezone.now(),
+    )
 
 
 def _get_month_range(month_value):
@@ -279,11 +349,11 @@ def _build_statistics_rows(start_date, end_date, therapist_id=None):
         assignments_qs = assignments_qs.filter(therapist_id=therapist_id)
 
     therapists = get_therapists_queryset()
-
     period_days = (end_date - start_date).days + 1
     available_per_therapist = period_days * 20
 
     rows = []
+
     for therapist in therapists:
         if therapist_id and str(therapist_id) != "all":
             if str(therapist.id) != str(therapist_id):
@@ -333,7 +403,7 @@ def therapists_api(request):
     therapists = get_therapists_queryset()
 
     return JsonResponse({
-        "therapists": [serialize_user(t) for t in therapists]
+        "therapists": [serialize_user(t) for t in therapists],
     })
 
 
@@ -348,6 +418,7 @@ def slots_api(request):
         return JsonResponse({"slots": []})
 
     role = get_request_role(request)
+
     if role == "physio" and str(therapist_id) != str(request.user.id):
         return json_error("Not authorized", 403)
 
@@ -360,11 +431,13 @@ def slots_api(request):
     now_time = now_local_time()
 
     slots = []
+
     for time_str in generate_time_strings():
         booking_time = validate_time(time_str)
         count = bookings.filter(appointment_time=booking_time).count()
 
         status = "available"
+
         if appointment_date < today_value:
             status = "past"
         elif appointment_date == today_value and booking_time < now_time:
@@ -392,6 +465,7 @@ def bookings_api(request):
         return json_error("Method not allowed", 405)
 
     data = parse_json(request)
+
     if not data:
         return json_error("Invalid JSON", 400)
 
@@ -405,6 +479,7 @@ def bookings_api(request):
         return json_error("Missing required fields", 400)
 
     role = get_request_role(request)
+
     if role == "physio" and str(therapist_id) != str(request.user.id):
         return json_error("You can only book under your own name", 403)
 
@@ -439,12 +514,16 @@ def bookings_api(request):
         attendance_status="no_show",
     )
 
+    move_waiting_list_to_booked(
+        patient_id=patient_id,
+        therapist_id=therapist_id,
+        appointment_date=appointment_date,
+    )
+
     return JsonResponse({
         "success": True,
         "message": "Appointment booked successfully",
-        "booking": {
-            "id": appointment.id,
-        },
+        "booking": {"id": appointment.id},
     })
 
 
@@ -474,6 +553,7 @@ def booking_detail_api(request, booking_id):
             return json_error("Past appointments cannot be edited", 403)
 
         data = parse_json(request)
+
         if not data:
             return json_error("Invalid JSON", 400)
 
@@ -511,27 +591,57 @@ def booking_detail_api(request, booking_id):
         if patient_booking_error:
             return patient_booking_error
 
+        old_therapist_id = appointment.therapist_id
+        old_date = appointment.appointment_date
+        old_time = appointment.appointment_time
+
         appointment.therapist_id = therapist_id
         appointment.appointment_date = appointment_date
         appointment.appointment_time = appointment_time
         appointment.notes = notes
         appointment.save()
 
+        alert_ids = notify_waiting_list_for_free_slot(
+            old_therapist_id,
+            old_date,
+            old_time,
+        )
+
+        move_waiting_list_to_booked(
+            patient_id=appointment.patient_id,
+            therapist_id=therapist_id,
+            appointment_date=appointment_date,
+        )
+
         return JsonResponse({
             "success": True,
             "message": "Booking updated successfully",
             "booking": serialize_booking(appointment),
+            "waiting_list_alert_ids": alert_ids,
+            "alerts": alert_ids,
         })
 
     if request.method == "DELETE":
         if is_past and not is_admin:
             return json_error("Only admin can delete past appointments", 403)
 
+        therapist_id = appointment.therapist_id
+        appointment_date = appointment.appointment_date
+        appointment_time = appointment.appointment_time
+
         appointment.delete()
+
+        alert_ids = notify_waiting_list_for_free_slot(
+            therapist_id,
+            appointment_date,
+            appointment_time,
+        )
 
         return JsonResponse({
             "success": True,
             "message": "Booking deleted successfully",
+            "waiting_list_alert_ids": alert_ids,
+            "alerts": alert_ids,
         })
 
     return json_error("Method not allowed", 405)
@@ -546,9 +656,7 @@ def booking_tracker_api(request):
     if mode == "today":
         selected_date = validate_date(request.GET.get("date")) or today_local()
 
-        qs = booking_base_queryset().filter(
-            appointment_date=selected_date,
-        )
+        qs = booking_base_queryset().filter(appointment_date=selected_date)
 
         qs = apply_booking_tracker_filters(request, qs)
         qs = qs.order_by("appointment_date", "appointment_time", "created_at")
@@ -559,22 +667,17 @@ def booking_tracker_api(request):
             "count": qs.count(),
             "bookings": [serialize_booking(b) for b in qs],
             "agents": [serialize_user(a) for a in get_visible_agents_queryset(request)],
-            "therapists": [serialize_user(t) for t in get_visible_therapists_queryset(request)],
+            "therapists": [
+                serialize_user(t) for t in get_visible_therapists_queryset(request)
+            ],
             "therapist_summary": [],
             "day_summary": [],
         })
 
     if mode == "future":
-        min_date = tomorrow_local()
-        max_date = two_weeks_forward()
+        from_date = validate_date(request.GET.get("from_date")) or tomorrow_local()
+        to_date = validate_date(request.GET.get("to_date")) or two_weeks_forward()
 
-        from_date = validate_date(request.GET.get("from_date")) or min_date
-        to_date = validate_date(request.GET.get("to_date")) or max_date
-
-        if from_date < min_date:
-            from_date = min_date
-        if to_date > max_date:
-            to_date = max_date
         if from_date > to_date:
             return json_error("From date cannot be after to date", 400)
 
@@ -584,7 +687,7 @@ def booking_tracker_api(request):
         )
 
         qs = apply_booking_tracker_filters(request, qs)
-        qs = qs.order_by("appointment_date", "appointment_time")
+        qs = qs.order_by("appointment_date", "appointment_time", "created_at")
 
         therapist_summary_qs = (
             qs.values("therapist_id", "therapist__username")
@@ -605,7 +708,9 @@ def booking_tracker_api(request):
             "count": qs.count(),
             "bookings": [serialize_booking(b) for b in qs],
             "agents": [serialize_user(a) for a in get_visible_agents_queryset(request)],
-            "therapists": [serialize_user(t) for t in get_visible_therapists_queryset(request)],
+            "therapists": [
+                serialize_user(t) for t in get_visible_therapists_queryset(request)
+            ],
             "therapist_summary": [
                 {
                     "therapist_id": row["therapist_id"],
@@ -624,16 +729,9 @@ def booking_tracker_api(request):
         })
 
     if mode == "monthly":
-        month_start = first_day_of_current_month()
-        month_end = last_day_of_current_month()
+        from_date = validate_date(request.GET.get("from_date")) or first_day_of_current_month()
+        to_date = validate_date(request.GET.get("to_date")) or last_day_of_current_month()
 
-        from_date = validate_date(request.GET.get("from_date")) or month_start
-        to_date = validate_date(request.GET.get("to_date")) or month_end
-
-        if from_date < month_start:
-            from_date = month_start
-        if to_date > month_end:
-            to_date = month_end
         if from_date > to_date:
             return json_error("From date cannot be after to date", 400)
 
@@ -652,7 +750,9 @@ def booking_tracker_api(request):
             "count": qs.count(),
             "bookings": [serialize_booking(b) for b in qs],
             "agents": [serialize_user(a) for a in get_visible_agents_queryset(request)],
-            "therapists": [serialize_user(t) for t in get_visible_therapists_queryset(request)],
+            "therapists": [
+                serialize_user(t) for t in get_visible_therapists_queryset(request)
+            ],
             "therapist_summary": [],
             "day_summary": [],
         })
@@ -667,18 +767,17 @@ def today_appointments_api(request):
     today_value = today_local()
     patient_search = (request.GET.get("patient") or "").strip()
 
-    qs = booking_base_queryset().filter(
-        appointment_date=today_value
-    )
+    qs = booking_base_queryset().filter(appointment_date=today_value)
 
     role = get_request_role(request)
+
     if role == "physio":
         qs = qs.filter(therapist_id=request.user.id)
 
     if patient_search:
         qs = qs.filter(
-            Q(patient__name__icontains=patient_search) |
-            Q(patient__patient_id__icontains=patient_search)
+            Q(patient__name__icontains=patient_search)
+            | Q(patient__patient_id__icontains=patient_search)
         )
 
     qs = qs.order_by("appointment_time", "created_at")
@@ -705,6 +804,7 @@ def today_statistics_api(request):
         return json_error("Not authorized", 403)
 
     role = get_request_role(request)
+
     allowed_roles = [
         "admin",
         "callcenter",
@@ -729,15 +829,14 @@ def today_statistics_api(request):
     )
 
     prev_start, prev_end = _get_previous_day_range(selected_date)
+
     previous_rows, _ = _build_statistics_rows(
         start_date=prev_start,
         end_date=prev_end,
         therapist_id=therapist_id,
     )
 
-    previous_map = {
-        str(row["therapist_id"]): row for row in previous_rows
-    }
+    previous_map = {str(row["therapist_id"]): row for row in previous_rows}
 
     for row in rows:
         prev_row = previous_map.get(str(row["therapist_id"]), {})
@@ -758,6 +857,7 @@ def monthly_statistics_api(request):
         return json_error("Not authorized", 403)
 
     role = get_request_role(request)
+
     allowed_roles = [
         "admin",
         "callcenter",
@@ -773,6 +873,7 @@ def monthly_statistics_api(request):
     therapist_id = (request.GET.get("therapist_id") or "").strip() or None
 
     start_date, end_date = _get_month_range(month_value)
+
     if not start_date or not end_date:
         return json_error("Invalid month format. Use YYYY-MM", 400)
 
@@ -786,15 +887,14 @@ def monthly_statistics_api(request):
     )
 
     prev_start, prev_end = _get_previous_month_range(start_date)
+
     previous_rows, _ = _build_statistics_rows(
         start_date=prev_start,
         end_date=prev_end,
         therapist_id=therapist_id,
     )
 
-    previous_map = {
-        str(row["therapist_id"]): row for row in previous_rows
-    }
+    previous_map = {str(row["therapist_id"]): row for row in previous_rows}
 
     for row in rows:
         prev_row = previous_map.get(str(row["therapist_id"]), {})
@@ -807,4 +907,28 @@ def monthly_statistics_api(request):
         "rows": rows,
         "totals": totals,
         "mode": "month",
+    })
+
+
+def my_booking_stats_api(request):
+    if not can_use_callcenter(request.user):
+        return json_error("Not authorized", 403)
+
+    today_value = today_local()
+    month_start = today_value.replace(day=1)
+
+    today_count = Appointment.objects.filter(
+        created_by=request.user,
+        created_at__date=today_value,
+    ).count()
+
+    monthly_count = Appointment.objects.filter(
+        created_by=request.user,
+        created_at__date__gte=month_start,
+        created_at__date__lte=today_value,
+    ).count()
+
+    return JsonResponse({
+        "today": today_count,
+        "monthly": monthly_count,
     })
