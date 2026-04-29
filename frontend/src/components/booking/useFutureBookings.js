@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "../../api/api";
 
 function formatLocalDate(date) {
@@ -43,70 +43,78 @@ export default function useFutureBookings() {
     setFutureTherapists([]);
   };
 
-  const loadFutureBookings = async (
-    fromDateValue = futureFilter.from_date,
-    toDateValue = futureFilter.to_date,
-    therapistIdValue = futureFilter.therapist_id,
-    userIdValue = futureFilter.user_id,
-    patientValue = futureFilter.patient
-  ) => {
-    try {
-      const minDate = getTomorrowString();
-      const maxDate = getTwoWeeksForwardString();
+  const loadFutureBookings = useCallback(
+    async (
+      fromDateValue = futureFilter.from_date,
+      toDateValue = futureFilter.to_date,
+      therapistIdValue = futureFilter.therapist_id,
+      userIdValue = futureFilter.user_id,
+      patientValue = futureFilter.patient
+    ) => {
+      try {
+        const minDate = getTomorrowString();
+        const maxDate = getTwoWeeksForwardString();
 
-      let safeFromDate = fromDateValue || minDate;
-      let safeToDate = toDateValue || maxDate;
+        let safeFromDate = fromDateValue || minDate;
+        let safeToDate = toDateValue || maxDate;
 
-      if (safeFromDate < minDate) safeFromDate = minDate;
-      if (safeFromDate > maxDate) safeFromDate = maxDate;
+        if (safeFromDate < minDate) safeFromDate = minDate;
+        if (safeFromDate > maxDate) safeFromDate = maxDate;
 
-      if (safeToDate < minDate) safeToDate = minDate;
-      if (safeToDate > maxDate) safeToDate = maxDate;
+        if (safeToDate < minDate) safeToDate = minDate;
+        if (safeToDate > maxDate) safeToDate = maxDate;
 
-      if (safeFromDate > safeToDate) {
-        safeToDate = safeFromDate;
+        if (safeFromDate > safeToDate) {
+          safeToDate = safeFromDate;
+        }
+
+        const params = new URLSearchParams();
+        params.append("mode", "future");
+        params.append("from_date", safeFromDate);
+        params.append("to_date", safeToDate);
+
+        if (therapistIdValue && therapistIdValue !== "all") {
+          params.append("therapist_id", therapistIdValue);
+        }
+
+        if (userIdValue && userIdValue !== "all") {
+          params.append("user_id", userIdValue);
+        }
+
+        if (patientValue?.trim()) {
+          params.append("patient", patientValue.trim());
+        }
+
+        const res = await api.get(
+          `callcenter/bookings/tracker/?${params.toString()}`
+        );
+
+        setFutureBookings(res.data.bookings || []);
+        setFutureTherapistSummary(res.data.therapist_summary || []);
+        setFutureDaySummary(res.data.day_summary || []);
+        setFutureAgents(res.data.agents || []);
+        setFutureTherapists(res.data.therapists || []);
+
+        setFutureFilter({
+          from_date: res.data.from_date || safeFromDate,
+          to_date: res.data.to_date || safeToDate,
+          therapist_id: therapistIdValue || "all",
+          user_id: userIdValue || "all",
+          patient: patientValue?.trim() || "",
+        });
+      } catch (err) {
+        console.error("Failed to load future bookings", err);
+        resetFutureState();
       }
-
-      const params = new URLSearchParams();
-      params.append("mode", "future");
-      params.append("from_date", safeFromDate);
-      params.append("to_date", safeToDate);
-
-      if (therapistIdValue && therapistIdValue !== "all") {
-        params.append("therapist_id", therapistIdValue);
-      }
-
-      if (userIdValue && userIdValue !== "all") {
-        params.append("user_id", userIdValue);
-      }
-
-      if (patientValue?.trim()) {
-        params.append("patient", patientValue.trim());
-      }
-
-      const res = await api.get(
-        `callcenter/bookings/tracker/?${params.toString()}`
-      );
-
-      setFutureBookings(res.data.bookings || []);
-      setFutureTherapistSummary(res.data.therapist_summary || []);
-      setFutureDaySummary(res.data.day_summary || []);
-      setFutureAgents(res.data.agents || []);
-      setFutureTherapists(res.data.therapists || []);
-
-      setFutureFilter((prev) => ({
-        ...prev,
-        from_date: res.data.from_date || safeFromDate,
-        to_date: res.data.to_date || safeToDate,
-        therapist_id: therapistIdValue || "all",
-        user_id: userIdValue || "all",
-        patient: patientValue?.trim() || "",
-      }));
-    } catch (err) {
-      console.error("Failed to load future bookings", err);
-      resetFutureState();
-    }
-  };
+    },
+    [
+      futureFilter.from_date,
+      futureFilter.to_date,
+      futureFilter.therapist_id,
+      futureFilter.user_id,
+      futureFilter.patient,
+    ]
+  );
 
   const handleApplyFutureFilters = async () => {
     await loadFutureBookings(
@@ -117,6 +125,25 @@ export default function useFutureBookings() {
       futureFilter.patient
     );
   };
+
+  useEffect(() => {
+    loadFutureBookings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadFutureBookings(
+        futureFilter.from_date,
+        futureFilter.to_date,
+        futureFilter.therapist_id,
+        futureFilter.user_id,
+        futureFilter.patient
+      );
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [loadFutureBookings, futureFilter]);
 
   return {
     futureBookings,

@@ -1,5 +1,5 @@
 def can_use_callcenter(user):
-    if not user or not user.is_authenticated:
+    if not getattr(user, "is_authenticated", False):
         return False
 
     role = (getattr(user, "role", "") or "").strip().lower()
@@ -13,4 +13,4 @@ def can_use_callcenter(user):
         "physio",
     }
 
-    return user.is_superuser or role in allowed_roles
+    return bool(user.is_superuser or role in allowed_roles)

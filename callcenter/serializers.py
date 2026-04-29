@@ -1,3 +1,7 @@
+from django.utils import timezone
+from callcenter.helpers import is_past_datetime  # ✅ adjust path if needed
+
+
 def serialize_booking(booking):
     return {
         "id": booking.id,
@@ -21,7 +25,7 @@ def serialize_booking(booking):
         # Booking details
         "notes": booking.notes or "",
 
-        # Created by (IMPORTANT for filters)
+        # Created by
         "created_by_id": booking.created_by.id if booking.created_by else None,
         "created_by_name": booking.created_by.username if booking.created_by else "",
 
@@ -31,6 +35,16 @@ def serialize_booking(booking):
             booking.attended_at.isoformat()
             if getattr(booking, "attended_at", None)
             else None
+        ),
+
+        # ✅ UI helpers
+        "is_today": (
+            str(booking.appointment_date) == str(timezone.localdate())
+            if booking.appointment_date else False
+        ),
+        "is_past": (
+            is_past_datetime(booking.appointment_date, booking.appointment_time)
+            if booking.appointment_date and booking.appointment_time else False
         ),
     }
 

@@ -6,9 +6,16 @@ from callcenter.api.booking_views import (
     bookings_api,
     booking_detail_api,
     booking_tracker_api,
+    my_booking_stats_api,
     today_appointments_api,
     today_statistics_api,
     monthly_statistics_api,
+)
+
+from callcenter.api.waiting_list_views import (
+    waiting_list_api,
+    waiting_list_detail_api,
+    waiting_list_alerts_api,
 )
 
 urlpatterns = [
@@ -17,10 +24,14 @@ urlpatterns = [
 
     path("bookings/", bookings_api, name="bookings_api"),
     path("bookings/<int:booking_id>/", booking_detail_api, name="booking_detail_api"),
-
     path("bookings/tracker/", booking_tracker_api, name="booking_tracker_api"),
-    path("bookings/today-appointments/", today_appointments_api, name="today_appointments_api"),
+    path("bookings/my-stats/", my_booking_stats_api, name="my_booking_stats_api"),
 
+    path("bookings/today-appointments/", today_appointments_api, name="today_appointments_api"),
     path("bookings/today-statistics/", today_statistics_api, name="today_statistics_api"),
     path("bookings/monthly-statistics/", monthly_statistics_api, name="monthly_statistics_api"),
+
+    path("waiting-list/", waiting_list_api, name="waiting_list_api"),
+    path("waiting-list/<int:entry_id>/", waiting_list_detail_api, name="waiting_list_detail_api"),
+    path("waiting-list/alerts/", waiting_list_alerts_api, name="waiting_list_alerts_api"),
 ]
