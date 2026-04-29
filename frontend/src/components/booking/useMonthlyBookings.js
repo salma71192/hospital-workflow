@@ -1,60 +1,63 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../../api/api";
-
-/* ================= HELPERS ================= */
 
 function getCurrentMonthString() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/* ================= HOOK ================= */
-
 export default function useMonthlyBookings() {
+  const latestFilterRef = useRef(null);
+
   const [monthlyBookingsCount, setMonthlyBookingsCount] = useState(0);
   const [monthlyBookings, setMonthlyBookings] = useState([]);
   const [monthlyAgents, setMonthlyAgents] = useState([]);
   const [monthlyTherapists, setMonthlyTherapists] = useState([]);
 
   const [monthlyFilter, setMonthlyFilter] = useState({
-    month: getCurrentMonthString(), // ✅ NEW (YYYY-MM)
+    month: getCurrentMonthString(),
     user_id: "all",
     patient: "",
     therapist_id: "all",
   });
 
+  useEffect(() => {
+    latestFilterRef.current = monthlyFilter;
+  }, [monthlyFilter]);
+
   const resetMonthlyState = () => {
     setMonthlyBookingsCount(0);
     setMonthlyBookings([]);
-    setMonthlyAgents([]);
-    setMonthlyTherapists([]);
   };
-
-  /* ================= LOAD ================= */
 
   const loadMonthlyBookings = useCallback(
     async (
-      monthValue = monthlyFilter.month,
-      userIdValue = monthlyFilter.user_id,
-      patientValue = monthlyFilter.patient,
-      therapistIdValue = monthlyFilter.therapist_id
+      monthValue,
+      userIdValue = "all",
+      patientValue = "",
+      therapistIdValue = "all"
     ) => {
+      const safeMonth = monthValue || getCurrentMonthString();
+      const safeUserId = userIdValue || "all";
+      const safePatient = patientValue || "";
+      const safeTherapistId = therapistIdValue || "all";
+
       try {
         const params = new URLSearchParams();
 
         params.append("mode", "monthly");
-        params.append("month", monthValue); // ✅ IMPORTANT FIX
+        params.append("month", safeMonth);
 
-        if (userIdValue && userIdValue !== "all") {
-          params.append("user_id", userIdValue);
+        if (safeUserId !== "all") {
+          params.append("user_id", safeUserId);
         }
 
-        if (patientValue?.trim()) {
-          params.append("patient", patientValue.trim());
+        if (safePatient.trim()) {
+          params.append("patient", safePatient.trim());
         }
 
-        if (therapistIdValue && therapistIdValue !== "all") {
-          params.append("therapist_id", therapistIdValue);
+        if (safeTherapistId !== "all") {
+          params.append("therapist_id", safeTherapistId);
         }
 
         const res = await api.get(
@@ -63,70 +66,68 @@ export default function useMonthlyBookings() {
 
         setMonthlyBookingsCount(res.data.count || 0);
         setMonthlyBookings(res.data.bookings || []);
-        setMonthlyAgents(res.data.agents || []);
-        setMonthlyTherapists(res.data.therapists || []);
 
-        // ✅ do NOT overwrite filter aggressively
-        setMonthlyFilter((prev) => ({
-          ...prev,
-          month: res.data.month || monthValue,
-          user_id: userIdValue || "all",
-          patient: patientValue?.trim() || "",
-          therapist_id: therapistIdValue || "all",
-        }));
+        // keep users loaded even if one response is missing agents
+        if (res.data.agents) {
+          setMonthlyAgents(res.data.agents || []);
+        }
+
+        if (res.data.therapists) {
+          setMonthlyTherapists(res.data.therapists || []);
+        }
+
+        setMonthlyFilter({
+          month: res.data.month || safeMonth,
+          user_id: safeUserId,
+          patient: safePatient.trim(),
+          therapist_id: safeTherapistId,
+        });
       } catch (err) {
         console.error("Failed to load monthly bookings", err);
         resetMonthlyState();
       }
     },
-    [
-      monthlyFilter.month,
-      monthlyFilter.user_id,
-      monthlyFilter.patient,
-      monthlyFilter.therapist_id,
-    ]
+    []
   );
 
-  /* ================= APPLY ================= */
+  const handleApplyMonthlyFilters = useCallback(async () => {
+    const current = latestFilterRef.current || monthlyFilter;
 
-  const handleApplyMonthlyFilters = async () => {
     await loadMonthlyBookings(
+      current.month,
+      current.user_id,
+      current.patient,
+      current.therapist_id
+    );
+  }, [loadMonthlyBookings, monthlyFilter]);
+
+  useEffect(() => {
+    loadMonthlyBookings(
       monthlyFilter.month,
       monthlyFilter.user_id,
       monthlyFilter.patient,
       monthlyFilter.therapist_id
     );
-  };
-
-  /* ================= INIT ================= */
-
-  useEffect(() => {
-    loadMonthlyBookings();
-    // eslint-disable-next-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ================= REALTIME ================= */
-
+  // realtime refresh without stale filter bugs
   useEffect(() => {
     const interval = setInterval(() => {
+      const current = latestFilterRef.current;
+
+      if (!current) return;
+
       loadMonthlyBookings(
-        monthlyFilter.month,
-        monthlyFilter.user_id,
-        monthlyFilter.patient,
-        monthlyFilter.therapist_id
+        current.month,
+        current.user_id,
+        current.patient,
+        current.therapist_id
       );
-    }, 10000);
+    }, 30000);
 
     return () => clearInterval(interval);
-  }, [
-    monthlyFilter.month,
-    monthlyFilter.user_id,
-    monthlyFilter.patient,
-    monthlyFilter.therapist_id,
-    loadMonthlyBookings,
-  ]);
-
-  /* ================= RETURN ================= */
+  }, [loadMonthlyBookings]);
 
   return {
     monthlyBookingsCount,
