@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
@@ -17,6 +17,27 @@ import useBookingDashboard from "../components/booking/useBookingDashboard";
 import WaitingListSection from "../components/callcenter/WaitingListSection";
 import useWaitingList from "../components/callcenter/useWaitingList";
 
+function getTodayString() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getTomorrowString() {
+  const next = new Date();
+  next.setDate(next.getDate() + 1);
+  return next.toISOString().split("T")[0];
+}
+
+function getTwoWeeksForwardString() {
+  const next = new Date();
+  next.setDate(next.getDate() + 14);
+  return next.toISOString().split("T")[0];
+}
+
+function getCurrentMonthString() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export default function CallCenterBookingWorkspace({
   user,
   onLogout,
@@ -25,7 +46,6 @@ export default function CallCenterBookingWorkspace({
 }) {
   const navigate = useNavigate();
   const bookingRef = useRef(null);
-  const scheduleInitRef = useRef(false);
 
   const [waitingModalOpen, setWaitingModalOpen] = useState(false);
   const [waitingModalData, setWaitingModalData] = useState(null);
@@ -57,16 +77,19 @@ export default function CallCenterBookingWorkspace({
   };
 
   const handleSlotFreed = (alerts = []) => {
-    setSlotFreedAlerts(alerts);
+    setSlotFreedAlerts(alerts || []);
   };
 
   const {
     activeSection,
     setActiveSection,
+
     trackerMode,
     setTrackerMode,
+
     message,
     error,
+
     selectedPatient,
     patientForm,
     setPatientForm,
@@ -116,67 +139,6 @@ export default function CallCenterBookingWorkspace({
     setActiveSection("tracker");
   }, [setActiveSection]);
 
-  useEffect(() => {
-    if (activeSection !== "schedule") return;
-    if (scheduleInitRef.current) return;
-
-    scheduleInitRef.current = true;
-    handleApplyTodayFilters?.();
-  }, [activeSection, handleApplyTodayFilters]);
-
-  const handleBackToAdmin = () => {
-    onStopImpersonation?.();
-    navigate("/admin");
-  };
-
-  const scrollToBookingSection = (delay = 200) => {
-    setTimeout(() => {
-      bookingRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, delay);
-  };
-
-  const handleSelectPatientForBook = async (patient) => {
-    await handleSelectPatient(patient);
-    setActiveSection("book");
-    scrollToBookingSection(200);
-  };
-
-  const handleCreatePatientThenBook = async (e) => {
-    await handleCreatePatientFile(e);
-    setActiveSection("book");
-    scrollToBookingSection(250);
-  };
-
-  const handleEditBookingAndOpenForm = (booking) => {
-    handleEditBooking(booking);
-    setActiveSection("book");
-    scrollToBookingSection(200);
-  };
-
-  const handleAddWaitingListFromModal = async ({
-    preferred_time_period,
-    notes,
-  }) => {
-    const patient = waitingModalData?.patient;
-    const form = waitingModalData?.bookingForm;
-
-    if (!patient?.id && !form?.patient_id) return;
-
-    await addToWaitingList({
-      patient_id: patient?.id || form.patient_id,
-      preferred_therapist_id: form.therapist_id || null,
-      preferred_date: form.appointment_date || null,
-      preferred_time_period: preferred_time_period || "",
-      notes: notes || form.notes || "",
-    });
-
-    setWaitingModalOpen(false);
-    setWaitingModalData(null);
-  };
-
   const trackerBookings = useMemo(() => {
     if (trackerMode === "future") return futureBookings;
     if (trackerMode === "monthly") return monthlyBookings;
@@ -219,7 +181,7 @@ export default function CallCenterBookingWorkspace({
     return setTodayFilter;
   }, [trackerMode, setFutureFilter, setMonthlyFilter, setTodayFilter]);
 
-  const handleApplyTrackerFilters = async () => {
+  const handleApplyTrackerFilters = useCallback(async () => {
     if (trackerMode === "future") {
       await handleApplyFutureFilters?.();
       return;
@@ -231,24 +193,120 @@ export default function CallCenterBookingWorkspace({
     }
 
     await handleApplyTodayFilters?.();
-  };
+  }, [
+    trackerMode,
+    handleApplyFutureFilters,
+    handleApplyMonthlyFilters,
+    handleApplyTodayFilters,
+  ]);
+
+  useEffect(() => {
+    if (activeSection !== "schedule") return;
+    handleApplyTrackerFilters();
+  }, [activeSection, trackerMode, trackerFilter, handleApplyTrackerFilters]);
 
   const handleTrackerModeChange = (nextMode) => {
-    setTrackerMode(nextMode);
-
     if (nextMode === "today") {
-      handleApplyTodayFilters?.();
-      return;
-    }
-
-    if (nextMode === "monthly") {
-      handleApplyMonthlyFilters?.();
-      return;
+      setTodayFilter((prev) => ({
+        ...prev,
+        date: prev.date || getTodayString(),
+      }));
     }
 
     if (nextMode === "future") {
-      handleApplyFutureFilters?.();
+      setFutureFilter((prev) => ({
+        ...prev,
+        from_date: prev.from_date || getTomorrowString(),
+        to_date: prev.to_date || getTwoWeeksForwardString(),
+      }));
     }
+
+    if (nextMode === "monthly") {
+      setMonthlyFilter((prev) => ({
+        ...prev,
+        month: prev.month || getCurrentMonthString(),
+        user_id: prev.user_id || "all",
+        patient: prev.patient || "",
+        therapist_id: prev.therapist_id || "all",
+      }));
+    }
+
+    setTrackerMode(nextMode);
+  };
+
+  const handleBackToAdmin = () => {
+    onStopImpersonation?.();
+    navigate("/admin");
+  };
+
+  const scrollToBookingSection = (delay = 200) => {
+    setTimeout(() => {
+      bookingRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, delay);
+  };
+
+  const handleSelectPatientForBook = async (patient) => {
+    await handleSelectPatient(patient);
+    setActiveSection("book");
+    scrollToBookingSection(200);
+  };
+
+  const handleCreatePatientThenBook = async (e) => {
+    await handleCreatePatientFile(e);
+    setActiveSection("book");
+    scrollToBookingSection(250);
+  };
+
+  const handleEditBookingAndOpenForm = async (booking) => {
+    await handleEditBooking(booking);
+    setActiveSection("book");
+    scrollToBookingSection(200);
+  };
+
+  const handleWaitingListBookEntry = async (entry) => {
+    await handleSelectPatient({
+      id: entry.patient_db_id,
+      name: entry.patient_name,
+      patient_id: entry.patient_id,
+    });
+
+    setBookingForm((prev) => ({
+      ...prev,
+      patient_id: entry.patient_db_id,
+      therapist_id: entry.preferred_therapist_id || prev.therapist_id || "",
+      appointment_date:
+        entry.preferred_date || prev.appointment_date || getTodayString(),
+      appointment_time: "",
+      notes: entry.notes || "",
+      booking_id: null,
+    }));
+
+    setActiveSection("book");
+    scrollToBookingSection(200);
+  };
+
+  const handleAddWaitingListFromModal = async ({
+    preferred_time_period,
+    notes,
+  }) => {
+    const patient = waitingModalData?.patient;
+    const form = waitingModalData?.bookingForm;
+
+    if (!patient?.id && !form?.patient_id) return;
+
+    await addToWaitingList({
+      patient_id: patient?.id || form.patient_id,
+      preferred_therapist_id: form.therapist_id || null,
+      preferred_date: form.appointment_date || null,
+      preferred_time_period: preferred_time_period || "",
+      notes: notes || form.notes || "",
+    });
+
+    setWaitingModalOpen(false);
+    setWaitingModalData(null);
   };
 
   return (
@@ -287,17 +345,14 @@ export default function CallCenterBookingWorkspace({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message ? (
-        <DashboardNotice type="success">{message}</DashboardNotice>
-      ) : null}
-
+      {message ? <DashboardNotice type="success">{message}</DashboardNotice> : null}
       {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
 
-      {slotFreedAlerts.length > 0 && (
+      {slotFreedAlerts.length > 0 ? (
         <DashboardNotice type="success">
           Slot freed. {slotFreedAlerts.length} waiting-list patient(s) matched.
         </DashboardNotice>
-      )}
+      ) : null}
 
       {activeSection === "tracker" && <MyStatsSection stats={stats} />}
 
@@ -351,9 +406,7 @@ export default function CallCenterBookingWorkspace({
           mode={trackerMode}
           onChangeMode={handleTrackerModeChange}
           bookings={trackerBookings}
-          therapistSummary={
-            trackerMode === "future" ? futureTherapistSummary : []
-          }
+          therapistSummary={trackerMode === "future" ? futureTherapistSummary : []}
           daySummary={trackerMode === "future" ? futureDaySummary : []}
           therapists={trackerTherapists}
           agents={trackerAgents}
@@ -374,6 +427,7 @@ export default function CallCenterBookingWorkspace({
           therapists={therapists}
           onAddToWaitingList={addToWaitingList}
           onDeleteEntry={deleteWaitingListEntry}
+          onBookEntry={handleWaitingListBookEntry}
         />
       )}
 

@@ -27,6 +27,23 @@ function getTodayString() {
   return new Date().toISOString().split("T")[0];
 }
 
+function getTomorrowString() {
+  const next = new Date();
+  next.setDate(next.getDate() + 1);
+  return next.toISOString().split("T")[0];
+}
+
+function getTwoWeeksForwardString() {
+  const next = new Date();
+  next.setDate(next.getDate() + 14);
+  return next.toISOString().split("T")[0];
+}
+
+function getCurrentMonthString() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export default function ReceptionBookingWorkspace({
   user,
   onLogout,
@@ -67,11 +84,13 @@ export default function ReceptionBookingWorkspace({
     setActiveSection,
     message,
     error,
+
     selectedPatient,
     patientForm,
     setPatientForm,
     bookingForm,
     setBookingForm,
+
     therapists,
     weekDates,
     slots,
@@ -80,6 +99,18 @@ export default function ReceptionBookingWorkspace({
     todayAgents,
     todayTherapists,
     loadTodayBookings,
+
+    monthlyBookings,
+    monthlyAgents,
+    monthlyTherapists,
+    loadMonthlyBookings,
+
+    futureBookings,
+    futureTherapistSummary,
+    futureDaySummary,
+    futureAgents,
+    futureTherapists,
+    loadFutureBookings,
 
     handleSelectPatient,
     handleCreatePatientFile,
@@ -95,6 +126,9 @@ export default function ReceptionBookingWorkspace({
 
   const [trackerFilter, setTrackerFilter] = useState({
     date: getTodayString(),
+    from_date: getTomorrowString(),
+    to_date: getTwoWeeksForwardString(),
+    month: getCurrentMonthString(),
     therapist_id: "all",
     user_id: "all",
     patient: "",
@@ -102,42 +136,9 @@ export default function ReceptionBookingWorkspace({
 
   const showOpenFile = !isPhysio;
 
-  const visibleTherapists = useMemo(() => {
-    if (!isPhysio) return therapists;
-    return therapists.filter((t) => String(t.id) === String(user?.id));
-  }, [isPhysio, therapists, user]);
-
-  const visibleTodayTherapists = useMemo(() => {
-    const source = todayTherapists?.length ? todayTherapists : therapists;
-    if (!isPhysio) return source;
-    return source.filter((t) => String(t.id) === String(user?.id));
-  }, [isPhysio, todayTherapists, therapists, user]);
-
-  const visibleTodayBookings = useMemo(() => {
-    if (!isPhysio) return todayBookings;
-    return todayBookings.filter(
-      (booking) => String(booking.therapist_id) === String(user?.id)
-    );
-  }, [isPhysio, todayBookings, user]);
-
-  const handleApplyTrackerFilters = useCallback(async () => {
-    await loadTodayBookings(
-      trackerFilter.date,
-      trackerFilter.therapist_id,
-      trackerFilter.user_id,
-      trackerFilter.patient
-    );
-  }, [trackerFilter, loadTodayBookings]);
-
   useEffect(() => {
     setActiveSection("stats");
   }, [setActiveSection]);
-
-  useEffect(() => {
-    if (activeSection === "schedule") {
-      handleApplyTrackerFilters();
-    }
-  }, [activeSection, handleApplyTrackerFilters]);
 
   useEffect(() => {
     if (!isPhysio || !user?.id) return;
@@ -155,6 +156,146 @@ export default function ReceptionBookingWorkspace({
       user_id: "all",
     }));
   }, [isPhysio, user, setBookingForm]);
+
+  const visibleTherapists = useMemo(() => {
+    if (!isPhysio) return therapists;
+    return therapists.filter((t) => String(t.id) === String(user?.id));
+  }, [isPhysio, therapists, user]);
+
+  const visibleTodayTherapists = useMemo(() => {
+    const source = todayTherapists?.length ? todayTherapists : therapists;
+    if (!isPhysio) return source;
+    return source.filter((t) => String(t.id) === String(user?.id));
+  }, [isPhysio, todayTherapists, therapists, user]);
+
+  const visibleMonthlyTherapists = useMemo(() => {
+    const source = monthlyTherapists?.length ? monthlyTherapists : therapists;
+    if (!isPhysio) return source;
+    return source.filter((t) => String(t.id) === String(user?.id));
+  }, [isPhysio, monthlyTherapists, therapists, user]);
+
+  const visibleFutureTherapists = useMemo(() => {
+    const source = futureTherapists?.length ? futureTherapists : therapists;
+    if (!isPhysio) return source;
+    return source.filter((t) => String(t.id) === String(user?.id));
+  }, [isPhysio, futureTherapists, therapists, user]);
+
+  const visibleTodayBookings = useMemo(() => {
+    if (!isPhysio) return todayBookings;
+    return todayBookings.filter(
+      (booking) => String(booking.therapist_id) === String(user?.id)
+    );
+  }, [isPhysio, todayBookings, user]);
+
+  const visibleMonthlyBookings = useMemo(() => {
+    if (!isPhysio) return monthlyBookings;
+    return monthlyBookings.filter(
+      (booking) => String(booking.therapist_id) === String(user?.id)
+    );
+  }, [isPhysio, monthlyBookings, user]);
+
+  const visibleFutureBookings = useMemo(() => {
+    if (!isPhysio) return futureBookings;
+    return futureBookings.filter(
+      (booking) => String(booking.therapist_id) === String(user?.id)
+    );
+  }, [isPhysio, futureBookings, user]);
+
+  const trackerBookings = useMemo(() => {
+    if (trackerMode === "future") return visibleFutureBookings;
+    if (trackerMode === "monthly") return visibleMonthlyBookings;
+    return visibleTodayBookings;
+  }, [
+    trackerMode,
+    visibleFutureBookings,
+    visibleMonthlyBookings,
+    visibleTodayBookings,
+  ]);
+
+  const trackerAgents = useMemo(() => {
+    if (trackerMode === "future") return futureAgents;
+    if (trackerMode === "monthly") return monthlyAgents;
+    return todayAgents;
+  }, [trackerMode, futureAgents, monthlyAgents, todayAgents]);
+
+  const trackerTherapists = useMemo(() => {
+    if (trackerMode === "future") return visibleFutureTherapists;
+    if (trackerMode === "monthly") return visibleMonthlyTherapists;
+    return visibleTodayTherapists;
+  }, [
+    trackerMode,
+    visibleFutureTherapists,
+    visibleMonthlyTherapists,
+    visibleTodayTherapists,
+  ]);
+
+  const handleApplyTrackerFilters = useCallback(async () => {
+    if (trackerMode === "future") {
+      await loadFutureBookings(
+        trackerFilter.from_date,
+        trackerFilter.to_date,
+        trackerFilter.therapist_id,
+        trackerFilter.user_id,
+        trackerFilter.patient
+      );
+      return;
+    }
+
+    if (trackerMode === "monthly") {
+      await loadMonthlyBookings(
+        trackerFilter.month,
+        trackerFilter.user_id,
+        trackerFilter.patient,
+        trackerFilter.therapist_id
+      );
+      return;
+    }
+
+    await loadTodayBookings(
+      trackerFilter.date,
+      trackerFilter.therapist_id,
+      trackerFilter.user_id,
+      trackerFilter.patient
+    );
+  }, [
+    trackerMode,
+    trackerFilter,
+    loadFutureBookings,
+    loadMonthlyBookings,
+    loadTodayBookings,
+  ]);
+
+  useEffect(() => {
+    if (activeSection === "schedule") {
+      handleApplyTrackerFilters();
+    }
+  }, [activeSection, handleApplyTrackerFilters]);
+
+  const handleTrackerModeChange = (nextMode) => {
+    setTrackerMode(nextMode);
+
+    setTrackerFilter((prev) => {
+      if (nextMode === "today") {
+        return {
+          ...prev,
+          date: prev.date || getTodayString(),
+        };
+      }
+
+      if (nextMode === "future") {
+        return {
+          ...prev,
+          from_date: prev.from_date || getTomorrowString(),
+          to_date: prev.to_date || getTwoWeeksForwardString(),
+        };
+      }
+
+      return {
+        ...prev,
+        month: prev.month || getCurrentMonthString(),
+      };
+    });
+  };
 
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
@@ -241,7 +382,13 @@ export default function ReceptionBookingWorkspace({
     setWaitingModalData(null);
   };
 
-  const handleWaitingListBookEntry = (entry) => {
+  const handleWaitingListBookEntry = async (entry) => {
+    await handleSelectPatient({
+      id: entry.patient_db_id,
+      name: entry.patient_name,
+      patient_id: entry.patient_id,
+    });
+
     setBookingForm((prev) => ({
       ...prev,
       patient_id: entry.patient_db_id,
@@ -252,12 +399,6 @@ export default function ReceptionBookingWorkspace({
       notes: entry.notes || "",
       booking_id: null,
     }));
-
-    handleSelectPatient({
-      id: entry.patient_db_id,
-      name: entry.patient_name,
-      patient_id: entry.patient_id,
-    });
 
     setActiveSection("book");
     scrollToBookingSection(200);
@@ -276,7 +417,7 @@ export default function ReceptionBookingWorkspace({
         ...(showOpenFile ? [{ key: "open_file", label: "Open New File" }] : []),
         {
           key: "schedule",
-          label: `Schedule (${visibleTodayBookings.length || 0})`,
+          label: `Schedule (${trackerBookings.length || 0})`,
         },
         {
           key: "waiting_list",
@@ -369,12 +510,14 @@ export default function ReceptionBookingWorkspace({
       {activeSection === "schedule" && (
         <BookingTrackerSection
           mode={trackerMode}
-          onChangeMode={setTrackerMode}
-          bookings={visibleTodayBookings}
-          therapistSummary={[]}
-          daySummary={[]}
-          therapists={visibleTodayTherapists}
-          agents={todayAgents}
+          onChangeMode={handleTrackerModeChange}
+          bookings={trackerBookings}
+          therapistSummary={
+            trackerMode === "future" ? futureTherapistSummary : []
+          }
+          daySummary={trackerMode === "future" ? futureDaySummary : []}
+          therapists={trackerTherapists}
+          agents={trackerAgents}
           filter={trackerFilter}
           setFilter={setTrackerFilter}
           onApplyFilters={handleApplyTrackerFilters}
