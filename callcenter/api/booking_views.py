@@ -272,24 +272,10 @@ def notify_waiting_list_for_free_slot(therapist_id, appointment_date, appointmen
 
 
 def move_waiting_list_to_booked(patient_id, therapist_id=None, appointment_date=None):
-    qs = WaitingListEntry.objects.filter(
+    WaitingListEntry.objects.filter(
         patient_id=patient_id,
         status__in=["waiting", "notified"],
-    )
-
-    if therapist_id:
-        qs = qs.filter(
-            Q(preferred_therapist_id=therapist_id)
-            | Q(preferred_therapist__isnull=True)
-        )
-
-    if appointment_date:
-        qs = qs.filter(
-            Q(preferred_date=appointment_date)
-            | Q(preferred_date__isnull=True)
-        )
-
-    qs.update(
+    ).update(
         status="booked",
         status_changed_at=timezone.now(),
     )
@@ -514,11 +500,7 @@ def bookings_api(request):
         attendance_status="no_show",
     )
 
-    move_waiting_list_to_booked(
-        patient_id=patient_id,
-        therapist_id=therapist_id,
-        appointment_date=appointment_date,
-    )
+    move_waiting_list_to_booked(patient_id=patient_id)
 
     return JsonResponse({
         "success": True,
@@ -607,11 +589,7 @@ def booking_detail_api(request, booking_id):
             old_time,
         )
 
-        move_waiting_list_to_booked(
-            patient_id=appointment.patient_id,
-            therapist_id=therapist_id,
-            appointment_date=appointment_date,
-        )
+        move_waiting_list_to_booked(patient_id=appointment.patient_id)
 
         return JsonResponse({
             "success": True,
@@ -657,7 +635,6 @@ def booking_tracker_api(request):
         selected_date = validate_date(request.GET.get("date")) or today_local()
 
         qs = booking_base_queryset().filter(appointment_date=selected_date)
-
         qs = apply_booking_tracker_filters(request, qs)
         qs = qs.order_by("appointment_date", "appointment_time", "created_at")
 
