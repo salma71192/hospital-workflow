@@ -25,6 +25,24 @@ def parse_json(request):
         return None
 
 
+def set_entry_status(entry, status):
+    entry.status = status
+
+    if hasattr(entry, "status_changed_at"):
+        entry.status_changed_at = timezone.now()
+
+    entry.save()
+
+
+def bulk_set_status(qs, status):
+    update_data = {"status": status}
+
+    if hasattr(WaitingListEntry, "status_changed_at"):
+        update_data["status_changed_at"] = timezone.now()
+
+    qs.update(**update_data)
+
+
 def serialize_waiting_list_entry(entry):
     return {
         "id": entry.id,
@@ -85,7 +103,7 @@ def mark_waiting_entry_booked(patient_id, therapist_id=None, appointment_date=No
             | Q(preferred_date__isnull=True)
         )
 
-    qs.update(status="booked", status_changed_at=timezone.now())
+    bulk_set_status(qs, "booked")
 
 
 def get_matching_waiting_entries(therapist_id, appointment_date, appointment_time=None):
@@ -174,6 +192,7 @@ def waiting_list_api(request):
 
     if request.method == "POST":
         data = parse_json(request)
+
         if not data:
             return json_error("Invalid JSON", 400)
 
@@ -240,8 +259,11 @@ def waiting_list_detail_api(request, entry_id):
 
     if request.method == "PUT":
         data = parse_json(request)
+
         if not data:
             return json_error("Invalid JSON", 400)
+
+        old_status = entry.status
 
         if "preferred_therapist_id" in data:
             entry.preferred_therapist_id = data.get("preferred_therapist_id") or None
@@ -268,9 +290,10 @@ def waiting_list_detail_api(request, entry_id):
             if status not in ["waiting", "notified", "booked", "cancelled"]:
                 return json_error("Invalid status", 400)
 
-            if entry.status != status:
-                entry.status = status
-                entry.status_changed_at = timezone.now()
+            entry.status = status
+
+        if old_status != entry.status and hasattr(entry, "status_changed_at"):
+            entry.status_changed_at = timezone.now()
 
         entry.save()
 
@@ -281,9 +304,7 @@ def waiting_list_detail_api(request, entry_id):
         })
 
     if request.method == "DELETE":
-        entry.status = "cancelled"
-        entry.status_changed_at = timezone.now()
-        entry.save()
+        set_entry_status(entry, "cancelled")
 
         return JsonResponse({
             "success": True,
