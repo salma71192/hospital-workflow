@@ -21,14 +21,9 @@ function getTwoWeeksForwardString() {
   return formatDate(next);
 }
 
-function getFirstDayOfMonthString() {
+function getCurrentMonthString() {
   const now = new Date();
-  return formatDate(new Date(now.getFullYear(), now.getMonth(), 1));
-}
-
-function getLastDayOfMonthString() {
-  const now = new Date();
-  return formatDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function isPastBooking(appointmentDate, appointmentTime) {
@@ -59,13 +54,12 @@ export default function BookingTrackerSection({
   isPhysio = false,
   currentUserId = "",
 }) {
-  const patientDebounceRef = useRef(null);
+  const debounceRef = useRef(null);
 
   const today = getTodayString();
   const tomorrow = getTomorrowString();
   const twoWeeksForward = getTwoWeeksForwardString();
-  const firstDayOfMonth = getFirstDayOfMonthString();
-  const lastDayOfMonth = getLastDayOfMonthString();
+  const currentMonth = getCurrentMonthString();
 
   const visibleTherapists = useMemo(() => {
     if (!isPhysio) return therapists;
@@ -77,30 +71,30 @@ export default function BookingTrackerSection({
 
   const title = useMemo(() => {
     if (mode === "future") return "Future Booking Tracker";
-    if (mode === "monthly") return "Whole Month Booking Tracker";
+    if (mode === "monthly") return "Monthly Booking Tracker";
     return "Same Day Booking Tracker";
   }, [mode]);
 
   const subtitle = useMemo(() => {
     if (mode === "future") return "View future bookings with shared filters.";
-    if (mode === "monthly") return "View whole month bookings using shared filters.";
+    if (mode === "monthly") return "View bookings by selected month.";
     return "View same day bookings using shared filters.";
   }, [mode]);
 
   useEffect(() => {
     if (!onApplyFilters) return;
 
-    if (patientDebounceRef.current) {
-      clearTimeout(patientDebounceRef.current);
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
     }
 
-    patientDebounceRef.current = setTimeout(() => {
+    debounceRef.current = setTimeout(() => {
       onApplyFilters();
     }, 250);
 
     return () => {
-      if (patientDebounceRef.current) {
-        clearTimeout(patientDebounceRef.current);
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
       }
     };
   }, [
@@ -108,6 +102,7 @@ export default function BookingTrackerSection({
     filter.date,
     filter.from_date,
     filter.to_date,
+    filter.month,
     filter.user_id,
     filter.therapist_id,
     filter.patient,
@@ -119,8 +114,8 @@ export default function BookingTrackerSection({
       if (nextMode === "today") {
         return {
           ...prev,
-          date: prev.date || today,
           mode: "today",
+          date: prev.date || today,
         };
       }
 
@@ -136,8 +131,7 @@ export default function BookingTrackerSection({
       return {
         ...prev,
         mode: "monthly",
-        from_date: firstDayOfMonth,
-        to_date: lastDayOfMonth,
+        month: prev.month || currentMonth,
       };
     });
 
@@ -184,7 +178,7 @@ export default function BookingTrackerSection({
               }}
               onClick={() => handleModeChange("monthly")}
             >
-              Whole Month
+              Month
             </button>
           </div>
         </div>
@@ -207,21 +201,33 @@ export default function BookingTrackerSection({
                 style={styles.input}
               />
             </div>
+          ) : mode === "monthly" ? (
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Month</label>
+              <input
+                type="month"
+                value={filter.month || currentMonth}
+                onChange={(e) =>
+                  setFilter?.((prev) => ({
+                    ...prev,
+                    month: e.target.value,
+                  }))
+                }
+                style={styles.input}
+              />
+            </div>
           ) : (
             <>
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>From Date</label>
                 <input
                   type="date"
-                  min={mode === "future" ? tomorrow : undefined}
-                  value={
-                    filter.from_date ||
-                    (mode === "future" ? tomorrow : firstDayOfMonth)
-                  }
+                  min={tomorrow}
+                  value={filter.from_date || tomorrow}
                   onChange={(e) =>
                     setFilter?.((prev) => {
                       const nextFromDate = e.target.value;
-                      const currentToDate = prev.to_date || "";
+                      const currentToDate = prev.to_date || twoWeeksForward;
 
                       return {
                         ...prev,
@@ -241,11 +247,8 @@ export default function BookingTrackerSection({
                 <label style={styles.label}>To Date</label>
                 <input
                   type="date"
-                  min={mode === "future" ? filter.from_date || tomorrow : undefined}
-                  value={
-                    filter.to_date ||
-                    (mode === "future" ? twoWeeksForward : lastDayOfMonth)
-                  }
+                  min={filter.from_date || tomorrow}
+                  value={filter.to_date || twoWeeksForward}
                   onChange={(e) =>
                     setFilter?.((prev) => ({
                       ...prev,

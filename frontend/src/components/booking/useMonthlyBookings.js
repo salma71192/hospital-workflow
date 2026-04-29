@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../../api/api";
 
-function formatLocalDate(date) {
-  return date.toLocaleDateString("en-CA");
+/* ================= HELPERS ================= */
+
+function getCurrentMonthString() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function getFirstDayOfMonthString() {
-  const now = new Date();
-  return formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
-}
-
-function getLastDayOfMonthString() {
-  const now = new Date();
-  return formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-}
+/* ================= HOOK ================= */
 
 export default function useMonthlyBookings() {
   const [monthlyBookingsCount, setMonthlyBookingsCount] = useState(0);
@@ -22,8 +17,7 @@ export default function useMonthlyBookings() {
   const [monthlyTherapists, setMonthlyTherapists] = useState([]);
 
   const [monthlyFilter, setMonthlyFilter] = useState({
-    from_date: getFirstDayOfMonthString(),
-    to_date: getLastDayOfMonthString(),
+    month: getCurrentMonthString(), // ✅ NEW (YYYY-MM)
     user_id: "all",
     patient: "",
     therapist_id: "all",
@@ -36,26 +30,20 @@ export default function useMonthlyBookings() {
     setMonthlyTherapists([]);
   };
 
+  /* ================= LOAD ================= */
+
   const loadMonthlyBookings = useCallback(
     async (
-      fromDateValue = monthlyFilter.from_date,
-      toDateValue = monthlyFilter.to_date,
+      monthValue = monthlyFilter.month,
       userIdValue = monthlyFilter.user_id,
       patientValue = monthlyFilter.patient,
       therapistIdValue = monthlyFilter.therapist_id
     ) => {
       try {
-        const safeFromDate = fromDateValue || getFirstDayOfMonthString();
-        let safeToDate = toDateValue || getLastDayOfMonthString();
-
-        if (safeFromDate > safeToDate) {
-          safeToDate = safeFromDate;
-        }
-
         const params = new URLSearchParams();
+
         params.append("mode", "monthly");
-        params.append("from_date", safeFromDate);
-        params.append("to_date", safeToDate);
+        params.append("month", monthValue); // ✅ IMPORTANT FIX
 
         if (userIdValue && userIdValue !== "all") {
           params.append("user_id", userIdValue);
@@ -78,47 +66,51 @@ export default function useMonthlyBookings() {
         setMonthlyAgents(res.data.agents || []);
         setMonthlyTherapists(res.data.therapists || []);
 
-        setMonthlyFilter({
-          from_date: res.data.from_date || safeFromDate,
-          to_date: res.data.to_date || safeToDate,
+        // ✅ do NOT overwrite filter aggressively
+        setMonthlyFilter((prev) => ({
+          ...prev,
+          month: res.data.month || monthValue,
           user_id: userIdValue || "all",
           patient: patientValue?.trim() || "",
           therapist_id: therapistIdValue || "all",
-        });
+        }));
       } catch (err) {
         console.error("Failed to load monthly bookings", err);
         resetMonthlyState();
       }
     },
     [
-      monthlyFilter.from_date,
-      monthlyFilter.to_date,
+      monthlyFilter.month,
       monthlyFilter.user_id,
       monthlyFilter.patient,
       monthlyFilter.therapist_id,
     ]
   );
 
+  /* ================= APPLY ================= */
+
   const handleApplyMonthlyFilters = async () => {
     await loadMonthlyBookings(
-      monthlyFilter.from_date,
-      monthlyFilter.to_date,
+      monthlyFilter.month,
       monthlyFilter.user_id,
       monthlyFilter.patient,
       monthlyFilter.therapist_id
     );
   };
 
+  /* ================= INIT ================= */
+
   useEffect(() => {
     loadMonthlyBookings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line
   }, []);
+
+  /* ================= REALTIME ================= */
 
   useEffect(() => {
     const interval = setInterval(() => {
       loadMonthlyBookings(
-        monthlyFilter.from_date,
-        monthlyFilter.to_date,
+        monthlyFilter.month,
         monthlyFilter.user_id,
         monthlyFilter.patient,
         monthlyFilter.therapist_id
@@ -126,7 +118,15 @@ export default function useMonthlyBookings() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [loadMonthlyBookings, monthlyFilter]);
+  }, [
+    monthlyFilter.month,
+    monthlyFilter.user_id,
+    monthlyFilter.patient,
+    monthlyFilter.therapist_id,
+    loadMonthlyBookings,
+  ]);
+
+  /* ================= RETURN ================= */
 
   return {
     monthlyBookingsCount,
