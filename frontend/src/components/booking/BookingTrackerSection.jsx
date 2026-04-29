@@ -1,20 +1,34 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import PatientAutocompleteFilter from "./PatientAutocompleteFilter";
 
+function formatDate(date) {
+  return date.toISOString().split("T")[0];
+}
+
 function getTodayString() {
-  return new Date().toISOString().split("T")[0];
+  return formatDate(new Date());
 }
 
 function getTomorrowString() {
   const next = new Date();
   next.setDate(next.getDate() + 1);
-  return next.toISOString().split("T")[0];
+  return formatDate(next);
 }
 
 function getTwoWeeksForwardString() {
   const next = new Date();
   next.setDate(next.getDate() + 14);
-  return next.toISOString().split("T")[0];
+  return formatDate(next);
+}
+
+function getFirstDayOfMonthString() {
+  const now = new Date();
+  return formatDate(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+function getLastDayOfMonthString() {
+  const now = new Date();
+  return formatDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
 }
 
 function isPastBooking(appointmentDate, appointmentTime) {
@@ -36,7 +50,7 @@ export default function BookingTrackerSection({
   daySummary = [],
   therapists = [],
   agents = [],
-  filter,
+  filter = {},
   setFilter,
   onApplyFilters,
   onEditBooking,
@@ -45,12 +59,13 @@ export default function BookingTrackerSection({
   isPhysio = false,
   currentUserId = "",
 }) {
+  const patientDebounceRef = useRef(null);
+
   const today = getTodayString();
   const tomorrow = getTomorrowString();
   const twoWeeksForward = getTwoWeeksForwardString();
-
-  const firstRenderRef = useRef(true);
-  const patientDebounceRef = useRef(null);
+  const firstDayOfMonth = getFirstDayOfMonthString();
+  const lastDayOfMonth = getLastDayOfMonthString();
 
   const visibleTherapists = useMemo(() => {
     if (!isPhysio) return therapists;
@@ -67,23 +82,12 @@ export default function BookingTrackerSection({
   }, [mode]);
 
   const subtitle = useMemo(() => {
-    if (mode === "future") {
-      return "View future bookings with shared filters.";
-    }
-
-    if (mode === "monthly") {
-      return "View whole month bookings using shared filters.";
-    }
-
+    if (mode === "future") return "View future bookings with shared filters.";
+    if (mode === "monthly") return "View whole month bookings using shared filters.";
     return "View same day bookings using shared filters.";
   }, [mode]);
 
   useEffect(() => {
-    if (firstRenderRef.current) {
-      firstRenderRef.current = false;
-      return;
-    }
-
     if (!onApplyFilters) return;
 
     if (patientDebounceRef.current) {
@@ -111,14 +115,12 @@ export default function BookingTrackerSection({
   ]);
 
   const handleModeChange = (nextMode) => {
-    onChangeMode?.(nextMode);
-
-    setFilter((prev) => {
+    setFilter?.((prev) => {
       if (nextMode === "today") {
         return {
           ...prev,
-          mode: "today",
           date: prev.date || today,
+          mode: "today",
         };
       }
 
@@ -134,8 +136,12 @@ export default function BookingTrackerSection({
       return {
         ...prev,
         mode: "monthly",
+        from_date: firstDayOfMonth,
+        to_date: lastDayOfMonth,
       };
     });
+
+    onChangeMode?.(nextMode);
   };
 
   return (
@@ -193,7 +199,7 @@ export default function BookingTrackerSection({
                 type="date"
                 value={filter.date || today}
                 onChange={(e) =>
-                  setFilter((prev) => ({
+                  setFilter?.((prev) => ({
                     ...prev,
                     date: e.target.value,
                   }))
@@ -208,9 +214,12 @@ export default function BookingTrackerSection({
                 <input
                   type="date"
                   min={mode === "future" ? tomorrow : undefined}
-                  value={filter.from_date || ""}
+                  value={
+                    filter.from_date ||
+                    (mode === "future" ? tomorrow : firstDayOfMonth)
+                  }
                   onChange={(e) =>
-                    setFilter((prev) => {
+                    setFilter?.((prev) => {
                       const nextFromDate = e.target.value;
                       const currentToDate = prev.to_date || "";
 
@@ -233,9 +242,12 @@ export default function BookingTrackerSection({
                 <input
                   type="date"
                   min={mode === "future" ? filter.from_date || tomorrow : undefined}
-                  value={filter.to_date || ""}
+                  value={
+                    filter.to_date ||
+                    (mode === "future" ? twoWeeksForward : lastDayOfMonth)
+                  }
                   onChange={(e) =>
-                    setFilter((prev) => ({
+                    setFilter?.((prev) => ({
                       ...prev,
                       to_date: e.target.value,
                     }))
@@ -251,7 +263,7 @@ export default function BookingTrackerSection({
             <select
               value={filter.user_id || "all"}
               onChange={(e) =>
-                setFilter((prev) => ({
+                setFilter?.((prev) => ({
                   ...prev,
                   user_id: e.target.value,
                 }))
@@ -261,7 +273,7 @@ export default function BookingTrackerSection({
               <option value="all">All</option>
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
-                  {agent.name}
+                  {agent.name || agent.username}
                 </option>
               ))}
             </select>
@@ -275,7 +287,7 @@ export default function BookingTrackerSection({
                 (isPhysio ? String(currentUserId) : "all")
               }
               onChange={(e) =>
-                setFilter((prev) => ({
+                setFilter?.((prev) => ({
                   ...prev,
                   therapist_id: e.target.value,
                 }))
@@ -295,7 +307,7 @@ export default function BookingTrackerSection({
           <PatientAutocompleteFilter
             value={filter.patient || ""}
             onChange={(value) =>
-              setFilter((prev) => ({
+              setFilter?.((prev) => ({
                 ...prev,
                 patient: value,
               }))
@@ -390,11 +402,7 @@ export default function BookingTrackerSection({
                               Edit
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              style={styles.disabledBtn}
-                              disabled
-                            >
+                            <button type="button" style={styles.disabledBtn} disabled>
                               Edit
                             </button>
                           )}
@@ -408,11 +416,7 @@ export default function BookingTrackerSection({
                               Delete
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              style={styles.disabledBtn}
-                              disabled
-                            >
+                            <button type="button" style={styles.disabledBtn} disabled>
                               Delete
                             </button>
                           )}
@@ -431,10 +435,7 @@ export default function BookingTrackerSection({
 }
 
 const styles = {
-  page: {
-    display: "grid",
-    gap: "16px",
-  },
+  page: { display: "grid", gap: "16px" },
   card: {
     background: "#fff",
     borderRadius: "18px",
@@ -458,20 +459,9 @@ const styles = {
     letterSpacing: "0.08em",
     color: "#be185d",
   },
-  title: {
-    fontSize: "24px",
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  subtext: {
-    fontSize: "14px",
-    color: "#64748b",
-  },
-  modeButtons: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
+  title: { fontSize: "24px", fontWeight: "800", color: "#0f172a" },
+  subtext: { fontSize: "14px", color: "#64748b" },
+  modeButtons: { display: "flex", gap: "8px", flexWrap: "wrap" },
   modeBtn: {
     background: "#fff",
     color: "#334155",
@@ -492,15 +482,8 @@ const styles = {
     gap: "12px",
     alignItems: "end",
   },
-  fieldGroup: {
-    display: "grid",
-    gap: "8px",
-  },
-  label: {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#475569",
-  },
+  fieldGroup: { display: "grid", gap: "8px" },
+  label: { fontSize: "13px", fontWeight: "700", color: "#475569" },
   input: {
     padding: "12px 14px",
     borderRadius: "12px",
@@ -514,15 +497,8 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: "16px",
   },
-  sectionTitle: {
-    fontSize: "16px",
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  list: {
-    display: "grid",
-    gap: "10px",
-  },
+  sectionTitle: { fontSize: "16px", fontWeight: "800", color: "#0f172a" },
+  list: { display: "grid", gap: "10px" },
   summaryRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -533,11 +509,7 @@ const styles = {
     borderRadius: "12px",
     padding: "12px 14px",
   },
-  summaryName: {
-    fontSize: "14px",
-    fontWeight: "700",
-    color: "#0f172a",
-  },
+  summaryName: { fontSize: "14px", fontWeight: "700", color: "#0f172a" },
   summaryBadge: {
     background: "#fdf2f8",
     color: "#be185d",
@@ -548,14 +520,8 @@ const styles = {
     minWidth: "36px",
     textAlign: "center",
   },
-  tableWrap: {
-    overflowX: "auto",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    minWidth: "980px",
-  },
+  tableWrap: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", minWidth: "980px" },
   th: {
     textAlign: "left",
     padding: "12px",
@@ -571,11 +537,7 @@ const styles = {
     color: "#0f172a",
     verticalAlign: "top",
   },
-  actions: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
+  actions: { display: "flex", gap: "8px", flexWrap: "wrap" },
   editBtn: {
     background: "#0ea5e9",
     color: "#fff",
