@@ -10,6 +10,8 @@ import { useNavigate } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 import WaitingListModal from "../components/common/WaitingListModal";
+import LeaderboardSection from "../components/common/LeaderboardSection";
+import useLeaderboard from "../components/common/useLeaderboard";
 
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import PatientRegisterForm from "../components/patients/PatientRegisterForm";
@@ -53,6 +55,9 @@ export default function CallCenterBookingWorkspace({
   const navigate = useNavigate();
   const bookingRef = useRef(null);
 
+  const stats = useMyStats();
+  const leaderboard = useLeaderboard("callcenter");
+
   const [trackerMode, setTrackerMode] = useState("today");
   const [trackerFilter, setTrackerFilter] = useState({
     date: getTodayString(),
@@ -67,8 +72,6 @@ export default function CallCenterBookingWorkspace({
   const [waitingModalOpen, setWaitingModalOpen] = useState(false);
   const [waitingModalData, setWaitingModalData] = useState(null);
   const [slotFreedAlerts, setSlotFreedAlerts] = useState([]);
-
-  const stats = useMyStats();
 
   const {
     waitingList,
@@ -337,6 +340,7 @@ export default function CallCenterBookingWorkspace({
       sidebarItems={[
         { key: "home", label: "Home" },
         { key: "tracker", label: "My Stats" },
+        { key: "leaderboard", label: "Leaderboard" },
         { key: "book", label: "Book" },
         { key: "open_file", label: "Open New File" },
         {
@@ -375,6 +379,13 @@ export default function CallCenterBookingWorkspace({
       ) : null}
 
       {activeSection === "tracker" && <MyStatsSection stats={stats} />}
+
+      {activeSection === "leaderboard" && (
+        <LeaderboardSection
+          title="Call Center Leaderboard"
+          rows={leaderboard}
+        />
+      )}
 
       {activeSection === "book" && (
         <div style={styles.stack}>
