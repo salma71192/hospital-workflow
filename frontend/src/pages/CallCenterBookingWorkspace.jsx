@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
@@ -47,6 +53,17 @@ export default function CallCenterBookingWorkspace({
   const navigate = useNavigate();
   const bookingRef = useRef(null);
 
+  const [trackerMode, setTrackerMode] = useState("today");
+  const [trackerFilter, setTrackerFilter] = useState({
+    date: getTodayString(),
+    from_date: getTomorrowString(),
+    to_date: getTwoWeeksForwardString(),
+    month: getCurrentMonthString(),
+    therapist_id: "all",
+    user_id: "all",
+    patient: "",
+  });
+
   const [waitingModalOpen, setWaitingModalOpen] = useState(false);
   const [waitingModalData, setWaitingModalData] = useState(null);
   const [slotFreedAlerts, setSlotFreedAlerts] = useState([]);
@@ -84,9 +101,6 @@ export default function CallCenterBookingWorkspace({
     activeSection,
     setActiveSection,
 
-    trackerMode,
-    setTrackerMode,
-
     message,
     error,
 
@@ -95,6 +109,7 @@ export default function CallCenterBookingWorkspace({
     setPatientForm,
     bookingForm,
     setBookingForm,
+
     therapists,
     weekDates,
     slots,
@@ -102,25 +117,19 @@ export default function CallCenterBookingWorkspace({
     todayBookings,
     todayAgents,
     todayTherapists,
-    todayFilter,
-    setTodayFilter,
-    handleApplyTodayFilters,
+    loadTodayBookings,
 
     monthlyBookings,
     monthlyAgents,
     monthlyTherapists,
-    monthlyFilter,
-    setMonthlyFilter,
-    handleApplyMonthlyFilters,
+    loadMonthlyBookings,
 
     futureBookings,
     futureTherapistSummary,
     futureDaySummary,
     futureAgents,
     futureTherapists,
-    futureFilter,
-    setFutureFilter,
-    handleApplyFutureFilters,
+    loadFutureBookings,
 
     handleSelectPatient,
     handleCreatePatientFile,
@@ -146,8 +155,14 @@ export default function CallCenterBookingWorkspace({
   }, [trackerMode, futureBookings, monthlyBookings, todayBookings]);
 
   const trackerAgents = useMemo(() => {
-    if (trackerMode === "future") return futureAgents;
-    if (trackerMode === "monthly") return monthlyAgents;
+    if (trackerMode === "future") {
+      return futureAgents?.length ? futureAgents : todayAgents;
+    }
+
+    if (trackerMode === "monthly") {
+      return monthlyAgents?.length ? monthlyAgents : todayAgents;
+    }
+
     return todayAgents;
   }, [trackerMode, futureAgents, monthlyAgents, todayAgents]);
 
@@ -169,35 +184,40 @@ export default function CallCenterBookingWorkspace({
     therapists,
   ]);
 
-  const trackerFilter = useMemo(() => {
-    if (trackerMode === "future") return futureFilter;
-    if (trackerMode === "monthly") return monthlyFilter;
-    return todayFilter;
-  }, [trackerMode, futureFilter, monthlyFilter, todayFilter]);
-
-  const setTrackerFilter = useMemo(() => {
-    if (trackerMode === "future") return setFutureFilter;
-    if (trackerMode === "monthly") return setMonthlyFilter;
-    return setTodayFilter;
-  }, [trackerMode, setFutureFilter, setMonthlyFilter, setTodayFilter]);
-
   const handleApplyTrackerFilters = useCallback(async () => {
     if (trackerMode === "future") {
-      await handleApplyFutureFilters?.();
+      await loadFutureBookings(
+        trackerFilter.from_date,
+        trackerFilter.to_date,
+        trackerFilter.therapist_id,
+        trackerFilter.user_id,
+        trackerFilter.patient
+      );
       return;
     }
 
     if (trackerMode === "monthly") {
-      await handleApplyMonthlyFilters?.();
+      await loadMonthlyBookings(
+        trackerFilter.month,
+        trackerFilter.user_id,
+        trackerFilter.patient,
+        trackerFilter.therapist_id
+      );
       return;
     }
 
-    await handleApplyTodayFilters?.();
+    await loadTodayBookings(
+      trackerFilter.date,
+      trackerFilter.therapist_id,
+      trackerFilter.user_id,
+      trackerFilter.patient
+    );
   }, [
     trackerMode,
-    handleApplyFutureFilters,
-    handleApplyMonthlyFilters,
-    handleApplyTodayFilters,
+    trackerFilter,
+    loadFutureBookings,
+    loadMonthlyBookings,
+    loadTodayBookings,
   ]);
 
   useEffect(() => {
@@ -206,32 +226,29 @@ export default function CallCenterBookingWorkspace({
   }, [activeSection, trackerMode, trackerFilter, handleApplyTrackerFilters]);
 
   const handleTrackerModeChange = (nextMode) => {
-    if (nextMode === "today") {
-      setTodayFilter((prev) => ({
-        ...prev,
-        date: prev.date || getTodayString(),
-      }));
-    }
+    setTrackerMode(nextMode);
 
-    if (nextMode === "future") {
-      setFutureFilter((prev) => ({
-        ...prev,
-        from_date: prev.from_date || getTomorrowString(),
-        to_date: prev.to_date || getTwoWeeksForwardString(),
-      }));
-    }
+    setTrackerFilter((prev) => {
+      if (nextMode === "today") {
+        return {
+          ...prev,
+          date: prev.date || getTodayString(),
+        };
+      }
 
-    if (nextMode === "monthly") {
-      setMonthlyFilter((prev) => ({
+      if (nextMode === "future") {
+        return {
+          ...prev,
+          from_date: prev.from_date || getTomorrowString(),
+          to_date: prev.to_date || getTwoWeeksForwardString(),
+        };
+      }
+
+      return {
         ...prev,
         month: prev.month || getCurrentMonthString(),
-        user_id: prev.user_id || "all",
-        patient: prev.patient || "",
-        therapist_id: prev.therapist_id || "all",
-      }));
-    }
-
-    setTrackerMode(nextMode);
+      };
+    });
   };
 
   const handleBackToAdmin = () => {
@@ -345,7 +362,10 @@ export default function CallCenterBookingWorkspace({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message ? <DashboardNotice type="success">{message}</DashboardNotice> : null}
+      {message ? (
+        <DashboardNotice type="success">{message}</DashboardNotice>
+      ) : null}
+
       {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
 
       {slotFreedAlerts.length > 0 ? (
@@ -406,7 +426,9 @@ export default function CallCenterBookingWorkspace({
           mode={trackerMode}
           onChangeMode={handleTrackerModeChange}
           bookings={trackerBookings}
-          therapistSummary={trackerMode === "future" ? futureTherapistSummary : []}
+          therapistSummary={
+            trackerMode === "future" ? futureTherapistSummary : []
+          }
           daySummary={trackerMode === "future" ? futureDaySummary : []}
           therapists={trackerTherapists}
           agents={trackerAgents}
