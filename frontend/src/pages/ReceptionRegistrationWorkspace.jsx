@@ -10,6 +10,9 @@ import PatientAssignmentForm from "../components/patients/PatientAssignmentForm"
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import RegistrationTrackerSection from "../components/assignments/RegistrationTrackerSection";
 
+import RegistrationStatsSection from "../components/assignments/RegistrationStatsSection";
+import useRegistrationStats from "../components/assignments/useRegistrationStats";
+
 function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
@@ -39,8 +42,9 @@ export default function ReceptionRegistrationWorkspace({
 }) {
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
+  const stats = useRegistrationStats();
 
-  const [activeSection, setActiveSection] = useState("register");
+  const [activeSection, setActiveSection] = useState("stats");
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [trackerMode, setTrackerMode] = useState("today");
 
@@ -322,6 +326,7 @@ export default function ReceptionRegistrationWorkspace({
       sidebarTitle="Registration"
       sidebarItems={[
         { key: "home", label: "Home" },
+        { key: "stats", label: "My Stats" },
         { key: "register", label: "Register" },
         { key: "open_file", label: "Open New File" },
         {
@@ -349,6 +354,10 @@ export default function ReceptionRegistrationWorkspace({
       {error ? (
         <DashboardNotice type="error">{error}</DashboardNotice>
       ) : null}
+
+      {activeSection === "stats" && (
+        <RegistrationStatsSection stats={stats} />
+      )}
 
       {activeSection === "register" && (
         <div style={styles.stack}>
