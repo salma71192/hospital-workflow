@@ -108,7 +108,6 @@ export default function useMonthlyBookings() {
       monthlyFilter.patient,
       monthlyFilter.therapist_id
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // realtime refresh without stale filter bugs

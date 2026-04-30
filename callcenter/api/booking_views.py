@@ -47,21 +47,6 @@ def two_weeks_forward():
     return today_local() + timedelta(days=14)
 
 
-def first_day_of_current_month():
-    return today_local().replace(day=1)
-
-
-def last_day_of_current_month():
-    first_day = first_day_of_current_month()
-
-    if first_day.month == 12:
-        next_month = first_day.replace(year=first_day.year + 1, month=1, day=1)
-    else:
-        next_month = first_day.replace(month=first_day.month + 1, day=1)
-
-    return next_month - timedelta(days=1)
-
-
 def booking_base_queryset():
     return Appointment.objects.select_related("patient", "therapist", "created_by")
 
@@ -92,16 +77,13 @@ def get_visible_agents_queryset(request):
 
     if role == "physio" and not request.user.is_superuser:
         return User.objects.filter(
-            Q(
-                role__in=[
-                    "admin",
-                    "callcenter",
-                    "callcenter_supervisor",
-                    "reception",
-                    "reception_supervisor",
-                ]
-            )
-            | Q(id=request.user.id)
+            Q(role__in=[
+                "admin",
+                "callcenter",
+                "callcenter_supervisor",
+                "reception",
+                "reception_supervisor",
+            ]) | Q(id=request.user.id)
         ).order_by("username")
 
     return get_agents_queryset()
@@ -271,7 +253,7 @@ def notify_waiting_list_for_free_slot(therapist_id, appointment_date, appointmen
     return matched_ids
 
 
-def move_waiting_list_to_booked(patient_id, therapist_id=None, appointment_date=None):
+def move_waiting_list_to_booked(patient_id):
     WaitingListEntry.objects.filter(
         patient_id=patient_id,
         status__in=["waiting", "notified"],
@@ -386,10 +368,8 @@ def therapists_api(request):
     if not can_use_callcenter(request.user):
         return json_error("Not authorized", 403)
 
-    therapists = get_therapists_queryset()
-
     return JsonResponse({
-        "therapists": [serialize_user(t) for t in therapists],
+        "therapists": [serialize_user(t) for t in get_therapists_queryset()],
     })
 
 
@@ -644,9 +624,7 @@ def booking_tracker_api(request):
             "count": qs.count(),
             "bookings": [serialize_booking(b) for b in qs],
             "agents": [serialize_user(a) for a in get_visible_agents_queryset(request)],
-            "therapists": [
-                serialize_user(t) for t in get_visible_therapists_queryset(request)
-            ],
+            "therapists": [serialize_user(t) for t in get_visible_therapists_queryset(request)],
             "therapist_summary": [],
             "day_summary": [],
         })
@@ -685,9 +663,7 @@ def booking_tracker_api(request):
             "count": qs.count(),
             "bookings": [serialize_booking(b) for b in qs],
             "agents": [serialize_user(a) for a in get_visible_agents_queryset(request)],
-            "therapists": [
-                serialize_user(t) for t in get_visible_therapists_queryset(request)
-            ],
+            "therapists": [serialize_user(t) for t in get_visible_therapists_queryset(request)],
             "therapist_summary": [
                 {
                     "therapist_id": row["therapist_id"],
@@ -706,15 +682,15 @@ def booking_tracker_api(request):
         })
 
     if mode == "monthly":
-        from_date = validate_date(request.GET.get("from_date")) or first_day_of_current_month()
-        to_date = validate_date(request.GET.get("to_date")) or last_day_of_current_month()
+        month_value = request.GET.get("month")
+        start_date, end_date = _get_month_range(month_value)
 
-        if from_date > to_date:
-            return json_error("From date cannot be after to date", 400)
+        if not start_date or not end_date:
+            return json_error("Invalid month format. Use YYYY-MM", 400)
 
         qs = booking_base_queryset().filter(
-            appointment_date__gte=from_date,
-            appointment_date__lte=to_date,
+            appointment_date__gte=start_date,
+            appointment_date__lte=end_date,
         )
 
         qs = apply_booking_tracker_filters(request, qs)
@@ -722,14 +698,13 @@ def booking_tracker_api(request):
 
         return JsonResponse({
             "mode": "monthly",
-            "from_date": str(from_date),
-            "to_date": str(to_date),
+            "month": month_value,
+            "from_date": str(start_date),
+            "to_date": str(end_date),
             "count": qs.count(),
             "bookings": [serialize_booking(b) for b in qs],
             "agents": [serialize_user(a) for a in get_visible_agents_queryset(request)],
-            "therapists": [
-                serialize_user(t) for t in get_visible_therapists_queryset(request)
-            ],
+            "therapists": [serialize_user(t) for t in get_visible_therapists_queryset(request)],
             "therapist_summary": [],
             "day_summary": [],
         })
@@ -780,21 +755,10 @@ def today_statistics_api(request):
     if not can_use_callcenter(request.user):
         return json_error("Not authorized", 403)
 
-    role = get_request_role(request)
-
-    allowed_roles = [
-        "admin",
-        "callcenter",
-        "callcenter_supervisor",
-        "reception_supervisor",
-        "physio",
-    ]
-
-    if role not in allowed_roles and not request.user.is_superuser:
-        return json_error("Not authorized", 403)
-
     selected_date = validate_date(request.GET.get("date")) or today_local()
     therapist_id = (request.GET.get("therapist_id") or "").strip() or None
+
+    role = get_request_role(request)
 
     if role == "physio" and not request.user.is_superuser:
         therapist_id = request.user.id
@@ -804,22 +768,6 @@ def today_statistics_api(request):
         end_date=selected_date,
         therapist_id=therapist_id,
     )
-
-    prev_start, prev_end = _get_previous_day_range(selected_date)
-
-    previous_rows, _ = _build_statistics_rows(
-        start_date=prev_start,
-        end_date=prev_end,
-        therapist_id=therapist_id,
-    )
-
-    previous_map = {str(row["therapist_id"]): row for row in previous_rows}
-
-    for row in rows:
-        prev_row = previous_map.get(str(row["therapist_id"]), {})
-        row["previous_booked"] = prev_row.get("booked", 0)
-        row["trend_booked"] = row["booked"] - row["previous_booked"]
-        row["capacity_warning"] = row["booked"] >= row["available_slots"] * 0.9
 
     return JsonResponse({
         "date": str(selected_date),
@@ -833,19 +781,6 @@ def monthly_statistics_api(request):
     if not can_use_callcenter(request.user):
         return json_error("Not authorized", 403)
 
-    role = get_request_role(request)
-
-    allowed_roles = [
-        "admin",
-        "callcenter",
-        "callcenter_supervisor",
-        "reception_supervisor",
-        "physio",
-    ]
-
-    if role not in allowed_roles and not request.user.is_superuser:
-        return json_error("Not authorized", 403)
-
     month_value = request.GET.get("month")
     therapist_id = (request.GET.get("therapist_id") or "").strip() or None
 
@@ -853,6 +788,8 @@ def monthly_statistics_api(request):
 
     if not start_date or not end_date:
         return json_error("Invalid month format. Use YYYY-MM", 400)
+
+    role = get_request_role(request)
 
     if role == "physio" and not request.user.is_superuser:
         therapist_id = request.user.id
@@ -862,22 +799,6 @@ def monthly_statistics_api(request):
         end_date=end_date,
         therapist_id=therapist_id,
     )
-
-    prev_start, prev_end = _get_previous_month_range(start_date)
-
-    previous_rows, _ = _build_statistics_rows(
-        start_date=prev_start,
-        end_date=prev_end,
-        therapist_id=therapist_id,
-    )
-
-    previous_map = {str(row["therapist_id"]): row for row in previous_rows}
-
-    for row in rows:
-        prev_row = previous_map.get(str(row["therapist_id"]), {})
-        row["previous_booked"] = prev_row.get("booked", 0)
-        row["trend_booked"] = row["booked"] - row["previous_booked"]
-        row["capacity_warning"] = row["booked"] >= row["available_slots"] * 0.9
 
     return JsonResponse({
         "date": str(month_value),
