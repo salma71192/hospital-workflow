@@ -1,6 +1,5 @@
 from datetime import timedelta
 
-from django.shortcuts import render
 from django.http import JsonResponse
 from django.utils import timezone
 from django.db.models import Count, Q
@@ -22,29 +21,30 @@ def dashboard(request):
 
     patients_today = Patient.objects.filter(
         created_by=request.user,
-        created_at__date=today
+        created_at__date=today,
     ).count()
 
     patients_month = Patient.objects.filter(
         created_by=request.user,
         created_at__month=today.month,
-        created_at__year=today.year
+        created_at__year=today.year,
     ).count()
 
     physios = User.objects.filter(role__in=["physio", "physiotherapist"])
 
-    context = {
+    return JsonResponse({
         "patients_today": patients_today,
         "patients_month": patients_month,
         "tasks": [],
-        "physios": physios,
-    }
-
-    # If using template:
-    # return render(request, "reception/dashboard.html", context)
-
-    # If using React frontend:
-    return JsonResponse(context)
+        "physios": [
+            {
+                "id": p.id,
+                "username": p.username,
+                "name": getattr(p, "name", p.username),
+            }
+            for p in physios
+        ],
+    })
 
 
 # ================= REGISTRATION STATS =================
@@ -56,27 +56,41 @@ def my_registration_stats_api(request):
     today_value = timezone.localdate()
     month_start = today_value.replace(day=1)
 
-    # ================= BASE QUERYSETS =================
+    # New patient files opened by receptionist
+    today_files_qs = Patient.objects.filter(
+        created_by=request.user,
+        created_at__date=today_value,
+    )
 
-    today_qs = PatientAssignment.objects.filter(
+    month_files_qs = Patient.objects.filter(
+        created_by=request.user,
+        created_at__date__gte=month_start,
+        created_at__date__lte=today_value,
+    )
+
+    # Assignments made by receptionist
+    today_assignments_qs = PatientAssignment.objects.filter(
         created_by=request.user,
         assignment_date=today_value,
     )
 
-    month_qs = PatientAssignment.objects.filter(
+    month_assignments_qs = PatientAssignment.objects.filter(
         created_by=request.user,
         assignment_date__gte=month_start,
         assignment_date__lte=today_value,
     )
-
-    # ================= DAILY CHART (LAST 7 DAYS) =================
 
     daily_rows = []
 
     for i in range(6, -1, -1):
         day = today_value - timedelta(days=i)
 
-        count = PatientAssignment.objects.filter(
+        file_count = Patient.objects.filter(
+            created_by=request.user,
+            created_at__date=day,
+        ).count()
+
+        assignment_count = PatientAssignment.objects.filter(
             created_by=request.user,
             assignment_date=day,
         ).count()
@@ -84,13 +98,13 @@ def my_registration_stats_api(request):
         daily_rows.append({
             "date": str(day),
             "label": day.strftime("%d %b"),
-            "count": count,
+            "count": file_count + assignment_count,
+            "new_files": file_count,
+            "assignments": assignment_count,
         })
 
-    # ================= PER PHYSIO =================
-
     therapist_rows = (
-        month_qs.values("therapist_id", "therapist__username")
+        month_assignments_qs.values("therapist_id", "therapist__username")
         .annotate(count=Count("id"))
         .order_by("-count")
     )
@@ -104,15 +118,21 @@ def my_registration_stats_api(request):
         for row in therapist_rows
     ]
 
-    # ================= CATEGORY BREAKDOWN =================
-
     category_rows = (
-        month_qs.values("category")
+        month_assignments_qs.values("category")
         .annotate(count=Count("id"))
         .order_by("-count")
     )
 
     categories_data = [
+        {
+            "category": "new_files",
+            "label": "New Files",
+            "count": month_files_qs.count(),
+        }
+    ]
+
+    categories_data += [
         {
             "category": row["category"] or "unknown",
             "label": (row["category"] or "unknown").replace("_", " ").title(),
@@ -121,30 +141,27 @@ def my_registration_stats_api(request):
         for row in category_rows
     ]
 
-    # ================= CONVERSION =================
-
-    appointment_count = month_qs.filter(category="appointment").count()
-
-    walk_in_count = month_qs.filter(category="walk_in").count()
-
-    initial_eval_count = month_qs.filter(
+    appointment_count = month_assignments_qs.filter(category="appointment").count()
+    walk_in_count = month_assignments_qs.filter(category="walk_in").count()
+    initial_eval_count = month_assignments_qs.filter(
         Q(category="initial_evaluation") | Q(category="initial_eval")
     ).count()
 
-    total_count = month_qs.count()
-
-    # ================= RESPONSE =================
+    today_total = today_files_qs.count() + today_assignments_qs.count()
+    monthly_total = month_files_qs.count() + month_assignments_qs.count()
 
     return JsonResponse({
-        "today": today_qs.count(),
-        "monthly": total_count,
+        "today": today_total,
+        "monthly": monthly_total,
         "daily": daily_rows,
         "therapists": therapists_data,
         "categories": categories_data,
         "conversion": {
+            "new_files": month_files_qs.count(),
             "appointment": appointment_count,
             "walk_in": walk_in_count,
             "initial_eval": initial_eval_count,
-            "total": total_count,
+            "assignments": month_assignments_qs.count(),
+            "total": monthly_total,
         },
     })
