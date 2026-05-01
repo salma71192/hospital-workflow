@@ -6,9 +6,34 @@ export default function LeaderboardSection({
   loading = false,
   error = "",
   onReload,
+  target = 100,
+  showTarget = true,
+  showConversion = true,
 }) {
   const safeRows = Array.isArray(rows) ? rows : [];
-  const topScore = Math.max(...safeRows.map((row) => row.monthly || 0), 1);
+
+  const getMonthly = (row) => row.monthly ?? row.count ?? 0;
+  const getToday = (row) => row.today ?? 0;
+  const getTarget = (row) => row.target ?? target ?? 100;
+
+  const getConversion = (row) => {
+    if (row.conversion !== undefined && row.conversion !== null) {
+      return row.conversion;
+    }
+
+    const completed = row.completed ?? row.attended ?? row.booked ?? getMonthly(row);
+    const total = row.total ?? getMonthly(row);
+
+    if (!total) return 0;
+    return Math.round((completed / total) * 100);
+  };
+
+  const sortedRows = [...safeRows].sort((a, b) => getMonthly(b) - getMonthly(a));
+
+  const topScore = Math.max(
+    ...sortedRows.map((row) => getMonthly(row)),
+    1
+  );
 
   return (
     <div style={styles.page}>
@@ -17,7 +42,7 @@ export default function LeaderboardSection({
           <div style={styles.eyebrow}>Performance</div>
           <h2 style={styles.title}>{title}</h2>
           <p style={styles.subtitle}>
-            Ranking by this month’s activity. Today’s count is shown beside it.
+            Ranking by this month’s activity. Today, target progress, and conversion are shown beside it.
           </p>
         </div>
 
@@ -32,17 +57,21 @@ export default function LeaderboardSection({
 
       {loading ? (
         <div style={styles.empty}>Loading leaderboard...</div>
-      ) : safeRows.length === 0 ? (
+      ) : sortedRows.length === 0 ? (
         <div style={styles.empty}>No leaderboard data found.</div>
       ) : (
         <div style={styles.list}>
-          {safeRows.map((row, index) => {
-            const monthly = row.monthly || 0;
-            const today = row.today || 0;
+          {sortedRows.map((row, index) => {
+            const monthly = getMonthly(row);
+            const today = getToday(row);
+            const userTarget = getTarget(row);
+            const targetPercent =
+              userTarget > 0 ? Math.min(100, Math.round((monthly / userTarget) * 100)) : 0;
+            const conversion = getConversion(row);
             const width = Math.max(6, Math.round((monthly / topScore) * 100));
 
             return (
-              <div key={row.user_id || row.name || index} style={styles.row}>
+              <div key={row.user_id || row.id || row.name || index} style={styles.row}>
                 <div style={styles.rankBox}>
                   <div
                     style={{
@@ -65,8 +94,10 @@ export default function LeaderboardSection({
                 <div style={styles.main}>
                   <div style={styles.nameRow}>
                     <div>
-                      <div style={styles.name}>{row.name || row.username || "-"}</div>
-                      <div style={styles.role}>{row.role || "User"}</div>
+                      <div style={styles.name}>
+                        {row.name || row.username || row.therapist_name || "-"}
+                      </div>
+                      <div style={styles.role}>{row.role || row.label || "User"}</div>
                     </div>
 
                     <div style={styles.scoreGroup}>
@@ -79,11 +110,46 @@ export default function LeaderboardSection({
                         <strong>{today}</strong>
                         <span>Today</span>
                       </div>
+
+                      {showTarget ? (
+                        <div style={styles.scoreBox}>
+                          <strong>{targetPercent}%</strong>
+                          <span>Target</span>
+                        </div>
+                      ) : null}
+
+                      {showConversion ? (
+                        <div style={styles.scoreBox}>
+                          <strong>{conversion}%</strong>
+                          <span>Convert</span>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
-                  <div style={styles.track}>
-                    <div style={{ ...styles.fill, width: `${width}%` }} />
+                  <div style={styles.progressGrid}>
+                    <div>
+                      <div style={styles.progressLabel}>Monthly Rank Progress</div>
+                      <div style={styles.track}>
+                        <div style={{ ...styles.fill, width: `${width}%` }} />
+                      </div>
+                    </div>
+
+                    {showTarget ? (
+                      <div>
+                        <div style={styles.progressLabel}>
+                          Target Progress ({monthly}/{userTarget})
+                        </div>
+                        <div style={styles.track}>
+                          <div
+                            style={{
+                              ...styles.targetFill,
+                              width: `${Math.max(6, targetPercent)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -154,6 +220,7 @@ const styles = {
     gap: "14px",
     alignItems: "center",
     boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
+    transition: "transform 0.2s ease, box-shadow 0.2s ease",
   },
   rankBox: {
     display: "grid",
@@ -222,6 +289,18 @@ const styles = {
     textAlign: "center",
     gap: "2px",
   },
+  progressGrid: {
+    display: "grid",
+    gap: "8px",
+  },
+  progressLabel: {
+    fontSize: "11px",
+    fontWeight: "800",
+    color: "#64748b",
+    marginBottom: "5px",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  },
   track: {
     height: "10px",
     background: "#e2e8f0",
@@ -232,7 +311,13 @@ const styles = {
     height: "100%",
     background: "#be185d",
     borderRadius: "999px",
-    transition: "width 0.25s ease",
+    transition: "width 0.35s ease",
+  },
+  targetFill: {
+    height: "100%",
+    background: "#2563eb",
+    borderRadius: "999px",
+    transition: "width 0.35s ease",
   },
   empty: {
     color: "#64748b",
