@@ -10,6 +10,8 @@ import { useNavigate } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 import WaitingListModal from "../components/common/WaitingListModal";
+import LeaderboardSection from "../components/common/LeaderboardSection";
+import useLeaderboard from "../components/common/useLeaderboard";
 
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import PatientRegisterForm from "../components/patients/PatientRegisterForm";
@@ -50,6 +52,7 @@ export default function ReceptionBookingWorkspace({
   actingAs,
   onStopImpersonation,
   isPhysio = false,
+  leaderboardScope,
 }) {
   const navigate = useNavigate();
   const bookingRef = useRef(null);
@@ -59,6 +62,13 @@ export default function ReceptionBookingWorkspace({
   const [waitingModalData, setWaitingModalData] = useState(null);
 
   const stats = useMyStats();
+
+  const {
+    leaderboard,
+    loading: leaderboardLoading,
+    error: leaderboardError,
+    reload: reloadLeaderboard,
+  } = useLeaderboard(leaderboardScope || (isPhysio ? "physio" : "reception"));
 
   const {
     waitingList,
@@ -404,6 +414,10 @@ export default function ReceptionBookingWorkspace({
     scrollToBookingSection(200);
   };
 
+  const leaderboardTitle = isPhysio
+    ? "Physio Leaderboard"
+    : "Reception Leaderboard";
+
   return (
     <DashboardLayout
       title="Booking Workspace"
@@ -413,6 +427,7 @@ export default function ReceptionBookingWorkspace({
       sidebarItems={[
         { key: "home", label: "Home" },
         { key: "stats", label: "My Stats" },
+        { key: "leaderboard", label: "Leaderboard" },
         { key: "book", label: "Book" },
         ...(showOpenFile ? [{ key: "open_file", label: "Open New File" }] : []),
         {
@@ -447,6 +462,16 @@ export default function ReceptionBookingWorkspace({
       ) : null}
 
       {activeSection === "stats" && <MyStatsSection stats={stats} />}
+
+      {activeSection === "leaderboard" && (
+        <LeaderboardSection
+          title={leaderboardTitle}
+          rows={leaderboard}
+          loading={leaderboardLoading}
+          error={leaderboardError}
+          onReload={reloadLeaderboard}
+        />
+      )}
 
       {activeSection === "book" && (
         <div style={styles.stack}>

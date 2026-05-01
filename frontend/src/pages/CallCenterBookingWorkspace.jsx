@@ -56,7 +56,12 @@ export default function CallCenterBookingWorkspace({
   const bookingRef = useRef(null);
 
   const stats = useMyStats();
-  const leaderboard = useLeaderboard("callcenter");
+  const {
+  leaderboard,
+       loading: leaderboardLoading,
+        error: leaderboardError,
+       reload: reloadLeaderboard,
+    } = useLeaderboard("callcenter");
 
   const [trackerMode, setTrackerMode] = useState("today");
   const [trackerFilter, setTrackerFilter] = useState({
@@ -384,6 +389,9 @@ export default function CallCenterBookingWorkspace({
         <LeaderboardSection
           title="Call Center Leaderboard"
           rows={leaderboard}
+          loading={leaderboardLoading}
+          error={leaderboardError}
+          onReload={reloadLeaderboard}
         />
       )}
 
