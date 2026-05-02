@@ -12,14 +12,29 @@ export default function useLeaderboard(scope = "reception") {
       setError("");
 
       const res = await api.get(
-        `reception/leaderboard/?scope=${scope}`
+        `/reception/leaderboard/?scope=${scope}`
       );
+
+      // DEBUG LOG
+      console.log("Leaderboard response:", res.data);
 
       setLeaderboard(res.data?.leaderboard || []);
     } catch (err) {
-      console.error("Failed to load leaderboard", err);
+      console.error("❌ Leaderboard failed:", err);
+
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+
+      console.log("Status:", status);
+      console.log("Error data:", data);
+
       setLeaderboard([]);
-      setError("Failed to load leaderboard");
+
+      setError(
+        data?.error ||
+        data?.detail ||
+        `Failed to load leaderboard${status ? ` (${status})` : ""}`
+      );
     } finally {
       setLoading(false);
     }
@@ -30,7 +45,7 @@ export default function useLeaderboard(scope = "reception") {
 
     const interval = setInterval(() => {
       loadLeaderboard();
-    }, 30000); // refresh every 30s
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [loadLeaderboard]);
