@@ -57,18 +57,31 @@ export default function ReceptionBookingWorkspace({
   const navigate = useNavigate();
   const bookingRef = useRef(null);
 
-  const [trackerMode, setTrackerMode] = useState("today");
-  const [waitingModalOpen, setWaitingModalOpen] = useState(false);
-  const [waitingModalData, setWaitingModalData] = useState(null);
-
   const stats = useMyStats();
+
+  const resolvedLeaderboardScope =
+    leaderboardScope || (isPhysio ? "physio" : "reception");
 
   const {
     leaderboard,
     loading: leaderboardLoading,
     error: leaderboardError,
     reload: reloadLeaderboard,
-  } = useLeaderboard(leaderboardScope || (isPhysio ? "physio" : "reception"));
+  } = useLeaderboard(resolvedLeaderboardScope);
+
+  const [trackerMode, setTrackerMode] = useState("today");
+  const [waitingModalOpen, setWaitingModalOpen] = useState(false);
+  const [waitingModalData, setWaitingModalData] = useState(null);
+
+  const [trackerFilter, setTrackerFilter] = useState({
+    date: getTodayString(),
+    from_date: getTomorrowString(),
+    to_date: getTwoWeeksForwardString(),
+    month: getCurrentMonthString(),
+    therapist_id: "all",
+    user_id: "all",
+    patient: "",
+  });
 
   const {
     waitingList,
@@ -134,16 +147,6 @@ export default function ReceptionBookingWorkspace({
     onBookingFailed: handleBookingFailed,
   });
 
-  const [trackerFilter, setTrackerFilter] = useState({
-    date: getTodayString(),
-    from_date: getTomorrowString(),
-    to_date: getTwoWeeksForwardString(),
-    month: getCurrentMonthString(),
-    therapist_id: "all",
-    user_id: "all",
-    patient: "",
-  });
-
   const showOpenFile = !isPhysio;
 
   useEffect(() => {
@@ -165,51 +168,51 @@ export default function ReceptionBookingWorkspace({
       therapist_id: physioId,
       user_id: "all",
     }));
-  }, [isPhysio, user, setBookingForm]);
+  }, [isPhysio, user?.id, setBookingForm]);
 
   const visibleTherapists = useMemo(() => {
     if (!isPhysio) return therapists;
     return therapists.filter((t) => String(t.id) === String(user?.id));
-  }, [isPhysio, therapists, user]);
+  }, [isPhysio, therapists, user?.id]);
 
   const visibleTodayTherapists = useMemo(() => {
     const source = todayTherapists?.length ? todayTherapists : therapists;
     if (!isPhysio) return source;
     return source.filter((t) => String(t.id) === String(user?.id));
-  }, [isPhysio, todayTherapists, therapists, user]);
+  }, [isPhysio, todayTherapists, therapists, user?.id]);
 
   const visibleMonthlyTherapists = useMemo(() => {
     const source = monthlyTherapists?.length ? monthlyTherapists : therapists;
     if (!isPhysio) return source;
     return source.filter((t) => String(t.id) === String(user?.id));
-  }, [isPhysio, monthlyTherapists, therapists, user]);
+  }, [isPhysio, monthlyTherapists, therapists, user?.id]);
 
   const visibleFutureTherapists = useMemo(() => {
     const source = futureTherapists?.length ? futureTherapists : therapists;
     if (!isPhysio) return source;
     return source.filter((t) => String(t.id) === String(user?.id));
-  }, [isPhysio, futureTherapists, therapists, user]);
+  }, [isPhysio, futureTherapists, therapists, user?.id]);
 
   const visibleTodayBookings = useMemo(() => {
     if (!isPhysio) return todayBookings;
     return todayBookings.filter(
       (booking) => String(booking.therapist_id) === String(user?.id)
     );
-  }, [isPhysio, todayBookings, user]);
+  }, [isPhysio, todayBookings, user?.id]);
 
   const visibleMonthlyBookings = useMemo(() => {
     if (!isPhysio) return monthlyBookings;
     return monthlyBookings.filter(
       (booking) => String(booking.therapist_id) === String(user?.id)
     );
-  }, [isPhysio, monthlyBookings, user]);
+  }, [isPhysio, monthlyBookings, user?.id]);
 
   const visibleFutureBookings = useMemo(() => {
     if (!isPhysio) return futureBookings;
     return futureBookings.filter(
       (booking) => String(booking.therapist_id) === String(user?.id)
     );
-  }, [isPhysio, futureBookings, user]);
+  }, [isPhysio, futureBookings, user?.id]);
 
   const trackerBookings = useMemo(() => {
     if (trackerMode === "future") return visibleFutureBookings;
@@ -357,8 +360,8 @@ export default function ReceptionBookingWorkspace({
     scrollToBookingSection(250);
   };
 
-  const handleEditBookingAndOpenForm = (booking) => {
-    handleEditBooking(booking);
+  const handleEditBookingAndOpenForm = async (booking) => {
+    await handleEditBooking(booking);
 
     if (isPhysio && user?.id) {
       setBookingForm((prev) => ({
@@ -457,9 +460,7 @@ export default function ReceptionBookingWorkspace({
         <DashboardNotice type="success">{message}</DashboardNotice>
       ) : null}
 
-      {error ? (
-        <DashboardNotice type="error">{error}</DashboardNotice>
-      ) : null}
+      {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
 
       {activeSection === "stats" && <MyStatsSection stats={stats} />}
 
@@ -548,7 +549,7 @@ export default function ReceptionBookingWorkspace({
           onApplyFilters={handleApplyTrackerFilters}
           onEditBooking={handleEditBookingAndOpenForm}
           onDeleteBooking={handleDeleteBooking}
-          isAdmin={user?.is_superuser || user?.role === "admin"}
+          isAdmin={Boolean(user?.is_superuser || user?.role === "admin")}
           isPhysio={isPhysio}
           currentUserId={user?.id}
         />

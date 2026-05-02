@@ -4,6 +4,8 @@ import api from "../api/api";
 
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
+import LeaderboardSection from "../components/common/LeaderboardSection";
+import useLeaderboard from "../components/common/useLeaderboard";
 
 import PatientRegisterForm from "../components/patients/PatientRegisterForm";
 import PatientAssignmentForm from "../components/patients/PatientAssignmentForm";
@@ -43,6 +45,13 @@ export default function ReceptionRegistrationWorkspace({
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
   const stats = useRegistrationStats();
+
+  const {
+    leaderboard,
+    loading: leaderboardLoading,
+    error: leaderboardError,
+    reload: reloadLeaderboard,
+  } = useLeaderboard("reception");
 
   const [activeSection, setActiveSection] = useState("stats");
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
@@ -84,6 +93,7 @@ export default function ReceptionRegistrationWorkspace({
 
   useEffect(() => {
     handleApplyTrackerFilters();
+  
   }, [trackerMode]);
 
   const handleBackToAdmin = () => {
@@ -232,6 +242,7 @@ export default function ReceptionRegistrationWorkspace({
       if (patient) {
         await handleSelectPatient(patient);
         setMessage("Patient created successfully");
+        reloadLeaderboard?.();
       }
     } catch (err) {
       console.error(err);
@@ -262,6 +273,7 @@ export default function ReceptionRegistrationWorkspace({
 
       resetAssignmentForm();
       await handleApplyTrackerFilters();
+      reloadLeaderboard?.();
       setActiveSection("tracker");
     } catch (err) {
       console.error(err);
@@ -309,6 +321,7 @@ export default function ReceptionRegistrationWorkspace({
       setMessage(res.data.message || "Assignment cancelled successfully");
       setError("");
       await handleApplyTrackerFilters();
+      reloadLeaderboard?.();
     } catch (err) {
       console.error(err);
       setError(err?.response?.data?.error || "Failed to cancel assignment");
@@ -327,6 +340,7 @@ export default function ReceptionRegistrationWorkspace({
       sidebarItems={[
         { key: "home", label: "Home" },
         { key: "stats", label: "My Stats" },
+        { key: "leaderboard", label: "Leaderboard" },
         { key: "register", label: "Register" },
         { key: "open_file", label: "Open New File" },
         {
@@ -357,6 +371,16 @@ export default function ReceptionRegistrationWorkspace({
 
       {activeSection === "stats" && (
         <RegistrationStatsSection stats={stats} />
+      )}
+
+      {activeSection === "leaderboard" && (
+        <LeaderboardSection
+          title="Reception Leaderboard"
+          rows={leaderboard}
+          loading={leaderboardLoading}
+          error={leaderboardError}
+          onReload={reloadLeaderboard}
+        />
       )}
 
       {activeSection === "register" && (

@@ -23,6 +23,8 @@ __all__ = [
 ]
 
 
+# ================= LAST THERAPIST =================
+
 def last_therapist_api(request, patient_id):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authorized"}, status=403)
@@ -46,6 +48,24 @@ def last_therapist_api(request, patient_id):
     })
 
 
+# ================= LEADERBOARD =================
+
+def get_user_display_name(user):
+    return (
+        getattr(user, "name", None)
+        or getattr(user, "full_name", None)
+        or user.get_full_name()
+        or user.username
+    )
+
+
+def get_users_from_ids_and_roles(user_ids, role_query):
+    role_ids = User.objects.filter(role_query).values_list("id", flat=True)
+    all_ids = set(user_ids)
+    all_ids.update(role_ids)
+    return User.objects.filter(id__in=all_ids).order_by("username")
+
+
 def leaderboard_api(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authorized"}, status=403)
@@ -57,13 +77,19 @@ def leaderboard_api(request):
 
     rows = []
 
+    # ================= CALL CENTER =================
     if scope == "callcenter":
-        users = User.objects.filter(
+        activity_user_ids = Appointment.objects.filter(
+            created_by__isnull=False,
+        ).values_list("created_by_id", flat=True)
+
+        users = get_users_from_ids_and_roles(
+            activity_user_ids,
             Q(role__icontains="callcenter")
             | Q(role__icontains="call_center")
             | Q(role__icontains="call center")
-            | Q(role__icontains="call")
-        ).order_by("username")
+            | Q(role__icontains="call"),
+        )
 
         for user in users:
             today_count = Appointment.objects.filter(
@@ -79,7 +105,7 @@ def leaderboard_api(request):
 
             rows.append({
                 "user_id": user.id,
-                "name": getattr(user, "name", None) or user.username,
+                "name": get_user_display_name(user),
                 "username": user.username,
                 "role": user.role,
                 "today": today_count,
@@ -89,11 +115,30 @@ def leaderboard_api(request):
                 "conversion": 100 if monthly_count > 0 else 0,
             })
 
+    # ================= RECEPTION =================
     elif scope == "reception":
-        users = User.objects.filter(
+        activity_user_ids = set()
+
+        activity_user_ids.update(
+            Patient.objects.filter(created_by__isnull=False)
+            .values_list("created_by_id", flat=True)
+        )
+
+        activity_user_ids.update(
+            PatientAssignment.objects.filter(created_by__isnull=False)
+            .values_list("created_by_id", flat=True)
+        )
+
+        users = get_users_from_ids_and_roles(
+            activity_user_ids,
             Q(role__icontains="reception")
-            | Q(role__icontains="admin")
-        ).order_by("username")
+            | Q(role__icontains="receptionist")
+            | Q(role__icontains="frontdesk")
+            | Q(role__icontains="front_desk")
+            | Q(role__icontains="front desk")
+            | Q(role__icontains="registration")
+            | Q(role__icontains="admin"),
+        )
 
         for user in users:
             today_files = Patient.objects.filter(
@@ -123,7 +168,7 @@ def leaderboard_api(request):
 
             rows.append({
                 "user_id": user.id,
-                "name": getattr(user, "name", None) or user.username,
+                "name": get_user_display_name(user),
                 "username": user.username,
                 "role": user.role,
                 "today": today_total,
@@ -135,11 +180,27 @@ def leaderboard_api(request):
                 "assignments": monthly_assignments,
             })
 
+    # ================= PHYSIO =================
     elif scope == "physio":
-        users = User.objects.filter(
+        activity_user_ids = set()
+
+        activity_user_ids.update(
+            Appointment.objects.filter(therapist__isnull=False)
+            .values_list("therapist_id", flat=True)
+        )
+
+        activity_user_ids.update(
+            PatientAssignment.objects.filter(therapist__isnull=False)
+            .values_list("therapist_id", flat=True)
+        )
+
+        users = get_users_from_ids_and_roles(
+            activity_user_ids,
             Q(role__icontains="physio")
             | Q(role__icontains="physiotherapist")
-        ).order_by("username")
+            | Q(role__icontains="therapist")
+            | Q(role__icontains="pt"),
+        )
 
         for user in users:
             today_appointments = Appointment.objects.filter(
@@ -153,18 +214,26 @@ def leaderboard_api(request):
                 appointment_date__lte=today,
             ).count()
 
-            today_attended = Appointment.objects.filter(
-                therapist=user,
-                appointment_date=today,
-                attendance_status="attended",
-            ).count()
-
             monthly_attended = Appointment.objects.filter(
                 therapist=user,
                 appointment_date__gte=month_start,
                 appointment_date__lte=today,
                 attendance_status="attended",
             ).count()
+
+            today_assignments = PatientAssignment.objects.filter(
+                therapist=user,
+                assignment_date=today,
+            ).count()
+
+            monthly_assignments = PatientAssignment.objects.filter(
+                therapist=user,
+                assignment_date__gte=month_start,
+                assignment_date__lte=today,
+            ).count()
+
+            today_total = today_appointments + today_assignments
+            monthly_total = monthly_appointments + monthly_assignments
 
             conversion = (
                 round((monthly_attended / monthly_appointments) * 100)
@@ -174,16 +243,18 @@ def leaderboard_api(request):
 
             rows.append({
                 "user_id": user.id,
-                "name": getattr(user, "name", None) or user.username,
+                "name": get_user_display_name(user),
                 "username": user.username,
                 "role": user.role,
-                "today": today_appointments,
-                "monthly": monthly_appointments,
-                "count": monthly_appointments,
+                "today": today_total,
+                "monthly": monthly_total,
+                "count": monthly_total,
                 "target": 100,
                 "completed": monthly_attended,
                 "total": monthly_appointments,
                 "conversion": conversion,
+                "appointments": monthly_appointments,
+                "assignments": monthly_assignments,
             })
 
     else:
