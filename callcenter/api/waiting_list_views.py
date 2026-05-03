@@ -10,6 +10,8 @@ from callcenter.models import Appointment, WaitingListEntry
 from callcenter.permissions import can_use_callcenter
 
 
+# ================= HELPERS =================
+
 def json_error(message, status=400, extra=None):
     payload = {"error": message}
     if extra:
@@ -78,12 +80,13 @@ def get_time_period_for_time(appointment_time):
 
     if 8 <= hour < 12:
         return "morning"
-
     if 12 <= hour < 17:
         return "afternoon"
 
     return "evening"
 
+
+# ================= CORE LOGIC =================
 
 def mark_waiting_entry_booked(patient_id, therapist_id=None, appointment_date=None):
     qs = WaitingListEntry.objects.filter(
@@ -132,116 +135,133 @@ def get_matching_waiting_entries(therapist_id, appointment_date, appointment_tim
     return qs
 
 
+# ================= MAIN API =================
+
 @csrf_exempt
 def waiting_list_api(request):
     if not can_use_callcenter(request.user):
         return json_error("Not authorized", 403)
 
-    if request.method == "GET":
-        status = (request.GET.get("status") or "active").strip().lower()
-        patient_search = (request.GET.get("patient") or "").strip()
-        therapist_id = (request.GET.get("therapist_id") or "").strip()
-        user_id = (request.GET.get("user_id") or "").strip()
-        preferred_date = validate_date(
-            request.GET.get("preferred_date") or request.GET.get("date")
-        )
-
-        qs = WaitingListEntry.objects.select_related(
-            "patient",
-            "preferred_therapist",
-            "created_by",
-        )
-
-        if status == "active":
-            qs = qs.filter(status__in=["waiting", "notified"])
-        elif status == "history":
-            qs = qs.filter(status__in=["booked", "cancelled"])
-        elif status != "all":
-            qs = qs.filter(status=status)
-
-        if patient_search:
-            qs = qs.filter(
-                Q(patient__name__icontains=patient_search)
-                | Q(patient__patient_id__icontains=patient_search)
+    try:
+        # ================= GET =================
+        if request.method == "GET":
+            status = (request.GET.get("status") or "active").strip().lower()
+            patient_search = (request.GET.get("patient") or "").strip()
+            therapist_id = (request.GET.get("therapist_id") or "").strip()
+            user_id = (request.GET.get("user_id") or "").strip()
+            preferred_date = validate_date(
+                request.GET.get("preferred_date") or request.GET.get("date")
             )
 
-        if therapist_id and therapist_id != "all":
-            qs = qs.filter(preferred_therapist_id=therapist_id)
+            qs = WaitingListEntry.objects.select_related(
+                "patient",
+                "preferred_therapist",
+                "created_by",
+            )
 
-        if user_id and user_id != "all":
-            qs = qs.filter(created_by_id=user_id)
+            # ✅ STATUS FILTER
+            if status == "active":
+                qs = qs.filter(status__in=["waiting", "notified"])
+            elif status == "history":
+                qs = qs.filter(status__in=["booked", "cancelled"])
+            elif status != "all":
+                qs = qs.filter(status=status)
 
-        if preferred_date:
-            if status == "history":
+            # ✅ PATIENT FILTER
+            if patient_search:
                 qs = qs.filter(
-                    Q(status_changed_at__date=preferred_date)
-                    | Q(preferred_date=preferred_date)
+                    Q(patient__name__icontains=patient_search)
+                    | Q(patient__patient_id__icontains=patient_search)
                 )
-            else:
-                qs = qs.filter(preferred_date=preferred_date)
 
-        qs = qs.order_by("-created_at")
+            # ✅ THERAPIST FILTER
+            if therapist_id and therapist_id != "all":
+                qs = qs.filter(preferred_therapist_id=therapist_id)
 
-        return JsonResponse({
-            "count": qs.count(),
-            "waiting_list": [
-                serialize_waiting_list_entry(entry)
-                for entry in qs
-            ],
-        })
+            # ✅ USER FILTER
+            if user_id and user_id != "all":
+                qs = qs.filter(created_by_id=user_id)
 
-    if request.method == "POST":
-        data = parse_json(request)
+            # ✅ DATE FILTER
+            if preferred_date:
+                if status in ["history", "all"]:
+                    qs = qs.filter(
+                        Q(status_changed_at__date=preferred_date)
+                        | Q(preferred_date=preferred_date)
+                    )
+                else:
+                    qs = qs.filter(preferred_date=preferred_date)
 
-        if not data:
-            return json_error("Invalid JSON", 400)
+            qs = qs.order_by("-created_at")
 
-        patient_id = data.get("patient_id")
-        preferred_therapist_id = data.get("preferred_therapist_id") or None
-        preferred_date = validate_date(data.get("preferred_date"))
-        preferred_time_period = (
-            data.get("preferred_time_period") or ""
-        ).strip().lower()
-        notes = (data.get("notes") or "").strip()
-
-        if not patient_id:
-            return json_error("Missing patient", 400)
-
-        if preferred_time_period not in ["", "morning", "afternoon", "evening"]:
-            return json_error("Invalid preferred time period", 400)
-
-        existing = WaitingListEntry.objects.filter(
-            patient_id=patient_id,
-            preferred_date=preferred_date,
-            preferred_time_period=preferred_time_period,
-            status__in=["waiting", "notified"],
-        ).first()
-
-        if existing:
             return JsonResponse({
-                "success": True,
-                "message": "Patient is already on the waiting list",
-                "entry": serialize_waiting_list_entry(existing),
+                "count": qs.count(),
+                "waiting_list": [
+                    serialize_waiting_list_entry(entry)
+                    for entry in qs
+                ],
             })
 
-        entry = WaitingListEntry.objects.create(
-            patient_id=patient_id,
-            preferred_therapist_id=preferred_therapist_id,
-            preferred_date=preferred_date,
-            preferred_time_period=preferred_time_period,
-            notes=notes,
-            status="waiting",
-            created_by=request.user,
-        )
+        # ================= POST =================
+        if request.method == "POST":
+            data = parse_json(request)
 
-        return JsonResponse({
-            "success": True,
-            "message": "Patient added to waiting list",
-            "entry": serialize_waiting_list_entry(entry),
-        })
+            if not data:
+                return json_error("Invalid JSON", 400)
 
-    return json_error("Method not allowed", 405)
+            patient_id = data.get("patient_id")
+            preferred_therapist_id = data.get("preferred_therapist_id") or None
+            preferred_date = validate_date(data.get("preferred_date"))
+            preferred_time_period = (
+                data.get("preferred_time_period") or ""
+            ).strip().lower()
+            notes = (data.get("notes") or "").strip()
 
+            if not patient_id:
+                return json_error("Missing patient", 400)
+
+            if preferred_time_period not in ["", "morning", "afternoon", "evening"]:
+                return json_error("Invalid preferred time period", 400)
+
+            # ✅ PREVENT DUPLICATES
+            existing = WaitingListEntry.objects.filter(
+                patient_id=patient_id,
+                preferred_date=preferred_date,
+                preferred_time_period=preferred_time_period,
+                status__in=["waiting", "notified"],
+            ).first()
+
+            if existing:
+                return JsonResponse({
+                    "success": True,
+                    "message": "Patient already on waiting list",
+                    "entry": serialize_waiting_list_entry(existing),
+                })
+
+            entry = WaitingListEntry.objects.create(
+                patient_id=patient_id,
+                preferred_therapist_id=preferred_therapist_id,
+                preferred_date=preferred_date,
+                preferred_time_period=preferred_time_period,
+                notes=notes,
+                status="waiting",
+                created_by=request.user,
+            )
+
+            return JsonResponse({
+                "success": True,
+                "message": "Patient added to waiting list",
+                "entry": serialize_waiting_list_entry(entry),
+            })
+
+        return json_error("Method not allowed", 405)
+
+    except Exception as e:
+        print("WAITING LIST ERROR:", str(e))
+        return json_error("Server error", 500, {"details": str(e)})
+
+
+# ================= DETAIL API =================
 
 @csrf_exempt
 def waiting_list_detail_api(request, entry_id):
@@ -255,7 +275,7 @@ def waiting_list_detail_api(request, entry_id):
             "created_by",
         ).get(id=entry_id)
     except WaitingListEntry.DoesNotExist:
-        return json_error("Waiting list entry not found", 404)
+        return json_error("Entry not found", 404)
 
     if request.method == "PUT":
         data = parse_json(request)
@@ -265,41 +285,24 @@ def waiting_list_detail_api(request, entry_id):
 
         old_status = entry.status
 
-        if "preferred_therapist_id" in data:
-            entry.preferred_therapist_id = data.get("preferred_therapist_id") or None
-
-        if "preferred_date" in data:
-            entry.preferred_date = validate_date(data.get("preferred_date"))
-
-        if "preferred_time_period" in data:
-            preferred_time_period = (
-                data.get("preferred_time_period") or ""
-            ).strip().lower()
-
-            if preferred_time_period not in ["", "morning", "afternoon", "evening"]:
-                return json_error("Invalid preferred time period", 400)
-
-            entry.preferred_time_period = preferred_time_period
-
-        if "notes" in data:
-            entry.notes = (data.get("notes") or "").strip()
+        entry.preferred_therapist_id = data.get("preferred_therapist_id", entry.preferred_therapist_id)
+        entry.preferred_date = validate_date(data.get("preferred_date")) or entry.preferred_date
+        entry.notes = data.get("notes", entry.notes)
 
         if "status" in data:
-            status = (data.get("status") or "").strip().lower()
-
+            status = data.get("status")
             if status not in ["waiting", "notified", "booked", "cancelled"]:
                 return json_error("Invalid status", 400)
-
             entry.status = status
 
-        if old_status != entry.status and hasattr(entry, "status_changed_at"):
+        if old_status != entry.status:
             entry.status_changed_at = timezone.now()
 
         entry.save()
 
         return JsonResponse({
             "success": True,
-            "message": "Waiting list updated",
+            "message": "Updated",
             "entry": serialize_waiting_list_entry(entry),
         })
 
@@ -308,12 +311,14 @@ def waiting_list_detail_api(request, entry_id):
 
         return JsonResponse({
             "success": True,
-            "message": "Waiting list entry moved to history",
+            "message": "Moved to history",
             "entry": serialize_waiting_list_entry(entry),
         })
 
     return json_error("Method not allowed", 405)
 
+
+# ================= ALERTS =================
 
 def waiting_list_alerts_api(request):
     if not can_use_callcenter(request.user):
@@ -324,47 +329,20 @@ def waiting_list_alerts_api(request):
     appointment_time = validate_time(request.GET.get("time"))
 
     if not therapist_id or not appointment_date:
-        return JsonResponse({
-            "count": 0,
-            "alerts": [],
-        })
-
-    if appointment_time:
-        slot_count = Appointment.objects.filter(
-            therapist_id=therapist_id,
-            appointment_date=appointment_date,
-            appointment_time=appointment_time,
-        ).count()
-
-        if slot_count >= 2:
-            return JsonResponse({
-                "count": 0,
-                "alerts": [],
-            })
+        return JsonResponse({"count": 0, "alerts": []})
 
     matches = get_matching_waiting_entries(
-        therapist_id=therapist_id,
-        appointment_date=appointment_date,
-        appointment_time=appointment_time,
+        therapist_id,
+        appointment_date,
+        appointment_time,
     )
 
-    matched_ids = list(matches.values_list("id", flat=True))
-
-    WaitingListEntry.objects.filter(id__in=matched_ids).update(
-        status="notified",
-        status_changed_at=timezone.now(),
-    )
-
-    alerts = WaitingListEntry.objects.select_related(
-        "patient",
-        "preferred_therapist",
-        "created_by",
-    ).filter(id__in=matched_ids)
+    bulk_set_status(matches, "notified")
 
     return JsonResponse({
-        "count": alerts.count(),
+        "count": matches.count(),
         "alerts": [
-            serialize_waiting_list_entry(entry)
-            for entry in alerts
+            serialize_waiting_list_entry(e)
+            for e in matches
         ],
     })

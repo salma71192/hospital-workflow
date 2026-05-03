@@ -23,6 +23,21 @@ function getPeriodLabel(period) {
 
 export default function WaitingListSection({
   waitingList = [],
+  waitingListCount = 0,
+
+  waitingListFilter = {
+    status: "active",
+    patient: "",
+    therapist_id: "all",
+    preferred_date: "",
+    preferred_time_period: "all",
+  },
+  setWaitingListFilter,
+  onApplyFilters,
+  onResetFilters,
+  onShowHistory,
+  onShowActive,
+
   therapists = [],
   selectedPatient,
   onSelectPatient,
@@ -37,29 +52,14 @@ export default function WaitingListSection({
   const [preferredTimePeriod, setPreferredTimePeriod] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState("active");
 
   const activePatient = selectedPatient || localSelectedPatient;
-
-  const visibleWaitingList = useMemo(() => {
-    if (tab === "history") {
-      return waitingList.filter(
-        (item) => item.status === "booked" || item.status === "cancelled"
-      );
-    }
-
-    return waitingList.filter(
-      (item) =>
-        !item.status ||
-        item.status === "waiting" ||
-        item.status === "notified"
-    );
-  }, [waitingList, tab]);
+  const tab = waitingListFilter.status === "all" ? "history" : "active";
 
   const groupedByTherapist = useMemo(() => {
     const groups = {};
 
-    visibleWaitingList.forEach((item) => {
+    waitingList.forEach((item) => {
       const key = item.preferred_therapist_id || "none";
       const name = item.preferred_therapist_name || "No Physio Selected";
 
@@ -75,7 +75,14 @@ export default function WaitingListSection({
     });
 
     return Object.values(groups);
-  }, [visibleWaitingList]);
+  }, [waitingList]);
+
+  const updateFilter = (key, value) => {
+    setWaitingListFilter?.((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
 
   const handleSelectPatient = (patient) => {
     setLocalSelectedPatient(patient);
@@ -137,7 +144,7 @@ export default function WaitingListSection({
             </div>
           </div>
 
-          <div style={styles.countBadge}>{waitingList.length}</div>
+          <div style={styles.countBadge}>{waitingListCount || waitingList.length}</div>
         </div>
 
         <UnifiedPatientSearch
@@ -159,9 +166,7 @@ export default function WaitingListSection({
                 {getPatientName(activePatient) || "Selected patient"}
               </div>
               {getPatientFile(activePatient) ? (
-                <div style={styles.selectedMeta}>
-                  File: {getPatientFile(activePatient)}
-                </div>
+                <div style={styles.selectedMeta}>File: {getPatientFile(activePatient)}</div>
               ) : null}
             </div>
 
@@ -247,7 +252,7 @@ export default function WaitingListSection({
         <div style={styles.headerRow}>
           <div>
             <div style={styles.eyebrow}>Waiting List</div>
-            <h3 style={styles.sectionTitle}>Patients</h3>
+            <h3 style={styles.sectionTitle}>Filters</h3>
           </div>
 
           <div style={styles.tabButtons}>
@@ -257,7 +262,7 @@ export default function WaitingListSection({
                 ...styles.tabBtn,
                 ...(tab === "active" ? styles.tabBtnActive : {}),
               }}
-              onClick={() => setTab("active")}
+              onClick={onShowActive}
             >
               Active
             </button>
@@ -268,11 +273,89 @@ export default function WaitingListSection({
                 ...styles.tabBtn,
                 ...(tab === "history" ? styles.tabBtnActive : {}),
               }}
-              onClick={() => setTab("history")}
+              onClick={onShowHistory}
             >
               History
             </button>
           </div>
+        </div>
+
+        <div style={styles.formGrid}>
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Patient</label>
+            <input
+              value={waitingListFilter.patient || ""}
+              onChange={(e) => updateFilter("patient", e.target.value)}
+              placeholder="Search patient name or file"
+              style={styles.input}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Physio</label>
+            <select
+              value={waitingListFilter.therapist_id || "all"}
+              onChange={(e) => updateFilter("therapist_id", e.target.value)}
+              style={styles.input}
+            >
+              <option value="all">All</option>
+              {therapists.map((therapist) => (
+                <option key={therapist.id} value={therapist.id}>
+                  {therapist.name || therapist.username}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Preferred Date</label>
+            <input
+              type="date"
+              value={waitingListFilter.preferred_date || ""}
+              onChange={(e) => updateFilter("preferred_date", e.target.value)}
+              style={styles.input}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Preferred Time</label>
+            <select
+              value={waitingListFilter.preferred_time_period || "all"}
+              onChange={(e) => updateFilter("preferred_time_period", e.target.value)}
+              style={styles.input}
+            >
+              <option value="all">All</option>
+              <option value="morning">Morning</option>
+              <option value="afternoon">Afternoon</option>
+              <option value="evening">Evening</option>
+            </select>
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Status</label>
+            <select
+              value={waitingListFilter.status || "active"}
+              onChange={(e) => updateFilter("status", e.target.value)}
+              style={styles.input}
+            >
+              <option value="active">Active</option>
+              <option value="all">All / History</option>
+              <option value="waiting">Waiting</option>
+              <option value="notified">Notified</option>
+              <option value="booked">Booked</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={styles.actions}>
+          <button type="button" style={styles.primaryButton} onClick={onApplyFilters}>
+            Apply Filters
+          </button>
+
+          <button type="button" style={styles.clearBtn} onClick={onResetFilters}>
+            Reset
+          </button>
         </div>
       </div>
 
@@ -310,63 +393,62 @@ export default function WaitingListSection({
                 </thead>
 
                 <tbody>
-                  {group.entries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td style={styles.tdBold}>{entry.patient_name}</td>
-                      <td style={styles.td}>{entry.patient_id}</td>
-                      <td style={styles.td}>{entry.preferred_date || "-"}</td>
-                      <td style={styles.td}>
-                        {getPeriodLabel(entry.preferred_time_period)}
-                      </td>
-                      <td style={styles.td}>
-                        <span
-                          style={{
-                            ...styles.statusBadge,
-                            ...(entry.status === "notified"
-                              ? styles.statusNotified
-                              : {}),
-                            ...(entry.status === "booked"
-                              ? styles.statusBooked
-                              : {}),
-                            ...(entry.status === "cancelled"
-                              ? styles.statusCancelled
-                              : {}),
-                          }}
-                        >
-                          {entry.status || "waiting"}
-                        </span>
-                      </td>
-                      <td style={styles.td}>{entry.notes || "-"}</td>
-                      <td style={styles.td}>{entry.created_by_name || "-"}</td>
-                      <td style={styles.td}>
-                        <div style={styles.actions}>
-                          {(entry.status === "waiting" ||
-                            entry.status === "notified" ||
-                            !entry.status) && (
-                            <button
-                              type="button"
-                              style={styles.bookBtn}
-                              onClick={() => onBookEntry?.(entry)}
-                            >
-                              Book
-                            </button>
-                          )}
+                  {group.entries.map((entry) => {
+                    const active =
+                      !entry.status ||
+                      entry.status === "waiting" ||
+                      entry.status === "notified";
 
-                          {(entry.status === "waiting" ||
-                            entry.status === "notified" ||
-                            !entry.status) && (
-                            <button
-                              type="button"
-                              style={styles.removeBtn}
-                              onClick={() => onDeleteEntry?.(entry.id)}
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                    return (
+                      <tr key={entry.id}>
+                        <td style={styles.tdBold}>{entry.patient_name}</td>
+                        <td style={styles.td}>{entry.patient_id}</td>
+                        <td style={styles.td}>{entry.preferred_date || "-"}</td>
+                        <td style={styles.td}>
+                          {getPeriodLabel(entry.preferred_time_period)}
+                        </td>
+                        <td style={styles.td}>
+                          <span
+                            style={{
+                              ...styles.statusBadge,
+                              ...(entry.status === "notified" ? styles.statusNotified : {}),
+                              ...(entry.status === "booked" ? styles.statusBooked : {}),
+                              ...(entry.status === "cancelled"
+                                ? styles.statusCancelled
+                                : {}),
+                            }}
+                          >
+                            {entry.status || "waiting"}
+                          </span>
+                        </td>
+                        <td style={styles.td}>{entry.notes || "-"}</td>
+                        <td style={styles.td}>{entry.created_by_name || "-"}</td>
+                        <td style={styles.td}>
+                          <div style={styles.actions}>
+                            {active && (
+                              <button
+                                type="button"
+                                style={styles.bookBtn}
+                                onClick={() => onBookEntry?.(entry)}
+                              >
+                                Book
+                              </button>
+                            )}
+
+                            {active && (
+                              <button
+                                type="button"
+                                style={styles.removeBtn}
+                                onClick={() => onDeleteEntry?.(entry.id)}
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -378,10 +460,7 @@ export default function WaitingListSection({
 }
 
 const styles = {
-  page: {
-    display: "grid",
-    gap: "16px",
-  },
+  page: { display: "grid", gap: "16px" },
   card: {
     background: "#fff",
     borderRadius: "18px",
@@ -405,12 +484,7 @@ const styles = {
     letterSpacing: "0.08em",
     color: "#be185d",
   },
-  title: {
-    margin: 0,
-    fontSize: "22px",
-    fontWeight: "800",
-    color: "#0f172a",
-  },
+  title: { margin: 0, fontSize: "22px", fontWeight: "800", color: "#0f172a" },
   sectionTitle: {
     margin: 0,
     fontSize: "20px",
@@ -441,11 +515,7 @@ const styles = {
     fontWeight: "800",
     textTransform: "uppercase",
   },
-  selectedName: {
-    color: "#0f172a",
-    fontSize: "15px",
-    fontWeight: "900",
-  },
+  selectedName: { color: "#0f172a", fontSize: "15px", fontWeight: "900" },
   selectedMeta: {
     color: "#64748b",
     fontSize: "13px",
@@ -466,15 +536,8 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     gap: "12px",
   },
-  fieldGroup: {
-    display: "grid",
-    gap: "8px",
-  },
-  label: {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#475569",
-  },
+  fieldGroup: { display: "grid", gap: "8px" },
+  label: { fontSize: "13px", fontWeight: "700", color: "#475569" },
   input: {
     padding: "12px 14px",
     borderRadius: "12px",
@@ -492,10 +555,7 @@ const styles = {
     fontWeight: "800",
     cursor: "pointer",
   },
-  disabledButton: {
-    opacity: 0.65,
-    cursor: "not-allowed",
-  },
+  disabledButton: { opacity: 0.65, cursor: "not-allowed" },
   countBadge: {
     minWidth: "42px",
     height: "42px",
@@ -506,11 +566,7 @@ const styles = {
     placeItems: "center",
     fontWeight: "900",
   },
-  tabButtons: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
+  tabButtons: { display: "flex", gap: "8px", flexWrap: "wrap" },
   tabBtn: {
     background: "#fff",
     color: "#334155",
@@ -525,14 +581,8 @@ const styles = {
     color: "#be185d",
     borderColor: "#be185d",
   },
-  tableWrap: {
-    overflowX: "auto",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    minWidth: "1080px",
-  },
+  tableWrap: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", minWidth: "1080px" },
   th: {
     textAlign: "left",
     padding: "12px",
@@ -566,23 +616,10 @@ const styles = {
     textTransform: "capitalize",
     display: "inline-block",
   },
-  statusNotified: {
-    background: "#fff7ed",
-    color: "#9a3412",
-  },
-  statusBooked: {
-    background: "#dcfce7",
-    color: "#166534",
-  },
-  statusCancelled: {
-    background: "#fee2e2",
-    color: "#991b1b",
-  },
-  actions: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
+  statusNotified: { background: "#fff7ed", color: "#9a3412" },
+  statusBooked: { background: "#dcfce7", color: "#166534" },
+  statusCancelled: { background: "#fee2e2", color: "#991b1b" },
+  actions: { display: "flex", gap: "8px", flexWrap: "wrap" },
   bookBtn: {
     background: "#0ea5e9",
     color: "#fff",
