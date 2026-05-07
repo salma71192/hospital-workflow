@@ -59,15 +59,27 @@ export default function ReceptionBookingWorkspace({
 
   const stats = useMyStats();
 
-  const resolvedLeaderboardScope =
-    leaderboardScope || (isPhysio ? "physio" : "reception");
+  const resolvedScope = leaderboardScope || (isPhysio ? "physio" : "reception");
 
   const {
     leaderboard,
     loading: leaderboardLoading,
     error: leaderboardError,
     reload: reloadLeaderboard,
-  } = useLeaderboard(resolvedLeaderboardScope);
+  } = useLeaderboard(resolvedScope);
+
+  const {
+    waitingList,
+    waitingListCount,
+    waitingListFilter,
+    setWaitingListFilter,
+    handleApplyWaitingListFilters,
+    resetWaitingListFilters,
+    showWaitingListHistory,
+    showActiveWaitingList,
+    addToWaitingList,
+    deleteWaitingListEntry,
+  } = useWaitingList();
 
   const [trackerMode, setTrackerMode] = useState("today");
   const [waitingModalOpen, setWaitingModalOpen] = useState(false);
@@ -82,13 +94,6 @@ export default function ReceptionBookingWorkspace({
     user_id: "all",
     patient: "",
   });
-
-  const {
-    waitingList,
-    waitingListCount,
-    addToWaitingList,
-    deleteWaitingListEntry,
-  } = useWaitingList();
 
   const handleBookingFailed = ({ message, bookingForm, selectedPatient }) => {
     if (!selectedPatient?.id && !bookingForm?.patient_id) return;
@@ -310,17 +315,17 @@ export default function ReceptionBookingWorkspace({
     });
   };
 
-  const handleBackToAdmin = () => {
-    onStopImpersonation?.();
-    navigate("/admin");
-  };
-
   const getHomeRoute = () => {
     if (isPhysio) return "/physio";
     if (user?.role === "callcenter" || actingAs?.role === "callcenter") {
       return "/callcenter";
     }
     return "/reception";
+  };
+
+  const handleBackToAdmin = () => {
+    onStopImpersonation?.();
+    navigate("/admin");
   };
 
   const scrollToBookingSection = (delay = 200) => {
@@ -374,27 +379,6 @@ export default function ReceptionBookingWorkspace({
     scrollToBookingSection(200);
   };
 
-  const handleAddWaitingListFromModal = async ({
-    preferred_time_period,
-    notes,
-  }) => {
-    const patient = waitingModalData?.patient;
-    const form = waitingModalData?.bookingForm;
-
-    if (!patient?.id && !form?.patient_id) return;
-
-    await addToWaitingList({
-      patient_id: patient?.id || form.patient_id,
-      preferred_therapist_id: form.therapist_id || null,
-      preferred_date: form.appointment_date || null,
-      preferred_time_period: preferred_time_period || "",
-      notes: notes || form.notes || "",
-    });
-
-    setWaitingModalOpen(false);
-    setWaitingModalData(null);
-  };
-
   const handleWaitingListBookEntry = async (entry) => {
     await handleSelectPatient({
       id: entry.patient_db_id,
@@ -415,6 +399,27 @@ export default function ReceptionBookingWorkspace({
 
     setActiveSection("book");
     scrollToBookingSection(200);
+  };
+
+  const handleAddWaitingListFromModal = async ({
+    preferred_time_period,
+    notes,
+  }) => {
+    const patient = waitingModalData?.patient;
+    const form = waitingModalData?.bookingForm;
+
+    if (!patient?.id && !form?.patient_id) return;
+
+    await addToWaitingList({
+      patient_id: patient?.id || form.patient_id,
+      preferred_therapist_id: form.therapist_id || null,
+      preferred_date: form.appointment_date || null,
+      preferred_time_period: preferred_time_period || "",
+      notes: notes || form.notes || "",
+    });
+
+    setWaitingModalOpen(false);
+    setWaitingModalData(null);
   };
 
   const leaderboardTitle = isPhysio
@@ -456,10 +461,7 @@ export default function ReceptionBookingWorkspace({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message ? (
-        <DashboardNotice type="success">{message}</DashboardNotice>
-      ) : null}
-
+      {message ? <DashboardNotice type="success">{message}</DashboardNotice> : null}
       {error ? <DashboardNotice type="error">{error}</DashboardNotice> : null}
 
       {activeSection === "stats" && <MyStatsSection stats={stats} />}
@@ -510,8 +512,7 @@ export default function ReceptionBookingWorkspace({
               />
             ) : (
               <div style={styles.helperCard}>
-                Search for a patient above, then continue to the booking
-                section.
+                Search for a patient above, then continue to the booking section.
                 {showOpenFile ? (
                   <>
                     {" "}
@@ -558,6 +559,13 @@ export default function ReceptionBookingWorkspace({
       {activeSection === "waiting_list" && (
         <WaitingListSection
           waitingList={waitingList}
+          waitingListCount={waitingListCount}
+          waitingListFilter={waitingListFilter}
+          setWaitingListFilter={setWaitingListFilter}
+          onApplyFilters={handleApplyWaitingListFilters}
+          onResetFilters={resetWaitingListFilters}
+          onShowHistory={showWaitingListHistory}
+          onShowActive={showActiveWaitingList}
           therapists={visibleTherapists}
           onAddToWaitingList={addToWaitingList}
           onDeleteEntry={deleteWaitingListEntry}
