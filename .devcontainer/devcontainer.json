@@ -1,5 +1,4 @@
 {
   "name": "Django Hospital Workflow",
-  "image": "mcr.microsoft.com/devcontainers/python:3.11",
-  "forwardPorts": [8000, 3000]
+  "image": "mcr.microsoft.com/devcontainers/python:3.11"
 }
