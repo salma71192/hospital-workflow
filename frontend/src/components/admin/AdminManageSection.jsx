@@ -1,3 +1,4 @@
+
 import React from "react";
 import ManageUsersPanel from "../users/ManageUsersPanel";
 
@@ -13,6 +14,9 @@ export default function AdminManageSection({
   onRoleUpdate,
   onDeleteUser,
   onActAsUser,
+  onEditUser,
+  onSetUserActive,
+  onChangeUserPassword,
 }) {
   return (
     <ManageUsersPanel
@@ -27,6 +31,9 @@ export default function AdminManageSection({
       onRoleUpdate={onRoleUpdate}
       onDeleteUser={onDeleteUser}
       onActAsUser={onActAsUser}
+      onEditUser={onEditUser}
+      onSetUserActive={onSetUserActive}
+      onChangeUserPassword={onChangeUserPassword}
     />
   );
 }
