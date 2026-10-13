@@ -1,3 +1,4 @@
+
 from datetime import timedelta
 import json
 
@@ -48,8 +49,12 @@ def _mark_today_appointment_attended(patient, therapist, marked_by):
     if not appointment:
         return None
 
-    therapist_changed = str(appointment.therapist_id) != str(therapist.id)
-    already_attended = getattr(appointment, "attendance_status", "") == "attended"
+    therapist_changed = (
+        str(appointment.therapist_id) != str(therapist.id)
+    )
+    already_attended = (
+        getattr(appointment, "attendance_status", "") == "attended"
+    )
 
     updated_fields = []
 
@@ -57,15 +62,24 @@ def _mark_today_appointment_attended(patient, therapist, marked_by):
         appointment.therapist = therapist
         updated_fields.append("therapist")
 
-    if hasattr(appointment, "attendance_status") and hasattr(appointment, "attended_at"):
+    if (
+        hasattr(appointment, "attendance_status")
+        and hasattr(appointment, "attended_at")
+    ):
         if not already_attended:
             appointment.attendance_status = "attended"
             appointment.attended_at = timezone.now()
-            updated_fields.extend(["attendance_status", "attended_at"])
+            updated_fields.extend(
+                ["attendance_status", "attended_at"]
+            )
 
-            patient.sessions_taken = int(patient.sessions_taken or 0) + 1
+            patient.sessions_taken = int(
+                patient.sessions_taken or 0
+            ) + 1
             patient.taken_with = therapist.username
-            patient.save(update_fields=["sessions_taken", "taken_with"])
+            patient.save(
+                update_fields=["sessions_taken", "taken_with"]
+            )
         else:
             patient.taken_with = therapist.username
             patient.save(update_fields=["taken_with"])
@@ -84,7 +98,9 @@ def assignments_api(request, assignment_id=None):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
-    role = (getattr(request.user, "role", "") or "").strip().lower()
+    role = (
+        getattr(request.user, "role", "") or ""
+    ).strip().lower()
     admin = is_admin(request.user)
     today_value = timezone.localdate()
 
@@ -132,8 +148,12 @@ def assignments_api(request, assignment_id=None):
             qs = qs.filter(assignment_date__lte=end_date)
 
         user_id = (request.GET.get("user_id") or "").strip()
-        therapist_id = (request.GET.get("therapist_id") or "").strip()
-        patient_search = (request.GET.get("patient") or "").strip()
+        therapist_id = (
+            request.GET.get("therapist_id") or ""
+        ).strip()
+        patient_search = (
+            request.GET.get("patient") or ""
+        ).strip()
 
         if user_id and user_id != "all":
             qs = qs.filter(created_by_id=user_id)
@@ -143,17 +163,24 @@ def assignments_api(request, assignment_id=None):
 
         if patient_search:
             qs = qs.filter(
-                Q(patient__name__icontains=patient_search) |
-                Q(patient__patient_id__icontains=patient_search)
+                Q(patient__name__icontains=patient_search)
+                | Q(patient__patient_id__icontains=patient_search)
             )
 
-        viewed_user_id = (request.GET.get("viewed_user_id") or "").strip()
-        viewed_user_role = (request.GET.get("viewed_user_role") or "").strip().lower()
+        viewed_user_id = (
+            request.GET.get("viewed_user_id") or ""
+        ).strip()
+        viewed_user_role = (
+            request.GET.get("viewed_user_role") or ""
+        ).strip().lower()
 
         if admin:
             if viewed_user_id and viewed_user_role == "physio":
                 qs = qs.filter(therapist_id=viewed_user_id)
-            elif viewed_user_id and viewed_user_role in ["reception", "reception_supervisor"]:
+            elif viewed_user_id and viewed_user_role in [
+                "reception",
+                "reception_supervisor",
+            ]:
                 qs = qs.filter(created_by_id=viewed_user_id)
 
         elif role == "physio":
@@ -168,28 +195,48 @@ def assignments_api(request, assignment_id=None):
                 "patient_id": a.patient.id,
                 "patient_name": a.patient.name,
                 "patient_file_id": a.patient.patient_id,
-                "therapist_id": a.therapist.id if a.therapist else None,
-                "therapist_name": a.therapist.username if a.therapist else "-",
+                "therapist_id": (
+                    a.therapist.id if a.therapist else None
+                ),
+                "therapist_name": (
+                    a.therapist.username if a.therapist else "-"
+                ),
                 "assignment_date": str(a.assignment_date),
                 "category": a.category,
-                "category_label": a.get_category_display() if hasattr(a, "get_category_display") else a.category,
+                "category_label": (
+                    a.get_category_display()
+                    if hasattr(a, "get_category_display")
+                    else a.category
+                ),
                 "notes": a.notes or "",
-                "created_by_id": a.created_by.id if a.created_by else None,
-                "created_by_name": a.created_by.username if a.created_by else "",
+                "created_by_id": (
+                    a.created_by.id if a.created_by else None
+                ),
+                "created_by_name": (
+                    a.created_by.username if a.created_by else ""
+                ),
                 "can_edit_today": a.assignment_date == today_value,
                 "can_cancel_today": a.assignment_date == today_value,
             }
-            for a in qs.order_by("-assignment_date", "-created_at")
+            for a in qs.order_by(
+                "-assignment_date", "-created_at"
+            )
         ]
 
         agents = list(
             User.objects.filter(
-                role__in=["reception", "reception_supervisor", "admin"]
+                role__in=[
+                    "reception",
+                    "reception_supervisor",
+                    "admin",
+                ]
             ).values("id", "username", "role")
         )
 
         therapists = list(
-            User.objects.filter(role="physio").values("id", "username")
+            User.objects.filter(role="physio").values(
+                "id", "username"
+            )
         )
 
         return JsonResponse({
@@ -204,12 +251,19 @@ def assignments_api(request, assignment_id=None):
     # POST
     # =========================
     if request.method == "POST":
-        if role not in ["reception", "admin", "reception_supervisor"] and not admin:
+        if (
+            role not in [
+                "reception",
+                "admin",
+                "reception_supervisor",
+            ]
+            and not admin
+        ):
             return JsonResponse({"error": "Not allowed"}, status=403)
 
         try:
             data = json.loads(request.body)
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
         patient_id = data.get("patient_id")
@@ -222,22 +276,42 @@ def assignments_api(request, assignment_id=None):
 
         try:
             patient = Patient.objects.get(id=patient_id)
-            therapist = User.objects.get(id=therapist_id, role="physio")
-        except Exception:
-            return JsonResponse({"error": "Invalid patient or therapist"}, status=400)
-
-        if PatientAssignment.objects.filter(
-            patient=patient,
-            assignment_date=today_value,
-        ).exists():
+            therapist = User.objects.get(
+                id=therapist_id,
+                role="physio",
+            )
+        except (Patient.DoesNotExist, User.DoesNotExist, ValueError, TypeError):
             return JsonResponse(
-                {"error": "This patient is already assigned today"},
+                {"error": "Invalid patient or therapist"},
                 status=400,
             )
 
+        # Lock the patient row and check for an existing assignment
+        # inside the same transaction to reduce race conditions.
         with transaction.atomic():
+            locked_patient = (
+                Patient.objects
+                .select_for_update()
+                .get(id=patient.id)
+            )
+
+            duplicate_exists = PatientAssignment.objects.filter(
+                patient=locked_patient,
+                assignment_date=today_value,
+            ).exists()
+
+            if duplicate_exists:
+                return JsonResponse(
+                    {
+                        "error": (
+                            "This patient is already assigned today"
+                        )
+                    },
+                    status=400,
+                )
+
             assignment = PatientAssignment.objects.create(
-                patient=patient,
+                patient=locked_patient,
                 therapist=therapist,
                 assignment_date=today_value,
                 category=category,
@@ -246,7 +320,7 @@ def assignments_api(request, assignment_id=None):
             )
 
             _mark_today_appointment_attended(
-                patient=patient,
+                patient=locked_patient,
                 therapist=therapist,
                 marked_by=request.user,
             )
@@ -266,11 +340,18 @@ def assignments_api(request, assignment_id=None):
                 "patient",
                 "therapist",
             ).get(id=assignment_id)
-        except PatientAssignment.DoesNotExist:
+        except (
+            PatientAssignment.DoesNotExist,
+            ValueError,
+            TypeError,
+        ):
             return JsonResponse({"error": "Not found"}, status=404)
 
         if assignment.assignment_date != today_value and not admin:
-            return JsonResponse({"error": "You can only edit today's assignments"}, status=403)
+            return JsonResponse(
+                {"error": "You can only edit today's assignments"},
+                status=403,
+            )
 
         can_edit_assignment = admin or role in [
             "reception",
@@ -282,7 +363,7 @@ def assignments_api(request, assignment_id=None):
 
         try:
             data = json.loads(request.body)
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
         therapist_id = data.get("therapist_id")
@@ -292,9 +373,15 @@ def assignments_api(request, assignment_id=None):
         new_therapist = assignment.therapist
         if therapist_id:
             try:
-                new_therapist = User.objects.get(id=therapist_id, role="physio")
-            except Exception:
-                return JsonResponse({"error": "Invalid therapist"}, status=400)
+                new_therapist = User.objects.get(
+                    id=therapist_id,
+                    role="physio",
+                )
+            except (User.DoesNotExist, ValueError, TypeError):
+                return JsonResponse(
+                    {"error": "Invalid therapist"},
+                    status=400,
+                )
 
         with transaction.atomic():
             assignment.therapist = new_therapist
@@ -319,11 +406,18 @@ def assignments_api(request, assignment_id=None):
     if request.method == "DELETE":
         try:
             assignment = PatientAssignment.objects.get(id=assignment_id)
-        except PatientAssignment.DoesNotExist:
+        except (
+            PatientAssignment.DoesNotExist,
+            ValueError,
+            TypeError,
+        ):
             return JsonResponse({"error": "Not found"}, status=404)
 
         if not admin and assignment.assignment_date != today_value:
-            return JsonResponse({"error": "Cannot delete past assignments"}, status=403)
+            return JsonResponse(
+                {"error": "Cannot delete past assignments"},
+                status=403,
+            )
 
         can_delete_assignment = admin or role in [
             "reception",
