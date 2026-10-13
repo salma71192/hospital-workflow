@@ -72,9 +72,13 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # -------------------
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'hospital_workflow',
+        'USER': 'hospital_user',
+        'PASSWORD': 'hospital_password',
+        'HOST': 'db',
+        'PORT': '5432',
     }
 }
 
@@ -112,7 +116,7 @@ AUTH_USER_MODEL = "users.User"
 # ===========================
 # CORS + CSRF
 # ===========================
-FRONTEND_URL = "https://miniature-train-4qrjjq6wvwhqwwr-3000.app.github.dev"
+FRONTEND_URL = "https://miniature-system-q7w4jrrr5v739w4j-3000.app.github.dev"
 
 CORS_ALLOWED_ORIGINS = [
     FRONTEND_URL,

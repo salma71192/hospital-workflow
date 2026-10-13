@@ -1,4 +1,6 @@
 {
   "name": "Django Hospital Workflow",
-  "image": "mcr.microsoft.com/devcontainers/python:3.11"
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}"
 }
