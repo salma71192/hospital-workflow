@@ -1,705 +1,767 @@
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+
+const inputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "9px 11px",
+  border: "1px solid #d1d5db",
+  borderRadius: "7px",
+  fontSize: "14px",
+  background: "#fff",
+};
+
+const buttonStyle = {
+  padding: "8px 12px",
+  border: "1px solid #d1d5db",
+  borderRadius: "7px",
+  background: "#fff",
+  cursor: "pointer",
+  fontSize: "13px",
+};
+
+const primaryButtonStyle = {
+  ...buttonStyle,
+  color: "#fff",
+  background: "#2563eb",
+  borderColor: "#2563eb",
+};
+
+const cardStyle = {
+  border: "1px solid #e5e7eb",
+  borderRadius: "10px",
+  padding: "16px",
+  background: "#fff",
+};
+
+function getRole(user) {
+  return user?.role || (user?.is_superuser ? "admin" : "user");
+}
+
+function getRoleLabel(role) {
+  return String(role || "user")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getUsername(user) {
+  return user?.username || user?.email || `User ${user?.id ?? ""}`;
+}
+
+function getErrorMessage(error, fallback) {
+  return (
+    error?.response?.data?.error ||
+    error?.response?.data?.detail ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback
+  );
+}
 
 export default function ManageUsersPanel({
   users = [],
-  activeCategory,
-  onCategoryChange,
-  groupedUsers = {},
-  categoryOrder = [],
-  roleLabels = {},
   roles = [],
-  currentUsername,
-  onRoleUpdate,
-  onDeleteUser,
-  onActAsUser,
+  currentUser,
+  currentUserId,
   onEditUser,
+  onDeleteUser,
   onSetUserActive,
   onChangeUserPassword,
+  onRoleUpdate,
 }) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedRole, setSelectedRole] = useState("all");
+
   const [editingUserId, setEditingUserId] = useState(null);
   const [editForm, setEditForm] = useState({
     username: "",
-    role: "",
+    role: "user",
     is_superuser: false,
+    is_active: true,
   });
-  const [saving, setSaving] = useState(false);
-  const [editError, setEditError] = useState("");
-  const [statusFilter, setStatusFilter] = useState("active");
+
+  const [passwordUserId, setPasswordUserId] = useState(null);
   const [newPassword, setNewPassword] = useState("");
-  const [passwordSaving, setPasswordSaving] = useState(false);
 
-  const categoryUsers = groupedUsers[activeCategory] ?? users;
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
-  const visibleUsers = categoryUsers.filter((user) => {
-    if (statusFilter === "active") {
-      return user.is_active !== false;
-    }
+  const roleOptions = useMemo(() => {
+    const values = new Set(
+      roles
+        .map((role) =>
+          typeof role === "string" ? role : role?.value || role?.name
+        )
+        .filter(Boolean)
+    );
 
-    if (statusFilter === "inactive") {
-      return user.is_active === false;
-    }
+    users.forEach((user) => values.add(getRole(user)));
 
-    return true;
-  });
+    return [...values].sort((a, b) =>
+      getRoleLabel(a).localeCompare(getRoleLabel(b))
+    );
+  }, [roles, users]);
 
-  const startEditing = (item) => {
-    setEditingUserId(item.id);
-    setEditForm({
-      username: item.username || "",
-      role: item.role || "",
-      is_superuser: !!item.is_superuser,
+  const roleCounts = useMemo(() => {
+    const counts = { all: users.length };
+
+    users.forEach((user) => {
+      const role = getRole(user);
+      counts[role] = (counts[role] || 0) + 1;
     });
-    setNewPassword("");
-    setEditError("");
-  };
 
-  const cancelEditing = () => {
+    return counts;
+  }, [users]);
+
+  const filteredUsers = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
+
+    return [...users]
+      .filter((user) => {
+        const matchesSearch =
+          !search ||
+          getUsername(user).toLowerCase().includes(search) ||
+          String(user?.email || "").toLowerCase().includes(search);
+
+        const matchesStatus =
+          statusFilter === "all" ||
+          (statusFilter === "active" && Boolean(user?.is_active)) ||
+          (statusFilter === "inactive" && !user?.is_active);
+
+        const matchesRole =
+          selectedRole === "all" || getRole(user) === selectedRole;
+
+        return matchesSearch && matchesStatus && matchesRole;
+      })
+      .sort((a, b) =>
+        getUsername(a).localeCompare(getUsername(b), undefined, {
+          sensitivity: "base",
+        })
+      );
+  }, [users, searchTerm, statusFilter, selectedRole]);
+
+  function clearMessages() {
+    setSuccessMessage("");
+    setErrorMessage("");
+  }
+
+  function startEditing(user) {
+    clearMessages();
+    setEditingUserId(user.id);
+    setEditForm({
+      username: user.username || "",
+      role: getRole(user),
+      is_superuser: Boolean(user.is_superuser),
+      is_active: Boolean(user.is_active),
+    });
+  }
+
+  function cancelEditing() {
     setEditingUserId(null);
     setEditForm({
       username: "",
-      role: "",
+      role: "user",
       is_superuser: false,
+      is_active: true,
     });
-    setNewPassword("");
-    setEditError("");
-    setSaving(false);
-    setPasswordSaving(false);
-  };
+  }
 
-  const handleSave = async (item) => {
+  function handleFormChange(event) {
+    const { name, value, type, checked } = event.target;
+
+    setEditForm((previous) => ({
+      ...previous,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }
+
+  async function handleSave(user) {
+    clearMessages();
+
     const username = editForm.username.trim();
 
     if (!username) {
-      setEditError("Username cannot be empty.");
-      return;
-    }
-
-    if (!editForm.role) {
-      setEditError("Please select a role.");
+      setErrorMessage("Username is required.");
       return;
     }
 
     if (typeof onEditUser !== "function") {
-      setEditError(
-        "The save handler is not connected. Check AdminDashboard.jsx."
-      );
+      setErrorMessage("The user profile update handler is not configured.");
+      return;
+    }
+
+    const statusChanged =
+      Boolean(user.is_active) !== Boolean(editForm.is_active);
+
+    const isCurrentUser =
+      String(user.id) === String(currentUserId ?? currentUser?.id);
+
+    if (statusChanged && isCurrentUser && !editForm.is_active) {
+      setErrorMessage("You cannot deactivate your own account.");
       return;
     }
 
     setSaving(true);
-    setEditError("");
 
     try {
-      await onEditUser(item.id, {
+      await onEditUser(user.id, {
         username,
         role: editForm.role,
-        is_superuser: editForm.is_superuser,
+        is_superuser: Boolean(editForm.is_superuser),
       });
 
+      if (statusChanged) {
+        if (typeof onSetUserActive !== "function") {
+          throw new Error(
+            "The account-status update handler is not configured."
+          );
+        }
+
+        await onSetUserActive(user.id, Boolean(editForm.is_active));
+      }
+
+      // Reset the form first so the success message is not cleared.
       cancelEditing();
+      setSuccessMessage("User changes saved successfully.");
     } catch (error) {
-      setEditError(
-        error?.response?.data?.error ||
-          error?.message ||
-          "Could not save changes. Please try again."
+      setErrorMessage(
+        getErrorMessage(error, "Unable to save the user changes.")
       );
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  const handleToggleActive = async (item) => {
-    if (typeof onSetUserActive !== "function") {
-      setEditError(
-        "Account status handler is not connected. Update AdminDashboard.jsx and AdminManageSection.jsx."
-      );
-      return;
-    }
+  async function handlePasswordChange(user) {
+    clearMessages();
 
-    const nextStatus = item.is_active === false;
-
-    if (
-      !nextStatus &&
-      item.username === currentUsername
-    ) {
-      setEditError("You cannot deactivate your own account.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Are you sure you want to ${
-        nextStatus ? "activate" : "deactivate"
-      } the account "${item.username}"?`
-    );
-
-    if (!confirmed) return;
-
-    setEditError("");
-
-    try {
-      await onSetUserActive(item.id, nextStatus);
-    } catch (error) {
-      setEditError(
-        error?.response?.data?.error ||
-          error?.message ||
-          "Could not update account status."
-      );
-    }
-  };
-
-  const handlePasswordChange = async (item) => {
-    if (!newPassword) {
-      setEditError("Please enter a new password.");
+    if (!newPassword.trim()) {
+      setErrorMessage("Please enter a new password.");
       return;
     }
 
     if (typeof onChangeUserPassword !== "function") {
-      setEditError(
-        "Password handler is not connected. Update AdminDashboard.jsx and AdminManageSection.jsx."
-      );
+      setErrorMessage("The password-change handler is not configured.");
       return;
     }
 
-    setPasswordSaving(true);
-    setEditError("");
+    setChangingPassword(true);
 
     try {
-      await onChangeUserPassword(item.id, newPassword);
+      await onChangeUserPassword(user.id, newPassword);
+
       setNewPassword("");
+      setPasswordUserId(null);
+      setSuccessMessage("Password changed successfully.");
     } catch (error) {
-      setEditError(
-        error?.response?.data?.error ||
-          error?.message ||
-          "Could not change the password."
+      setErrorMessage(
+        getErrorMessage(error, "Unable to change the password.")
       );
     } finally {
-      setPasswordSaving(false);
+      setChangingPassword(false);
     }
-  };
+  }
 
-  const countUsers = (category) =>
-    (groupedUsers[category] ?? []).filter((user) => {
-      if (statusFilter === "active") {
-        return user.is_active !== false;
-      }
+  async function handleToggleStatus(user) {
+    clearMessages();
 
-      if (statusFilter === "inactive") {
-        return user.is_active === false;
-      }
+    const isCurrentUser =
+      String(user.id) === String(currentUserId ?? currentUser?.id);
 
-      return true;
-    }).length;
+    if (isCurrentUser && user.is_active) {
+      setErrorMessage("You cannot deactivate your own account.");
+      return;
+    }
+
+    if (typeof onSetUserActive !== "function") {
+      setErrorMessage("The account-status update handler is not configured.");
+      return;
+    }
+
+    try {
+      await onSetUserActive(user.id, !user.is_active);
+      setSuccessMessage(
+        `Account ${user.is_active ? "deactivated" : "activated"} successfully.`
+      );
+    } catch (error) {
+      setErrorMessage(
+        getErrorMessage(error, "Unable to update the account status.")
+      );
+    }
+  }
 
   return (
-    <div style={styles.card}>
-      <h2 style={styles.cardTitle}>Manage Users</h2>
+    <section style={{ display: "grid", gap: "18px" }}>
+      <div>
+        <h2 style={{ margin: "0 0 6px", fontSize: "22px" }}>
+          Manage Users
+        </h2>
+        <p style={{ margin: 0, color: "#6b7280", fontSize: "14px" }}>
+          Search accounts, organize users by role, and manage account settings.
+        </p>
+      </div>
 
-      {/* User categories */}
-      <div style={styles.tabsWrap}>
-        {categoryOrder.map((category) => (
+      {successMessage && (
+        <div
+          role="status"
+          style={{
+            padding: "11px 14px",
+            borderRadius: "7px",
+            color: "#166534",
+            background: "#dcfce7",
+            border: "1px solid #bbf7d0",
+          }}
+        >
+          {successMessage}
+        </div>
+      )}
+
+      {errorMessage && (
+        <div
+          role="alert"
+          style={{
+            padding: "11px 14px",
+            borderRadius: "7px",
+            color: "#991b1b",
+            background: "#fee2e2",
+            border: "1px solid #fecaca",
+          }}
+        >
+          {errorMessage}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          flexWrap: "wrap",
+        }}
+      >
+        <button
+          type="button"
+          style={{
+            ...buttonStyle,
+            ...(selectedRole === "all"
+              ? primaryButtonStyle
+              : {}),
+          }}
+          onClick={() => setSelectedRole("all")}
+        >
+          All Roles ({roleCounts.all || 0})
+        </button>
+
+        {roleOptions.map((role) => (
           <button
-            key={category}
+            key={role}
             type="button"
-            onClick={() => onCategoryChange(category)}
             style={{
-              ...styles.tabButton,
-              ...(activeCategory === category
-                ? styles.activeTabButton
-                : {}),
+              ...buttonStyle,
+              ...(selectedRole === role ? primaryButtonStyle : {}),
             }}
+            onClick={() => setSelectedRole(role)}
           >
-            {roleLabels[category] || category} (
-            {countUsers(category)})
+            {getRoleLabel(role)} ({roleCounts[role] || 0})
           </button>
         ))}
       </div>
 
-      {/* Account status filters */}
-      <div style={styles.filterWrap}>
-        {[
-          { value: "active", label: "Active Users" },
-          { value: "inactive", label: "Inactive Users" },
-          { value: "all", label: "All Users" },
-        ].map((filter) => (
-          <button
-            key={filter.value}
-            type="button"
-            onClick={() => setStatusFilter(filter.value)}
+      <div
+        style={{
+          ...cardStyle,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          gap: "12px",
+        }}
+      >
+        <div>
+          <label
+            htmlFor="user-search"
             style={{
-              ...styles.filterButton,
-              ...(statusFilter === filter.value
-                ? styles.activeFilterButton
-                : {}),
+              display: "block",
+              marginBottom: "6px",
+              fontSize: "13px",
+              fontWeight: 600,
             }}
           >
-            {filter.label}
-          </button>
-        ))}
+            Search users
+          </label>
+          <input
+            id="user-search"
+            type="search"
+            placeholder="Search by username or email"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="user-status-filter"
+            style={{
+              display: "block",
+              marginBottom: "6px",
+              fontSize: "13px",
+              fontWeight: 600,
+            }}
+          >
+            Account status
+          </label>
+          <select
+            id="user-status-filter"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            style={inputStyle}
+          >
+            <option value="all">All accounts</option>
+            <option value="active">Active only</option>
+            <option value="inactive">Inactive only</option>
+          </select>
+        </div>
       </div>
 
-      {visibleUsers.length > 0 ? (
-        <div style={styles.userGrid}>
-          {visibleUsers.map((item) => {
-            const isEditing = editingUserId === item.id;
-            const isActive = item.is_active !== false;
+      <div style={{ color: "#6b7280", fontSize: "13px" }}>
+        Showing {filteredUsers.length} of {users.length} users. Users are
+        sorted alphabetically by username.
+      </div>
+
+      {filteredUsers.length === 0 ? (
+        <div style={{ ...cardStyle, color: "#6b7280" }}>
+          No users match your search or selected filters.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: "12px" }}>
+          {filteredUsers.map((user) => {
+            const isEditing = editingUserId === user.id;
+            const isChangingPassword = passwordUserId === user.id;
 
             return (
-              <div key={item.id} style={styles.userCard}>
-                <div style={styles.userInfo}>
-                  {isEditing ? (
-                    <div style={styles.editFields}>
-                      <label style={styles.fieldLabel}>
-                        Username
-                        <input
-                          type="text"
-                          value={editForm.username}
-                          onChange={(e) =>
-                            setEditForm((prev) => ({
-                              ...prev,
-                              username: e.target.value,
-                            }))
-                          }
-                          style={styles.textInput}
-                          autoComplete="off"
-                        />
-                      </label>
-
-                      <label style={styles.fieldLabel}>
-                        Role
-                        <select
-                          value={editForm.role}
-                          onChange={(e) =>
-                            setEditForm((prev) => ({
-                              ...prev,
-                              role: e.target.value,
-                            }))
-                          }
-                          style={styles.smallSelect}
-                        >
-                          {roles.map((role) => (
-                            <option key={role} value={role}>
-                              {roleLabels[role] || role}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label style={styles.smallCheckboxRow}>
-                        <input
-                          type="checkbox"
-                          checked={editForm.is_superuser}
-                          onChange={(e) =>
-                            setEditForm((prev) => ({
-                              ...prev,
-                              is_superuser: e.target.checked,
-                            }))
-                          }
-                        />
-                        Superuser
-                      </label>
-
-                      <div style={styles.statusRow}>
-                        <span style={styles.fieldLabel}>
-                          Account Status
-                        </span>
-
-                        <span
-                          style={{
-                            ...styles.statusBadge,
-                            ...(isActive
-                              ? styles.activeStatusBadge
-                              : styles.inactiveStatusBadge),
-                          }}
-                        >
-                          {isActive ? "Active" : "Inactive"}
-                        </span>
-                      </div>
-
-                      <button
-                        type="button"
-                        style={
-                          isActive
-                            ? styles.deleteButton
-                            : styles.activateButton
-                        }
-                        onClick={() => handleToggleActive(item)}
-                      >
-                        {isActive
-                          ? "Deactivate Account"
-                          : "Activate Account"}
-                      </button>
-
-                      <div style={styles.passwordSection}>
-                        <div style={styles.sectionTitle}>
-                          Change Password
-                        </div>
-
-                        <label style={styles.fieldLabel}>
-                          New Password
-                          <input
-                            type="password"
-                            value={newPassword}
-                            onChange={(e) =>
-                              setNewPassword(e.target.value)
-                            }
-                            style={styles.textInput}
-                            placeholder="Enter a new password"
-                            autoComplete="new-password"
-                          />
-                        </label>
-
-                        <button
-                          type="button"
-                          style={{
-                            ...styles.passwordButton,
-                            ...(passwordSaving
-                              ? styles.disabledButton
-                              : {}),
-                          }}
-                          onClick={() =>
-                            handlePasswordChange(item)
-                          }
-                          disabled={passwordSaving}
-                        >
-                          {passwordSaving
-                            ? "Updating Password..."
-                            : "Change Password"}
-                        </button>
-                      </div>
-
-                      {editError ? (
-                        <div role="alert" style={styles.errorText}>
-                          {editError}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <>
-                      <div style={styles.userName}>
-                        {item.username}
-                        {item.is_active === false
-                          ? " (Inactive)"
-                          : ""}
-                      </div>
-
-                      <div style={styles.userMeta}>
-                        Role:{" "}
-                        {roleLabels[item.role] ||
-                          item.role ||
-                          "No role"}
-                        {item.is_superuser ? " • Superuser" : ""}
-                      </div>
-
-                      <div style={styles.statusRow}>
-                        <span
-                          style={{
-                            ...styles.statusBadge,
-                            ...(isActive
-                              ? styles.activeStatusBadge
-                              : styles.inactiveStatusBadge),
-                          }}
-                        >
-                          {isActive ? "Active" : "Inactive"}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div style={styles.actionsWrap}>
-                  {isEditing ? (
-                    <>
-                      <button
-                        type="button"
+              <article key={user.id} style={cardStyle}>
+                {!isEditing ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: "14px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: "1 1 220px" }}>
+                      <h3
                         style={{
-                          ...styles.saveButton,
-                          ...(saving ? styles.disabledButton : {}),
+                          margin: "0 0 5px",
+                          fontSize: "16px",
+                          overflowWrap: "anywhere",
                         }}
-                        onClick={() => handleSave(item)}
-                        disabled={saving}
                       >
-                        {saving ? "Saving..." : "Save"}
-                      </button>
+                        {getUsername(user)}
+                      </h3>
 
-                      <button
-                        type="button"
-                        style={styles.cancelButton}
-                        onClick={cancelEditing}
-                        disabled={saving || passwordSaving}
+                      {user.email && (
+                        <p
+                          style={{
+                            margin: "0 0 9px",
+                            color: "#6b7280",
+                            fontSize: "13px",
+                            overflowWrap: "anywhere",
+                          }}
+                        >
+                          {user.email}
+                        </p>
+                      )}
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "7px",
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                        }}
                       >
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <>
+                        <span
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: "20px",
+                            background: "#eff6ff",
+                            color: "#1d4ed8",
+                            fontSize: "12px",
+                          }}
+                        >
+                          {getRoleLabel(getRole(user))}
+                        </span>
+
+                        <span
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: "20px",
+                            background: user.is_active
+                              ? "#dcfce7"
+                              : "#fee2e2",
+                            color: user.is_active ? "#166534" : "#991b1b",
+                            fontSize: "12px",
+                          }}
+                        >
+                          {user.is_active ? "Active" : "Inactive"}
+                        </span>
+
+                        {user.is_superuser && (
+                          <span
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "20px",
+                              background: "#f3e8ff",
+                              color: "#6b21a8",
+                              fontSize: "12px",
+                            }}
+                          >
+                            Superuser
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "7px",
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <button
                         type="button"
-                        style={styles.editButton}
-                        onClick={() => startEditing(item)}
+                        style={buttonStyle}
+                        onClick={() => startEditing(user)}
                       >
                         Edit
                       </button>
 
                       <button
                         type="button"
-                        style={styles.viewButton}
-                        onClick={() => onActAsUser?.(item)}
+                        style={buttonStyle}
+                        onClick={() => {
+                          clearMessages();
+                          setPasswordUserId(
+                            isChangingPassword ? null : user.id
+                          );
+                          setNewPassword("");
+                        }}
                       >
-                        Open as User
+                        {isChangingPassword ? "Cancel Password" : "Change Password"}
                       </button>
-                    </>
-                  )}
-                </div>
-              </div>
+
+                      <button
+                        type="button"
+                        style={buttonStyle}
+                        onClick={() => handleToggleStatus(user)}
+                      >
+                        {user.is_active ? "Deactivate" : "Activate"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      handleSave(user);
+                    }}
+                    style={{ display: "grid", gap: "13px" }}
+                  >
+                    <h3 style={{ margin: 0, fontSize: "16px" }}>
+                      Edit {getUsername(user)}
+                    </h3>
+
+                    <div>
+                      <label
+                        htmlFor={`username-${user.id}`}
+                        style={{
+                          display: "block",
+                          marginBottom: "5px",
+                          fontSize: "13px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Username
+                      </label>
+                      <input
+                        id={`username-${user.id}`}
+                        name="username"
+                        value={editForm.username}
+                        onChange={handleFormChange}
+                        required
+                        style={inputStyle}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor={`role-${user.id}`}
+                        style={{
+                          display: "block",
+                          marginBottom: "5px",
+                          fontSize: "13px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Role
+                      </label>
+                      <select
+                        id={`role-${user.id}`}
+                        name="role"
+                        value={editForm.role}
+                        onChange={handleFormChange}
+                        style={inputStyle}
+                      >
+                        {roleOptions.map((role) => (
+                          <option key={role} value={role}>
+                            {getRoleLabel(role)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor={`status-${user.id}`}
+                        style={{
+                          display: "block",
+                          marginBottom: "5px",
+                          fontSize: "13px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Account status
+                      </label>
+                      <select
+                        id={`status-${user.id}`}
+                        name="is_active"
+                        value={String(editForm.is_active)}
+                        onChange={(event) =>
+                          setEditForm((previous) => ({
+                            ...previous,
+                            is_active: event.target.value === "true",
+                          }))
+                        }
+                        style={inputStyle}
+                      >
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                      </select>
+                      <p
+                        style={{
+                          margin: "5px 0 0",
+                          fontSize: "12px",
+                          color: "#6b7280",
+                        }}
+                      >
+                        Status changes will apply only after you click Save.
+                      </p>
+                    </div>
+
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        fontSize: "14px",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        name="is_superuser"
+                        checked={editForm.is_superuser}
+                        onChange={handleFormChange}
+                      />
+                      Superuser privileges
+                    </label>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "8px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        style={{
+                          ...primaryButtonStyle,
+                          opacity: saving ? 0.65 : 1,
+                        }}
+                      >
+                        {saving ? "Saving..." : "Save"}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={saving}
+                        style={buttonStyle}
+                        onClick={() => {
+                          cancelEditing();
+                          clearMessages();
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {isChangingPassword && !isEditing && (
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      handlePasswordChange(user);
+                    }}
+                    style={{
+                      marginTop: "16px",
+                      paddingTop: "14px",
+                      borderTop: "1px solid #e5e7eb",
+                      display: "grid",
+                      gap: "10px",
+                    }}
+                  >
+                    <label
+                      htmlFor={`password-${user.id}`}
+                      style={{ fontSize: "13px", fontWeight: 600 }}
+                    >
+                      New password
+                    </label>
+                    <input
+                      id={`password-${user.id}`}
+                      type="password"
+                      autoComplete="new-password"
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                      placeholder="Enter a new password"
+                      required
+                      style={inputStyle}
+                    />
+
+                    <div>
+                      <button
+                        type="submit"
+                        disabled={changingPassword}
+                        style={{
+                          ...primaryButtonStyle,
+                          opacity: changingPassword ? 0.65 : 1,
+                        }}
+                      >
+                        {changingPassword ? "Changing..." : "Save Password"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </article>
             );
           })}
         </div>
-      ) : (
-        <div style={styles.emptyState}>
-          No {statusFilter === "all" ? "" : statusFilter + " "}users
-          in this category.
-        </div>
       )}
-    </div>
+    </section>
   );
 }
-
-const styles = {
-  card: {
-    background: "#fff",
-    borderRadius: "18px",
-    padding: "24px",
-    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
-    border: "1px solid #e8eef7",
-  },
-  cardTitle: {
-    margin: "0 0 18px 0",
-    fontSize: "24px",
-    color: "#0f172a",
-    fontWeight: "800",
-  },
-  tabsWrap: {
-    display: "flex",
-    gap: "10px",
-    flexWrap: "wrap",
-    marginBottom: "16px",
-  },
-  tabButton: {
-    background: "#e2e8f0",
-    color: "#334155",
-    border: "none",
-    borderRadius: "999px",
-    padding: "10px 16px",
-    fontSize: "14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  activeTabButton: {
-    background: "#1d4ed8",
-    color: "#fff",
-  },
-  filterWrap: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-    marginBottom: "20px",
-  },
-  filterButton: {
-    background: "#f1f5f9",
-    color: "#334155",
-    border: "1px solid #cbd5e1",
-    borderRadius: "8px",
-    padding: "9px 12px",
-    fontSize: "13px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  activeFilterButton: {
-    background: "#0f766e",
-    color: "#fff",
-    borderColor: "#0f766e",
-  },
-  userGrid: {
-    display: "grid",
-    gap: "12px",
-  },
-  userCard: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "16px",
-    border: "1px solid #e2e8f0",
-    borderRadius: "12px",
-    padding: "16px",
-    flexWrap: "wrap",
-  },
-  userInfo: {
-    minWidth: "180px",
-    flex: "1 1 220px",
-  },
-  userName: {
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: "6px",
-    overflowWrap: "anywhere",
-  },
-  userMeta: {
-    color: "#64748b",
-    fontSize: "14px",
-  },
-  editFields: {
-    display: "grid",
-    gap: "12px",
-    width: "100%",
-    maxWidth: "360px",
-  },
-  fieldLabel: {
-    display: "grid",
-    gap: "6px",
-    fontSize: "14px",
-    fontWeight: "600",
-    color: "#334155",
-  },
-  textInput: {
-    width: "100%",
-    boxSizing: "border-box",
-    padding: "9px 10px",
-    borderRadius: "8px",
-    border: "1px solid #cbd5e1",
-    fontSize: "14px",
-  },
-  actionsWrap: {
-    display: "flex",
-    gap: "10px",
-    alignItems: "center",
-    flexWrap: "wrap",
-  },
-  smallSelect: {
-    padding: "8px 10px",
-    borderRadius: "8px",
-    border: "1px solid #cbd5e1",
-    fontSize: "14px",
-    background: "#fff",
-  },
-  smallCheckboxRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    fontSize: "14px",
-    color: "#334155",
-  },
-  statusRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    flexWrap: "wrap",
-  },
-  statusBadge: {
-    display: "inline-block",
-    borderRadius: "999px",
-    padding: "5px 10px",
-    fontSize: "12px",
-    fontWeight: "700",
-  },
-  activeStatusBadge: {
-    color: "#166534",
-    background: "#dcfce7",
-  },
-  inactiveStatusBadge: {
-    color: "#991b1b",
-    background: "#fee2e2",
-  },
-  passwordSection: {
-    display: "grid",
-    gap: "10px",
-    padding: "12px",
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: "10px",
-  },
-  sectionTitle: {
-    color: "#0f172a",
-    fontSize: "14px",
-    fontWeight: "800",
-  },
-  editButton: {
-    background: "#0f766e",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  saveButton: {
-    background: "#15803d",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  cancelButton: {
-    background: "#e2e8f0",
-    color: "#334155",
-    border: "none",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  viewButton: {
-    background: "#1d4ed8",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  deleteButton: {
-    background: "#ef4444",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  activateButton: {
-    background: "#15803d",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  passwordButton: {
-    background: "#4338ca",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  disabledButton: {
-    opacity: 0.6,
-    cursor: "not-allowed",
-  },
-  errorText: {
-    color: "#b91c1c",
-    fontSize: "13px",
-    lineHeight: "1.4",
-  },
-  emptyState: {
-    padding: "18px",
-    borderRadius: "12px",
-    background: "#f8fafc",
-    color: "#64748b",
-    border: "1px dashed #cbd5e1",
-  },
-};
