@@ -11,10 +11,11 @@ from .api_views import (
     delete_user_api,
     set_user_active_api,
     change_user_password_api,
+    change_my_password_api,
 )
 
-
 urlpatterns = [
+    # Authentication
     path("login/", login_api, name="login_api"),
     path("logout/", logout_api, name="logout_api"),
     path("me/", current_user_api, name="current_user_api"),
@@ -40,10 +41,17 @@ urlpatterns = [
         name="set_user_active_api",
     ),
 
-    # Reset a user's password
+    # Admin resets another user's password
     path(
         "change-password/<int:user_id>/",
         change_user_password_api,
         name="change_user_password_api",
+    ),
+
+    # Signed-in user changes their own password
+    path(
+        "change-my-password/",
+        change_my_password_api,
+        name="change_my_password_api",
     ),
 ]

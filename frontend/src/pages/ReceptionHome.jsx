@@ -1,6 +1,5 @@
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-
 export default function ReceptionHome({
   user,
   onLogout,
@@ -8,14 +7,12 @@ export default function ReceptionHome({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
-
-  const displayName = actingAs?.username || user?.username || "Reception User";
-
+  const displayName =
+    actingAs?.username || user?.username || "Reception User";
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
     navigate("/admin");
   };
-
   const dailyMessage = useMemo(() => {
     const messages = [
       "A calm start creates a smoother day for every patient.",
@@ -26,22 +23,18 @@ export default function ReceptionHome({
       "Consistency at the front desk builds trust.",
       "The best workflows feel simple, clear, and calm.",
     ];
-
     return messages[new Date().getDate() % messages.length];
   }, []);
-
   return (
     <div style={styles.page}>
       <div style={styles.softGlowBlue} />
       <div style={styles.softGlowPink} />
-
       <div style={styles.container}>
         {actingAs ? (
           <div style={styles.banner}>
             <div style={styles.bannerText}>
               Viewing as: <strong>{actingAs?.username}</strong>
             </div>
-
             <button
               type="button"
               style={styles.bannerButton}
@@ -51,26 +44,32 @@ export default function ReceptionHome({
             </button>
           </div>
         ) : null}
-
         <div style={styles.topBar}>
           <div style={styles.titleBlock}>
             <div style={styles.eyebrow}>Reception</div>
-            <h1 style={styles.title}>Welcome back, {displayName}</h1>
+            <h1 style={styles.title}>
+              Welcome back, {displayName}
+            </h1>
             <p style={styles.subtitle}>
               Choose the workspace you want to continue with today.
             </p>
           </div>
-
-          <button type="button" style={styles.logoutButton} onClick={onLogout}>
+          <button
+            type="button"
+            style={styles.logoutButton}
+            onClick={onLogout}
+          >
             Logout
           </button>
         </div>
-
         <div style={styles.messageCard}>
-          <div style={styles.messageLabel}>Today&apos;s Message</div>
-          <div style={styles.messageText}>{dailyMessage}</div>
+          <div style={styles.messageLabel}>
+            Today&apos;s Message
+          </div>
+          <div style={styles.messageText}>
+            {dailyMessage}
+          </div>
         </div>
-
         <div style={styles.grid}>
           <button
             type="button"
@@ -80,41 +79,22 @@ export default function ReceptionHome({
             <div style={styles.cardContent}>
               <div style={styles.cardHeader}>
                 <div>
-                  <div style={styles.cardEyebrowBlue}>Workspace</div>
-                  <div style={styles.cardTitle}>Registration</div>
+                  <div style={styles.cardEyebrowBlue}>
+                    Workspace
+                  </div>
+                  <div style={styles.cardTitle}>
+                    Registration
+                  </div>
                 </div>
-
                 <div style={styles.badgeBlue}>R</div>
               </div>
-
               <div style={styles.cardText}>
-                Search patients, open new files, and manage registration tasks.
+                Search patients, open new files, and manage
+                registration tasks.
               </div>
-
-              <div style={styles.cardActionBlue}>Open Registration →</div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            style={styles.card}
-            onClick={() => navigate("/reception/booking")}
-          >
-            <div style={styles.cardContent}>
-              <div style={styles.cardHeader}>
-                <div>
-                  <div style={styles.cardEyebrowPink}>Workspace</div>
-                  <div style={styles.cardTitle}>Booking</div>
-                </div>
-
-                <div style={styles.badgePink}>B</div>
+              <div style={styles.cardActionBlue}>
+                Open Registration →
               </div>
-
-              <div style={styles.cardText}>
-                Book appointments, manage schedules, and review booking trackers.
-              </div>
-
-              <div style={styles.cardActionPink}>Open Booking →</div>
             </div>
           </button>
         </div>
@@ -122,7 +102,6 @@ export default function ReceptionHome({
     </div>
   );
 }
-
 const styles = {
   page: {
     minHeight: "100vh",
@@ -290,14 +269,6 @@ const styles = {
     color: "#2563eb",
     marginBottom: "8px",
   },
-  cardEyebrowPink: {
-    fontSize: "12px",
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    color: "#db2777",
-    marginBottom: "8px",
-  },
   cardTitle: {
     fontSize: "26px",
     fontWeight: "700",
@@ -317,19 +288,6 @@ const styles = {
     fontSize: "16px",
     flexShrink: 0,
   },
-  badgePink: {
-    width: "44px",
-    height: "44px",
-    borderRadius: "14px",
-    background: "#fdf2f8",
-    color: "#db2777",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: "800",
-    fontSize: "16px",
-    flexShrink: 0,
-  },
   cardText: {
     fontSize: "15px",
     lineHeight: 1.8,
@@ -341,12 +299,6 @@ const styles = {
     fontSize: "14px",
     fontWeight: "800",
     color: "#2563eb",
-    marginTop: "6px",
-  },
-  cardActionPink: {
-    fontSize: "14px",
-    fontWeight: "800",
-    color: "#db2777",
     marginTop: "6px",
   },
 };

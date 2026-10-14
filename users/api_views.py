@@ -1,10 +1,11 @@
 
-from django.contrib.auth import authenticate, login, logout
+import json
+
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-import json
 
 from .models import User
 
@@ -36,7 +37,16 @@ def is_admin_user(user):
 
 def parse_json_body(request):
     try:
-        return json.loads(request.body), None
+        data = json.loads(request.body)
+
+        if not isinstance(data, dict):
+            return None, JsonResponse(
+                {"error": "JSON body must be an object"},
+                status=400,
+            )
+
+        return data, None
+
     except (json.JSONDecodeError, UnicodeDecodeError):
         return None, JsonResponse(
             {"error": "Invalid JSON"},
@@ -153,7 +163,10 @@ def create_user_api(request):
             status=405,
         )
 
-    permission_error = admin_error_response(request, "create users")
+    permission_error = admin_error_response(
+        request,
+        "create users",
+    )
     if permission_error:
         return permission_error
 
@@ -181,7 +194,10 @@ def create_user_api(request):
     username = username.strip()
 
     if role not in ALLOWED_ROLES:
-        return JsonResponse({"error": "Invalid role"}, status=400)
+        return JsonResponse(
+            {"error": "Invalid role"},
+            status=400,
+        )
 
     if not isinstance(is_superuser, bool):
         return JsonResponse(
@@ -199,6 +215,7 @@ def create_user_api(request):
         username=username,
         password=password,
     )
+
     user.role = role
     user.is_superuser = is_superuser
     user.is_staff = is_superuser or role == "admin"
@@ -212,7 +229,10 @@ def create_user_api(request):
 
 
 def list_users_api(request):
-    permission_error = admin_error_response(request, "view users")
+    permission_error = admin_error_response(
+        request,
+        "view users",
+    )
     if permission_error:
         return permission_error
 
@@ -238,7 +258,10 @@ def update_user_api(request, user_id):
             status=405,
         )
 
-    permission_error = admin_error_response(request, "update users")
+    permission_error = admin_error_response(
+        request,
+        "update users",
+    )
     if permission_error:
         return permission_error
 
@@ -254,7 +277,10 @@ def update_user_api(request, user_id):
     if error:
         return error
 
-    new_username = data.get("username", target_user.username)
+    new_username = data.get(
+        "username",
+        target_user.username,
+    )
 
     if not isinstance(new_username, str) or not new_username.strip():
         return JsonResponse(
@@ -281,7 +307,10 @@ def update_user_api(request, user_id):
     )
 
     if new_role not in ALLOWED_ROLES:
-        return JsonResponse({"error": "Invalid role"}, status=400)
+        return JsonResponse(
+            {"error": "Invalid role"},
+            status=400,
+        )
 
     if not isinstance(new_is_superuser, bool):
         return JsonResponse(
@@ -321,8 +350,8 @@ def update_user_api(request, user_id):
 @csrf_exempt
 def delete_user_api(request, user_id):
     """
-    Legacy endpoint: deactivate the account instead of deleting
-    the database record, to help preserve linked historical data.
+    Deactivate the account instead of deleting the database record.
+    This preserves historical data linked to the user.
     """
     if request.method != "DELETE":
         return JsonResponse(
@@ -460,8 +489,8 @@ def set_user_active_api(request, user_id):
 @csrf_exempt
 def change_user_password_api(request, user_id):
     """
-    Admin sets a new password without needing the old password.
-    Django stores the password using its configured password hasher.
+    Admin resets another user's password without needing the old one.
+    The new password is securely hashed by Django.
     """
     if request.method != "POST":
         return JsonResponse(
@@ -490,7 +519,7 @@ def change_user_password_api(request, user_id):
 
     new_password = data.get("new_password")
 
-    if not isinstance(new_password, str) or not new_password:
+    if not isinstance(new_password, str) or not new_password.strip():
         return JsonResponse(
             {"error": "A new password is required"},
             status=400,
@@ -498,9 +527,9 @@ def change_user_password_api(request, user_id):
 
     try:
         validate_password(new_password, user=target_user)
-    except ValidationError as error:
+    except ValidationError as exc:
         return JsonResponse(
-            {"error": " ".join(error.messages)},
+            {"error": " ".join(exc.messages)},
             status=400,
         )
 
@@ -512,4 +541,92 @@ def change_user_password_api(request, user_id):
         "message": (
             f"Password updated for '{target_user.username}'."
         ),
+    })
+
+
+@csrf_exempt
+def change_my_password_api(request):
+    """
+    Allows a signed-in user to change their own password.
+    Requires current_password, new_password, and confirm_password.
+    Keeps the user logged in after a successful change.
+    """
+    if request.method != "POST":
+        return JsonResponse(
+            {"error": "Method not allowed"},
+            status=405,
+        )
+
+    if not request.user.is_authenticated:
+        return JsonResponse(
+            {"error": "Not authenticated"},
+            status=401,
+        )
+
+    data, error = parse_json_body(request)
+    if error:
+        return error
+
+    current_password = data.get("current_password")
+    new_password = data.get("new_password")
+    confirm_password = data.get("confirm_password")
+
+    if not all(
+        isinstance(value, str) and value
+        for value in (
+            current_password,
+            new_password,
+            confirm_password,
+        )
+    ):
+        return JsonResponse(
+            {
+                "error": (
+                    "Current password, new password, and "
+                    "password confirmation are required."
+                )
+            },
+            status=400,
+        )
+
+    if not request.user.check_password(current_password):
+        return JsonResponse(
+            {"error": "Current password is incorrect."},
+            status=400,
+        )
+
+    if new_password != confirm_password:
+        return JsonResponse(
+            {"error": "New password and confirmation do not match."},
+            status=400,
+        )
+
+    if current_password == new_password:
+        return JsonResponse(
+            {
+                "error": (
+                    "Your new password must be different from "
+                    "your current password."
+                )
+            },
+            status=400,
+        )
+
+    try:
+        validate_password(new_password, user=request.user)
+    except ValidationError as exc:
+        return JsonResponse(
+            {"error": " ".join(exc.messages)},
+            status=400,
+        )
+
+    request.user.set_password(new_password)
+    request.user.save(update_fields=["password"])
+
+    # Preserve the current authenticated session.
+    update_session_auth_hash(request, request.user)
+
+    return JsonResponse({
+        "success": True,
+        "message": "Your password has been changed successfully.",
     })
