@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
@@ -11,31 +12,54 @@ import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import RegistrationTrackerSection from "../components/assignments/RegistrationTrackerSection";
 import RegistrationStatsSection from "../components/assignments/RegistrationStatsSection";
 import useRegistrationStats from "../components/assignments/useRegistrationStats";
+
+const MONTHLY_EVALUATION_TARGET = 30;
+
 function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
 function getTodayString() {
   return formatLocalDate(new Date());
 }
+
 function getFirstDayOfMonthString() {
   const now = new Date();
   return formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
 }
+
 function getLastDayOfMonthString() {
   const now = new Date();
   return formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
 }
+
 function getDateOffset(days) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return formatLocalDate(date);
 }
+
 function getDisplayName(item) {
   return item?.therapist_name || item?.name || item?.username || "Unknown";
 }
+
+function getEvaluationColor(count) {
+  if (count < 15) return "#f59e0b";
+  if (count <= 20) return "#2563eb";
+  if (count <= MONTHLY_EVALUATION_TARGET) return "#16a34a";
+  return "#dc2626";
+}
+
+function getEvaluationStatus(count) {
+  if (count < 15) return "Below 15 evaluations";
+  if (count <= 20) return "15 to 20 evaluations";
+  if (count <= MONTHLY_EVALUATION_TARGET) return "21 to 30 evaluations";
+  return "Above monthly target";
+}
+
 export default function ReceptionRegistrationWorkspace({
   user,
   onLogout,
@@ -45,12 +69,14 @@ export default function ReceptionRegistrationWorkspace({
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
   const stats = useRegistrationStats();
+
   const {
     leaderboard,
     loading: leaderboardLoading,
     error: leaderboardError,
     reload: reloadLeaderboard,
   } = useLeaderboard("reception");
+
   const [activeSection, setActiveSection] = useState("stats");
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [trackerMode, setTrackerMode] = useState("today");
@@ -79,6 +105,7 @@ export default function ReceptionRegistrationWorkspace({
   const [trackerAssignments, setTrackerAssignments] = useState([]);
   const [trackerAgents, setTrackerAgents] = useState([]);
   const [trackerTarget, setTrackerTarget] = useState(50);
+
   // Evaluation Tracker state
   const [evaluationFromDate, setEvaluationFromDate] = useState(
     getFirstDayOfMonthString
@@ -88,12 +115,16 @@ export default function ReceptionRegistrationWorkspace({
   const [evaluationTotal, setEvaluationTotal] = useState(0);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
   const [evaluationError, setEvaluationError] = useState("");
+  const [evaluationPeriod, setEvaluationPeriod] = useState("month");
+
   useEffect(() => {
     loadTherapists();
   }, [actingAs, user]);
+
   useEffect(() => {
     handleApplyTrackerFilters();
   }, [trackerMode]);
+
   const loadTherapists = async () => {
     try {
       const res = await api.get("reception/therapists/");
@@ -103,6 +134,7 @@ export default function ReceptionRegistrationWorkspace({
       setTherapists([]);
     }
   };
+
   const loadAssignments = async ({
     start_date = "",
     end_date = "",
@@ -112,24 +144,31 @@ export default function ReceptionRegistrationWorkspace({
   }) => {
     try {
       const params = new URLSearchParams();
+
       if (start_date) params.append("start_date", start_date);
       if (end_date) params.append("end_date", end_date);
+
       if (user_id && user_id !== "all") {
         params.append("user_id", user_id);
       }
+
       if (patient?.trim()) {
         params.append("patient", patient.trim());
       }
+
       if (therapist_id && therapist_id !== "all") {
         params.append("therapist_id", therapist_id);
       }
+
       if (actingAs && (user?.is_superuser || user?.role === "admin")) {
         params.append("viewed_user_id", String(actingAs.id));
         params.append("viewed_user_role", String(actingAs.role || ""));
       }
+
       const res = await api.get(
         `reception/assignments/?${params.toString()}`
       );
+
       setTrackerAssignments(res.data.assignments || []);
       setTrackerAgents(res.data.agents || []);
     } catch (err) {
@@ -138,12 +177,12 @@ export default function ReceptionRegistrationWorkspace({
       setTrackerAgents([]);
     }
   };
-  // Accept an optional filter object so quick presets can apply the
-  // newly selected dates without relying on a timer or stale React state.
+
   const handleApplyTrackerFilters = useCallback(
     async (filters = trackerFilter) => {
       if (trackerMode === "today") {
         const safeDate = filters.date || getTodayString();
+
         await loadAssignments({
           start_date: safeDate,
           end_date: safeDate,
@@ -151,8 +190,10 @@ export default function ReceptionRegistrationWorkspace({
           patient: filters.patient,
           therapist_id: filters.therapist_id,
         });
+
         return;
       }
+
       await loadAssignments({
         start_date: filters.from_date,
         end_date: filters.to_date,
@@ -163,17 +204,22 @@ export default function ReceptionRegistrationWorkspace({
     },
     [trackerMode, trackerFilter, actingAs, user]
   );
+
   const loadEvaluationTracker = useCallback(async () => {
     setEvaluationLoading(true);
     setEvaluationError("");
+
     try {
       const params = new URLSearchParams();
+
       if (evaluationFromDate) {
         params.append("start_date", evaluationFromDate);
       }
+
       if (evaluationToDate) {
         params.append("end_date", evaluationToDate);
       }
+
       if (
         actingAs &&
         (user?.is_superuser || user?.role === "admin")
@@ -181,10 +227,11 @@ export default function ReceptionRegistrationWorkspace({
         params.append("viewed_user_id", String(actingAs.id));
         params.append("viewed_user_role", String(actingAs.role || ""));
       }
-      // This endpoint must count only category="initial_evaluation".
+
       const res = await api.get(
         `reception/evaluation-tracker/?${params.toString()}`
       );
+
       setEvaluationRows(res.data.therapists || []);
       setEvaluationTotal(Number(res.data.total || 0));
     } catch (err) {
@@ -199,15 +246,18 @@ export default function ReceptionRegistrationWorkspace({
       setEvaluationLoading(false);
     }
   }, [evaluationFromDate, evaluationToDate, actingAs, user]);
+
   useEffect(() => {
     if (activeSection === "evaluation_tracker") {
       loadEvaluationTracker();
     }
   }, [activeSection, loadEvaluationTracker]);
+
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
     navigate("/admin");
   };
+
   const resetAssignmentForm = () => {
     setAssignmentForm({
       patient_id: "",
@@ -218,22 +268,27 @@ export default function ReceptionRegistrationWorkspace({
     setSelectedPatient(null);
     setEditingAssignmentId(null);
   };
+
   const handleSelectPatient = async (patient) => {
     setMessage("");
     setError("");
     setSelectedPatient(patient);
+
     setAssignmentForm((prev) => ({
       ...prev,
       patient_id: patient.id,
       therapist_id: "",
     }));
+
     setEditingAssignmentId(null);
     setActiveSection("register");
+
     try {
       const res = await api.get(
         `reception/last-therapist/${patient.id}/`
       );
       const therapist = res.data.therapist;
+
       if (therapist) {
         setAssignmentForm((prev) => ({
           ...prev,
@@ -249,6 +304,7 @@ export default function ReceptionRegistrationWorkspace({
       console.error("Failed to load last therapist", err);
       setMessage(`Selected ${patient.name} for assignment.`);
     }
+
     setTimeout(() => {
       assignmentRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -256,20 +312,25 @@ export default function ReceptionRegistrationWorkspace({
       });
     }, 200);
   };
+
   const handleCreatePatientFile = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
+
     try {
       const res = await api.post("patients/", {
         name: patientForm.name,
         patient_id: patientForm.patient_id,
       });
+
       const patient = res.data.patient;
+
       setPatientForm({
         name: "",
         patient_id: "",
       });
+
       if (patient) {
         await handleSelectPatient(patient);
         setMessage("Patient created successfully");
@@ -280,10 +341,12 @@ export default function ReceptionRegistrationWorkspace({
       setError(err?.response?.data?.error || "Create failed");
     }
   };
+
   const handleCreateOrUpdateAssignment = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
+
     try {
       if (editingAssignmentId) {
         const res = await api.put(
@@ -294,6 +357,7 @@ export default function ReceptionRegistrationWorkspace({
             notes: assignmentForm.notes,
           }
         );
+
         setMessage(
           res.data.message || "Assignment updated successfully"
         );
@@ -304,6 +368,7 @@ export default function ReceptionRegistrationWorkspace({
         );
         setMessage(res.data.message || "Assigned successfully");
       }
+
       resetAssignmentForm();
       await handleApplyTrackerFilters();
       reloadLeaderboard?.();
@@ -313,23 +378,28 @@ export default function ReceptionRegistrationWorkspace({
       setError(err?.response?.data?.error || "Assignment failed");
     }
   };
+
   const handleEditAssignment = (assignment) => {
     setMessage("");
     setError("");
     setEditingAssignmentId(assignment.id);
+
     setSelectedPatient({
       id: assignment.patient_id,
       name: assignment.patient_name,
       patient_id: assignment.patient_file_id,
     });
+
     setAssignmentForm({
       patient_id: assignment.patient_id,
       therapist_id: String(assignment.therapist_id || ""),
       category: assignment.category || "appointment",
       notes: assignment.notes || "",
     });
+
     setActiveSection("register");
     setMessage(`Editing assignment for ${assignment.patient_name}`);
+
     setTimeout(() => {
       assignmentRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -337,15 +407,19 @@ export default function ReceptionRegistrationWorkspace({
       });
     }, 200);
   };
+
   const handleCancelAssignment = async (assignment) => {
     const confirmed = window.confirm(
       `Cancel today's assignment for ${assignment.patient_name}?`
     );
+
     if (!confirmed) return;
+
     try {
       const res = await api.delete(
         `reception/assignments/${assignment.id}/`
       );
+
       setMessage(
         res.data.message || "Assignment cancelled successfully"
       );
@@ -360,8 +434,12 @@ export default function ReceptionRegistrationWorkspace({
       setMessage("");
     }
   };
+
   const handleEvaluationPreset = (preset) => {
     const today = getTodayString();
+
+    setEvaluationPeriod(preset);
+
     if (preset === "today") {
       setEvaluationFromDate(today);
       setEvaluationToDate(today);
@@ -373,6 +451,17 @@ export default function ReceptionRegistrationWorkspace({
       setEvaluationToDate(today);
     }
   };
+
+  const handleEvaluationDateChange = (which, value) => {
+    setEvaluationPeriod("custom");
+
+    if (which === "from") {
+      setEvaluationFromDate(value);
+    } else {
+      setEvaluationToDate(value);
+    }
+  };
+
   const sidebarItems = [
     { key: "home", label: "Home" },
     { key: "stats", label: "My Stats" },
@@ -388,6 +477,7 @@ export default function ReceptionRegistrationWorkspace({
       label: "Evaluation Tracker",
     },
   ];
+
   return (
     <DashboardLayout
       title="Registration Workspace"
@@ -411,18 +501,17 @@ export default function ReceptionRegistrationWorkspace({
       onBackToAdmin={handleBackToAdmin}
     >
       {message ? (
-        <DashboardNotice type="success">
-          {message}
-        </DashboardNotice>
+        <DashboardNotice type="success">{message}</DashboardNotice>
       ) : null}
+
       {error ? (
-        <DashboardNotice type="error">
-          {error}
-        </DashboardNotice>
+        <DashboardNotice type="error">{error}</DashboardNotice>
       ) : null}
+
       {activeSection === "stats" && (
         <RegistrationStatsSection stats={stats} />
       )}
+
       {activeSection === "leaderboard" && (
         <LeaderboardSection
           title="Reception Leaderboard"
@@ -432,6 +521,7 @@ export default function ReceptionRegistrationWorkspace({
           onReload={reloadLeaderboard}
         />
       )}
+
       {activeSection === "register" && (
         <div style={styles.stack}>
           <UnifiedPatientSearch
@@ -444,6 +534,7 @@ export default function ReceptionRegistrationWorkspace({
             onRegisterNew={() => setActiveSection("open_file")}
             registerButtonLabel="Open New File"
           />
+
           {selectedPatient ? (
             <PatientAssignmentForm
               ref={assignmentRef}
@@ -462,6 +553,7 @@ export default function ReceptionRegistrationWorkspace({
           )}
         </div>
       )}
+
       {activeSection === "open_file" && (
         <PatientRegisterForm
           patientForm={patientForm}
@@ -469,6 +561,7 @@ export default function ReceptionRegistrationWorkspace({
           onSubmit={handleCreatePatientFile}
         />
       )}
+
       {activeSection === "tracker" && (
         <RegistrationTrackerSection
           mode={trackerMode}
@@ -485,6 +578,7 @@ export default function ReceptionRegistrationWorkspace({
           onCancelAssignment={handleCancelAssignment}
         />
       )}
+
       {activeSection === "evaluation_tracker" && (
         <section style={styles.evaluationPage}>
           <div style={styles.evaluationHeader}>
@@ -492,14 +586,13 @@ export default function ReceptionRegistrationWorkspace({
               <div style={styles.evaluationEyebrow}>
                 RECEPTION REPORT
               </div>
-              <h2 style={styles.evaluationTitle}>
-                Evaluation Tracker
-              </h2>
+              <h2 style={styles.evaluationTitle}>Evaluation Tracker</h2>
               <p style={styles.evaluationDescription}>
                 Track initial evaluations assigned to each physiotherapist.
                 Only assignments categorized as Initial Evaluation are counted.
               </p>
             </div>
+
             <button
               type="button"
               style={styles.refreshButton}
@@ -509,32 +602,36 @@ export default function ReceptionRegistrationWorkspace({
               {evaluationLoading ? "Loading..." : "Refresh"}
             </button>
           </div>
+
           <div style={styles.evaluationPresets}>
-            <button
-              type="button"
-              style={styles.presetButton}
-              onClick={() => handleEvaluationPreset("today")}
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              style={styles.presetButton}
-              onClick={() => handleEvaluationPreset("week")}
-            >
-              Last 7 Days
-            </button>
-            <button
-              type="button"
-              style={styles.presetButton}
-              onClick={() => handleEvaluationPreset("month")}
-            >
-              This Month
-            </button>
+            {[
+              { key: "today", label: "Today" },
+              { key: "week", label: "Last 7 Days" },
+              { key: "month", label: "This Month" },
+            ].map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                aria-pressed={evaluationPeriod === preset.key}
+                style={{
+                  ...styles.presetButton,
+                  ...(evaluationPeriod === preset.key
+                    ? styles.activePresetButton
+                    : {}),
+                }}
+                onClick={() => handleEvaluationPreset(preset.key)}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
+
           <div style={styles.evaluationFilters}>
             <div style={styles.evaluationField}>
-              <label style={styles.evaluationLabel} htmlFor="evaluation-from">
+              <label
+                style={styles.evaluationLabel}
+                htmlFor="evaluation-from"
+              >
                 From Date
               </label>
               <input
@@ -542,12 +639,18 @@ export default function ReceptionRegistrationWorkspace({
                 type="date"
                 value={evaluationFromDate}
                 max={evaluationToDate || undefined}
-                onChange={(e) => setEvaluationFromDate(e.target.value)}
+                onChange={(e) =>
+                  handleEvaluationDateChange("from", e.target.value)
+                }
                 style={styles.evaluationInput}
               />
             </div>
+
             <div style={styles.evaluationField}>
-              <label style={styles.evaluationLabel} htmlFor="evaluation-to">
+              <label
+                style={styles.evaluationLabel}
+                htmlFor="evaluation-to"
+              >
                 To Date
               </label>
               <input
@@ -555,10 +658,13 @@ export default function ReceptionRegistrationWorkspace({
                 type="date"
                 value={evaluationToDate}
                 min={evaluationFromDate || undefined}
-                onChange={(e) => setEvaluationToDate(e.target.value)}
+                onChange={(e) =>
+                  handleEvaluationDateChange("to", e.target.value)
+                }
                 style={styles.evaluationInput}
               />
             </div>
+
             <button
               type="button"
               style={styles.applyEvaluationButton}
@@ -568,11 +674,11 @@ export default function ReceptionRegistrationWorkspace({
               Apply Dates
             </button>
           </div>
+
           {evaluationError ? (
-            <div style={styles.evaluationError}>
-              {evaluationError}
-            </div>
+            <div style={styles.evaluationError}>{evaluationError}</div>
           ) : null}
+
           <div style={styles.evaluationSummary}>
             <div style={styles.totalCard}>
               <span style={styles.totalLabel}>
@@ -586,6 +692,7 @@ export default function ReceptionRegistrationWorkspace({
               </span>
             </div>
           </div>
+
           <div style={styles.tableCard}>
             <div style={styles.tableHeading}>
               <h3 style={styles.tableTitle}>
@@ -595,6 +702,7 @@ export default function ReceptionRegistrationWorkspace({
                 {evaluationRows.length} physiotherapists
               </span>
             </div>
+
             {evaluationLoading ? (
               <div style={styles.tableMessage}>
                 Loading evaluation data…
@@ -616,18 +724,72 @@ export default function ReceptionRegistrationWorkspace({
                       <th style={styles.tableHeaderCell}>Initial Evaluations</th>
                     </tr>
                   </thead>
+
                   <tbody>
-                    {evaluationRows.map((row, index) => (
-                      <tr key={row.therapist_id ?? row.id ?? index}>
-                        <td style={styles.tableCell}>
-                          {getDisplayName(row)}
-                        </td>
-                        <td style={styles.countCell}>
-                          {Number(row.count ?? row.total ?? 0)}
-                        </td>
-                      </tr>
-                    ))}
+                    {evaluationRows.map((row, index) => {
+                      const count = Number(row.count ?? row.total ?? 0);
+                      const percentage =
+                        (count / MONTHLY_EVALUATION_TARGET) * 100;
+                      const barColor = getEvaluationColor(count);
+                      const showMonthlyBar = evaluationPeriod === "month";
+
+                      return (
+                        <tr key={row.therapist_id ?? row.id ?? index}>
+                          <td style={styles.tableCell}>
+                            <div style={styles.therapistNameCell}>
+                              <span style={styles.therapistName}>
+                                {getDisplayName(row)}
+                              </span>
+
+                              {showMonthlyBar && (
+                                <div
+                                  style={styles.evaluationProgress}
+                                  title={`${count} of ${MONTHLY_EVALUATION_TARGET} monthly evaluations`}
+                                  aria-label={`${getDisplayName(row)}: ${count} evaluations, ${Math.round(percentage)}% of monthly target`}
+                                >
+                                  <div style={styles.progressTrack}>
+                                    <div
+                                      style={{
+                                        ...styles.progressFill,
+                                        width: `${Math.min(percentage, 100)}%`,
+                                        backgroundColor: barColor,
+                                      }}
+                                    />
+                                  </div>
+
+                                  <span
+                                    style={{
+                                      ...styles.progressLabel,
+                                      color: barColor,
+                                    }}
+                                  >
+                                    {count}/{MONTHLY_EVALUATION_TARGET} ·{" "}
+                                    {Math.round(percentage)}%
+                                  </span>
+
+                                  <span style={styles.progressStatus}>
+                                    {getEvaluationStatus(count)}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          <td
+                            style={{
+                              ...styles.countCell,
+                              ...(count > MONTHLY_EVALUATION_TARGET
+                                ? styles.overTargetCount
+                                : {}),
+                            }}
+                          >
+                            {count}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
+
                   <tfoot>
                     <tr>
                       <td style={styles.totalFooterCell}>Total</td>
@@ -645,6 +807,7 @@ export default function ReceptionRegistrationWorkspace({
     </DashboardLayout>
   );
 }
+
 const styles = {
   stack: {
     display: "grid",
@@ -717,6 +880,11 @@ const styles = {
     color: "#334155",
     fontWeight: "700",
     cursor: "pointer",
+  },
+  activePresetButton: {
+    background: "#eff6ff",
+    borderColor: "#93c5fd",
+    color: "#1d4ed8",
   },
   evaluationFilters: {
     display: "grid",
@@ -842,6 +1010,46 @@ const styles = {
     color: "#334155",
     fontSize: "14px",
     borderBottom: "1px solid #f1f5f9",
+    minWidth: "250px",
+  },
+  therapistNameCell: {
+    display: "grid",
+    gap: "8px",
+    minWidth: "220px",
+  },
+  therapistName: {
+    color: "#334155",
+    fontSize: "14px",
+    fontWeight: "700",
+  },
+  evaluationProgress: {
+    display: "grid",
+    gridTemplateColumns: "minmax(70px, 1fr) auto",
+    alignItems: "center",
+    gap: "5px 10px",
+    maxWidth: "390px",
+  },
+  progressTrack: {
+    height: "8px",
+    overflow: "hidden",
+    background: "#e2e8f0",
+    borderRadius: "999px",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: "999px",
+    transition: "width 180ms ease",
+  },
+  progressLabel: {
+    fontSize: "11px",
+    fontWeight: "800",
+    whiteSpace: "nowrap",
+  },
+  progressStatus: {
+    gridColumn: "1 / -1",
+    color: "#64748b",
+    fontSize: "10px",
+    lineHeight: 1.3,
   },
   countCell: {
     padding: "14px 20px",
@@ -849,6 +1057,9 @@ const styles = {
     fontSize: "15px",
     fontWeight: "800",
     borderBottom: "1px solid #f1f5f9",
+  },
+  overTargetCount: {
+    color: "#dc2626",
   },
   totalFooterCell: {
     padding: "15px 20px",
