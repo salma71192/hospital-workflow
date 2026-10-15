@@ -77,7 +77,9 @@ export default function ReceptionRegistrationWorkspace({
     reload: reloadLeaderboard,
   } = useLeaderboard("reception");
 
-  const [activeSection, setActiveSection] = useState("stats");
+  // Assign a Patient is the default tab.
+  const [activeSection, setActiveSection] = useState("register");
+
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [trackerMode, setTrackerMode] = useState("today");
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -1080,11 +1082,5 @@ const styles = {
     color: "#1d4ed8",
     fontSize: "15px",
     fontWeight: "800",
-  },
-  tableMessage: {
-    padding: "28px 20px",
-    textAlign: "center",
-    color: "#64748b",
-    fontSize: "14px",
   },
 };
