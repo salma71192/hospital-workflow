@@ -1,5 +1,4 @@
 from django.urls import path
-
 from .api_views import (
     last_therapist_api,
     therapists_api,
@@ -8,8 +7,8 @@ from .api_views import (
     physio_tracker_api,
     follow_up_required_api,
     leaderboard_api,
+    evaluation_tracker_api,
 )
-
 urlpatterns = [
     path("therapists/", therapists_api, name="therapists_api"),
     path("assignments/", assignments_api, name="assignments_api"),
@@ -31,4 +30,9 @@ urlpatterns = [
         name="last_therapist_api",
     ),
     path("leaderboard/", leaderboard_api, name="leaderboard_api"),
+    path(
+        "evaluation-tracker/",
+        evaluation_tracker_api,
+        name="evaluation_tracker_api",
+    ),
 ]
