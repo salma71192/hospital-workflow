@@ -81,16 +81,19 @@ export default function ReceptionRegistrationWorkspace({
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [trackerMode, setTrackerMode] = useState("today");
   const [selectedPatient, setSelectedPatient] = useState(null);
+
   const [patientForm, setPatientForm] = useState({
     name: "",
     patient_id: "",
   });
+
   const [assignmentForm, setAssignmentForm] = useState({
     patient_id: "",
     therapist_id: "",
     category: "appointment",
     notes: "",
   });
+
   const [trackerFilter, setTrackerFilter] = useState({
     date: getTodayString(),
     from_date: getFirstDayOfMonthString(),
@@ -99,6 +102,7 @@ export default function ReceptionRegistrationWorkspace({
     patient: "",
     therapist_id: "all",
   });
+
   const [therapists, setTherapists] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -220,10 +224,7 @@ export default function ReceptionRegistrationWorkspace({
         params.append("end_date", evaluationToDate);
       }
 
-      if (
-        actingAs &&
-        (user?.is_superuser || user?.role === "admin")
-      ) {
+      if (actingAs && (user?.is_superuser || user?.role === "admin")) {
         params.append("viewed_user_id", String(actingAs.id));
         params.append("viewed_user_role", String(actingAs.role || ""));
       }
@@ -462,12 +463,11 @@ export default function ReceptionRegistrationWorkspace({
     }
   };
 
+  // Sidebar menu order and labels
   const sidebarItems = [
     { key: "home", label: "Home" },
-    { key: "stats", label: "My Stats" },
-    { key: "leaderboard", label: "Leaderboard" },
-    { key: "register", label: "Register" },
-    { key: "open_file", label: "Open New File" },
+    { key: "register", label: "Assign a Patient" },
+    { key: "open_file", label: "Register New Patient" },
     {
       key: "tracker",
       label: `Registration Tracker (${trackerAssignments.length})`,
@@ -476,6 +476,8 @@ export default function ReceptionRegistrationWorkspace({
       key: "evaluation_tracker",
       label: "Evaluation Tracker",
     },
+    { key: "stats", label: "My Stats" },
+    { key: "leaderboard", label: "Leaderboard" },
   ];
 
   return (
@@ -525,14 +527,14 @@ export default function ReceptionRegistrationWorkspace({
       {activeSection === "register" && (
         <div style={styles.stack}>
           <UnifiedPatientSearch
-            title="Register"
+            title="Assign a Patient"
             placeholder="Search patient name or ID"
             actionLabel="Assign to Physio"
             onSelectPatient={handleSelectPatient}
             emptyText="Start typing to search patients."
-            noResultsText="No patients found. Open a new file if needed."
+            noResultsText="No patients found. Register a new patient if needed."
             onRegisterNew={() => setActiveSection("open_file")}
-            registerButtonLabel="Open New File"
+            registerButtonLabel="Register New Patient"
           />
 
           {selectedPatient ? (
@@ -546,9 +548,9 @@ export default function ReceptionRegistrationWorkspace({
             />
           ) : (
             <div style={styles.helperCard}>
-              Search for a patient above, then assign to
-              physiotherapist below. If the patient is not found,
-              use the <strong>Open New File</strong> button.
+              Search for a patient above, then assign the patient to a
+              physiotherapist. If the patient is not found, use the{" "}
+              <strong>Register New Patient</strong> button.
             </div>
           )}
         </div>
@@ -720,8 +722,12 @@ export default function ReceptionRegistrationWorkspace({
                 <table style={styles.table}>
                   <thead>
                     <tr>
-                      <th style={styles.tableHeaderCell}>Physiotherapist</th>
-                      <th style={styles.tableHeaderCell}>Initial Evaluations</th>
+                      <th style={styles.tableHeaderCell}>
+                        Physiotherapist
+                      </th>
+                      <th style={styles.tableHeaderCell}>
+                        Initial Evaluations
+                      </th>
                     </tr>
                   </thead>
 
