@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/api";
+
 export default function UnifiedPatientSearch({
   title = "Search Patient",
   placeholder = "Search by patient name or ID",
@@ -21,34 +22,85 @@ export default function UnifiedPatientSearch({
   registerButtonLabel = "Open New File",
 }) {
   const navigate = useNavigate();
+
   const [searchTerm, setSearchTerm] = useState(initialValue);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasTyped, setHasTyped] = useState(Boolean(initialValue));
+
   const debounceRef = useRef(null);
   const requestIdRef = useRef(0);
+
+  // Cancel pending requests and clear previous results.
+  const clearSearch = () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+
+    // Invalidate any request that is already running.
+    requestIdRef.current += 1;
+
+    setSearchTerm("");
+    setResults([]);
+    setLoading(false);
+    setHasTyped(false);
+  };
+
+  // Clear search before notifying the parent that a patient was selected.
+  const handleSelectPatient = (patient) => {
+    clearSearch();
+
+    if (onSelectPatient) {
+      onSelectPatient(patient);
+    }
+  };
+
+  const handleSecondarySelectPatient = (patient) => {
+    clearSearch();
+
+    if (onSecondarySelectPatient) {
+      onSecondarySelectPatient(patient);
+    }
+  };
+
   useEffect(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
+      debounceRef.current = null;
     }
+
     const term = searchTerm.trim();
+
     if (!term || term.length < minChars) {
       requestIdRef.current += 1;
       setResults([]);
       setLoading(false);
       return;
     }
+
+    const scheduledRequestId = requestIdRef.current + 1;
+
     debounceRef.current = setTimeout(async () => {
       const currentRequestId = ++requestIdRef.current;
+
       try {
         setLoading(true);
+
         const res = await api.get(
           `patients/?search=${encodeURIComponent(term)}`
         );
-        if (currentRequestId !== requestIdRef.current) return;
+
+        if (currentRequestId !== requestIdRef.current) {
+          return;
+        }
+
         setResults(res.data.patients || []);
       } catch (err) {
-        if (currentRequestId !== requestIdRef.current) return;
+        if (currentRequestId !== requestIdRef.current) {
+          return;
+        }
+
         setResults([]);
       } finally {
         if (currentRequestId === requestIdRef.current) {
@@ -56,30 +108,42 @@ export default function UnifiedPatientSearch({
         }
       }
     }, debounceMs);
+
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
+        debounceRef.current = null;
       }
+
+      // Invalidate this effect's request if the search changes or unmounts.
+      requestIdRef.current += 1;
     };
   }, [searchTerm, minChars, debounceMs]);
+
   const trimmedSearch = searchTerm.trim();
+
   return (
     <div style={styles.page}>
       <div style={styles.card}>
         <div style={styles.header}>
           <div style={styles.headerIcon}>⌕</div>
+
           <div style={styles.headerText}>
             <h2 style={styles.cardTitle}>{title}</h2>
             <p style={styles.subtitle}>
               Find a patient record or create a new patient file.
             </p>
           </div>
+
           <div style={styles.headerBadge}>PATIENTS</div>
         </div>
+
         <div style={styles.searchSection}>
           <label style={styles.label}>Patient name or ID</label>
+
           <div style={styles.inputWrapper}>
             <span style={styles.searchIcon}>⌕</span>
+
             <input
               type="text"
               placeholder={placeholder}
@@ -91,29 +155,29 @@ export default function UnifiedPatientSearch({
               style={styles.input}
               aria-label="Search patients by name or ID"
             />
+
             {trimmedSearch && (
               <button
                 type="button"
                 style={styles.clearButton}
-                onClick={() => {
-                  setSearchTerm("");
-                  setResults([]);
-                  setHasTyped(false);
-                }}
+                onClick={clearSearch}
                 aria-label="Clear patient search"
               >
                 ×
               </button>
             )}
           </div>
+
           <div style={styles.searchHint}>
             <span style={styles.hintDot} />
             Results update automatically as you type.
           </div>
         </div>
+
         <div style={styles.registerPanel}>
           <div style={styles.registerInfo}>
             <div style={styles.registerIcon}>＋</div>
+
             <div>
               <div style={styles.registerTitle}>New patient?</div>
               <div style={styles.registerDescription}>
@@ -121,6 +185,7 @@ export default function UnifiedPatientSearch({
               </div>
             </div>
           </div>
+
           <button
             type="button"
             style={{
@@ -128,15 +193,19 @@ export default function UnifiedPatientSearch({
               ...(!onRegisterNew ? styles.disabledButton : {}),
             }}
             onClick={() => {
-              if (onRegisterNew) onRegisterNew();
+              if (onRegisterNew) {
+                onRegisterNew();
+              }
             }}
             disabled={!onRegisterNew}
           >
             <span>＋</span> {registerButtonLabel}
           </button>
         </div>
+
         <div style={styles.resultsHeader}>
           <div style={styles.resultsTitle}>Patient Records</div>
+
           <div style={styles.resultsCount}>
             {loading
               ? "Searching..."
@@ -145,12 +214,14 @@ export default function UnifiedPatientSearch({
                 }`}
           </div>
         </div>
+
         {loading && (
           <div style={styles.statusCard}>
             <span style={styles.loadingDot} />
             Searching patient records...
           </div>
         )}
+
         {!loading && !trimmedSearch && (
           <div style={styles.emptyCard}>
             <div style={styles.emptyIcon}>⌕</div>
@@ -158,6 +229,7 @@ export default function UnifiedPatientSearch({
             <div style={styles.emptyDescription}>{emptyText}</div>
           </div>
         )}
+
         {!loading &&
           trimmedSearch.length < minChars &&
           trimmedSearch.length > 0 && (
@@ -166,6 +238,7 @@ export default function UnifiedPatientSearch({
               {minChars === 1 ? "" : "s"}.
             </div>
           )}
+
         {!loading &&
           trimmedSearch.length >= minChars &&
           hasTyped &&
@@ -174,6 +247,7 @@ export default function UnifiedPatientSearch({
               <div style={styles.emptyIcon}>!</div>
               <div style={styles.emptyTitle}>No matching patients</div>
               <div style={styles.emptyDescription}>{noResultsText}</div>
+
               {onRegisterNew && (
                 <div style={styles.emptyRegisterNote}>
                   You can use “{registerButtonLabel}” above to continue.
@@ -181,10 +255,12 @@ export default function UnifiedPatientSearch({
               )}
             </div>
           )}
+
         {!loading && results.length > 0 && (
           <div style={styles.resultsList}>
             {results.map((patient) => {
               const isDisabled = disabledPatientIds.includes(patient.id);
+
               return (
                 <div
                   key={patient.id}
@@ -200,14 +276,17 @@ export default function UnifiedPatientSearch({
                         .charAt(0)
                         .toUpperCase()}
                     </div>
+
                     <div style={styles.patientDetails}>
                       <div style={styles.patientName}>
                         {patient.name || "Unnamed patient"}
                       </div>
+
                       <div style={styles.patientMeta}>
                         <span style={styles.idBadge}>
                           ID: {patient.patient_id || patient.id}
                         </span>
+
                         {isDisabled && (
                           <span style={styles.unavailableBadge}>
                             Unavailable
@@ -216,16 +295,20 @@ export default function UnifiedPatientSearch({
                       </div>
                     </div>
                   </div>
+
                   <div style={styles.actionButtons}>
                     {showOpenFile && (
                       <button
                         type="button"
                         style={styles.openButton}
-                        onClick={() => navigate(`/patients/${patient.id}`)}
+                        onClick={() =>
+                          navigate(`/patients/${patient.id}`)
+                        }
                       >
                         <span>↗</span> Open File
                       </button>
                     )}
+
                     {onSecondarySelectPatient && (
                       <button
                         type="button"
@@ -236,13 +319,14 @@ export default function UnifiedPatientSearch({
                         disabled={isDisabled}
                         onClick={() => {
                           if (!isDisabled) {
-                            onSecondarySelectPatient(patient);
+                            handleSecondarySelectPatient(patient);
                           }
                         }}
                       >
                         {secondaryActionLabel || "Secondary"}
                       </button>
                     )}
+
                     <button
                       type="button"
                       style={{
@@ -251,8 +335,8 @@ export default function UnifiedPatientSearch({
                       }}
                       disabled={isDisabled}
                       onClick={() => {
-                        if (!isDisabled && onSelectPatient) {
-                          onSelectPatient(patient);
+                        if (!isDisabled) {
+                          handleSelectPatient(patient);
                         }
                       }}
                     >
@@ -268,6 +352,7 @@ export default function UnifiedPatientSearch({
             })}
           </div>
         )}
+
         <div style={styles.footer}>
           <span style={styles.footerDot} />
           Patient search and record access
@@ -276,6 +361,7 @@ export default function UnifiedPatientSearch({
     </div>
   );
 }
+
 const styles = {
   page: {
     width: "100%",

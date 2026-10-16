@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
@@ -11,34 +12,37 @@ import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import RegistrationTrackerSection from "../components/assignments/RegistrationTrackerSection";
 import RegistrationStatsSection from "../components/assignments/RegistrationStatsSection";
 import useRegistrationStats from "../components/assignments/useRegistrationStats";
+
 const MONTHLY_EVALUATION_TARGET = 30;
 const DAILY_EVALUATION_TARGET = 4;
+
 function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
 function getTodayString() {
   return formatLocalDate(new Date());
 }
+
 function getFirstDayOfMonthString() {
   const now = new Date();
-  return formatLocalDate(
-    new Date(now.getFullYear(), now.getMonth(), 1)
-  );
+  return formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
 }
+
 function getLastDayOfMonthString() {
   const now = new Date();
-  return formatLocalDate(
-    new Date(now.getFullYear(), now.getMonth() + 1, 0)
-  );
+  return formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
 }
+
 function getDateOffset(days) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return formatLocalDate(date);
 }
+
 function getDisplayName(item) {
   return (
     item?.therapist_name ||
@@ -47,49 +51,61 @@ function getDisplayName(item) {
     "Unknown Therapist"
   );
 }
+
 function getEvaluationTarget(period) {
   return period === "today"
     ? DAILY_EVALUATION_TARGET
     : MONTHLY_EVALUATION_TARGET;
 }
+
 function getEvaluationColor(count, period) {
   const target = getEvaluationTarget(period);
+
   if (period === "today") {
     if (count > target) return "#dc2626";
     if (count === target) return "#059669";
     return "#d97706";
   }
+
   if (count < 15) return "#d97706";
   if (count <= 20) return "#2563eb";
   if (count <= target) return "#059669";
   return "#7c3aed";
 }
+
 function getEvaluationStatus(count, period) {
   const target = getEvaluationTarget(period);
+
   if (period === "today") {
     if (count > target) return "Above daily target";
     if (count === target) return "Daily target reached";
     return "Below daily target";
   }
+
   if (count < 15) return "Needs attention";
   if (count <= 20) return "Progressing";
   if (count <= target) return "On track";
   return "Target exceeded";
 }
+
 function getEvaluationPercentage(count, period) {
   const target = getEvaluationTarget(period);
   return Math.round((count / target) * 100);
 }
+
 function formatDateLabel(value) {
   if (!value) return "Not selected";
+
   const date = new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) return value;
+
   return date.toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
     year: "numeric",
   });
 }
+
 export default function ReceptionRegistrationWorkspace({
   user,
   onLogout,
@@ -98,21 +114,26 @@ export default function ReceptionRegistrationWorkspace({
 }) {
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
+
   const stats = useRegistrationStats();
+
   const {
     leaderboard,
     loading: leaderboardLoading,
     error: leaderboardError,
     reload: reloadLeaderboard,
   } = useLeaderboard("reception");
+
   const [activeSection, setActiveSection] = useState("register");
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [trackerMode, setTrackerMode] = useState("today");
   const [selectedPatient, setSelectedPatient] = useState(null);
+
   const [patientForm, setPatientForm] = useState({
     name: "",
     patient_id: "",
   });
+
   const [assignmentForm, setAssignmentForm] = useState({
     patient_id: "",
     therapist_id: "",
@@ -121,6 +142,7 @@ export default function ReceptionRegistrationWorkspace({
     referring_physician: "",
     notes: "",
   });
+
   const [trackerFilter, setTrackerFilter] = useState({
     date: getTodayString(),
     from_date: getFirstDayOfMonthString(),
@@ -129,17 +151,21 @@ export default function ReceptionRegistrationWorkspace({
     patient: "",
     therapist_id: "all",
   });
+
   const [therapists, setTherapists] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [trackerAssignments, setTrackerAssignments] = useState([]);
   const [trackerAgents, setTrackerAgents] = useState([]);
   const [trackerTarget, setTrackerTarget] = useState(50);
+
   // Evaluation Tracker state
   const [evaluationFromDate, setEvaluationFromDate] = useState(
-    getFirstDayOfMonthString
+    getFirstDayOfMonthString()
   );
-  const [evaluationToDate, setEvaluationToDate] = useState(getTodayString);
+  const [evaluationToDate, setEvaluationToDate] = useState(
+    getTodayString()
+  );
   const [evaluationRows, setEvaluationRows] = useState([]);
   const [evaluationTotal, setEvaluationTotal] = useState(0);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
@@ -147,12 +173,15 @@ export default function ReceptionRegistrationWorkspace({
   const [evaluationPeriod, setEvaluationPeriod] = useState("month");
   const [evaluationSearch, setEvaluationSearch] = useState("");
   const [evaluationSort, setEvaluationSort] = useState("count-desc");
+
   useEffect(() => {
     loadTherapists();
   }, [actingAs, user]);
+
   useEffect(() => {
     handleApplyTrackerFilters();
   }, [trackerMode]);
+
   const loadTherapists = async () => {
     try {
       const res = await api.get("reception/therapists/");
@@ -162,6 +191,7 @@ export default function ReceptionRegistrationWorkspace({
       setTherapists([]);
     }
   };
+
   const loadAssignments = async ({
     start_date = "",
     end_date = "",
@@ -171,24 +201,31 @@ export default function ReceptionRegistrationWorkspace({
   }) => {
     try {
       const params = new URLSearchParams();
+
       if (start_date) params.append("start_date", start_date);
       if (end_date) params.append("end_date", end_date);
+
       if (user_id && user_id !== "all") {
         params.append("user_id", user_id);
       }
+
       if (patient?.trim()) {
         params.append("patient", patient.trim());
       }
+
       if (therapist_id && therapist_id !== "all") {
         params.append("therapist_id", therapist_id);
       }
+
       if (actingAs && (user?.is_superuser || user?.role === "admin")) {
         params.append("viewed_user_id", String(actingAs.id));
         params.append("viewed_user_role", String(actingAs.role || ""));
       }
+
       const res = await api.get(
         `reception/assignments/?${params.toString()}`
       );
+
       setTrackerAssignments(res.data.assignments || []);
       setTrackerAgents(res.data.agents || []);
     } catch (err) {
@@ -197,10 +234,12 @@ export default function ReceptionRegistrationWorkspace({
       setTrackerAgents([]);
     }
   };
+
   const handleApplyTrackerFilters = useCallback(
     async (filters = trackerFilter) => {
       if (trackerMode === "today") {
         const safeDate = filters.date || getTodayString();
+
         await loadAssignments({
           start_date: safeDate,
           end_date: safeDate,
@@ -208,8 +247,10 @@ export default function ReceptionRegistrationWorkspace({
           patient: filters.patient,
           therapist_id: filters.therapist_id,
         });
+
         return;
       }
+
       await loadAssignments({
         start_date: filters.from_date,
         end_date: filters.to_date,
@@ -220,24 +261,31 @@ export default function ReceptionRegistrationWorkspace({
     },
     [trackerMode, trackerFilter, actingAs, user]
   );
+
   const loadEvaluationTracker = useCallback(async () => {
     setEvaluationLoading(true);
     setEvaluationError("");
+
     try {
       const params = new URLSearchParams();
+
       if (evaluationFromDate) {
         params.append("start_date", evaluationFromDate);
       }
+
       if (evaluationToDate) {
         params.append("end_date", evaluationToDate);
       }
+
       if (actingAs && (user?.is_superuser || user?.role === "admin")) {
         params.append("viewed_user_id", String(actingAs.id));
         params.append("viewed_user_role", String(actingAs.role || ""));
       }
+
       const res = await api.get(
         `reception/evaluation-tracker/?${params.toString()}`
       );
+
       setEvaluationRows(res.data.therapists || []);
       setEvaluationTotal(Number(res.data.total || 0));
     } catch (err) {
@@ -252,15 +300,18 @@ export default function ReceptionRegistrationWorkspace({
       setEvaluationLoading(false);
     }
   }, [evaluationFromDate, evaluationToDate, actingAs, user]);
+
   useEffect(() => {
     if (activeSection === "evaluation_tracker") {
       loadEvaluationTracker();
     }
   }, [activeSection, loadEvaluationTracker]);
+
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
     navigate("/admin");
   };
+
   const resetAssignmentForm = () => {
     setAssignmentForm({
       patient_id: "",
@@ -270,30 +321,38 @@ export default function ReceptionRegistrationWorkspace({
       referring_physician: "",
       notes: "",
     });
+
     setSelectedPatient(null);
     setEditingAssignmentId(null);
   };
+
   const handleSelectPatient = async (patient) => {
     setMessage("");
     setError("");
     setSelectedPatient(patient);
+
     setAssignmentForm((prev) => ({
       ...prev,
       patient_id: patient.id,
       therapist_id: "",
     }));
+
     setEditingAssignmentId(null);
     setActiveSection("register");
+
     try {
       const res = await api.get(
         `reception/last-therapist/${patient.id}/`
       );
+
       const therapist = res.data.therapist;
+
       if (therapist) {
         setAssignmentForm((prev) => ({
           ...prev,
           therapist_id: String(therapist.id),
         }));
+
         setMessage(
           `Selected ${patient.name} (Previously with ${therapist.name})`
         );
@@ -304,6 +363,7 @@ export default function ReceptionRegistrationWorkspace({
       console.error("Failed to load last therapist", err);
       setMessage(`Selected ${patient.name} for assignment.`);
     }
+
     setTimeout(() => {
       assignmentRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -311,20 +371,25 @@ export default function ReceptionRegistrationWorkspace({
       });
     }, 200);
   };
+
   const handleCreatePatientFile = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
+
     try {
       const res = await api.post("patients/", {
         name: patientForm.name,
         patient_id: patientForm.patient_id,
       });
+
       const patient = res.data.patient;
+
       setPatientForm({
         name: "",
         patient_id: "",
       });
+
       if (patient) {
         await handleSelectPatient(patient);
         setMessage("Patient created successfully");
@@ -335,10 +400,12 @@ export default function ReceptionRegistrationWorkspace({
       setError(err?.response?.data?.error || "Create failed");
     }
   };
+
   const handleCreateOrUpdateAssignment = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
+
     try {
       if (editingAssignmentId) {
         const res = await api.put(
@@ -354,6 +421,7 @@ export default function ReceptionRegistrationWorkspace({
             notes: assignmentForm.notes,
           }
         );
+
         setMessage(
           res.data.message || "Assignment updated successfully"
         );
@@ -362,9 +430,14 @@ export default function ReceptionRegistrationWorkspace({
           "reception/assignments/",
           assignmentForm
         );
+
         setMessage(res.data.message || "Assigned successfully");
       }
+
+      // Clear selected patient and assignment fields after success.
       resetAssignmentForm();
+
+      // Refresh the tracker, then hide the patient search by switching views.
       await handleApplyTrackerFilters();
       reloadLeaderboard?.();
       setActiveSection("tracker");
@@ -373,15 +446,18 @@ export default function ReceptionRegistrationWorkspace({
       setError(err?.response?.data?.error || "Assignment failed");
     }
   };
+
   const handleEditAssignment = (assignment) => {
     setMessage("");
     setError("");
     setEditingAssignmentId(assignment.id);
+
     setSelectedPatient({
       id: assignment.patient_id,
       name: assignment.patient_name,
       patient_id: assignment.patient_file_id,
     });
+
     setAssignmentForm({
       patient_id: assignment.patient_id,
       therapist_id: String(assignment.therapist_id || ""),
@@ -390,8 +466,10 @@ export default function ReceptionRegistrationWorkspace({
       referring_physician: assignment.referring_physician || "",
       notes: assignment.notes || "",
     });
+
     setActiveSection("register");
     setMessage(`Editing assignment for ${assignment.patient_name}`);
+
     setTimeout(() => {
       assignmentRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -399,19 +477,24 @@ export default function ReceptionRegistrationWorkspace({
       });
     }, 200);
   };
+
   const handleCancelAssignment = async (assignment) => {
     const confirmed = window.confirm(
       `Cancel today's assignment for ${assignment.patient_name}?`
     );
+
     if (!confirmed) return;
+
     try {
       const res = await api.delete(
         `reception/assignments/${assignment.id}/`
       );
+
       setMessage(
         res.data.message || "Assignment cancelled successfully"
       );
       setError("");
+
       await handleApplyTrackerFilters();
       reloadLeaderboard?.();
     } catch (err) {
@@ -422,9 +505,11 @@ export default function ReceptionRegistrationWorkspace({
       setMessage("");
     }
   };
+
   const handleEvaluationPreset = (preset) => {
     const today = getTodayString();
     setEvaluationPeriod(preset);
+
     if (preset === "today") {
       setEvaluationFromDate(today);
       setEvaluationToDate(today);
@@ -436,14 +521,17 @@ export default function ReceptionRegistrationWorkspace({
       setEvaluationToDate(today);
     }
   };
+
   const handleEvaluationDateChange = (which, value) => {
     setEvaluationPeriod("custom");
+
     if (which === "from") {
       setEvaluationFromDate(value);
     } else {
       setEvaluationToDate(value);
     }
   };
+
   const handleEvaluationApplyDates = () => {
     if (
       evaluationFromDate &&
@@ -455,8 +543,10 @@ export default function ReceptionRegistrationWorkspace({
       );
       return;
     }
+
     loadEvaluationTracker();
   };
+
   const sidebarItems = [
     { key: "home", label: "Home" },
     { key: "register", label: "Assign a Patient" },
@@ -465,13 +555,11 @@ export default function ReceptionRegistrationWorkspace({
       key: "tracker",
       label: `Registration Tracker (${trackerAssignments.length})`,
     },
-    {
-      key: "evaluation_tracker",
-      label: "Evaluation Tracker",
-    },
+    { key: "evaluation_tracker", label: "Evaluation Tracker" },
     { key: "stats", label: "My Stats" },
     { key: "leaderboard", label: "Leaderboard" },
   ];
+
   const filteredEvaluationRows = evaluationRows
     .filter((row) =>
       getDisplayName(row)
@@ -481,18 +569,20 @@ export default function ReceptionRegistrationWorkspace({
     .sort((a, b) => {
       const countA = Number(a.count ?? a.total ?? 0);
       const countB = Number(b.count ?? b.total ?? 0);
-      if (evaluationSort === "count-asc") {
-        return countA - countB;
-      }
+
+      if (evaluationSort === "count-asc") return countA - countB;
       if (evaluationSort === "name-asc") {
         return getDisplayName(a).localeCompare(getDisplayName(b));
       }
       if (evaluationSort === "name-desc") {
         return getDisplayName(b).localeCompare(getDisplayName(a));
       }
+
       return countB - countA;
     });
+
   const evaluationTarget = getEvaluationTarget(evaluationPeriod);
+
   return (
     <DashboardLayout
       title="Registration Workspace"
@@ -508,6 +598,7 @@ export default function ReceptionRegistrationWorkspace({
           navigate("/reception");
           return;
         }
+
         setActiveSection(key);
       }}
       onLogout={onLogout}
@@ -518,12 +609,15 @@ export default function ReceptionRegistrationWorkspace({
       {message ? (
         <DashboardNotice type="success">{message}</DashboardNotice>
       ) : null}
+
       {error ? (
         <DashboardNotice type="error">{error}</DashboardNotice>
       ) : null}
+
       {activeSection === "stats" && (
         <RegistrationStatsSection stats={stats} />
       )}
+
       {activeSection === "leaderboard" && (
         <LeaderboardSection
           title="Reception Leaderboard"
@@ -533,6 +627,7 @@ export default function ReceptionRegistrationWorkspace({
           onReload={reloadLeaderboard}
         />
       )}
+
       {activeSection === "register" && (
         <div style={styles.stack}>
           <UnifiedPatientSearch
@@ -545,6 +640,7 @@ export default function ReceptionRegistrationWorkspace({
             onRegisterNew={() => setActiveSection("open_file")}
             registerButtonLabel="Register New Patient"
           />
+
           {selectedPatient ? (
             <PatientAssignmentForm
               ref={assignmentRef}
@@ -563,6 +659,7 @@ export default function ReceptionRegistrationWorkspace({
           )}
         </div>
       )}
+
       {activeSection === "open_file" && (
         <PatientRegisterForm
           patientForm={patientForm}
@@ -570,6 +667,7 @@ export default function ReceptionRegistrationWorkspace({
           onSubmit={handleCreatePatientFile}
         />
       )}
+
       {activeSection === "tracker" && (
         <RegistrationTrackerSection
           mode={trackerMode}
@@ -586,6 +684,7 @@ export default function ReceptionRegistrationWorkspace({
           onCancelAssignment={handleCancelAssignment}
         />
       )}
+
       {activeSection === "evaluation_tracker" && (
         <section style={styles.evaluationPage}>
           <div style={styles.evaluationHero}>
@@ -593,13 +692,11 @@ export default function ReceptionRegistrationWorkspace({
               <div style={styles.evaluationEyebrow}>
                 RECEPTION WORKSPACE / REPORTS
               </div>
-              <h2 style={styles.evaluationTitle}>
-                Evaluation Tracker
-              </h2>
+              <h2 style={styles.evaluationTitle}>Evaluation Tracker</h2>
               <p style={styles.evaluationDescription}>
-                Monitor initial evaluations across your physiotherapy
-                team. View each physiotherapist's evaluation count and
-                progress against the applicable target.
+                Monitor initial evaluations across your physiotherapy team.
+                View each physiotherapist's evaluation count and progress
+                against the applicable target.
               </p>
               <div style={styles.periodSummary}>
                 <span style={styles.periodDot} />
@@ -609,6 +706,7 @@ export default function ReceptionRegistrationWorkspace({
                 </span>
               </div>
             </div>
+
             <button
               type="button"
               style={{
@@ -622,6 +720,7 @@ export default function ReceptionRegistrationWorkspace({
               {evaluationLoading ? "Refreshing…" : "Refresh data"}
             </button>
           </div>
+
           <div style={styles.filterCard}>
             <div style={styles.filterCardHeading}>
               <div>
@@ -632,6 +731,7 @@ export default function ReceptionRegistrationWorkspace({
               </div>
               <span style={styles.filterIcon}>▦</span>
             </div>
+
             <div style={styles.evaluationPresets}>
               {[
                 { key: "today", label: "Today" },
@@ -657,6 +757,7 @@ export default function ReceptionRegistrationWorkspace({
                 </button>
               ))}
             </div>
+
             <div style={styles.evaluationFilters}>
               <div style={styles.evaluationField}>
                 <label
@@ -676,6 +777,7 @@ export default function ReceptionRegistrationWorkspace({
                   style={styles.evaluationInput}
                 />
               </div>
+
               <div style={styles.evaluationField}>
                 <label
                   style={styles.evaluationLabel}
@@ -694,6 +796,7 @@ export default function ReceptionRegistrationWorkspace({
                   style={styles.evaluationInput}
                 />
               </div>
+
               <button
                 type="button"
                 style={{
@@ -708,6 +811,7 @@ export default function ReceptionRegistrationWorkspace({
               </button>
             </div>
           </div>
+
           {evaluationError ? (
             <div style={styles.evaluationError} role="alert">
               <span style={styles.errorIcon}>!</span>
@@ -719,6 +823,7 @@ export default function ReceptionRegistrationWorkspace({
               </div>
             </div>
           ) : null}
+
           <div style={styles.tableCard}>
             <div style={styles.tableHeading}>
               <div>
@@ -731,6 +836,7 @@ export default function ReceptionRegistrationWorkspace({
                     : "Monthly target reference: 30 evaluations per physiotherapist"}
                 </p>
               </div>
+
               <span style={styles.tableCountBadge}>
                 {filteredEvaluationRows.length}{" "}
                 {filteredEvaluationRows.length === 1
@@ -738,6 +844,7 @@ export default function ReceptionRegistrationWorkspace({
                   : "therapists"}
               </span>
             </div>
+
             <div style={styles.tableToolbar}>
               <div style={styles.searchWrapper}>
                 <span style={styles.searchIcon}>⌕</span>
@@ -750,11 +857,9 @@ export default function ReceptionRegistrationWorkspace({
                   style={styles.searchInput}
                 />
               </div>
+
               <div style={styles.sortWrapper}>
-                <label
-                  htmlFor="evaluation-sort"
-                  style={styles.sortLabel}
-                >
+                <label htmlFor="evaluation-sort" style={styles.sortLabel}>
                   Sort by
                 </label>
                 <select
@@ -770,6 +875,7 @@ export default function ReceptionRegistrationWorkspace({
                 </select>
               </div>
             </div>
+
             {evaluationLoading ? (
               <div style={styles.tableMessage}>
                 <span style={styles.loadingSpinner} />
@@ -793,6 +899,7 @@ export default function ReceptionRegistrationWorkspace({
                     ? "Try a different date range or check whether initial evaluations have been recorded."
                     : "Try another name or clear your search."}
                 </p>
+
                 {evaluationSearch && (
                   <button
                     type="button"
@@ -823,6 +930,7 @@ export default function ReceptionRegistrationWorkspace({
                       <th style={styles.tableHeaderCell}>Status</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {filteredEvaluationRows.map((row, index) => {
                       const count = Number(row.count ?? row.total ?? 0);
@@ -838,6 +946,7 @@ export default function ReceptionRegistrationWorkspace({
                         count,
                         evaluationPeriod
                       );
+
                       return (
                         <tr
                           key={row.therapist_id ?? row.id ?? index}
@@ -848,6 +957,7 @@ export default function ReceptionRegistrationWorkspace({
                               {String(index + 1).padStart(2, "0")}
                             </span>
                           </td>
+
                           <td style={styles.tableCell}>
                             <div style={styles.therapistIdentity}>
                               <div
@@ -862,6 +972,7 @@ export default function ReceptionRegistrationWorkspace({
                                   .charAt(0)
                                   .toUpperCase()}
                               </div>
+
                               <div style={styles.therapistNameBlock}>
                                 <span style={styles.therapistName}>
                                   {getDisplayName(row)}
@@ -872,11 +983,11 @@ export default function ReceptionRegistrationWorkspace({
                               </div>
                             </div>
                           </td>
+
                           <td style={styles.countCell}>
-                            <span style={styles.countPill}>
-                              {count}
-                            </span>
+                            <span style={styles.countPill}>{count}</span>
                           </td>
+
                           <td style={styles.progressCell}>
                             <div style={styles.progressCellContent}>
                               <div
@@ -892,14 +1003,12 @@ export default function ReceptionRegistrationWorkspace({
                                 <div
                                   style={{
                                     ...styles.progressFill,
-                                    width: `${Math.min(
-                                      percentage,
-                                      100
-                                    )}%`,
+                                    width: `${Math.min(percentage, 100)}%`,
                                     background: color,
                                   }}
                                 />
                               </div>
+
                               <span
                                 style={{
                                   ...styles.progressLabel,
@@ -909,10 +1018,12 @@ export default function ReceptionRegistrationWorkspace({
                                 {percentage}%
                               </span>
                             </div>
+
                             <div style={styles.progressTargetText}>
                               {count} / {evaluationTarget} evaluations
                             </div>
                           </td>
+
                           <td style={styles.statusCell}>
                             <span
                               style={{
@@ -935,6 +1046,7 @@ export default function ReceptionRegistrationWorkspace({
                       );
                     })}
                   </tbody>
+
                   <tfoot>
                     <tr>
                       <td colSpan={2} style={styles.totalFooterCell}>
@@ -952,6 +1064,7 @@ export default function ReceptionRegistrationWorkspace({
                 </table>
               </div>
             )}
+
             <div style={styles.tableFooter}>
               <span>
                 Showing {filteredEvaluationRows.length} of{" "}
@@ -969,6 +1082,7 @@ export default function ReceptionRegistrationWorkspace({
     </DashboardLayout>
   );
 }
+
 const styles = {
   stack: {
     display: "grid",
