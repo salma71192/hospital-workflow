@@ -1,12 +1,22 @@
+
 import json
+import re
 from datetime import date
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 
 from .models import Patient
 from callcenter.models import Appointment
+
+
+def normalize_patient_id(value):
+    """Remove all whitespace so differently spaced IDs match."""
+    if value is None:
+        return ""
+    return re.sub(r"\s+", "", str(value)).strip()
 
 
 def _can_create_patient(user):
@@ -58,12 +68,49 @@ def _can_view_patient_tracker(user):
     ]
 
 
+def _patient_to_dict(patient):
+    return {
+        "id": patient.id,
+        "name": patient.name,
+        "patient_id": patient.patient_id,
+        "current_approval_number": patient.current_approval_number,
+        "approval_start_date": (
+            str(patient.approval_start_date)
+            if patient.approval_start_date else ""
+        ),
+        "approval_expiry_date": (
+            str(patient.approval_expiry_date)
+            if patient.approval_expiry_date else ""
+        ),
+        "approved_sessions": patient.approved_sessions,
+        "approved_cpt_codes": patient.approved_cpt_codes or [],
+        "sessions_taken": patient.sessions_taken,
+        "taken_with": patient.taken_with,
+        "current_future_appointments": patient.current_future_appointments,
+        "insurance_provider": patient.insurance_provider or "",
+        "created_at": (
+            patient.created_at.isoformat() if patient.created_at else ""
+        ),
+        "registered_at": (
+            patient.registered_at.isoformat() if patient.registered_at else ""
+        ),
+        "registered_by": (
+            patient.registered_by.username if patient.registered_by else ""
+        ),
+        "registered_by_role": patient.registered_by_role or "",
+    }
+
+
 def _get_patient_status(patient, latest_seen_date):
     today_value = date.today()
 
     expiry_date = getattr(patient, "approval_expiry_date", None)
-    approved_sessions = int(getattr(patient, "approved_sessions", 0) or 0)
-    sessions_taken = int(getattr(patient, "sessions_taken", 0) or 0)
+    approved_sessions = int(
+        getattr(patient, "approved_sessions", 0) or 0
+    )
+    sessions_taken = int(
+        getattr(patient, "sessions_taken", 0) or 0
+    )
     remaining_sessions = max(approved_sessions - sessions_taken, 0)
 
     if expiry_date and expiry_date < today_value:
@@ -71,8 +118,10 @@ def _get_patient_status(patient, latest_seen_date):
 
     if latest_seen_date:
         days_since_seen = (today_value - latest_seen_date).days
+
         if days_since_seen > 30:
             return "inactive"
+
         if days_since_seen > 14:
             return "irregular"
 
@@ -82,13 +131,49 @@ def _get_patient_status(patient, latest_seen_date):
     return "active"
 
 
+def _find_duplicate_patient(patient_id, exclude_id=None):
+    """
+    Compare normalized IDs against existing records.
+    This also detects legacy records that still contain spaces.
+    """
+    normalized_id = normalize_patient_id(patient_id)
+
+    if not normalized_id:
+        return None
+
+    patients = Patient.objects.all()
+
+    if exclude_id is not None:
+        patients = patients.exclude(id=exclude_id)
+
+    for existing_patient in patients.only("id", "patient_id").iterator():
+        if normalize_patient_id(existing_patient.patient_id) == normalized_id:
+            return existing_patient
+
+    return None
+
+
+def _duplicate_error():
+    return JsonResponse(
+        {
+            "success": False,
+            "error": (
+                "This patient file number already exists. "
+                "Please check the existing patient records."
+            ),
+        },
+        status=400,
+    )
+
+
 @csrf_exempt
 def patients_api(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
     if request.method == "GET":
-        search = request.GET.get("search", "").strip()
+        search = (request.GET.get("search") or "").strip()
+
         patients_qs = (
             Patient.objects.select_related("registered_by")
             .all()
@@ -96,30 +181,34 @@ def patients_api(request):
         )
 
         if search:
-            patients_qs = patients_qs.filter(
-                Q(name__icontains=search) | Q(patient_id__icontains=search)
-            ).order_by("-created_at")
+            normalized_search = normalize_patient_id(search)
 
-        patients = []
-        for patient in patients_qs:
-            patients.append({
-                "id": patient.id,
-                "name": patient.name,
-                "patient_id": patient.patient_id,
-                "current_approval_number": patient.current_approval_number,
-                "approval_start_date": str(patient.approval_start_date) if patient.approval_start_date else "",
-                "approval_expiry_date": str(patient.approval_expiry_date) if patient.approval_expiry_date else "",
-                "approved_sessions": patient.approved_sessions,
-                "approved_cpt_codes": patient.approved_cpt_codes or [],
-                "sessions_taken": patient.sessions_taken,
-                "taken_with": patient.taken_with,
-                "current_future_appointments": patient.current_future_appointments,
-                "insurance_provider": patient.insurance_provider,
-                "created_at": patient.created_at.isoformat() if patient.created_at else "",
-                "registered_at": patient.registered_at.isoformat() if patient.registered_at else "",
-                "registered_by": patient.registered_by.username if patient.registered_by else "",
-                "registered_by_role": patient.registered_by_role or "",
-            })
+            patients_qs = patients_qs.filter(
+                Q(name__icontains=search)
+                | Q(patient_id__icontains=search)
+            )
+
+            # Include IDs that match when whitespace is ignored.
+            # The comparison also handles older records with spaces.
+            matching_ids = []
+            if normalized_search:
+                for existing_patient in (
+                    Patient.objects.only("id", "patient_id").iterator()
+                ):
+                    if (
+                        normalize_patient_id(existing_patient.patient_id)
+                        .lower()
+                        .find(normalized_search.lower()) >= 0
+                    ):
+                        matching_ids.append(existing_patient.id)
+
+            if matching_ids:
+                patients_qs = (
+                    patients_qs
+                    | Patient.objects.filter(id__in=matching_ids)
+                ).distinct().order_by("-created_at")
+
+        patients = [_patient_to_dict(patient) for patient in patients_qs]
 
         return JsonResponse({"patients": patients})
 
@@ -131,12 +220,13 @@ def patients_api(request):
             )
 
         try:
-            data = json.loads(request.body)
-        except json.JSONDecodeError:
+            data = json.loads(request.body or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
         name = (data.get("name") or "").strip()
-        patient_id = (data.get("patient_id") or "").strip()
+        raw_patient_id = data.get("patient_id") or ""
+        patient_id = normalize_patient_id(raw_patient_id)
 
         if not name or not patient_id:
             return JsonResponse(
@@ -144,43 +234,33 @@ def patients_api(request):
                 status=400,
             )
 
-        if Patient.objects.filter(patient_id=patient_id).exists():
-            return JsonResponse(
-                {"error": "Patient ID already exists"},
-                status=400,
-            )
+        # Store a canonical ID with all whitespace removed.
+        duplicate = _find_duplicate_patient(patient_id)
 
-        patient = Patient.objects.create(
-            name=name,
-            patient_id=patient_id,
-            registered_by=request.user,
-            registered_by_role=getattr(request.user, "role", "") or (
-                "admin" if request.user.is_superuser else ""
-            ),
-        )
+        if duplicate:
+            return _duplicate_error()
+
+        try:
+            with transaction.atomic():
+                patient = Patient.objects.create(
+                    name=name,
+                    patient_id=patient_id,
+                    registered_by=request.user,
+                    registered_by_role=(
+                        getattr(request.user, "role", "") or
+                        ("admin" if request.user.is_superuser else "")
+                    ),
+                )
+        except IntegrityError:
+            # Covers exact duplicate IDs when the model/database has
+            # a unique constraint on patient_id.
+            return _duplicate_error()
 
         return JsonResponse({
             "success": True,
             "message": "Patient file created successfully",
-            "patient": {
-                "id": patient.id,
-                "name": patient.name,
-                "patient_id": patient.patient_id,
-                "current_approval_number": patient.current_approval_number,
-                "approval_start_date": str(patient.approval_start_date) if patient.approval_start_date else "",
-                "approval_expiry_date": str(patient.approval_expiry_date) if patient.approval_expiry_date else "",
-                "approved_sessions": patient.approved_sessions,
-                "approved_cpt_codes": patient.approved_cpt_codes or [],
-                "sessions_taken": patient.sessions_taken,
-                "taken_with": patient.taken_with,
-                "current_future_appointments": patient.current_future_appointments,
-                "insurance_provider": patient.insurance_provider,
-                "created_at": patient.created_at.isoformat() if patient.created_at else "",
-                "registered_at": patient.registered_at.isoformat() if patient.registered_at else "",
-                "registered_by": patient.registered_by.username if patient.registered_by else "",
-                "registered_by_role": patient.registered_by_role or "",
-            },
-        })
+            "patient": _patient_to_dict(patient),
+        }, status=201)
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -191,43 +271,30 @@ def patient_detail_api(request, patient_id):
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
     try:
-        patient = Patient.objects.select_related("registered_by").get(id=patient_id)
-    except Patient.DoesNotExist:
+        patient = Patient.objects.select_related("registered_by").get(
+            id=patient_id
+        )
+    except (Patient.DoesNotExist, ValueError, TypeError):
         return JsonResponse({"error": "Patient not found"}, status=404)
 
     if request.method == "GET":
-        return JsonResponse({
-            "patient": {
-                "id": patient.id,
-                "name": patient.name,
-                "patient_id": patient.patient_id,
-                "current_approval_number": patient.current_approval_number,
-                "approval_start_date": str(patient.approval_start_date) if patient.approval_start_date else "",
-                "approval_expiry_date": str(patient.approval_expiry_date) if patient.approval_expiry_date else "",
-                "approved_sessions": patient.approved_sessions,
-                "approved_cpt_codes": patient.approved_cpt_codes or [],
-                "sessions_taken": patient.sessions_taken,
-                "taken_with": patient.taken_with,
-                "current_future_appointments": patient.current_future_appointments,
-                "insurance_provider": patient.insurance_provider or "",
-                "created_at": patient.created_at.isoformat() if patient.created_at else "",
-                "registered_at": patient.registered_at.isoformat() if patient.registered_at else "",
-                "registered_by": patient.registered_by.username if patient.registered_by else "",
-                "registered_by_role": patient.registered_by_role or "",
-            }
-        })
+        return JsonResponse({"patient": _patient_to_dict(patient)})
 
     if request.method == "PUT":
         if not _can_edit_patient(request.user):
-            return JsonResponse({"error": "Not allowed to edit patient files"}, status=403)
+            return JsonResponse(
+                {"error": "Not allowed to edit patient files"},
+                status=403,
+            )
 
         try:
-            data = json.loads(request.body)
-        except json.JSONDecodeError:
+            data = json.loads(request.body or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
         name = (data.get("name") or "").strip()
-        new_patient_id = (data.get("patient_id") or "").strip()
+        raw_patient_id = data.get("patient_id") or ""
+        new_patient_id = normalize_patient_id(raw_patient_id)
 
         if not name or not new_patient_id:
             return JsonResponse(
@@ -235,22 +302,19 @@ def patient_detail_api(request, patient_id):
                 status=400,
             )
 
-        duplicate = (
-            Patient.objects.filter(patient_id=new_patient_id)
-            .exclude(id=patient.id)
-            .first()
+        duplicate = _find_duplicate_patient(
+            new_patient_id,
+            exclude_id=patient.id,
         )
+
         if duplicate:
-            return JsonResponse(
-                {"error": "Patient ID already exists"},
-                status=400,
-            )
+            return _duplicate_error()
 
         try:
             approved_sessions = int(data.get("approved_sessions", 0))
             if approved_sessions < 0:
                 approved_sessions = 0
-        except Exception:
+        except (TypeError, ValueError):
             return JsonResponse(
                 {"error": "approved_sessions must be a number"},
                 status=400,
@@ -260,7 +324,7 @@ def patient_detail_api(request, patient_id):
             sessions_taken = int(data.get("sessions_taken", 0))
             if sessions_taken < 0:
                 sessions_taken = 0
-        except Exception:
+        except (TypeError, ValueError):
             return JsonResponse(
                 {"error": "sessions_taken must be a number"},
                 status=400,
@@ -268,38 +332,37 @@ def patient_detail_api(request, patient_id):
 
         patient.name = name
         patient.patient_id = new_patient_id
-        patient.current_approval_number = (data.get("current_approval_number") or "").strip() or None
-        patient.approval_start_date = (data.get("approval_start_date") or None) or None
-        patient.approval_expiry_date = (data.get("approval_expiry_date") or None) or None
+        patient.current_approval_number = (
+            (data.get("current_approval_number") or "").strip() or None
+        )
+        patient.approval_start_date = (
+            data.get("approval_start_date") or None
+        )
+        patient.approval_expiry_date = (
+            data.get("approval_expiry_date") or None
+        )
         patient.approved_sessions = approved_sessions
         patient.sessions_taken = sessions_taken
-        patient.taken_with = (data.get("taken_with") or "").strip() or None
-        patient.current_future_appointments = data.get("current_future_appointments") or None
-        patient.insurance_provider = (data.get("insurance_provider") or "").strip() or None
+        patient.taken_with = (
+            (data.get("taken_with") or "").strip() or None
+        )
+        patient.current_future_appointments = (
+            data.get("current_future_appointments") or None
+        )
+        patient.insurance_provider = (
+            (data.get("insurance_provider") or "").strip() or None
+        )
 
-        patient.save()
+        try:
+            with transaction.atomic():
+                patient.save()
+        except IntegrityError:
+            return _duplicate_error()
 
         return JsonResponse({
             "success": True,
             "message": "Patient file updated successfully",
-            "patient": {
-                "id": patient.id,
-                "name": patient.name,
-                "patient_id": patient.patient_id,
-                "current_approval_number": patient.current_approval_number,
-                "approval_start_date": str(patient.approval_start_date) if patient.approval_start_date else "",
-                "approval_expiry_date": str(patient.approval_expiry_date) if patient.approval_expiry_date else "",
-                "approved_sessions": patient.approved_sessions,
-                "approved_cpt_codes": patient.approved_cpt_codes or [],
-                "sessions_taken": patient.sessions_taken,
-                "taken_with": patient.taken_with,
-                "current_future_appointments": patient.current_future_appointments,
-                "insurance_provider": patient.insurance_provider or "",
-                "created_at": patient.created_at.isoformat() if patient.created_at else "",
-                "registered_at": patient.registered_at.isoformat() if patient.registered_at else "",
-                "registered_by": patient.registered_by.username if patient.registered_by else "",
-                "registered_by_role": patient.registered_by_role or "",
-            },
+            "patient": _patient_to_dict(patient),
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -307,31 +370,40 @@ def patient_detail_api(request, patient_id):
 
 @csrf_exempt
 def patient_tracker_api(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
     if not _can_view_patient_tracker(request.user):
         return JsonResponse({"error": "Not authorized"}, status=403)
 
     today_value = date.today()
     role = (getattr(request.user, "role", "") or "").strip().lower()
-
     search = (request.GET.get("search") or "").strip()
 
     patients_qs = Patient.objects.all().order_by("name")
 
     if search:
         patients_qs = patients_qs.filter(
-            Q(name__icontains=search) | Q(patient_id__icontains=search)
+            Q(name__icontains=search)
+            | Q(patient_id__icontains=search)
         )
 
     patient_rows = []
 
     for patient in patients_qs:
-        appointments_qs = Appointment.objects.filter(patient_id=patient.id)
+        appointments_qs = Appointment.objects.filter(
+            patient_id=patient.id
+        )
 
         if role == "physio":
-            appointments_qs = appointments_qs.filter(therapist_id=request.user.id)
+            appointments_qs = appointments_qs.filter(
+                therapist_id=request.user.id
+            )
 
         latest_seen = (
-            appointments_qs.filter(appointment_date__lte=today_value)
+            appointments_qs.filter(
+                appointment_date__lte=today_value
+            )
             .order_by("-appointment_date", "-appointment_time")
             .values_list("appointment_date", flat=True)
             .first()
@@ -342,7 +414,9 @@ def patient_tracker_api(request):
         ).count()
 
         latest_therapist_id = (
-            appointments_qs.order_by("-appointment_date", "-appointment_time")
+            appointments_qs.order_by(
+                "-appointment_date", "-appointment_time"
+            )
             .values_list("therapist_id", flat=True)
             .first()
         )
@@ -350,9 +424,15 @@ def patient_tracker_api(request):
         if role == "physio" and not latest_therapist_id:
             continue
 
-        approved_sessions = int(getattr(patient, "approved_sessions", 0) or 0)
-        sessions_taken = int(getattr(patient, "sessions_taken", 0) or 0)
-        remaining_sessions = max(approved_sessions - sessions_taken, 0)
+        approved_sessions = int(
+            getattr(patient, "approved_sessions", 0) or 0
+        )
+        sessions_taken = int(
+            getattr(patient, "sessions_taken", 0) or 0
+        )
+        remaining_sessions = max(
+            approved_sessions - sessions_taken, 0
+        )
 
         patient_rows.append({
             "id": patient.id,
@@ -368,4 +448,3 @@ def patient_tracker_api(request):
         })
 
     return JsonResponse({"patients": patient_rows})
-
