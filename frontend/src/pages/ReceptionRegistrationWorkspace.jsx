@@ -117,6 +117,8 @@ export default function ReceptionRegistrationWorkspace({
     patient_id: "",
     therapist_id: "",
     category: "appointment",
+    visit_number: "",
+    referring_physician: "",
     notes: "",
   });
   const [trackerFilter, setTrackerFilter] = useState({
@@ -264,6 +266,8 @@ export default function ReceptionRegistrationWorkspace({
       patient_id: "",
       therapist_id: "",
       category: "appointment",
+      visit_number: "",
+      referring_physician: "",
       notes: "",
     });
     setSelectedPatient(null);
@@ -342,6 +346,11 @@ export default function ReceptionRegistrationWorkspace({
           {
             therapist_id: assignmentForm.therapist_id,
             category: assignmentForm.category,
+            visit_number: assignmentForm.visit_number,
+            referring_physician:
+              assignmentForm.category === "initial_evaluation"
+                ? assignmentForm.referring_physician
+                : "",
             notes: assignmentForm.notes,
           }
         );
@@ -377,6 +386,8 @@ export default function ReceptionRegistrationWorkspace({
       patient_id: assignment.patient_id,
       therapist_id: String(assignment.therapist_id || ""),
       category: assignment.category || "appointment",
+      visit_number: assignment.visit_number ?? "",
+      referring_physician: assignment.referring_physician || "",
       notes: assignment.notes || "",
     });
     setActiveSection("register");
