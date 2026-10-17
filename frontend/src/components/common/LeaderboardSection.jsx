@@ -1,56 +1,66 @@
+
 import React from "react";
 
 export default function LeaderboardSection({
-  title = "Leaderboard",
+  title = "Reception Leaderboard",
   rows = [],
   loading = false,
   error = "",
   onReload,
-  target = 100,
+  target = 400,
   showTarget = true,
-  showConversion = true,
 }) {
+  const monthlyTarget = Number(target) > 0 ? Number(target) : 400;
   const safeRows = Array.isArray(rows) ? rows : [];
 
-  const getMonthly = (row) => row.monthly ?? row.count ?? 0;
-  const getToday = (row) => row.today ?? 0;
-  const getTarget = (row) => row.target ?? target ?? 100;
+  const monthlyCount = (row) =>
+    Math.max(
+      0,
+      Number(row.monthly ?? row.count ?? row.registration_count ?? 0) || 0
+    );
 
-  const getConversion = (row) => {
-    if (row.conversion !== undefined && row.conversion !== null) {
-      return row.conversion;
-    }
+  const todayCount = (row) =>
+    Math.max(0, Number(row.today ?? row.today_count ?? 0) || 0);
 
-    const completed = row.completed ?? row.attended ?? row.booked ?? getMonthly(row);
-    const total = row.total ?? getMonthly(row);
+  const displayName = (row) =>
+    row.name || row.full_name || row.display_name || row.username || "-";
 
-    if (!total) return 0;
-    return Math.round((completed / total) * 100);
-  };
-
-  const sortedRows = [...safeRows].sort((a, b) => getMonthly(b) - getMonthly(a));
-
-  const topScore = Math.max(
-    ...sortedRows.map((row) => getMonthly(row)),
-    1
+  const sortedRows = [...safeRows].sort(
+    (a, b) => monthlyCount(b) - monthlyCount(a)
   );
 
   return (
     <div style={styles.page}>
-      <div style={styles.headerCard}>
+      <div style={styles.heading}>
         <div>
-          <div style={styles.eyebrow}>Performance</div>
+          <span style={styles.teamBadge}>RECEPTION TEAM</span>
           <h2 style={styles.title}>{title}</h2>
           <p style={styles.subtitle}>
-            Ranking by this month’s activity. Today, target progress, and conversion are shown beside it.
+            Track monthly registrations and celebrate progress toward the target.
           </p>
         </div>
 
-        {onReload ? (
-          <button type="button" onClick={onReload} style={styles.refreshBtn}>
-            Refresh
+        {onReload && (
+          <button
+            type="button"
+            onClick={onReload}
+            style={styles.refreshButton}
+          >
+            ↻ Refresh
           </button>
-        ) : null}
+        )}
+      </div>
+
+      <div style={styles.targetCard}>
+        <div style={styles.targetIcon}>★</div>
+        <div style={styles.targetContent}>
+          <div style={styles.targetLabel}>MONTHLY TARGET</div>
+          <div style={styles.targetValue}>
+            {monthlyTarget}
+            <span> registrations per staff member</span>
+          </div>
+        </div>
+        <span style={styles.targetBadge}>Monthly goal</span>
       </div>
 
       {error ? <div style={styles.error}>{error}</div> : null}
@@ -58,103 +68,133 @@ export default function LeaderboardSection({
       {loading ? (
         <div style={styles.empty}>Loading leaderboard...</div>
       ) : sortedRows.length === 0 ? (
-        <div style={styles.empty}>No leaderboard data found.</div>
+        <div style={styles.empty}>
+          No registration data available for this month.
+        </div>
       ) : (
-        <div style={styles.list}>
+        <div style={styles.tableCard}>
+          <div style={styles.tableHeader}>
+            <span>STAFF MEMBER</span>
+            <span>TODAY</span>
+            <span>THIS MONTH</span>
+            {showTarget && <span>TARGET PROGRESS</span>}
+          </div>
+
           {sortedRows.map((row, index) => {
-            const monthly = getMonthly(row);
-            const today = getToday(row);
-            const userTarget = getTarget(row);
-            const targetPercent =
-              userTarget > 0 ? Math.min(100, Math.round((monthly / userTarget) * 100)) : 0;
-            const conversion = getConversion(row);
-            const width = Math.max(6, Math.round((monthly / topScore) * 100));
+            const monthly = monthlyCount(row);
+            const today = todayCount(row);
+            const percent = Math.round((monthly / monthlyTarget) * 100);
+            const barWidth = Math.min(100, percent);
+            const achieved = monthly >= monthlyTarget;
+            const remaining = Math.max(0, monthlyTarget - monthly);
+
+            const rankStyle =
+              index === 0
+                ? styles.goldRank
+                : index === 1
+                ? styles.silverRank
+                : index === 2
+                ? styles.bronzeRank
+                : styles.normalRank;
+
+            const statusStyle = achieved
+              ? styles.achievedBadge
+              : percent >= 75
+              ? styles.nearTargetBadge
+              : percent >= 40
+              ? styles.inProgressBadge
+              : styles.startBadge;
+
+            const statusText = achieved
+              ? "Target achieved"
+              : percent >= 75
+              ? "Almost there"
+              : percent >= 40
+              ? "In progress"
+              : "Getting started";
 
             return (
-              <div key={row.user_id || row.id || row.name || index} style={styles.row}>
-                <div style={styles.rankBox}>
-                  <div
-                    style={{
-                      ...styles.rank,
-                      ...(index === 0 ? styles.gold : {}),
-                      ...(index === 1 ? styles.silver : {}),
-                      ...(index === 2 ? styles.bronze : {}),
-                    }}
-                  >
-                    {index === 0
-                      ? "🥇"
-                      : index === 1
-                      ? "🥈"
-                      : index === 2
-                      ? "🥉"
+              <div
+                key={
+                  row.user_id ??
+                  row.id ??
+                  row.username ??
+                  `${displayName(row)}-${index}`
+                }
+                style={styles.tableRow}
+              >
+                <div style={styles.staffCell}>
+                  <div style={{ ...styles.rank, ...rankStyle }}>
+                    {index < 3
+                      ? ["🥇", "🥈", "🥉"][index]
                       : `#${index + 1}`}
                   </div>
-                </div>
 
-                <div style={styles.main}>
-                  <div style={styles.nameRow}>
-                    <div>
-                      <div style={styles.name}>
-                        {row.name || row.username || row.therapist_name || "-"}
-                      </div>
-                      <div style={styles.role}>{row.role || row.label || "User"}</div>
+                  <div style={styles.staffDetails}>
+                    <div style={styles.nameLine}>
+                      <span style={styles.staffName}>{displayName(row)}</span>
+                      {index === 0 && (
+                        <span style={styles.topBadge}>TOP</span>
+                      )}
                     </div>
-
-                    <div style={styles.scoreGroup}>
-                      <div style={styles.scoreBox}>
-                        <strong>{monthly}</strong>
-                        <span>Month</span>
-                      </div>
-
-                      <div style={styles.scoreBox}>
-                        <strong>{today}</strong>
-                        <span>Today</span>
-                      </div>
-
-                      {showTarget ? (
-                        <div style={styles.scoreBox}>
-                          <strong>{targetPercent}%</strong>
-                          <span>Target</span>
-                        </div>
-                      ) : null}
-
-                      {showConversion ? (
-                        <div style={styles.scoreBox}>
-                          <strong>{conversion}%</strong>
-                          <span>Convert</span>
-                        </div>
-                      ) : null}
+                    <div style={styles.staffRole}>
+                      {row.role || row.label || "Reception"}
                     </div>
                   </div>
+                </div>
 
-                  <div style={styles.progressGrid}>
-                    <div>
-                      <div style={styles.progressLabel}>Monthly Rank Progress</div>
-                      <div style={styles.track}>
-                        <div style={{ ...styles.fill, width: `${width}%` }} />
-                      </div>
+                <div style={styles.todayCell}>
+                  <span style={styles.todayBadge}>{today}</span>
+                </div>
+
+                <div style={styles.monthCell}>
+                  <strong>{monthly}</strong>
+                  <span style={styles.monthTotal}> / {monthlyTarget}</span>
+                  {showTarget && (
+                    <div style={styles.statusLine}>
+                      <span style={{ ...styles.statusBadge, ...statusStyle }}>
+                        {statusText}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {showTarget && (
+                  <div style={styles.progressCell}>
+                    <div style={styles.progressTop}>
+                      <strong
+                        style={{
+                          ...styles.percent,
+                          ...(achieved ? styles.achievedText : {}),
+                        }}
+                      >
+                        {percent}%
+                      </strong>
+                      <span style={styles.remaining}>
+                        {achieved ? "Complete" : `${remaining} left`}
+                      </span>
                     </div>
 
-                    {showTarget ? (
-                      <div>
-                        <div style={styles.progressLabel}>
-                          Target Progress ({monthly}/{userTarget})
-                        </div>
-                        <div style={styles.track}>
-                          <div
-                            style={{
-                              ...styles.targetFill,
-                              width: `${Math.max(6, targetPercent)}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ) : null}
+                    <div style={styles.track}>
+                      <div
+                        style={{
+                          ...styles.fill,
+                          width: `${barWidth}%`,
+                          ...(achieved ? styles.achievedFill : {}),
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             );
           })}
+
+          <div style={styles.footer}>
+            <span style={styles.footerDot} />
+            {sortedRows.length} staff member
+            {sortedRows.length === 1 ? "" : "s"} ranked by monthly registrations
+          </div>
         </div>
       )}
     </div>
@@ -163,176 +203,362 @@ export default function LeaderboardSection({
 
 const styles = {
   page: {
+    width: "100%",
     display: "grid",
-    gap: "16px",
+    gap: "20px",
+    color: "#172b4d",
+    fontFamily: "inherit",
+    boxSizing: "border-box",
   },
-  headerCard: {
-    background: "linear-gradient(135deg, #fdf2f8, #ffffff)",
-    border: "1px solid #fbcfe8",
-    borderRadius: "20px",
-    padding: "22px",
+
+  heading: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "16px",
+    alignItems: "center",
     flexWrap: "wrap",
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.06)",
+    gap: "16px",
   },
-  eyebrow: {
-    fontSize: "12px",
+
+  teamBadge: {
+    display: "inline-flex",
+    padding: "6px 10px",
+    borderRadius: "7px",
+    background: "#ede9fe",
+    color: "#6d28d9",
+    fontSize: "10px",
     fontWeight: "900",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    color: "#be185d",
+    letterSpacing: "1px",
   },
+
   title: {
-    margin: "4px 0",
-    fontSize: "26px",
-    fontWeight: "900",
-    color: "#0f172a",
+    margin: "10px 0 0",
+    color: "#172b4d",
+    fontSize: "25px",
+    lineHeight: 1.3,
+    fontWeight: "800",
   },
+
   subtitle: {
-    margin: 0,
-    color: "#64748b",
+    margin: "7px 0 0",
+    color: "#718096",
     fontSize: "14px",
-    fontWeight: "600",
+    lineHeight: 1.6,
   },
-  refreshBtn: {
-    background: "#be185d",
-    color: "#fff",
-    border: "none",
-    borderRadius: "12px",
+
+  refreshButton: {
+    background: "#eef2ff",
+    color: "#4338ca",
+    border: "1px solid #c7d2fe",
+    borderRadius: "10px",
     padding: "10px 14px",
+    fontSize: "13px",
     fontWeight: "800",
     cursor: "pointer",
   },
-  list: {
-    display: "grid",
-    gap: "12px",
-  },
-  row: {
-    background: "#fff",
-    border: "1px solid #e2e8f0",
-    borderRadius: "18px",
-    padding: "14px",
-    display: "grid",
-    gridTemplateColumns: "58px 1fr",
-    gap: "14px",
+
+  targetCard: {
+    display: "flex",
     alignItems: "center",
-    boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
-    transition: "transform 0.2s ease, box-shadow 0.2s ease",
+    gap: "14px",
+    flexWrap: "wrap",
+    background: "linear-gradient(110deg, #eff6ff, #f5f3ff)",
+    border: "1px solid #dbeafe",
+    borderRadius: "14px",
+    padding: "18px",
   },
-  rankBox: {
+
+  targetIcon: {
+    width: "44px",
+    height: "44px",
+    flexShrink: 0,
     display: "grid",
     placeItems: "center",
-  },
-  rank: {
-    width: "46px",
-    height: "46px",
-    borderRadius: "999px",
-    background: "#f1f5f9",
-    color: "#334155",
-    display: "grid",
-    placeItems: "center",
-    fontSize: "14px",
+    borderRadius: "12px",
+    background: "#4338ca",
+    color: "#ffffff",
+    fontSize: "23px",
     fontWeight: "900",
   },
-  gold: {
-    background: "#fef3c7",
-    color: "#92400e",
-    fontSize: "22px",
+
+  targetContent: {
+    flex: 1,
+    minWidth: "160px",
   },
-  silver: {
-    background: "#e5e7eb",
-    color: "#374151",
-    fontSize: "22px",
+
+  targetLabel: {
+    fontSize: "10px",
+    letterSpacing: "1px",
+    color: "#6366a5",
+    fontWeight: "900",
+    marginBottom: "5px",
   },
-  bronze: {
-    background: "#ffedd5",
-    color: "#9a3412",
-    fontSize: "22px",
+
+  targetValue: {
+    color: "#27356d",
+    fontSize: "20px",
+    fontWeight: "900",
+    lineHeight: 1.5,
   },
-  main: {
+
+  targetBadge: {
+    background: "#ffffff",
+    border: "1px solid #c7d2fe",
+    color: "#4338ca",
+    borderRadius: "999px",
+    padding: "7px 11px",
+    fontSize: "11px",
+    fontWeight: "800",
+  },
+
+  tableCard: {
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: "14px",
+    overflow: "hidden",
+    minWidth: 0,
+    boxShadow: "0 6px 20px rgba(30, 41, 59, 0.04)",
+  },
+
+  tableHeader: {
     display: "grid",
+    gridTemplateColumns: "minmax(180px, 1.5fr) 70px 130px minmax(140px, 1fr)",
     gap: "12px",
-  },
-  nameRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "14px",
     alignItems: "center",
-    flexWrap: "wrap",
+    padding: "14px 18px",
+    background: "#f8faff",
+    borderBottom: "1px solid #e8edf5",
+    color: "#64748b",
+    fontSize: "10px",
+    fontWeight: "900",
+    letterSpacing: "0.6px",
   },
-  name: {
-    color: "#0f172a",
+
+  tableRow: {
+    display: "grid",
+    gridTemplateColumns: "minmax(180px, 1.5fr) 70px 130px minmax(140px, 1fr)",
+    gap: "12px",
+    alignItems: "center",
+    padding: "17px 18px",
+    borderBottom: "1px solid #edf1f7",
+    minWidth: 0,
+  },
+
+  staffCell: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    minWidth: 0,
+  },
+
+  rank: {
+    width: "38px",
+    height: "38px",
+    flexShrink: 0,
+    display: "grid",
+    placeItems: "center",
+    borderRadius: "11px",
     fontSize: "16px",
     fontWeight: "900",
   },
-  role: {
-    color: "#64748b",
+
+  goldRank: {
+    background: "#fef3c7",
+    border: "1px solid #fcd34d",
+  },
+
+  silverRank: {
+    background: "#f1f5f9",
+    border: "1px solid #cbd5e1",
+  },
+
+  bronzeRank: {
+    background: "#ffedd5",
+    border: "1px solid #fdba74",
+  },
+
+  normalRank: {
+    background: "#eef2ff",
+    color: "#4f46e5",
     fontSize: "12px",
-    fontWeight: "700",
-    textTransform: "capitalize",
   },
-  scoreGroup: {
+
+  staffDetails: {
+    minWidth: 0,
+  },
+
+  nameLine: {
     display: "flex",
-    gap: "10px",
+    alignItems: "center",
     flexWrap: "wrap",
+    gap: "7px",
   },
-  scoreBox: {
-    minWidth: "72px",
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: "12px",
-    padding: "8px 10px",
-    display: "grid",
+
+  staffName: {
+    color: "#1e293b",
+    fontSize: "13px",
+    fontWeight: "800",
+    overflowWrap: "anywhere",
+  },
+
+  topBadge: {
+    background: "#fef3c7",
+    color: "#92400e",
+    borderRadius: "5px",
+    padding: "3px 5px",
+    fontSize: "9px",
+    fontWeight: "900",
+  },
+
+  staffRole: {
+    marginTop: "5px",
+    color: "#94a3b8",
+    fontSize: "11px",
+  },
+
+  todayCell: {
     textAlign: "center",
-    gap: "2px",
   },
-  progressGrid: {
+
+  todayBadge: {
+    display: "inline-block",
+    minWidth: "28px",
+    padding: "6px 8px",
+    borderRadius: "8px",
+    background: "#e0f2fe",
+    color: "#0369a1",
+    fontSize: "13px",
+    fontWeight: "900",
+  },
+
+  monthCell: {
+    color: "#1e293b",
+    fontSize: "17px",
+    fontWeight: "900",
+    whiteSpace: "nowrap",
+  },
+
+  monthTotal: {
+    color: "#94a3b8",
+    fontSize: "11px",
+    fontWeight: "600",
+  },
+
+  statusLine: {
+    marginTop: "7px",
+  },
+
+  statusBadge: {
+    display: "inline-block",
+    borderRadius: "999px",
+    padding: "5px 8px",
+    fontSize: "10px",
+    fontWeight: "800",
+    whiteSpace: "nowrap",
+  },
+
+  achievedBadge: {
+    background: "#dcfce7",
+    color: "#166534",
+  },
+
+  nearTargetBadge: {
+    background: "#fef3c7",
+    color: "#92400e",
+  },
+
+  inProgressBadge: {
+    background: "#dbeafe",
+    color: "#1d4ed8",
+  },
+
+  startBadge: {
+    background: "#f3e8ff",
+    color: "#7e22ce",
+  },
+
+  progressCell: {
     display: "grid",
     gap: "8px",
+    minWidth: 0,
   },
-  progressLabel: {
-    fontSize: "11px",
-    fontWeight: "800",
-    color: "#64748b",
-    marginBottom: "5px",
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
+
+  progressTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "6px",
+    flexWrap: "wrap",
   },
+
+  percent: {
+    color: "#4f46e5",
+    fontSize: "14px",
+    fontWeight: "900",
+  },
+
+  achievedText: {
+    color: "#15803d",
+  },
+
+  remaining: {
+    color: "#94a3b8",
+    fontSize: "10px",
+    fontWeight: "700",
+  },
+
   track: {
-    height: "10px",
-    background: "#e2e8f0",
+    width: "100%",
+    height: "8px",
+    background: "#edf0f7",
     borderRadius: "999px",
     overflow: "hidden",
   },
+
   fill: {
     height: "100%",
-    background: "#be185d",
+    background: "linear-gradient(90deg, #6366f1, #8b5cf6)",
     borderRadius: "999px",
-    transition: "width 0.35s ease",
+    transition: "width 0.3s ease",
   },
-  targetFill: {
-    height: "100%",
-    background: "#2563eb",
-    borderRadius: "999px",
-    transition: "width 0.35s ease",
+
+  achievedFill: {
+    background: "linear-gradient(90deg, #16a34a, #4ade80)",
   },
-  empty: {
+
+  footer: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "14px 18px",
+    background: "#fafbff",
     color: "#64748b",
-    background: "#f8fafc",
-    border: "1px dashed #cbd5e1",
-    borderRadius: "14px",
-    padding: "16px",
-    fontWeight: "700",
+    fontSize: "11px",
+    fontWeight: "600",
   },
+
+  footerDot: {
+    width: "7px",
+    height: "7px",
+    borderRadius: "50%",
+    background: "#8b5cf6",
+  },
+
+  empty: {
+    padding: "28px 18px",
+    textAlign: "center",
+    border: "1px dashed #cbd5e1",
+    borderRadius: "12px",
+    background: "#ffffff",
+    color: "#64748b",
+    fontSize: "13px",
+  },
+
   error: {
-    background: "#fef2f2",
-    color: "#b91c1c",
-    border: "1px solid #fecaca",
-    borderRadius: "14px",
+    background: "#fff1f2",
+    color: "#be123c",
+    border: "1px solid #fecdd3",
+    borderRadius: "12px",
     padding: "14px",
-    fontWeight: "800",
+    fontWeight: "700",
   },
 };

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import api from "../../api/api";
 
@@ -22,12 +23,19 @@ export default function WaitingListModal({
     }
   }, [isOpen, bookingForm]);
 
+  const handleClose = () => {
+    if (loading) return;
+    onClose?.();
+  };
+
   if (!isOpen) return null;
 
   const patientId =
     patient?.id || patient?.patient_db_id || bookingForm?.patient_id;
 
-  const safeTherapistId = therapistId || bookingForm?.therapist_id || "";
+  const safeTherapistId =
+    therapistId || bookingForm?.therapist_id || "";
+
   const safeDate = date || bookingForm?.appointment_date || "";
 
   const handleSubmit = async () => {
@@ -36,32 +44,33 @@ export default function WaitingListModal({
       return;
     }
 
+    if (loading) return;
+
     setLoading(true);
 
     try {
+      const payload = {
+        patient_id: patientId,
+        preferred_therapist_id: safeTherapistId || null,
+        preferred_date: safeDate || null,
+        preferred_time_period: timePeriod,
+        notes,
+      };
+
       if (onSubmit) {
-        await onSubmit({
-          patient_id: patientId,
-          preferred_therapist_id: safeTherapistId || null,
-          preferred_date: safeDate || null,
-          preferred_time_period: timePeriod,
-          notes,
-        });
+        await onSubmit(payload);
       } else {
-        await api.post("callcenter/waiting-list/", {
-          patient_id: patientId,
-          preferred_therapist_id: safeTherapistId || null,
-          preferred_date: safeDate || null,
-          preferred_time_period: timePeriod,
-          notes,
-        });
+        await api.post("callcenter/waiting-list/", payload);
       }
 
       alert("Added to waiting list");
       onClose?.();
     } catch (err) {
       console.error("Failed to add to waiting list", err);
-      alert(err?.response?.data?.error || "Failed to add to waiting list");
+      alert(
+        err?.response?.data?.error ||
+          "Failed to add to waiting list"
+      );
     } finally {
       setLoading(false);
     }
@@ -69,14 +78,30 @@ export default function WaitingListModal({
 
   return (
     <div style={styles.overlay}>
-      <div style={styles.modal}>
+      <div
+        style={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="waiting-list-modal-title"
+      >
         <div style={styles.header}>
           <div>
             <div style={styles.eyebrow}>Waiting List</div>
-            <h3 style={styles.title}>Add Patient to Waiting List</h3>
+            <h3
+              id="waiting-list-modal-title"
+              style={styles.title}
+            >
+              Add Patient to Waiting List
+            </h3>
           </div>
 
-          <button type="button" onClick={onClose} style={styles.closeBtn}>
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={loading}
+            aria-label="Close waiting list modal"
+            style={styles.closeBtn}
+          >
             ×
           </button>
         </div>
@@ -88,8 +113,11 @@ export default function WaitingListModal({
         <div style={styles.infoBox}>
           <div>
             <strong>Patient:</strong>{" "}
-            {patient?.name || patient?.patient_name || "Selected patient"}
+            {patient?.name ||
+              patient?.patient_name ||
+              "Selected patient"}
           </div>
+
           {safeDate ? (
             <div>
               <strong>Date:</strong> {safeDate}
@@ -97,10 +125,15 @@ export default function WaitingListModal({
           ) : null}
         </div>
 
-        <label style={styles.label}>Preferred Time</label>
+        <label style={styles.label} htmlFor="waiting-list-time">
+          Preferred Time
+        </label>
+
         <select
+          id="waiting-list-time"
           value={timePeriod}
           onChange={(e) => setTimePeriod(e.target.value)}
+          disabled={loading}
           style={styles.input}
         >
           <option value="">Any Time</option>
@@ -109,11 +142,16 @@ export default function WaitingListModal({
           <option value="evening">Evening</option>
         </select>
 
-        <label style={styles.label}>Notes</label>
+        <label style={styles.label} htmlFor="waiting-list-notes">
+          Notes
+        </label>
+
         <textarea
+          id="waiting-list-notes"
           placeholder="Notes"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          disabled={loading}
           style={styles.textarea}
         />
 
@@ -129,7 +167,7 @@ export default function WaitingListModal({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={loading}
             style={styles.cancelBtn}
           >

@@ -22,8 +22,8 @@ import MyStatsSection from "../components/booking/MyStatsSection";
 import useMyStats from "../components/booking/useMyStats";
 import useBookingDashboard from "../components/booking/useBookingDashboard";
 
-import WaitingListSection from "../components/callcenter/WaitingListSection";
-import useWaitingList from "../components/callcenter/useWaitingList";
+import WaitingListSection from "../components/waitingList/WaitingListSection";
+import useWaitingList from "../components/waitingList/useWaitingList";
 
 function getTodayString() {
   return new Date().toISOString().split("T")[0];
