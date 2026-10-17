@@ -1,4 +1,3 @@
-
 const adminMenuConfig = [
   {
     key: "user_management",
@@ -38,17 +37,17 @@ const adminMenuConfig = [
     key: "rehab_management",
     label: "Rehab Management",
     icon: "activity",
+    defaultOpen: true,
     children: [
       {
         key: "statistics",
         label: "Rehab Statistics",
       },
       {
-        key: "evaluations",
-        label: "Evaluations",
+        key: "evaluation_tracker",
+        label: "Evaluation Tracker",
       },
     ],
   },
 ];
-
 export default adminMenuConfig;

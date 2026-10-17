@@ -7,6 +7,7 @@ import AdminCreateSection from "../components/admin/AdminCreateSection";
 import AdminManageSection from "../components/admin/AdminManageSection";
 import AdminStatisticsSection from "../components/admin/AdminStatisticsSection";
 import AdminRegistrationTrackerSection from "../components/admin/AdminRegistrationTrackerSection";
+import EvaluationTrackerSection from "../components/assignments/EvaluationTrackerSection";
 export default function AdminDashboard({
   user,
   onLogout,
@@ -23,9 +24,13 @@ export default function AdminDashboard({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [activeSection, setActiveSection] = useState("manage");
-  const [activeCategory, setActiveCategory] = useState(
-    () => localStorage.getItem("activeCategory") || "admin"
-  );
+  const [activeCategory, setActiveCategory] = useState(() => {
+    try {
+      return localStorage.getItem("activeCategory") || "admin";
+    } catch {
+      return "admin";
+    }
+  });
   const roles = [
     "admin",
     "approvals",
@@ -66,6 +71,40 @@ export default function AdminDashboard({
     callcenter: "/callcenter",
     callcenter_supervisor: "/callcenter-supervisor",
   };
+  const sidebarItems = [
+    {
+      key: "create",
+      label: "Create New User",
+    },
+    {
+      key: "manage",
+      label: "Manage Users",
+    },
+    {
+      key: "statistics",
+      label: "Rehab Statistics",
+    },
+    {
+      key: "registration_tracker",
+      label: "Registration History",
+    },
+    {
+      key: "evaluation_tracker",
+      label: "Evaluation Tracker",
+    },
+    {
+      key: "add_patient",
+      label: "Add New Patient",
+    },
+    {
+      key: "register_patient",
+      label: "Register New Patient",
+    },
+    {
+      key: "evaluations",
+      label: "Evaluations",
+    },
+  ];
   const fetchUsers = async () => {
     try {
       const res = await api.get("users/list-users/");
@@ -124,7 +163,11 @@ export default function AdminDashboard({
   ];
   const handleCategoryChange = (category) => {
     setActiveCategory(category);
-    localStorage.setItem("activeCategory", category);
+    try {
+      localStorage.setItem("activeCategory", category);
+    } catch (storageError) {
+      console.warn("Could not save active category:", storageError);
+    }
   };
   const handleSectionChange = (section) => {
     setActiveSection(section);
@@ -243,15 +286,7 @@ export default function AdminDashboard({
       subtitle={`Welcome, ${user?.username || ""}`}
       accent="#1e3a8a"
       sidebarTitle="Admin Panel"
-      sidebarItems={[
-        { key: "create", label: "Create New User" },
-        { key: "manage", label: "Manage Users" },
-        { key: "statistics", label: "Rehab Statistics" },
-        {
-          key: "registration_tracker",
-          label: "Registration History",
-        },
-      ]}
+      sidebarItems={sidebarItems}
       activeSection={activeSection}
       setActiveSection={handleSectionChange}
       onLogout={onLogout}
@@ -306,6 +341,9 @@ export default function AdminDashboard({
         )}
         {activeSection === "registration_tracker" && (
           <AdminRegistrationTrackerSection />
+        )}
+        {activeSection === "evaluation_tracker" && (
+          <EvaluationTrackerSection user={user} />
         )}
         {activeSection === "add_patient" &&
           renderPlaceholder(
