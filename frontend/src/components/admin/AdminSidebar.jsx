@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import SidebarCategory from "./SidebarCategory";
 import adminMenuConfig from "./adminMenuConfig";
 import "./AdminSidebar.css";
@@ -6,53 +6,67 @@ export default function AdminSidebar({
   activeSection,
   onSelect,
   sidebarTitle = "Hospital Workflow",
+  sidebarItems = [],
 }) {
-  // Add Evaluation Tracker without modifying the original menu config.
-  const menuConfig = React.useMemo(() => {
-    const config = Array.isArray(adminMenuConfig)
-      ? adminMenuConfig.map((category) => ({
-          ...category,
-          items: Array.isArray(category.items)
-            ? [...category.items]
-            : category.items,
-        }))
+  const menuConfig = useMemo(() => {
+    // Preserve the original admin menu and its categorization.
+    const originalMenu = Array.isArray(adminMenuConfig)
+      ? adminMenuConfig
       : [];
-    const trackerExists = config.some((category) =>
-      (category.items || []).some(
-        (item) => item.key === "evaluation_tracker"
-      )
-    );
-    if (!trackerExists) {
-      const managementCategory = config.find(
-        (category) =>
-          Array.isArray(category.items) &&
-          category.items.some((item) =>
-            ["create", "manage", "users"].includes(item.key)
-          )
+    const config = originalMenu.map((category) => ({
+      ...category,
+      children: Array.isArray(category.children)
+        ? category.children.map((item) => ({ ...item }))
+        : [],
+    }));
+    // Merge additional dashboard items into their existing categories.
+    const additionalItems = Array.isArray(sidebarItems)
+      ? sidebarItems
+      : [];
+    additionalItems.forEach((category) => {
+      const existingCategory = config.find(
+        (item) => item.key === category.key
       );
-      const targetCategory = managementCategory || config[0];
-      const trackerItem = {
-        key: "evaluation_tracker",
-        label: "Evaluation Tracker",
-      };
-      if (targetCategory) {
-        if (!Array.isArray(targetCategory.items)) {
-          targetCategory.items = [];
-        }
-        targetCategory.items.push(trackerItem);
-      } else {
+      const children = Array.isArray(category.children)
+        ? category.children
+        : Array.isArray(category.items)
+          ? category.items
+          : [];
+      if (existingCategory) {
+        children.forEach((child) => {
+          const alreadyExists = existingCategory.children.some(
+            (item) => item.key === child.key
+          );
+          if (!alreadyExists) {
+            existingCategory.children.push({ ...child });
+          }
+        });
+      } else if (children.length > 0) {
         config.push({
-          key: "evaluation_tools",
-          label: "Evaluation Tools",
-          items: [trackerItem],
+          ...category,
+          children: children.map((item) => ({ ...item })),
+        });
+      }
+    });
+    // Ensure the Evaluation Tracker remains in Rehab Management.
+    const rehabCategory = config.find(
+      (category) => category.key === "rehab_management"
+    );
+    if (rehabCategory) {
+      const trackerExists = rehabCategory.children.some(
+        (item) => item.key === "evaluation_tracker"
+      );
+      if (!trackerExists) {
+        rehabCategory.children.push({
+          key: "evaluation_tracker",
+          label: "Evaluation Tracker",
         });
       }
     }
     return config;
-  }, []);
+  }, [sidebarItems]);
   return (
     <aside className="admin-sidebar">
-      {/* Sidebar Header */}
       <div className="admin-sidebar__header">
         <div className="admin-sidebar__brand">
           <div className="admin-sidebar__logo">
@@ -68,7 +82,6 @@ export default function AdminSidebar({
           MANAGEMENT MENU
         </div>
       </div>
-      {/* Navigation Categories */}
       <nav
         className="admin-sidebar__navigation"
         aria-label="Admin navigation"
@@ -82,7 +95,6 @@ export default function AdminSidebar({
           />
         ))}
       </nav>
-      {/* Sidebar Footer */}
       <div className="admin-sidebar__footer">
         <span className="admin-sidebar__footer-indicator" />
         <span>Hospital Management System</span>

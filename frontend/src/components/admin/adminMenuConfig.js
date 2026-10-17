@@ -20,11 +20,11 @@ const adminMenuConfig = [
     icon: "clipboard-list",
     children: [
       {
-        key: "add_patient",
-        label: "Add New Patient",
+        key: "register_patient",
+        label: "Assign a Patient",
       },
       {
-        key: "register_patient",
+        key: "open_file",
         label: "Register New Patient",
       },
       {

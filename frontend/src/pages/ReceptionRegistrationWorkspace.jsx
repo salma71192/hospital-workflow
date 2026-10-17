@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
@@ -12,27 +13,55 @@ import RegistrationTrackerSection from "../components/assignments/RegistrationTr
 import RegistrationStatsSection from "../components/assignments/RegistrationStatsSection";
 import EvaluationTrackerSection from "../components/assignments/EvaluationTrackerSection";
 import useRegistrationStats from "../components/assignments/useRegistrationStats";
+
 function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
 function getTodayString() {
   return formatLocalDate(new Date());
 }
+
 function getFirstDayOfMonthString() {
   const now = new Date();
-  return formatLocalDate(
-    new Date(now.getFullYear(), now.getMonth(), 1)
-  );
+  return formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
 }
+
 function getLastDayOfMonthString() {
   const now = new Date();
   return formatLocalDate(
     new Date(now.getFullYear(), now.getMonth() + 1, 0)
   );
 }
+
+function getApiError(err, fallback) {
+  const data = err?.response?.data;
+
+  if (typeof data?.error === "string") return data.error;
+  if (typeof data?.detail === "string") return data.detail;
+  if (typeof data === "string") return data;
+
+  if (data && typeof data === "object") {
+    return Object.entries(data)
+      .map(([field, value]) => {
+        const detail = Array.isArray(value)
+          ? value.join(", ")
+          : typeof value === "string"
+          ? value
+          : JSON.stringify(value);
+
+        return `${field}: ${detail}`;
+      })
+      .join(" | ") || fallback;
+  }
+
+  if (err?.message) return `${fallback}: ${err.message}`;
+  return fallback;
+}
+
 export default function ReceptionRegistrationWorkspace({
   user,
   onLogout,
@@ -42,20 +71,24 @@ export default function ReceptionRegistrationWorkspace({
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
   const stats = useRegistrationStats();
+
   const {
     leaderboard,
     loading: leaderboardLoading,
     error: leaderboardError,
     reload: reloadLeaderboard,
   } = useLeaderboard("reception");
+
   const [activeSection, setActiveSection] = useState("register");
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [trackerMode, setTrackerMode] = useState("today");
   const [selectedPatient, setSelectedPatient] = useState(null);
+
   const [patientForm, setPatientForm] = useState({
     name: "",
     patient_id: "",
   });
+
   const [assignmentForm, setAssignmentForm] = useState({
     patient_id: "",
     therapist_id: "",
@@ -64,6 +97,7 @@ export default function ReceptionRegistrationWorkspace({
     referring_physician: "",
     notes: "",
   });
+
   const [trackerFilter, setTrackerFilter] = useState({
     date: getTodayString(),
     from_date: getFirstDayOfMonthString(),
@@ -72,66 +106,77 @@ export default function ReceptionRegistrationWorkspace({
     patient: "",
     therapist_id: "all",
   });
+
   const [therapists, setTherapists] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [creatingPatient, setCreatingPatient] = useState(false);
   const [trackerAssignments, setTrackerAssignments] = useState([]);
   const [trackerAgents, setTrackerAgents] = useState([]);
   const [trackerTarget, setTrackerTarget] = useState(50);
-  useEffect(() => {
-    loadTherapists();
-  }, [actingAs, user]);
-  useEffect(() => {
-    handleApplyTrackerFilters();
-  }, [trackerMode]);
-  const loadTherapists = async () => {
+
+  const loadTherapists = useCallback(async () => {
     try {
       const res = await api.get("reception/therapists/");
-      setTherapists(res.data.therapists || []);
+      setTherapists(res.data?.therapists || []);
     } catch (err) {
       console.error("Failed to load therapists", err);
       setTherapists([]);
     }
-  };
-  const loadAssignments = async ({
+  }, []);
+
+  useEffect(() => {
+    loadTherapists();
+  }, [loadTherapists, actingAs, user]);
+
+  const loadAssignments = useCallback(async ({
     start_date = "",
     end_date = "",
     user_id = "all",
     patient = "",
     therapist_id = "all",
-  }) => {
+  } = {}) => {
     try {
       const params = new URLSearchParams();
+
       if (start_date) params.append("start_date", start_date);
       if (end_date) params.append("end_date", end_date);
+
       if (user_id && user_id !== "all") {
         params.append("user_id", user_id);
       }
+
       if (patient?.trim()) {
         params.append("patient", patient.trim());
       }
+
       if (therapist_id && therapist_id !== "all") {
         params.append("therapist_id", therapist_id);
       }
+
       if (actingAs && (user?.is_superuser || user?.role === "admin")) {
         params.append("viewed_user_id", String(actingAs.id));
         params.append("viewed_user_role", String(actingAs.role || ""));
       }
+
       const res = await api.get(
         `reception/assignments/?${params.toString()}`
       );
-      setTrackerAssignments(res.data.assignments || []);
-      setTrackerAgents(res.data.agents || []);
+
+      setTrackerAssignments(res.data?.assignments || []);
+      setTrackerAgents(res.data?.agents || []);
     } catch (err) {
       console.error("Failed to load assignments", err);
       setTrackerAssignments([]);
       setTrackerAgents([]);
     }
-  };
+  }, [actingAs, user]);
+
   const handleApplyTrackerFilters = useCallback(
     async (filters = trackerFilter) => {
       if (trackerMode === "today") {
         const safeDate = filters.date || getTodayString();
+
         await loadAssignments({
           start_date: safeDate,
           end_date: safeDate,
@@ -139,8 +184,10 @@ export default function ReceptionRegistrationWorkspace({
           patient: filters.patient,
           therapist_id: filters.therapist_id,
         });
+
         return;
       }
+
       await loadAssignments({
         start_date: filters.from_date,
         end_date: filters.to_date,
@@ -149,12 +196,18 @@ export default function ReceptionRegistrationWorkspace({
         therapist_id: filters.therapist_id,
       });
     },
-    [trackerMode, trackerFilter, actingAs, user]
+    [trackerMode, trackerFilter, loadAssignments]
   );
+
+  useEffect(() => {
+    handleApplyTrackerFilters();
+  }, [trackerMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleBackToAdmin = () => {
     onStopImpersonation?.();
     navigate("/admin");
   };
+
   const resetAssignmentForm = () => {
     setAssignmentForm({
       patient_id: "",
@@ -167,27 +220,34 @@ export default function ReceptionRegistrationWorkspace({
     setSelectedPatient(null);
     setEditingAssignmentId(null);
   };
+
   const handleSelectPatient = async (patient) => {
     setMessage("");
     setError("");
     setSelectedPatient(patient);
+
     setAssignmentForm((prev) => ({
       ...prev,
       patient_id: patient.id,
       therapist_id: "",
     }));
+
     setEditingAssignmentId(null);
     setActiveSection("register");
+
     try {
       const res = await api.get(
         `reception/last-therapist/${patient.id}/`
       );
-      const therapist = res.data.therapist;
+
+      const therapist = res.data?.therapist;
+
       if (therapist) {
         setAssignmentForm((prev) => ({
           ...prev,
           therapist_id: String(therapist.id),
         }));
+
         setMessage(
           `Selected ${patient.name} (Previously with ${therapist.name})`
         );
@@ -198,6 +258,7 @@ export default function ReceptionRegistrationWorkspace({
       console.error("Failed to load last therapist", err);
       setMessage(`Selected ${patient.name} for assignment.`);
     }
+
     setTimeout(() => {
       assignmentRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -205,34 +266,74 @@ export default function ReceptionRegistrationWorkspace({
       });
     }, 200);
   };
+
   const handleCreatePatientFile = async (e) => {
     e.preventDefault();
+
+    if (creatingPatient) return;
+
+    const name = String(patientForm.name || "").trim();
+    const patientId = String(patientForm.patient_id || "").trim();
+
+    if (!name || !patientId) {
+      setError("Please enter both the patient name and patient ID.");
+      setMessage("");
+      return;
+    }
+
+    setCreatingPatient(true);
     setMessage("");
     setError("");
+
     try {
       const res = await api.post("patients/", {
-        name: patientForm.name,
-        patient_id: patientForm.patient_id,
+        name,
+        patient_id: patientId,
       });
-      const patient = res.data.patient;
+
+      const data = res.data || {};
+      const patient = data.patient || data;
+
       setPatientForm({
         name: "",
         patient_id: "",
       });
-      if (patient) {
+
+      setMessage(
+        data.message || "Patient file created successfully."
+      );
+
+      reloadLeaderboard?.();
+
+      if (patient?.id) {
         await handleSelectPatient(patient);
-        setMessage("Patient created successfully");
-        reloadLeaderboard?.();
+        setMessage(
+          data.message || `Patient file created successfully for ${patient.name || name}.`
+        );
+      } else {
+        setSelectedPatient(null);
       }
     } catch (err) {
-      console.error(err);
-      setError(err?.response?.data?.error || "Create failed");
+      console.error(
+        "Failed to create patient file:",
+        err?.response?.status,
+        err?.response?.data || err
+      );
+
+      setError(
+        getApiError(err, "Failed to create patient file. Please try again.")
+      );
+      setMessage("");
+    } finally {
+      setCreatingPatient(false);
     }
   };
+
   const handleCreateOrUpdateAssignment = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
+
     try {
       if (editingAssignmentId) {
         const res = await api.put(
@@ -248,34 +349,40 @@ export default function ReceptionRegistrationWorkspace({
             notes: assignmentForm.notes,
           }
         );
+
         setMessage(
-          res.data.message || "Assignment updated successfully"
+          res.data?.message || "Assignment updated successfully."
         );
       } else {
         const res = await api.post(
           "reception/assignments/",
           assignmentForm
         );
-        setMessage(res.data.message || "Assigned successfully");
+
+        setMessage(res.data?.message || "Assigned successfully.");
       }
+
       resetAssignmentForm();
       await handleApplyTrackerFilters();
       reloadLeaderboard?.();
       setActiveSection("tracker");
     } catch (err) {
-      console.error(err);
-      setError(err?.response?.data?.error || "Assignment failed");
+      console.error("Assignment failed", err);
+      setError(getApiError(err, "Assignment failed."));
     }
   };
+
   const handleEditAssignment = (assignment) => {
     setMessage("");
     setError("");
     setEditingAssignmentId(assignment.id);
+
     setSelectedPatient({
       id: assignment.patient_id,
       name: assignment.patient_name,
       patient_id: assignment.patient_file_id,
     });
+
     setAssignmentForm({
       patient_id: assignment.patient_id,
       therapist_id: String(assignment.therapist_id || ""),
@@ -284,8 +391,10 @@ export default function ReceptionRegistrationWorkspace({
       referring_physician: assignment.referring_physician || "",
       notes: assignment.notes || "",
     });
+
     setActiveSection("register");
     setMessage(`Editing assignment for ${assignment.patient_name}`);
+
     setTimeout(() => {
       assignmentRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -293,29 +402,32 @@ export default function ReceptionRegistrationWorkspace({
       });
     }, 200);
   };
+
   const handleCancelAssignment = async (assignment) => {
     const confirmed = window.confirm(
       `Cancel today's assignment for ${assignment.patient_name}?`
     );
+
     if (!confirmed) return;
+
     try {
       const res = await api.delete(
         `reception/assignments/${assignment.id}/`
       );
+
       setMessage(
-        res.data.message || "Assignment cancelled successfully"
+        res.data?.message || "Assignment cancelled successfully."
       );
       setError("");
       await handleApplyTrackerFilters();
       reloadLeaderboard?.();
     } catch (err) {
-      console.error(err);
-      setError(
-        err?.response?.data?.error || "Failed to cancel assignment"
-      );
+      console.error("Failed to cancel assignment", err);
+      setError(getApiError(err, "Failed to cancel assignment."));
       setMessage("");
     }
   };
+
   const sidebarItems = [
     { key: "home", label: "Home" },
     { key: "register", label: "Assign a Patient" },
@@ -328,6 +440,7 @@ export default function ReceptionRegistrationWorkspace({
     { key: "stats", label: "My Stats" },
     { key: "leaderboard", label: "Leaderboard" },
   ];
+
   return (
     <DashboardLayout
       title="Registration Workspace"
@@ -339,10 +452,14 @@ export default function ReceptionRegistrationWorkspace({
       sidebarItems={sidebarItems}
       activeSection={activeSection}
       setActiveSection={(key) => {
+        setMessage("");
+        setError("");
+
         if (key === "home") {
           navigate("/reception");
           return;
         }
+
         setActiveSection(key);
       }}
       onLogout={onLogout}
@@ -350,15 +467,18 @@ export default function ReceptionRegistrationWorkspace({
       actingAsName={actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message ? (
+      {message && (
         <DashboardNotice type="success">{message}</DashboardNotice>
-      ) : null}
-      {error ? (
+      )}
+
+      {error && (
         <DashboardNotice type="error">{error}</DashboardNotice>
-      ) : null}
+      )}
+
       {activeSection === "stats" && (
         <RegistrationStatsSection stats={stats} />
       )}
+
       {activeSection === "leaderboard" && (
         <LeaderboardSection
           title="Reception Leaderboard"
@@ -368,6 +488,7 @@ export default function ReceptionRegistrationWorkspace({
           onReload={reloadLeaderboard}
         />
       )}
+
       {activeSection === "register" && (
         <div style={styles.stack}>
           <UnifiedPatientSearch
@@ -377,9 +498,15 @@ export default function ReceptionRegistrationWorkspace({
             onSelectPatient={handleSelectPatient}
             emptyText="Start typing to search patients."
             noResultsText="No patients found. Register a new patient if needed."
-            onRegisterNew={() => setActiveSection("open_file")}
+            onRegisterNew={() => {
+              setMessage("");
+              setError("");
+              setPatientForm({ name: "", patient_id: "" });
+              setActiveSection("open_file");
+            }}
             registerButtonLabel="Register New Patient"
           />
+
           {selectedPatient ? (
             <PatientAssignmentForm
               ref={assignmentRef}
@@ -398,13 +525,25 @@ export default function ReceptionRegistrationWorkspace({
           )}
         </div>
       )}
+
       {activeSection === "open_file" && (
-        <PatientRegisterForm
-          patientForm={patientForm}
-          setPatientForm={setPatientForm}
-          onSubmit={handleCreatePatientFile}
-        />
+        <div style={styles.stack}>
+          <h2 style={styles.heading}>Register New Patient</h2>
+
+          <PatientRegisterForm
+            patientForm={patientForm}
+            setPatientForm={setPatientForm}
+            onSubmit={handleCreatePatientFile}
+          />
+
+          {creatingPatient && (
+            <DashboardNotice type="success">
+              Creating patient file...
+            </DashboardNotice>
+          )}
+        </div>
       )}
+
       {activeSection === "tracker" && (
         <RegistrationTrackerSection
           mode={trackerMode}
@@ -421,6 +560,7 @@ export default function ReceptionRegistrationWorkspace({
           onCancelAssignment={handleCancelAssignment}
         />
       )}
+
       {activeSection === "evaluation_tracker" && (
         <EvaluationTrackerSection
           user={user}
@@ -430,15 +570,22 @@ export default function ReceptionRegistrationWorkspace({
     </DashboardLayout>
   );
 }
+
 const styles = {
   stack: {
     display: "grid",
     gap: "16px",
   },
+  heading: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: "22px",
+    fontWeight: 700,
+  },
   helperCard: {
     color: "#64748b",
     fontSize: "14px",
-    fontWeight: "600",
+    fontWeight: 600,
     background: "#f8fafc",
     border: "1px dashed #cbd5e1",
     borderRadius: "12px",
