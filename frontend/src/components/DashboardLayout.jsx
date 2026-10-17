@@ -1,4 +1,6 @@
+
 import React, { useState } from "react";
+import AdminSidebar from "./admin/AdminSidebar";
 
 export default function DashboardLayout({
   title,
@@ -13,6 +15,7 @@ export default function DashboardLayout({
   actingAsName,
   onBackToAdmin,
   children,
+  useAdminSidebar = false,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -22,7 +25,10 @@ export default function DashboardLayout({
         {actingAs && onBackToAdmin && (
           <div style={styles.banner}>
             <span>Viewing as: {actingAsName}</span>
-            <button style={styles.bannerButton} onClick={onBackToAdmin}>
+            <button
+              style={styles.bannerButton}
+              onClick={onBackToAdmin}
+            >
               Back to Admin
             </button>
           </div>
@@ -30,7 +36,9 @@ export default function DashboardLayout({
 
         <div style={styles.topBar}>
           <div>
-            <h1 style={{ ...styles.title, color: accent }}>{title}</h1>
+            <h1 style={{ ...styles.title, color: accent }}>
+              {title}
+            </h1>
             <p style={styles.subtitle}>{subtitle}</p>
           </div>
 
@@ -38,11 +46,15 @@ export default function DashboardLayout({
             <button
               style={styles.sidebarToggle}
               onClick={() => setSidebarOpen((prev) => !prev)}
+              aria-expanded={sidebarOpen}
             >
               {sidebarOpen ? "Hide Menu" : "Show Menu"}
             </button>
 
-            <button style={styles.logoutButton} onClick={onLogout}>
+            <button
+              style={styles.logoutButton}
+              onClick={onLogout}
+            >
               Logout
             </button>
           </div>
@@ -51,28 +63,41 @@ export default function DashboardLayout({
         <div
           style={{
             ...styles.layout,
-            gridTemplateColumns: sidebarOpen ? "280px 1fr" : "1fr",
+            gridTemplateColumns: sidebarOpen
+              ? "280px minmax(0, 1fr)"
+              : "minmax(0, 1fr)",
           }}
         >
           {sidebarOpen && (
-            <aside style={styles.sidebar}>
-              <div style={styles.sidebarTitle}>{sidebarTitle}</div>
+            useAdminSidebar ? (
+              <AdminSidebar
+                sidebarTitle={sidebarTitle}
+                activeSection={activeSection}
+                onSelect={setActiveSection}
+              />
+            ) : (
+              <aside style={styles.sidebar}>
+                <div style={styles.sidebarTitle}>
+                  {sidebarTitle}
+                </div>
 
-              {sidebarItems.map((item) => (
-                <button
-                  key={item.key}
-                  style={{
-                    ...styles.sidebarButton,
-                    ...(activeSection === item.key
-                      ? styles.sidebarButtonActive
-                      : {}),
-                  }}
-                  onClick={() => setActiveSection(item.key)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </aside>
+                {sidebarItems.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    style={{
+                      ...styles.sidebarButton,
+                      ...(activeSection === item.key
+                        ? styles.sidebarButtonActive
+                        : {}),
+                    }}
+                    onClick={() => setActiveSection(item.key)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </aside>
+            )
           )}
 
           <main style={styles.content}>{children}</main>
@@ -127,7 +152,7 @@ const styles = {
     fontWeight: "800",
   },
   subtitle: {
-    margin: "8px 0 0 0",
+    margin: "8px 0 0",
     color: "#64748b",
     fontSize: "16px",
   },
@@ -186,7 +211,7 @@ const styles = {
     border: "none",
     background: "#f8fbff",
     color: "#0f172a",
-    padding: "14px 14px",
+    padding: "14px",
     borderRadius: "14px",
     marginBottom: "10px",
     fontSize: "15px",
