@@ -3,11 +3,11 @@ import json
 import re
 from datetime import date
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.http import JsonResponse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 
 from .models import Patient
 from callcenter.models import Appointment
@@ -85,7 +85,8 @@ def _patient_to_dict(patient):
             patient.created_at.isoformat() if patient.created_at else ""
         ),
         "registered_at": (
-            patient.registered_at.isoformat() if patient.registered_at else ""
+            patient.registered_at.isoformat()
+            if patient.registered_at else ""
         ),
         "registered_by": (
             patient.registered_by.username if patient.registered_by else ""
@@ -160,7 +161,10 @@ def _parse_json(request):
             raise ValueError("Expected a JSON object")
         return data, None
     except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
-        return None, JsonResponse({"error": "Invalid JSON object"}, status=400)
+        return None, JsonResponse(
+            {"error": "Invalid JSON object"},
+            status=400,
+        )
 
 
 @csrf_exempt
@@ -174,14 +178,14 @@ def patients_api(request):
             request.GET.get("archived", "").strip().lower() == "true"
         )
         show_all = (
-            request.GET.get("include_archived", "").strip().lower() == "true"
+            request.GET.get("include_archived", "").strip().lower()
+            == "true"
         )
 
         patients_qs = Patient.objects.select_related(
             "registered_by"
         ).all()
 
-        # Normal lists exclude archived records. Admin can request them.
         if show_archived or show_all:
             if not _is_admin(request.user):
                 return JsonResponse(
@@ -197,8 +201,9 @@ def patients_api(request):
             normalized_search = normalize_patient_id(search).casefold()
             matching_ids = []
 
-            # Supports search for IDs even when old records contain spaces.
-            for existing in Patient.objects.only("id", "patient_id").iterator():
+            for existing in Patient.objects.only(
+                "id", "patient_id"
+            ).iterator():
                 if normalized_search in normalize_patient_id(
                     existing.patient_id
                 ).casefold():
@@ -252,6 +257,8 @@ def patients_api(request):
                 )
         except IntegrityError:
             return _duplicate_error()
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
 
         return JsonResponse({
             "success": True,
@@ -276,8 +283,10 @@ def patient_detail_api(request, patient_id):
 
     if request.method == "GET":
         if patient.is_archived and not _is_admin(request.user):
-            return JsonResponse({"error": "Patient file not found"}, status=404)
-
+            return JsonResponse(
+                {"error": "Patient file not found"},
+                status=404,
+            )
         return JsonResponse({"patient": _patient_to_dict(patient)})
 
     if request.method == "PUT":
@@ -345,6 +354,8 @@ def patient_detail_api(request, patient_id):
                 patient.save()
         except IntegrityError:
             return _duplicate_error()
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
 
         return JsonResponse({
             "success": True,
@@ -352,7 +363,6 @@ def patient_detail_api(request, patient_id):
             "patient": _patient_to_dict(patient),
         })
 
-    # Archive, restore, and permanent deletion are admin-only.
     if request.method == "POST":
         if not _is_admin(request.user):
             return JsonResponse(
@@ -367,16 +377,10 @@ def patient_detail_api(request, patient_id):
         action = (data.get("action") or "").strip().lower()
 
         if action == "archive":
-            if patient.is_archived:
-                return JsonResponse({
-                    "success": True,
-                    "message": "Patient file is already archived",
-                    "patient": _patient_to_dict(patient),
-                })
-
-            patient.is_archived = True
-            patient.archived_at = timezone.now()
-            patient.save(update_fields=["is_archived", "archived_at"])
+            if not patient.is_archived:
+                patient.is_archived = True
+                patient.archived_at = timezone.now()
+                patient.save(update_fields=["is_archived", "archived_at"])
 
             return JsonResponse({
                 "success": True,
@@ -385,16 +389,10 @@ def patient_detail_api(request, patient_id):
             })
 
         if action == "restore":
-            if not patient.is_archived:
-                return JsonResponse({
-                    "success": True,
-                    "message": "Patient file is already active",
-                    "patient": _patient_to_dict(patient),
-                })
-
-            patient.is_archived = False
-            patient.archived_at = None
-            patient.save(update_fields=["is_archived", "archived_at"])
+            if patient.is_archived:
+                patient.is_archived = False
+                patient.archived_at = None
+                patient.save(update_fields=["is_archived", "archived_at"])
 
             return JsonResponse({
                 "success": True,
@@ -425,36 +423,36 @@ def patient_detail_api(request, patient_id):
                 )
             }, status=400)
 
-        # Preserve appointment history. Do not delete the patient while
-        # appointments still reference it.
-        has_appointments = Appointment.objects.filter(
-            patient_id=patient.id
-        ).exists()
-
-        if has_appointments:
-            return JsonResponse({
-                "error": (
-                    "This patient has linked appointments. Archive the file "
-                    "instead, or first implement a safe history-retention "
-                    "strategy for related records."
-                ),
-                "appointments_preserved": True,
-            }, status=409)
-
         try:
             with transaction.atomic():
+                # Delete appointments associated with this patient first.
+                appointments = Appointment.objects.filter(
+                    patient_id=patient.pk
+                )
+                appointments_deleted = appointments.count()
+                appointments.delete()
+
+                # Django will handle related objects according to each
+                # relationship's on_delete setting.
                 patient.delete()
+
         except IntegrityError:
             return JsonResponse({
+                "success": False,
                 "error": (
-                    "This patient is linked to other records and cannot be "
-                    "permanently deleted safely. Archive the file instead."
-                )
+                    "Deletion was blocked by another related record. "
+                    "The transaction was rolled back. Inspect the related "
+                    "models and their on_delete settings."
+                ),
             }, status=409)
 
         return JsonResponse({
             "success": True,
-            "message": "Patient file permanently deleted",
+            "message": (
+                "Patient and deletable related records were permanently "
+                "deleted."
+            ),
+            "appointments_deleted": appointments_deleted,
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -531,7 +529,8 @@ def patient_tracker_api(request):
         approved_sessions = int(patient.approved_sessions or 0)
         sessions_taken = int(patient.sessions_taken or 0)
         remaining_sessions = max(
-            approved_sessions - sessions_taken, 0
+            approved_sessions - sessions_taken,
+            0,
         )
 
         patient_rows.append({

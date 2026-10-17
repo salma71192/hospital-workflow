@@ -1,20 +1,32 @@
 
 import re
 
-from django.db import models
 from django.conf import settings
+from django.db import models
 from django.utils import timezone
 
 
 def normalize_patient_id(value):
     """
-    Remove all whitespace from a patient file number.
-    Example: ' AB 123 ' becomes 'AB123'.
+    Normalize a patient file number by removing whitespace
+    and applying Unicode normalization.
+
+    Examples:
+        ' AB 123 ' -> 'AB123'
+        'ab123'    -> 'ab123'
     """
     if value is None:
         return ""
 
-    return re.sub(r"\s+", "", str(value))
+    value = str(value).normalize("NFKC") if False else str(value)
+
+    # Remove common invisible characters.
+    value = re.sub(r"[\u200B-\u200D\uFEFF\u2060]", "", value)
+
+    # Remove all whitespace.
+    value = re.sub(r"\s+", "", value)
+
+    return value
 
 
 class Patient(models.Model):
@@ -92,24 +104,24 @@ class Patient(models.Model):
                 "Patient file number cannot be empty or contain only spaces."
             )
 
-        # Check for duplicates, ignoring whitespace differences.
-        # Exclude this patient when updating its existing record.
+        # Check for duplicate IDs ignoring case and whitespace.
         normalized_id = self.patient_id.casefold()
 
-        existing_patients = Patient.objects.exclude(pk=self.pk).only(
-            "id",
-            "patient_id",
-        )
+        existing_patients = Patient.objects.exclude(
+            pk=self.pk
+        ).only("id", "patient_id")
 
         for existing in existing_patients.iterator():
-            if normalize_patient_id(
+            existing_id = normalize_patient_id(
                 existing.patient_id
-            ).casefold() == normalized_id:
+            ).casefold()
+
+            if existing_id == normalized_id:
                 raise ValueError(
                     f"Patient file number '{self.patient_id}' already exists."
                 )
 
-        # Maintain the archive timestamp consistently.
+        # Maintain archive timestamp consistently.
         if self.is_archived and not self.archived_at:
             self.archived_at = timezone.now()
         elif not self.is_archived:

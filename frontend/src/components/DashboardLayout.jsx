@@ -599,6 +599,8 @@ function getMenuIcon(key, index) {
     settings: "⚙",
     approvals: "✓",
     patients: "♡",
+    patient_files: "📁",
+    patientFiles: "📁",
     reports: "▧",
   };
 

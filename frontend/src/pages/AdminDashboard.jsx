@@ -1,26 +1,21 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
-
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
-
 import AdminCreateSection from "../components/admin/AdminCreateSection";
 import AdminManageSection from "../components/admin/AdminManageSection";
 import AdminStatisticsSection from "../components/admin/AdminStatisticsSection";
 import AdminRegistrationTrackerSection from "../components/admin/AdminRegistrationTrackerSection";
-
+import AdminPatientFilesSection from "../components/admin/AdminPatientFilesSection";
 export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const navigate = useNavigate();
-
   const [formData, setFormData] = useState({
     username: "",
     password: "",
     role: "admin",
     is_superuser: false,
   });
-
   const [users, setUsers] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -28,7 +23,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const [activeCategory, setActiveCategory] = useState(
     localStorage.getItem("activeCategory") || "admin"
   );
-
   const roles = [
     "admin",
     "approvals",
@@ -42,7 +36,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     "callcenter",
     "callcenter_supervisor",
   ];
-
   const roleLabels = {
     admin: "Admin",
     approvals: "Approvals",
@@ -57,7 +50,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     callcenter_supervisor: "Call Center Supervisor",
     no_role: "No Role",
   };
-
   const roleRoutes = {
     admin: "/admin",
     approvals: "/approvals",
@@ -71,7 +63,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     callcenter: "/callcenter",
     callcenter_supervisor: "/callcenter-supervisor",
   };
-
   const fetchUsers = async () => {
     try {
       const res = await api.get("users/list-users/");
@@ -87,11 +78,9 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       );
     }
   };
-
   useEffect(() => {
     fetchUsers();
   }, []);
-
   const groupedUsers = useMemo(() => {
     const groups = {
       admin: [],
@@ -107,7 +96,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       visitor_ceo: [],
       no_role: [],
     };
-
     users.forEach((item) => {
       if (groups[item.role]) {
         groups[item.role].push(item);
@@ -115,10 +103,8 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         groups.no_role.push(item);
       }
     });
-
     return groups;
   }, [users]);
-
   const categoryOrder = [
     "admin",
     "approvals",
@@ -133,31 +119,24 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     "visitor_ceo",
     "no_role",
   ];
-
   const handleCategoryChange = (category) => {
     setActiveCategory(category);
     localStorage.setItem("activeCategory", category);
   };
-
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
-
     try {
       const res = await api.post("users/create-user/", formData);
-
       setMessage(res.data.message || "User created successfully");
-
       const createdRole = formData.role;
-
       setFormData({
         username: "",
         password: "",
         role: "admin",
         is_superuser: false,
       });
-
       await fetchUsers();
       setActiveSection("manage");
       setActiveCategory(createdRole);
@@ -172,18 +151,15 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setMessage("");
     }
   };
-
   const handleActAsUser = (selectedUser) => {
     onActAsUser(selectedUser);
-
     navigate(
       selectedUser.is_superuser
         ? "/admin"
         : roleRoutes[selectedUser.role] || "/admin"
     );
   };
-
-  // Update role and superuser status.
+  // Update a user's role and superuser status.
   const handleRoleUpdate = async (
     userId,
     newRole,
@@ -191,13 +167,11 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   ) => {
     setMessage("");
     setError("");
-
     try {
       const res = await api.put(`users/update-user/${userId}/`, {
         role: newRole,
         is_superuser: newIsSuperuser,
       });
-
       setMessage(res.data.message || "User updated successfully");
       await fetchUsers();
     } catch (err) {
@@ -211,18 +185,15 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       throw err;
     }
   };
-
-  // Save username, role, and superuser changes.
+  // Save username, role, superuser status, or other editable user fields.
   const handleEditUser = async (userId, updatedData) => {
     setMessage("");
     setError("");
-
     try {
       const res = await api.put(
         `users/update-user/${userId}/`,
         updatedData
       );
-
       setMessage(res.data.message || "User updated successfully");
       await fetchUsers();
     } catch (err) {
@@ -231,54 +202,49 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         `Failed to save changes (HTTP ${
           err?.response?.status || "network error"
         }).`;
-
       setError(errorMessage);
       setMessage("");
       throw err;
     }
   };
-
   // Activate or deactivate an account.
   const handleSetUserActive = async (userId, isActive) => {
     setMessage("");
     setError("");
-
     try {
       const res = await api.post(
         `users/set-active/${userId}/`,
         { is_active: isActive }
       );
-
       setMessage(
         res.data.message ||
-          `User account ${isActive ? "activated" : "deactivated"} successfully.`
+          `User account ${
+            isActive ? "activated" : "deactivated"
+          } successfully.`
       );
-
       await fetchUsers();
     } catch (err) {
       const errorMessage =
         err?.response?.data?.error ||
-        `Failed to ${isActive ? "activate" : "deactivate"} account (HTTP ${
+        `Failed to ${
+          isActive ? "activate" : "deactivate"
+        } account (HTTP ${
           err?.response?.status || "network error"
         }).`;
-
       setError(errorMessage);
       setMessage("");
       throw err;
     }
   };
-
   // Change a user's password.
   const handleChangeUserPassword = async (userId, newPassword) => {
     setMessage("");
     setError("");
-
     try {
       const res = await api.post(
         `users/change-password/${userId}/`,
         { new_password: newPassword }
       );
-
       setMessage(
         res.data.message || "User password changed successfully."
       );
@@ -288,33 +254,27 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         `Failed to change password (HTTP ${
           err?.response?.status || "network error"
         }).`;
-
       setError(errorMessage);
       setMessage("");
       throw err;
     }
   };
-
-  // Keep the existing delete/deactivate endpoint available.
+  // Keep the existing user delete/deactivate endpoint.
   const handleDeleteUser = async (userId, username) => {
     const confirmed = window.confirm(
       `Delete user "${username}"?`
     );
-
     if (!confirmed) return;
-
     setMessage("");
     setError("");
-
     try {
       const res = await api.delete(
         `users/delete-user/${userId}/`
       );
-
       setMessage(
-        res.data.message || "User account deactivated successfully."
+        res.data.message ||
+          "User account deactivated successfully."
       );
-
       await fetchUsers();
     } catch (err) {
       setError(
@@ -326,17 +286,29 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setMessage("");
     }
   };
-
   return (
     <DashboardLayout
       title="Admin Dashboard"
-      subtitle={`Welcome, ${user?.username}`}
+      subtitle={`Welcome, ${user?.username || ""}`}
       accent="#1e3a8a"
       sidebarTitle="Admin Panel"
       sidebarItems={[
-        { key: "create", label: "Create New User" },
-        { key: "manage", label: "Manage Users" },
-        { key: "statistics", label: "Statistics Tracker" },
+        {
+          key: "create",
+          label: "Create New User",
+        },
+        {
+          key: "manage",
+          label: "Manage Users",
+        },
+        {
+          key: "patient_files",
+          label: "Patient Files",
+        },
+        {
+          key: "statistics",
+          label: "Statistics Tracker",
+        },
         {
           key: "registration_tracker",
           label: "Registration Tracker",
@@ -346,18 +318,16 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setActiveSection={setActiveSection}
       onLogout={onLogout}
     >
-      {message ? (
+      {message && (
         <DashboardNotice type="success">
           {message}
         </DashboardNotice>
-      ) : null}
-
-      {error ? (
+      )}
+      {error && (
         <DashboardNotice type="error">
           {error}
         </DashboardNotice>
-      ) : null}
-
+      )}
       {activeSection === "create" && (
         <AdminCreateSection
           formData={formData}
@@ -367,7 +337,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
           onSubmit={handleCreateUser}
         />
       )}
-
       {activeSection === "manage" && (
         <AdminManageSection
           users={users}
@@ -386,11 +355,12 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
           onChangeUserPassword={handleChangeUserPassword}
         />
       )}
-
+      {activeSection === "patient_files" && (
+        <AdminPatientFilesSection />
+      )}
       {activeSection === "statistics" && (
         <AdminStatisticsSection />
       )}
-
       {activeSection === "registration_tracker" && (
         <AdminRegistrationTrackerSection />
       )}
