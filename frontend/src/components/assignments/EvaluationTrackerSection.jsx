@@ -1,27 +1,34 @@
+
 import React, { useCallback, useEffect, useState } from "react";
 import api from "../../api/api";
+
 const MONTHLY_EVALUATION_TARGET = 30;
 const DAILY_EVALUATION_TARGET = 4;
+
 function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
 function getTodayString() {
   return formatLocalDate(new Date());
 }
+
 function getFirstDayOfMonthString() {
   const now = new Date();
   return formatLocalDate(
     new Date(now.getFullYear(), now.getMonth(), 1)
   );
 }
+
 function getDateOffset(days) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return formatLocalDate(date);
 }
+
 function getDisplayName(row) {
   return (
     row?.therapist_name ||
@@ -30,49 +37,119 @@ function getDisplayName(row) {
     "Unknown Therapist"
   );
 }
+
 function getEvaluationTarget(period) {
   return period === "today"
     ? DAILY_EVALUATION_TARGET
     : MONTHLY_EVALUATION_TARGET;
 }
+
 function getEvaluationColor(count, period) {
   const target = getEvaluationTarget(period);
+
   if (period === "today") {
     if (count > target) return "#dc2626";
     if (count === target) return "#059669";
     return "#d97706";
   }
+
   if (count < 15) return "#d97706";
   if (count <= 20) return "#2563eb";
   if (count <= target) return "#059669";
   return "#7c3aed";
 }
+
 function getEvaluationStatus(count, period) {
   const target = getEvaluationTarget(period);
+
   if (period === "today") {
     if (count > target) return "Above daily target";
     if (count === target) return "Daily target reached";
     return "Below daily target";
   }
+
   if (count < 15) return "Needs attention";
   if (count <= 20) return "Progressing";
   if (count <= target) return "On track";
   return "Target exceeded";
 }
+
 function getEvaluationPercentage(count, period) {
   const target = getEvaluationTarget(period);
   return Math.round((count / target) * 100);
 }
+
 function formatDateLabel(value) {
   if (!value) return "Not selected";
+
   const date = new Date(`${value}T12:00:00`);
+
   if (Number.isNaN(date.getTime())) return value;
+
   return date.toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
     year: "numeric",
   });
 }
+
+function getEvaluationRecords(row) {
+  const records =
+    row?.evaluations ??
+    row?.evaluation_details ??
+    row?.evaluation_records ??
+    row?.records ??
+    [];
+
+  return Array.isArray(records) ? records : [];
+}
+
+function getField(record, fields) {
+  for (const field of fields) {
+    const value = record?.[field];
+
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== ""
+    ) {
+      if (typeof value === "object") {
+        return (
+          value.name ??
+          value.full_name ??
+          value.username ??
+          value.display_name ??
+          ""
+        );
+      }
+
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function formatRecordDate(value) {
+  if (!value) return "—";
+
+  const dateString = String(value);
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    return formatDateLabel(dateString);
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return dateString;
+
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function EvaluationTrackerSection({
   user,
   actingAs = null,
@@ -88,50 +165,77 @@ export default function EvaluationTrackerSection({
   const [period, setPeriod] = useState("month");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("count-desc");
+  const [expandedTherapist, setExpandedTherapist] = useState(null);
+
   const loadTracker = useCallback(async () => {
     if (fromDate && toDate && fromDate > toDate) {
       setError("The From Date cannot be later than the To Date.");
       return;
     }
+
     setLoading(true);
     setError("");
+
     try {
       const params = new URLSearchParams();
-      if (fromDate) params.append("start_date", fromDate);
-      if (toDate) params.append("end_date", toDate);
+
+      if (fromDate) {
+        params.set("start_date", fromDate);
+      }
+
+      if (toDate) {
+        params.set("end_date", toDate);
+      }
+
       if (
         actingAs &&
-        (user?.is_superuser || user?.role === "admin")
+        (user?.is_superuser ||
+          String(user?.role || "").toLowerCase() === "admin")
       ) {
-        params.append("viewed_user_id", String(actingAs.id));
-        params.append(
+        params.set("viewed_user_id", String(actingAs.id));
+        params.set(
           "viewed_user_role",
           String(actingAs.role || "")
         );
       }
+
       const response = await api.get(
         `reception/evaluation-tracker/?${params.toString()}`
       );
-      setRows(response.data.therapists || []);
-      setTotal(Number(response.data.total || 0));
+
+      setRows(
+        Array.isArray(response.data?.therapists)
+          ? response.data.therapists
+          : []
+      );
+
+      setTotal(Number(response.data?.total || 0));
+      setExpandedTherapist(null);
     } catch (err) {
       console.error("Failed to load Evaluation Tracker", err);
+
       setRows([]);
       setTotal(0);
+
       setError(
         err?.response?.data?.error ||
-          "Could not load evaluation data. Please check that the Evaluation Tracker API is connected."
+          "Could not load evaluation data. Please check the Evaluation Tracker API."
       );
     } finally {
       setLoading(false);
     }
   }, [fromDate, toDate, actingAs, user]);
+
   useEffect(() => {
     loadTracker();
   }, [loadTracker]);
+
   const handlePreset = (preset) => {
     const currentDate = getTodayString();
+
     setPeriod(preset);
+    setExpandedTherapist(null);
+
     if (preset === "today") {
       setFromDate(currentDate);
       setToDate(currentDate);
@@ -139,18 +243,31 @@ export default function EvaluationTrackerSection({
       setFromDate(getDateOffset(-6));
       setToDate(currentDate);
     } else if (preset === "month") {
-      setFromDate(getFirstDayOfMonthString());
+      // Always calculate the first day of the current month.
+      const firstDay = getFirstDayOfMonthString();
+
+      setFromDate(firstDay);
       setToDate(currentDate);
     }
   };
+
   const handleDateChange = (which, value) => {
     setPeriod("custom");
+    setExpandedTherapist(null);
+
     if (which === "from") {
       setFromDate(value);
     } else {
       setToDate(value);
     }
   };
+
+  const toggleTherapistDetails = (therapistKey) => {
+    setExpandedTherapist((current) =>
+      current === therapistKey ? null : therapistKey
+    );
+  };
+
   const filteredRows = rows
     .filter((row) =>
       getDisplayName(row)
@@ -160,29 +277,36 @@ export default function EvaluationTrackerSection({
     .sort((a, b) => {
       const countA = Number(a.count ?? a.total ?? 0);
       const countB = Number(b.count ?? b.total ?? 0);
+
       if (sort === "count-asc") return countA - countB;
+
       if (sort === "name-asc") {
         return getDisplayName(a).localeCompare(getDisplayName(b));
       }
+
       if (sort === "name-desc") {
         return getDisplayName(b).localeCompare(getDisplayName(a));
       }
+
       return countB - countA;
     });
+
   const target = getEvaluationTarget(period);
+
   return (
     <section style={styles.page}>
       <div style={styles.hero}>
         <div style={styles.heroContent}>
-          <div style={styles.eyebrow}>
-            WORKSPACE / REPORTS
-          </div>
+          <div style={styles.eyebrow}>WORKSPACE / REPORTS</div>
+
           <h2 style={styles.heroTitle}>Evaluation Tracker</h2>
+
           <p style={styles.heroDescription}>
             Monitor initial evaluations across your physiotherapy team.
-            View each physiotherapist's evaluation count and progress
-            against the applicable target.
+            View each physiotherapist's evaluation count, progress,
+            and individual evaluation records.
           </p>
+
           <div style={styles.periodSummary}>
             <span style={styles.periodDot} />
             <span>
@@ -190,6 +314,7 @@ export default function EvaluationTrackerSection({
             </span>
           </div>
         </div>
+
         <button
           type="button"
           style={{
@@ -203,6 +328,7 @@ export default function EvaluationTrackerSection({
           {loading ? "Refreshing…" : "Refresh data"}
         </button>
       </div>
+
       <div style={styles.filterCard}>
         <div style={styles.filterCardHeading}>
           <div>
@@ -213,6 +339,7 @@ export default function EvaluationTrackerSection({
           </div>
           <span style={styles.filterIcon}>▦</span>
         </div>
+
         <div style={styles.presets}>
           {[
             { key: "today", label: "Today" },
@@ -238,6 +365,7 @@ export default function EvaluationTrackerSection({
             </button>
           ))}
         </div>
+
         <div style={styles.dateFilters}>
           <div style={styles.dateField}>
             <label htmlFor="evaluation-from" style={styles.dateLabel}>
@@ -254,6 +382,7 @@ export default function EvaluationTrackerSection({
               style={styles.dateInput}
             />
           </div>
+
           <div style={styles.dateField}>
             <label htmlFor="evaluation-to" style={styles.dateLabel}>
               TO DATE
@@ -269,6 +398,7 @@ export default function EvaluationTrackerSection({
               style={styles.dateInput}
             />
           </div>
+
           <button
             type="button"
             style={{
@@ -283,6 +413,7 @@ export default function EvaluationTrackerSection({
           </button>
         </div>
       </div>
+
       {error && (
         <div style={styles.errorBox} role="alert">
           <span style={styles.errorIcon}>!</span>
@@ -294,6 +425,7 @@ export default function EvaluationTrackerSection({
           </div>
         </div>
       )}
+
       <div style={styles.tableCard}>
         <div style={styles.tableHeading}>
           <div>
@@ -306,11 +438,13 @@ export default function EvaluationTrackerSection({
                 : "Monthly target reference: 30 evaluations per physiotherapist"}
             </p>
           </div>
+
           <span style={styles.countBadge}>
             {filteredRows.length}{" "}
             {filteredRows.length === 1 ? "therapist" : "therapists"}
           </span>
         </div>
+
         <div style={styles.toolbar}>
           <div style={styles.searchWrapper}>
             <span style={styles.searchIcon}>⌕</span>
@@ -323,6 +457,7 @@ export default function EvaluationTrackerSection({
               style={styles.searchInput}
             />
           </div>
+
           <div style={styles.sortWrapper}>
             <label htmlFor="evaluation-sort" style={styles.sortLabel}>
               Sort by
@@ -340,6 +475,7 @@ export default function EvaluationTrackerSection({
             </select>
           </div>
         </div>
+
         {loading ? (
           <div style={styles.tableMessage}>
             <span style={styles.loadingSpinner} />
@@ -363,6 +499,7 @@ export default function EvaluationTrackerSection({
                 ? "Try a different date range or check whether initial evaluations have been recorded."
                 : "Try another name or clear your search."}
             </p>
+
             {search && (
               <button
                 type="button"
@@ -391,8 +528,12 @@ export default function EvaluationTrackerSection({
                       : "Monthly target progress"}
                   </th>
                   <th style={styles.tableHeaderCell}>Status</th>
+                  <th style={styles.tableHeaderActionCell}>
+                    Details
+                  </th>
                 </tr>
               </thead>
+
               <tbody>
                 {filteredRows.map((row, index) => {
                   const count = Number(row.count ?? row.total ?? 0);
@@ -402,112 +543,324 @@ export default function EvaluationTrackerSection({
                   );
                   const color = getEvaluationColor(count, period);
                   const status = getEvaluationStatus(count, period);
+
+                  const therapistKey =
+                    row.therapist_id ??
+                    row.id ??
+                    row.username ??
+                    getDisplayName(row);
+
+                  const isExpanded =
+                    expandedTherapist === therapistKey;
+
+                  const evaluations = getEvaluationRecords(row);
+
                   return (
-                    <tr
-                      key={row.therapist_id ?? row.id ?? index}
-                      style={styles.tableRow}
-                    >
-                      <td style={styles.rankCell}>
-                        <span style={styles.rankBadge}>
-                          {String(index + 1).padStart(2, "0")}
-                        </span>
-                      </td>
-                      <td style={styles.tableCell}>
-                        <div style={styles.therapistIdentity}>
-                          <div
-                            style={{
-                              ...styles.therapistAvatar,
-                              background: `${color}18`,
-                              color,
-                            }}
-                          >
-                            {getDisplayName(row)
-                              .trim()
-                              .charAt(0)
-                              .toUpperCase()}
-                          </div>
-                          <div style={styles.therapistNameBlock}>
-                            <span style={styles.therapistName}>
-                              {getDisplayName(row)}
-                            </span>
-                            <span style={styles.therapistSubtext}>
-                              Physiotherapy team
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-                      <td style={styles.countCell}>
-                        <span style={styles.countPill}>{count}</span>
-                      </td>
-                      <td style={styles.progressCell}>
-                        <div style={styles.progressCellContent}>
-                          <div
-                            style={styles.progressTrack}
-                            role="progressbar"
-                            aria-label={`${getDisplayName(
-                              row
-                            )} evaluation target progress`}
-                            aria-valuemin={0}
-                            aria-valuenow={count}
-                            aria-valuemax={target}
-                          >
+                    <React.Fragment key={therapistKey}>
+                      <tr style={styles.tableRow}>
+                        <td style={styles.rankCell}>
+                          <span style={styles.rankBadge}>
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                        </td>
+
+                        <td style={styles.tableCell}>
+                          <div style={styles.therapistIdentity}>
                             <div
                               style={{
-                                ...styles.progressFill,
-                                width: `${Math.min(percentage, 100)}%`,
+                                ...styles.therapistAvatar,
+                                background: `${color}18`,
+                                color,
+                              }}
+                            >
+                              {getDisplayName(row)
+                                .trim()
+                                .charAt(0)
+                                .toUpperCase()}
+                            </div>
+
+                            <div style={styles.therapistNameBlock}>
+                              <span style={styles.therapistName}>
+                                {getDisplayName(row)}
+                              </span>
+                              <span style={styles.therapistSubtext}>
+                                Physiotherapy team
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td style={styles.countCell}>
+                          <span style={styles.countPill}>{count}</span>
+                        </td>
+
+                        <td style={styles.progressCell}>
+                          <div style={styles.progressCellContent}>
+                            <div
+                              style={styles.progressTrack}
+                              role="progressbar"
+                              aria-label={`${getDisplayName(
+                                row
+                              )} evaluation target progress`}
+                              aria-valuemin={0}
+                              aria-valuenow={count}
+                              aria-valuemax={target}
+                            >
+                              <div
+                                style={{
+                                  ...styles.progressFill,
+                                  width: `${Math.min(percentage, 100)}%`,
+                                  background: color,
+                                }}
+                              />
+                            </div>
+
+                            <span
+                              style={{
+                                ...styles.progressLabel,
+                                color,
+                              }}
+                            >
+                              {percentage}%
+                            </span>
+                          </div>
+
+                          <div style={styles.progressTargetText}>
+                            {count} / {target} evaluations
+                          </div>
+                        </td>
+
+                        <td style={styles.statusCell}>
+                          <span
+                            style={{
+                              ...styles.statusBadge,
+                              color,
+                              background: `${color}12`,
+                              borderColor: `${color}30`,
+                            }}
+                          >
+                            <span
+                              style={{
+                                ...styles.statusDot,
                                 background: color,
                               }}
                             />
-                          </div>
-                          <span
-                            style={{
-                              ...styles.progressLabel,
-                              color,
-                            }}
-                          >
-                            {percentage}%
+                            {status}
                           </span>
-                        </div>
-                        <div style={styles.progressTargetText}>
-                          {count} / {target} evaluations
-                        </div>
-                      </td>
-                      <td style={styles.statusCell}>
-                        <span
-                          style={{
-                            ...styles.statusBadge,
-                            color,
-                            background: `${color}12`,
-                            borderColor: `${color}30`,
-                          }}
-                        >
-                          <span
+                        </td>
+
+                        <td style={styles.actionCell}>
+                          <button
+                            type="button"
                             style={{
-                              ...styles.statusDot,
-                              background: color,
+                              ...styles.detailsButton,
+                              ...(isExpanded
+                                ? styles.detailsButtonActive
+                                : {}),
                             }}
-                          />
-                          {status}
-                        </span>
-                      </td>
-                    </tr>
+                            onClick={() =>
+                              toggleTherapistDetails(therapistKey)
+                            }
+                            aria-expanded={isExpanded}
+                            aria-label={`${
+                              isExpanded ? "Hide" : "View"
+                            } evaluations for ${getDisplayName(row)}`}
+                          >
+                            {isExpanded ? "Hide details" : "View details"}
+                            <span
+                              style={{
+                                ...styles.chevron,
+                                transform: isExpanded
+                                  ? "rotate(180deg)"
+                                  : "rotate(0deg)",
+                              }}
+                              aria-hidden="true"
+                            >
+                              ▾
+                            </span>
+                          </button>
+                        </td>
+                      </tr>
+
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={6} style={styles.detailsCell}>
+                            <div style={styles.detailsPanel}>
+                              <div style={styles.detailsHeading}>
+                                <div>
+                                  <h4 style={styles.detailsTitle}>
+                                    Individual evaluations
+                                  </h4>
+                                  <p style={styles.detailsSubtitle}>
+                                    {getDisplayName(row)} ·{" "}
+                                    {formatDateLabel(fromDate)} –{" "}
+                                    {formatDateLabel(toDate)}
+                                  </p>
+                                </div>
+
+                                <span style={styles.detailsCount}>
+                                  {evaluations.length}{" "}
+                                  {evaluations.length === 1
+                                    ? "record"
+                                    : "records"}
+                                </span>
+                              </div>
+
+                              {count === 0 ? (
+                                <div style={styles.noEvaluations}>
+                                  <span style={styles.noEvaluationsIcon}>
+                                    ✓
+                                  </span>
+                                  <div>
+                                    <strong style={styles.noEvaluationsTitle}>
+                                      No evaluations assigned to this
+                                      therapist yet.
+                                    </strong>
+                                    <p style={styles.noEvaluationsText}>
+                                      No initial evaluations were recorded
+                                      for this therapist during the selected
+                                      date range.
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : evaluations.length === 0 ? (
+                                <div style={styles.detailsEmpty}>
+                                  <strong>
+                                    Individual evaluation records are
+                                    not included in the API response.
+                                  </strong>
+                                  <p>
+                                    The tracker returned a total but no
+                                    individual records. Check that the
+                                    backend includes the evaluations array.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div style={styles.detailsTableScroll}>
+                                  <table style={styles.detailsTable}>
+                                    <thead>
+                                      <tr>
+                                        <th style={styles.detailsTh}>
+                                          Patient name
+                                        </th>
+                                        <th style={styles.detailsTh}>
+                                          File number
+                                        </th>
+                                        <th style={styles.detailsTh}>
+                                          Registered by
+                                        </th>
+                                        <th style={styles.detailsTh}>
+                                          Evaluation date
+                                        </th>
+                                        <th style={styles.detailsTh}>
+                                          Referring physician
+                                        </th>
+                                        <th style={styles.detailsTh}>
+                                          Specialty
+                                        </th>
+                                      </tr>
+                                    </thead>
+
+                                    <tbody>
+                                      {evaluations.map(
+                                        (record, recordIndex) => (
+                                          <tr
+                                            key={
+                                              record.id ??
+                                              record.evaluation_id ??
+                                              recordIndex
+                                            }
+                                          >
+                                            <td style={styles.detailsTd}>
+                                              {getField(record, [
+                                                "patient_name",
+                                                "full_name",
+                                                "name",
+                                                "patient",
+                                              ]) || "—"}
+                                            </td>
+
+                                            <td style={styles.detailsTd}>
+                                              {getField(record, [
+                                                "file_number",
+                                                "patient_file_number",
+                                                "medical_record_number",
+                                                "mrn",
+                                              ]) || "—"}
+                                            </td>
+
+                                            <td style={styles.detailsTd}>
+                                              {getField(record, [
+                                                "receptionist_name",
+                                                "registered_by_name",
+                                                "registered_by",
+                                                "created_by_name",
+                                                "created_by",
+                                              ]) || "—"}
+                                            </td>
+
+                                            <td style={styles.detailsTd}>
+                                              {formatRecordDate(
+                                                getField(record, [
+                                                  "evaluation_date",
+                                                  "date",
+                                                  "created_at",
+                                                  "registration_date",
+                                                ])
+                                              )}
+                                            </td>
+
+                                            <td style={styles.detailsTd}>
+                                              {getField(record, [
+                                                "referring_physician_name",
+                                                "referring_doctor_name",
+                                                "referring_physician",
+                                                "referring_doctor",
+                                                "physician_name",
+                                                "doctor_name",
+                                              ]) || "—"}
+                                            </td>
+
+                                            <td style={styles.detailsTd}>
+                                              {getField(record, [
+                                                "physician_specialty",
+                                                "referring_physician_specialty",
+                                                "doctor_specialty",
+                                                "specialty",
+                                              ]) || "—"}
+                                            </td>
+                                          </tr>
+                                        )
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
+
               <tfoot>
                 <tr>
                   <td colSpan={2} style={styles.totalFooterCell}>
                     Total initial evaluations
                   </td>
                   <td style={styles.totalFooterCount}>{total}</td>
-                  <td colSpan={2} style={styles.totalFooterNote}>
-                    {formatDateLabel(fromDate)} – {formatDateLabel(toDate)}
+                  <td colSpan={3} style={styles.totalFooterNote}>
+                    {formatDateLabel(fromDate)} –{" "}
+                    {formatDateLabel(toDate)}
                   </td>
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
+
         <div style={styles.tableFooter}>
           <span>
             Showing {filteredRows.length} of {rows.length} physiotherapists
@@ -522,6 +875,7 @@ export default function EvaluationTrackerSection({
     </section>
   );
 }
+
 const styles = {
   page: {
     display: "grid",
@@ -866,6 +1220,17 @@ const styles = {
     borderBottom: "1px solid #e7edf3",
     whiteSpace: "nowrap",
   },
+  tableHeaderActionCell: {
+    padding: "13px 20px 13px 12px",
+    background: "#f6f9fc",
+    color: "#718096",
+    fontSize: "10px",
+    fontWeight: "800",
+    letterSpacing: "0.055em",
+    borderBottom: "1px solid #e7edf3",
+    textAlign: "right",
+    whiteSpace: "nowrap",
+  },
   tableRow: {
     transition: "background 150ms ease",
   },
@@ -916,6 +1281,149 @@ const styles = {
   therapistSubtext: {
     color: "#94a3b8",
     fontSize: "10px",
+  },
+  actionCell: {
+    padding: "14px 20px 14px 12px",
+    borderBottom: "1px solid #edf1f6",
+    textAlign: "right",
+    verticalAlign: "middle",
+    whiteSpace: "nowrap",
+  },
+  detailsButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "8px 12px",
+    border: "1px solid #d9e2ec",
+    borderRadius: "8px",
+    background: "#ffffff",
+    color: "#334155",
+    fontSize: "11px",
+    fontWeight: "700",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    transition: "all 150ms ease",
+  },
+  detailsButtonActive: {
+    background: "#edf6f7",
+    borderColor: "#83c7cc",
+    color: "#116b75",
+  },
+  chevron: {
+    display: "inline-block",
+    fontSize: "13px",
+    lineHeight: 1,
+    transition: "transform 150ms ease",
+  },
+  detailsCell: {
+    padding: 0,
+    background: "#f8fafc",
+    borderBottom: "1px solid #e2e8f0",
+  },
+  detailsPanel: {
+    padding: "20px",
+    display: "grid",
+    gap: "15px",
+  },
+  detailsHeading: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: "10px",
+  },
+  detailsTitle: {
+    margin: 0,
+    color: "#153653",
+    fontSize: "14px",
+    fontWeight: "800",
+  },
+  detailsSubtitle: {
+    margin: "5px 0 0",
+    color: "#718096",
+    fontSize: "11px",
+  },
+  detailsCount: {
+    padding: "6px 9px",
+    border: "1px solid #dce7ef",
+    borderRadius: "8px",
+    background: "#ffffff",
+    color: "#456078",
+    fontSize: "11px",
+    fontWeight: "800",
+  },
+  noEvaluations: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "12px",
+    padding: "18px",
+    border: "1px solid #cce8df",
+    borderRadius: "11px",
+    background: "#f0faf6",
+    color: "#166534",
+    fontSize: "13px",
+    lineHeight: 1.6,
+  },
+  noEvaluationsIcon: {
+    display: "grid",
+    placeItems: "center",
+    flexShrink: 0,
+    width: "30px",
+    height: "30px",
+    borderRadius: "9px",
+    background: "#d9f2e7",
+    color: "#15803d",
+    fontSize: "16px",
+    fontWeight: "900",
+  },
+  noEvaluationsTitle: {
+    display: "block",
+    fontSize: "13px",
+    fontWeight: "800",
+  },
+  noEvaluationsText: {
+    margin: "4px 0 0",
+    color: "#477565",
+    fontSize: "11px",
+  },
+  detailsEmpty: {
+    padding: "16px",
+    border: "1px solid #e2e8f0",
+    borderRadius: "10px",
+    background: "#ffffff",
+    color: "#475569",
+    fontSize: "12px",
+    lineHeight: 1.7,
+  },
+  detailsTableScroll: {
+    width: "100%",
+    overflowX: "auto",
+    border: "1px solid #e2e8f0",
+    borderRadius: "10px",
+    background: "#ffffff",
+  },
+  detailsTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    textAlign: "left",
+    minWidth: "850px",
+  },
+  detailsTh: {
+    padding: "12px",
+    background: "#edf4f8",
+    color: "#456078",
+    fontSize: "10px",
+    fontWeight: "800",
+    borderBottom: "1px solid #dce5ed",
+    whiteSpace: "nowrap",
+  },
+  detailsTd: {
+    padding: "12px",
+    color: "#334155",
+    fontSize: "11px",
+    borderBottom: "1px solid #edf1f6",
+    verticalAlign: "top",
   },
   countCell: {
     padding: "14px 17px",
