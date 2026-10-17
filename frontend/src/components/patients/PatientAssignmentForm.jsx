@@ -1,6 +1,4 @@
-
 import React, { useMemo, useState, useEffect } from "react";
-
 const DEFAULT_PHYSICIANS = [
   "Suad Trebinjac",
   "Philippe Noel Neyret",
@@ -11,7 +9,6 @@ const DEFAULT_PHYSICIANS = [
   "Ammar Yasser Omran",
   "Yasser Salam",
 ];
-
 const CATEGORIES = [
   { value: "appointment", label: "Appointment" },
   { value: "walk_in", label: "Walk-in" },
@@ -25,7 +22,6 @@ const CATEGORIES = [
     label: "Initial Evaluation",
   },
 ];
-
 const SPECIALITIES = [
   "Pediatrics",
   "Neuro",
@@ -37,7 +33,27 @@ const SPECIALITIES = [
   "Lipodema",
   "Sports",
 ];
-
+const LAST_THERAPIST_KEY = "hospital_workflow_last_therapist_id";
+function getTodayDate() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function getRememberedTherapistId() {
+  try {
+    return localStorage.getItem(LAST_THERAPIST_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
 export default function PatientAssignmentForm({
   selectedPatient,
   assignmentForm = {},
@@ -47,20 +63,31 @@ export default function PatientAssignmentForm({
   specialities = [],
   onSubmit,
   loading = false,
+  // Pass the authenticated user's role through one of these props.
+  userRole = "",
+  role = "",
+  user = null,
 }) {
   const [therapistSearch, setTherapistSearch] = useState("");
   const [therapistMenuOpen, setTherapistMenuOpen] = useState(false);
   const [physicianSearch, setPhysicianSearch] = useState("");
-
+  // Detect Admin using the role supplied by the parent component.
+  const effectiveRole = normalizeRole(
+    userRole ||
+      role ||
+      user?.role ||
+      user?.user_role ||
+      user?.user_type ||
+      ""
+  );
+  const isAdmin = effectiveRole === "admin";
   const isEvaluation =
     assignmentForm.category === "initial_evaluation";
-
   const therapistLabel = (therapist) =>
     therapist.display_name ||
     therapist.full_name ||
     therapist.username ||
     `Therapist ${therapist.id}`;
-
   const selectedTherapist = useMemo(
     () =>
       therapists.find(
@@ -70,29 +97,66 @@ export default function PatientAssignmentForm({
       ),
     [therapists, assignmentForm.therapist_id]
   );
-
+  // Suggest the previously selected therapist if none is selected.
+  useEffect(() => {
+    if (
+      assignmentForm.therapist_id ||
+      therapists.length === 0 ||
+      typeof setAssignmentForm !== "function"
+    ) {
+      return;
+    }
+    const rememberedId = getRememberedTherapistId();
+    const rememberedTherapist = therapists.find(
+      (therapist) =>
+        String(therapist.id) === String(rememberedId)
+    );
+    if (rememberedTherapist) {
+      setAssignmentForm((previous) => ({
+        ...previous,
+        therapist_id: String(rememberedTherapist.id),
+      }));
+    }
+  }, [
+    therapists,
+    assignmentForm.therapist_id,
+    setAssignmentForm,
+  ]);
   useEffect(() => {
     if (selectedTherapist && !therapistMenuOpen) {
       setTherapistSearch(therapistLabel(selectedTherapist));
     }
   }, [selectedTherapist, therapistMenuOpen]);
-
+  // Initialize today's date only for Admin.
+  useEffect(() => {
+    if (
+      isAdmin &&
+      !assignmentForm.assignment_date &&
+      typeof setAssignmentForm === "function"
+    ) {
+      setAssignmentForm((previous) => ({
+        ...previous,
+        assignment_date:
+          previous.assignment_date || getTodayDate(),
+      }));
+    }
+  }, [
+    isAdmin,
+    assignmentForm.assignment_date,
+    setAssignmentForm,
+  ]);
   const filteredTherapists = useMemo(() => {
     const query = therapistSearch.trim().toLowerCase();
-
     return therapists.filter((therapist) =>
       therapistLabel(therapist).toLowerCase().includes(query)
     );
   }, [therapists, therapistSearch]);
-
   const filteredPhysicians = useMemo(() => {
     const query = physicianSearch.trim().toLowerCase();
-
     return physicians.filter((name) =>
       String(name).toLowerCase().includes(query)
     );
   }, [physicians, physicianSearch]);
-
   const availableSpecialities = useMemo(
     () =>
       Array.from(
@@ -100,109 +164,100 @@ export default function PatientAssignmentForm({
       ),
     [specialities]
   );
-
   const updateField = (field, value) => {
     setAssignmentForm((previous) => ({
       ...previous,
       [field]: value,
     }));
   };
-
   const chooseTherapist = (therapist) => {
-    updateField("therapist_id", String(therapist.id));
+    const therapistId = String(therapist.id);
+    updateField("therapist_id", therapistId);
     setTherapistSearch(therapistLabel(therapist));
     setTherapistMenuOpen(false);
+    try {
+      localStorage.setItem(LAST_THERAPIST_KEY, therapistId);
+    } catch {
+      // Assignment can continue if browser storage is unavailable.
+    }
   };
-
   const handleSubmit = (event) => {
     event.preventDefault();
-
     if (loading) return;
-
     if (!selectedPatient) {
       alert("Please select a patient first.");
       return;
     }
-
     if (!assignmentForm.therapist_id) {
       alert("Please select a physiotherapist.");
       return;
     }
-
+    if (isAdmin && !assignmentForm.assignment_date) {
+      alert("Please select the assignment date.");
+      return;
+    }
+    if (
+      isAdmin &&
+      assignmentForm.assignment_date > getTodayDate()
+    ) {
+      alert("The assignment date cannot be in the future.");
+      return;
+    }
     const visitNumber = Number(assignmentForm.visit_number);
-
     if (!Number.isInteger(visitNumber) || visitNumber < 1) {
       alert("Please enter a valid visit number.");
       return;
     }
-
     if (isEvaluation && !assignmentForm.referring_physician) {
       alert("Please select the referring physician.");
       return;
     }
-
     if (typeof onSubmit === "function") {
       onSubmit(event);
     }
   };
-
   return (
     <form
       onSubmit={handleSubmit}
       style={styles.card}
       onClick={(event) => {
-        if (
-          !event.target.closest("[data-therapist-autocomplete]")
-        ) {
+        if (!event.target.closest("[data-therapist-autocomplete]")) {
           setTherapistMenuOpen(false);
         }
       }}
     >
       <div style={styles.topAccent} />
-
       <div style={styles.header}>
         <div style={styles.headerText}>
-          <div style={styles.eyebrow}>
-            PATIENT MANAGEMENT
-          </div>
-
+          <div style={styles.eyebrow}>PATIENT MANAGEMENT</div>
           <h3 style={styles.title}>Assign Patient</h3>
-
           <p style={styles.subtitle}>
             Allocate a patient and complete the assignment details.
           </p>
         </div>
-
         <div style={styles.headerIcon} aria-hidden="true">
           <span>＋</span>
         </div>
       </div>
-
       {selectedPatient ? (
         <div style={styles.patient}>
           <div style={styles.patientIcon} aria-hidden="true">
             ♙
           </div>
-
           <div style={styles.patientInfo}>
-            <span style={styles.patientLabel}>
-              SELECTED PATIENT
-            </span>
-
+            <span style={styles.patientLabel}>SELECTED PATIENT</span>
             <strong style={styles.patientName}>
               {selectedPatient.full_name ||
                 selectedPatient.name ||
                 selectedPatient.patient_name ||
                 "Selected patient"}
             </strong>
-
             {selectedPatient.patient_id && (
               <span style={styles.patientMeta}>
                 File No: {selectedPatient.patient_id}
               </span>
             )}
           </div>
-
           <span style={styles.patientStatus}>
             <span style={styles.statusDot} />
             Selected
@@ -214,26 +269,22 @@ export default function PatientAssignmentForm({
           <span>Select a patient before saving the assignment.</span>
         </div>
       )}
-
       <div style={styles.sectionHeading}>
         <span style={styles.sectionNumber}>01</span>
-
         <div>
-          <div style={styles.sectionTitle}>
-            Assignment details
-          </div>
-
+          <div style={styles.sectionTitle}>Assignment details</div>
           <div style={styles.sectionSubtitle}>
             Select the therapist and visit information.
+            {isAdmin
+              ? " Admin can also set the assignment date."
+              : ""}
           </div>
         </div>
       </div>
-
       <div style={styles.field}>
         <label style={styles.label}>
           Physiotherapist <span style={styles.required}>*</span>
         </label>
-
         <div
           style={styles.autocomplete}
           data-therapist-autocomplete
@@ -264,11 +315,9 @@ export default function PatientAssignmentForm({
             disabled={loading}
             required={!assignmentForm.therapist_id}
           />
-
           <span style={styles.searchIcon} aria-hidden="true">
             ⌕
           </span>
-
           {therapistMenuOpen && !loading && (
             <div
               style={styles.dropdown}
@@ -280,7 +329,6 @@ export default function PatientAssignmentForm({
                   const selected =
                     String(therapist.id) ===
                     String(assignmentForm.therapist_id);
-
                   return (
                     <button
                       type="button"
@@ -303,11 +351,9 @@ export default function PatientAssignmentForm({
                           .charAt(0)
                           .toUpperCase()}
                       </span>
-
                       <span style={styles.therapistName}>
                         {therapistLabel(therapist)}
                       </span>
-
                       {selected && (
                         <span style={styles.check}>✓</span>
                       )}
@@ -322,19 +368,45 @@ export default function PatientAssignmentForm({
             </div>
           )}
         </div>
+        {selectedTherapist && (
+          <p style={styles.rememberedHint}>
+            Suggested therapist: {therapistLabel(selectedTherapist)}.
+            You can choose another therapist at any time.
+          </p>
+        )}
       </div>
-
+      {/* Only Admin sees the assignment date field. */}
+      {isAdmin && (
+        <div style={styles.field}>
+          <label style={styles.label}>
+            Date of Assignment{" "}
+            <span style={styles.required}>*</span>
+          </label>
+          <input
+            type="date"
+            value={assignmentForm.assignment_date || getTodayDate()}
+            onChange={(event) =>
+              updateField("assignment_date", event.target.value)
+            }
+            style={styles.input}
+            required
+            disabled={loading}
+            max={getTodayDate()}
+          />
+          <p style={styles.dateHint}>
+            You can select today or a previous date.
+          </p>
+        </div>
+      )}
       <div style={styles.row}>
         <div style={styles.field}>
           <label style={styles.label}>
             Assignment Type <span style={styles.required}>*</span>
           </label>
-
           <select
             value={assignmentForm.category || "appointment"}
             onChange={(event) => {
               const category = event.target.value;
-
               setAssignmentForm((previous) => ({
                 ...previous,
                 category,
@@ -343,7 +415,6 @@ export default function PatientAssignmentForm({
                     ? previous.referring_physician || ""
                     : "",
               }));
-
               setPhysicianSearch("");
             }}
             style={styles.select}
@@ -357,12 +428,10 @@ export default function PatientAssignmentForm({
             ))}
           </select>
         </div>
-
         <div style={styles.field}>
           <label style={styles.label}>
             Visit No. <span style={styles.required}>*</span>
           </label>
-
           <input
             type="number"
             min="1"
@@ -377,29 +446,24 @@ export default function PatientAssignmentForm({
           />
         </div>
       </div>
-
       {isEvaluation && (
         <>
           <div style={styles.sectionHeading}>
             <span style={styles.sectionNumber}>02</span>
-
             <div>
               <div style={styles.sectionTitle}>
                 Referral information
               </div>
-
               <div style={styles.sectionSubtitle}>
                 Specify the referring physician.
               </div>
             </div>
           </div>
-
           <div style={styles.field}>
             <label style={styles.label}>
               Referring Physician{" "}
               <span style={styles.required}>*</span>
             </label>
-
             <div style={styles.physicianSearchWrapper}>
               <input
                 type="text"
@@ -413,12 +477,10 @@ export default function PatientAssignmentForm({
                 autoComplete="off"
                 aria-label="Search referring physician"
               />
-
               <span style={styles.searchHint}>
                 Filter names below
               </span>
             </div>
-
             <select
               value={assignmentForm.referring_physician || ""}
               onChange={(event) =>
@@ -432,20 +494,16 @@ export default function PatientAssignmentForm({
               disabled={loading}
             >
               <option value="">Select physician</option>
-
               {filteredPhysicians.map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>
               ))}
-
               {assignmentForm.referring_physician &&
                 !filteredPhysicians.includes(
                   assignmentForm.referring_physician
                 ) && (
-                  <option
-                    value={assignmentForm.referring_physician}
-                  >
+                  <option value={assignmentForm.referring_physician}>
                     {assignmentForm.referring_physician}
                   </option>
                 )}
@@ -453,20 +511,15 @@ export default function PatientAssignmentForm({
           </div>
         </>
       )}
-
       <details style={styles.optional}>
         <summary style={styles.optionalTitle}>
           <span style={styles.optionalPlus}>＋</span>
-
           <span>Speciality and notes</span>
-
           <span style={styles.optionalHint}>OPTIONAL</span>
         </summary>
-
         <div style={styles.optionalContent}>
           <div style={styles.field}>
             <label style={styles.label}>Speciality</label>
-
             <select
               value={assignmentForm.speciality || ""}
               onChange={(event) =>
@@ -476,7 +529,6 @@ export default function PatientAssignmentForm({
               disabled={loading}
             >
               <option value="">Select speciality</option>
-
               {availableSpecialities.map((speciality) => (
                 <option key={speciality} value={speciality}>
                   {speciality}
@@ -484,10 +536,8 @@ export default function PatientAssignmentForm({
               ))}
             </select>
           </div>
-
           <div style={styles.field}>
             <label style={styles.label}>Notes</label>
-
             <textarea
               value={assignmentForm.notes || ""}
               onChange={(event) =>
@@ -501,7 +551,6 @@ export default function PatientAssignmentForm({
           </div>
         </div>
       </details>
-
       <button
         type="submit"
         style={{
@@ -524,22 +573,13 @@ export default function PatientAssignmentForm({
           </>
         )}
       </button>
-
       <p style={styles.footer}>
         Please verify the assignment details before saving.
       </p>
-
       <style>{`
         @keyframes patientAssignmentSpin {
           to { transform: rotate(360deg); }
         }
-
-        .patient-assignment-input:focus {
-          border-color: #7c3aed !important;
-          box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
-          outline: none;
-        }
-
         details > summary::-webkit-details-marker {
           display: none;
         }
@@ -547,7 +587,6 @@ export default function PatientAssignmentForm({
     </form>
   );
 }
-
 const styles = {
   card: {
     position: "relative",
@@ -564,7 +603,6 @@ const styles = {
     boxSizing: "border-box",
     minWidth: 0,
   },
-
   topAccent: {
     position: "absolute",
     top: 0,
@@ -575,7 +613,6 @@ const styles = {
     background:
       "linear-gradient(90deg, #6D28D9 0%, #A855F7 50%, #EC4899 100%)",
   },
-
   header: {
     display: "flex",
     justifyContent: "space-between",
@@ -584,11 +621,7 @@ const styles = {
     marginBottom: "24px",
     paddingTop: "5px",
   },
-
-  headerText: {
-    minWidth: 0,
-  },
-
+  headerText: { minWidth: 0 },
   eyebrow: {
     display: "inline-block",
     color: "#6D28D9",
@@ -601,7 +634,6 @@ const styles = {
     letterSpacing: "1.1px",
     marginBottom: "9px",
   },
-
   title: {
     margin: 0,
     color: "#2E1065",
@@ -609,29 +641,26 @@ const styles = {
     fontWeight: 800,
     letterSpacing: "-0.5px",
   },
-
   subtitle: {
     margin: "7px 0 0",
     color: "#7C7194",
     fontSize: "13px",
     lineHeight: 1.6,
   },
-
   headerIcon: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "48px",
+    height: "48px",
+    flexShrink: 0,
     background: "linear-gradient(135deg, #6D28D9, #A855F7)",
     color: "#FFFFFF",
     border: "1px solid #8B5CF6",
     borderRadius: "15px",
-    width: "48px",
-    height: "48px",
-    flexShrink: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
     fontSize: "28px",
     boxShadow: "0 7px 16px rgba(109, 40, 217, 0.2)",
   },
-
   patient: {
     display: "flex",
     alignItems: "center",
@@ -644,7 +673,6 @@ const styles = {
     marginBottom: "25px",
     minWidth: 0,
   },
-
   patientIcon: {
     display: "flex",
     alignItems: "center",
@@ -657,7 +685,6 @@ const styles = {
     borderRadius: "12px",
     fontSize: "24px",
   },
-
   patientInfo: {
     display: "flex",
     flexDirection: "column",
@@ -665,25 +692,18 @@ const styles = {
     flex: 1,
     minWidth: 0,
   },
-
   patientLabel: {
     color: "#8B5CF6",
     fontSize: "10px",
     fontWeight: 800,
     letterSpacing: "0.8px",
   },
-
   patientName: {
     color: "#3B0764",
     fontSize: "14px",
     overflowWrap: "anywhere",
   },
-
-  patientMeta: {
-    color: "#7C3AED",
-    fontSize: "11px",
-  },
-
+  patientMeta: { color: "#7C3AED", fontSize: "11px" },
   patientStatus: {
     display: "inline-flex",
     alignItems: "center",
@@ -697,14 +717,12 @@ const styles = {
     fontWeight: 800,
     flexShrink: 0,
   },
-
   statusDot: {
     width: "7px",
     height: "7px",
     borderRadius: "50%",
     background: "#22C55E",
   },
-
   notice: {
     display: "flex",
     alignItems: "center",
@@ -717,14 +735,12 @@ const styles = {
     color: "#92400E",
     fontSize: "13px",
   },
-
   sectionHeading: {
     display: "flex",
     alignItems: "center",
     gap: "12px",
     marginBottom: "18px",
   },
-
   sectionNumber: {
     display: "flex",
     alignItems: "center",
@@ -739,27 +755,23 @@ const styles = {
     fontWeight: 800,
     boxShadow: "0 4px 10px rgba(109, 40, 217, 0.18)",
   },
-
   sectionTitle: {
     color: "#3B0764",
     fontSize: "14px",
     fontWeight: 800,
   },
-
   sectionSubtitle: {
     color: "#9588A9",
     fontSize: "12px",
     marginTop: "4px",
     lineHeight: 1.4,
   },
-
   row: {
     display: "grid",
     gridTemplateColumns:
       "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
     gap: "14px",
   },
-
   field: {
     display: "flex",
     flexDirection: "column",
@@ -767,17 +779,12 @@ const styles = {
     marginBottom: "17px",
     minWidth: 0,
   },
-
   label: {
     color: "#4C3A65",
     fontSize: "12px",
     fontWeight: 750,
   },
-
-  required: {
-    color: "#E11D48",
-  },
-
+  required: { color: "#E11D48" },
   input: {
     display: "block",
     width: "100%",
@@ -790,9 +797,7 @@ const styles = {
     color: "#2E1065",
     fontSize: "14px",
     outlineColor: "#8B5CF6",
-    transition: "border-color 0.2s, box-shadow 0.2s",
   },
-
   inputWithIcon: {
     display: "block",
     width: "100%",
@@ -806,7 +811,6 @@ const styles = {
     fontSize: "14px",
     outlineColor: "#8B5CF6",
   },
-
   select: {
     display: "block",
     width: "100%",
@@ -821,13 +825,11 @@ const styles = {
     outlineColor: "#8B5CF6",
     cursor: "pointer",
   },
-
   autocomplete: {
     position: "relative",
     width: "100%",
     minWidth: 0,
   },
-
   searchIcon: {
     position: "absolute",
     right: "13px",
@@ -836,7 +838,6 @@ const styles = {
     color: "#8B5CF6",
     pointerEvents: "none",
   },
-
   dropdown: {
     position: "absolute",
     top: "calc(100% + 6px)",
@@ -850,7 +851,6 @@ const styles = {
     maxHeight: "240px",
     overflowY: "auto",
   },
-
   dropdownItem: {
     display: "flex",
     alignItems: "center",
@@ -866,19 +866,16 @@ const styles = {
     fontSize: "13px",
     cursor: "pointer",
   },
-
   dropdownItemSelected: {
     background: "#F3E8FF",
     color: "#6D28D9",
     fontWeight: 700,
   },
-
   therapistName: {
     flex: 1,
     minWidth: 0,
     overflowWrap: "anywhere",
   },
-
   avatar: {
     display: "inline-flex",
     alignItems: "center",
@@ -891,31 +888,37 @@ const styles = {
     color: "#6D28D9",
     fontWeight: 800,
   },
-
   check: {
     marginLeft: "auto",
     color: "#7C3AED",
     fontWeight: 800,
   },
-
   noResults: {
     padding: "16px",
     color: "#9588A9",
     textAlign: "center",
     fontSize: "13px",
   },
-
+  rememberedHint: {
+    margin: "7px 0 0",
+    color: "#7C3AED",
+    fontSize: "11px",
+    lineHeight: 1.5,
+  },
+  dateHint: {
+    margin: "-2px 0 0",
+    color: "#9588A9",
+    fontSize: "11px",
+  },
   physicianSearchWrapper: {
     display: "flex",
     flexDirection: "column",
     gap: "5px",
   },
-
   searchHint: {
     color: "#9588A9",
     fontSize: "11px",
   },
-
   optional: {
     border: "1px solid #E9DDFB",
     borderRadius: "13px",
@@ -923,7 +926,6 @@ const styles = {
     marginTop: "5px",
     background: "#FCFAFF",
   },
-
   optionalTitle: {
     display: "flex",
     alignItems: "center",
@@ -935,7 +937,6 @@ const styles = {
     padding: "14px 0",
     listStyle: "none",
   },
-
   optionalPlus: {
     display: "inline-flex",
     alignItems: "center",
@@ -947,7 +948,6 @@ const styles = {
     color: "#7C3AED",
     fontSize: "19px",
   },
-
   optionalHint: {
     marginLeft: "auto",
     color: "#A78BFA",
@@ -955,12 +955,10 @@ const styles = {
     fontWeight: 800,
     letterSpacing: "0.5px",
   },
-
   optionalContent: {
     borderTop: "1px solid #EDE5FA",
     paddingTop: "16px",
   },
-
   textarea: {
     display: "block",
     width: "100%",
@@ -977,7 +975,6 @@ const styles = {
     fontFamily: "inherit",
     lineHeight: 1.6,
   },
-
   button: {
     display: "flex",
     alignItems: "center",
@@ -987,7 +984,8 @@ const styles = {
     boxSizing: "border-box",
     marginTop: "22px",
     padding: "15px 16px",
-    background: "linear-gradient(135deg, #6D28D9 0%, #9333EA 55%, #A855F7 100%)",
+    background:
+      "linear-gradient(135deg, #6D28D9 0%, #9333EA 55%, #A855F7 100%)",
     color: "#FFFFFF",
     border: "1px solid #7C3AED",
     borderRadius: "12px",
@@ -995,27 +993,22 @@ const styles = {
     fontWeight: 800,
     cursor: "pointer",
     boxShadow: "0 7px 17px rgba(109, 40, 217, 0.22)",
-    transition: "transform 0.2s, box-shadow 0.2s",
   },
-
   buttonDisabled: {
     opacity: 0.65,
     cursor: "not-allowed",
     boxShadow: "none",
   },
-
   buttonContent: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     gap: "10px",
   },
-
   buttonArrow: {
     fontSize: "20px",
     lineHeight: 1,
   },
-
   spinner: {
     width: "15px",
     height: "15px",
@@ -1025,7 +1018,6 @@ const styles = {
     display: "inline-block",
     animation: "patientAssignmentSpin 0.8s linear infinite",
   },
-
   footer: {
     margin: "13px 0 0",
     textAlign: "center",
