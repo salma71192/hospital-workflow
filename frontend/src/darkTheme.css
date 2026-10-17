@@ -1,0 +1,223 @@
+
+/* ========================================
+   HOSPITAL WORKFLOW - GLOBAL DARK THEME
+   Matching the Admin Sidebar
+   ======================================== */
+
+:root {
+  --hospital-dark: #111111;
+  --hospital-dark-hover: #252525;
+  --hospital-dark-active: #363636;
+  --hospital-dark-border: #363636;
+  --hospital-text: #ffffff;
+  --hospital-muted-text: #b8b8b8;
+  --hospital-icon: #c4c4c4;
+}
+
+/* ========================================
+   ALL DASHBOARD HEADERS
+   ======================================== */
+
+.app-header,
+.dashboard-header,
+.page-header,
+.main-header,
+.top-header,
+.topbar,
+.top-bar,
+.navbar,
+.dashboard-navbar,
+.header,
+header.app-header,
+header.dashboard-header,
+header.page-header {
+  background: var(--hospital-dark);
+  color: var(--hospital-text);
+  border-color: var(--hospital-dark-border);
+}
+
+/* Header headings */
+
+.app-header h1,
+.app-header h2,
+.app-header h3,
+.dashboard-header h1,
+.dashboard-header h2,
+.dashboard-header h3,
+.page-header h1,
+.page-header h2,
+.page-header h3,
+.main-header h1,
+.main-header h2,
+.main-header h3,
+.topbar h1,
+.topbar h2,
+.navbar h1,
+.navbar h2,
+.header h1,
+.header h2,
+header.app-header h1,
+header.dashboard-header h1,
+header.page-header h1 {
+  color: var(--hospital-text);
+}
+
+/* Header descriptions and subtitles */
+
+.app-header p,
+.dashboard-header p,
+.page-header p,
+.main-header p,
+.topbar p,
+.navbar p,
+.header p {
+  color: var(--hospital-muted-text);
+}
+
+/* Header links */
+
+.app-header a,
+.dashboard-header a,
+.page-header a,
+.main-header a,
+.topbar a,
+.navbar a,
+.header a {
+  color: #e5e5e5;
+  text-decoration: none;
+}
+
+.app-header a:hover,
+.dashboard-header a:hover,
+.page-header a:hover,
+.main-header a:hover,
+.topbar a:hover,
+.navbar a:hover,
+.header a:hover {
+  color: #ffffff;
+}
+
+/* Header buttons */
+
+.app-header button,
+.dashboard-header button,
+.page-header button,
+.main-header button,
+.topbar button,
+.navbar button,
+.header button {
+  border-color: var(--hospital-dark-border);
+}
+
+/* ========================================
+   DASHBOARD TITLE SECTIONS
+   Reusable classes for page components
+   ======================================== */
+
+.dark-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  background: var(--hospital-dark);
+  color: var(--hospital-text);
+  border-bottom: 1px solid var(--hospital-dark-border);
+}
+
+.dark-page-header h1,
+.dark-page-header h2,
+.dark-page-header h3 {
+  margin: 0;
+  color: var(--hospital-text);
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 700;
+}
+
+.dark-page-header p {
+  margin: 6px 0 0;
+  color: var(--hospital-muted-text);
+}
+
+/* ========================================
+   SIDEBARS
+   ======================================== */
+
+.sidebar,
+.dashboard-sidebar,
+.main-sidebar,
+.app-sidebar,
+.navigation-sidebar {
+  background: var(--hospital-dark);
+  color: var(--hospital-text);
+  border-color: var(--hospital-dark-border);
+}
+
+/* Sidebar headings */
+
+.sidebar h1,
+.sidebar h2,
+.sidebar h3,
+.dashboard-sidebar h1,
+.dashboard-sidebar h2,
+.main-sidebar h2,
+.app-sidebar h2,
+.navigation-sidebar h2 {
+  color: var(--hospital-text);
+}
+
+/* Sidebar navigation links */
+
+.sidebar a,
+.dashboard-sidebar a,
+.main-sidebar a,
+.app-sidebar a,
+.navigation-sidebar a {
+  color: #d4d4d4;
+}
+
+.sidebar a:hover,
+.dashboard-sidebar a:hover,
+.main-sidebar a:hover,
+.app-sidebar a:hover,
+.navigation-sidebar a:hover {
+  background: var(--hospital-dark-hover);
+  color: var(--hospital-text);
+}
+
+/* ========================================
+   REUSABLE DARK SECTION TITLE
+   ======================================== */
+
+.dark-section-title {
+  padding: 16px 20px;
+  background: var(--hospital-dark);
+  color: var(--hospital-text);
+  border-bottom: 1px solid var(--hospital-dark-border);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* ========================================
+   ACCESSIBILITY
+   ======================================== */
+
+.dark-page-header a:focus-visible,
+.dark-page-header button:focus-visible,
+.app-header a:focus-visible,
+.dashboard-header a:focus-visible,
+.page-header a:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+/* Responsive layout */
+
+@media (max-width: 768px) {
+  .dark-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
+  }
+}
