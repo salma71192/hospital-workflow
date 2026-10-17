@@ -13,10 +13,18 @@ export default function SidebarCategory({
     (item) => item.key === activeSection
   );
 
+  // Keep the active category expanded.
   const expanded = isOpen || hasActiveChild;
+
+  const icons = {
+    users: "♙",
+    "clipboard-list": "▤",
+    activity: "▥",
+  };
 
   return (
     <div className="admin-sidebar-category">
+      {/* Category Header */}
       <button
         type="button"
         className={`admin-sidebar-category__trigger ${
@@ -24,17 +32,19 @@ export default function SidebarCategory({
         }`}
         onClick={() => setIsOpen((previous) => !previous)}
         aria-expanded={expanded}
+        aria-controls={`sidebar-category-${category.key}`}
       >
         <span className="admin-sidebar-category__label">
-          {category.icon && (
-            <span className="admin-sidebar-category__icon">
-              {category.icon === "users" && "👥"}
-              {category.icon === "clipboard-list" && "📋"}
-              {category.icon === "activity" && "📊"}
-            </span>
-          )}
+          <span
+            className="admin-sidebar-category__icon"
+            aria-hidden="true"
+          >
+            {icons[category.icon] || "•"}
+          </span>
 
-          <span>{category.label}</span>
+          <span className="admin-sidebar-category__text">
+            {category.label}
+          </span>
         </span>
 
         <span
@@ -47,26 +57,41 @@ export default function SidebarCategory({
         </span>
       </button>
 
-      {expanded && (
-        <div className="admin-sidebar-category__children">
-          {category.children?.map((item) => (
+      {/* Submenu Items */}
+      <div
+        id={`sidebar-category-${category.key}`}
+        className={`admin-sidebar-category__children ${
+          expanded ? "open" : "closed"
+        }`}
+        hidden={!expanded}
+      >
+        {category.children?.map((item) => {
+          const isActive = activeSection === item.key;
+
+          return (
             <button
               type="button"
               key={item.key}
               className={`admin-sidebar-category__item ${
-                activeSection === item.key ? "active" : ""
+                isActive ? "active" : ""
               }`}
               onClick={() => onSelect(item.key)}
+              aria-current={isActive ? "page" : undefined}
             >
-              <span className="admin-sidebar-category__dot">
-                {activeSection === item.key ? "●" : "○"}
+              <span
+                className="admin-sidebar-category__dot"
+                aria-hidden="true"
+              >
+                {isActive ? "●" : "○"}
               </span>
 
-              <span>{item.label}</span>
+              <span className="admin-sidebar-category__item-text">
+                {item.label}
+              </span>
             </button>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }
