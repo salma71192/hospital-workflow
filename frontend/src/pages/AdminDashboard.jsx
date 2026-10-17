@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
@@ -10,7 +11,11 @@ import AdminManageSection from "../components/admin/AdminManageSection";
 import AdminStatisticsSection from "../components/admin/AdminStatisticsSection";
 import AdminRegistrationTrackerSection from "../components/admin/AdminRegistrationTrackerSection";
 
-export default function AdminDashboard({ user, onLogout, onActAsUser }) {
+export default function AdminDashboard({
+  user,
+  onLogout,
+  onActAsUser,
+}) {
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
@@ -21,12 +26,13 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   });
 
   const [users, setUsers] = useState([]);
-
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
   const [activeSection, setActiveSection] = useState("manage");
+
   const [activeCategory, setActiveCategory] = useState(
-    localStorage.getItem("activeCategory") || "admin"
+    () => localStorage.getItem("activeCategory") || "admin"
   );
 
   const roles = [
@@ -77,7 +83,14 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       const res = await api.get("users/list-users/");
       setUsers(res.data.users || []);
     } catch (err) {
-      console.error("Failed to load users", err);
+      console.error("Failed to load users:", err);
+
+      setError(
+        err?.response?.data?.error ||
+          `Failed to load users (HTTP ${
+            err?.response?.status || "network error"
+          }).`
+      );
     }
   };
 
@@ -132,6 +145,12 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     localStorage.setItem("activeCategory", category);
   };
 
+  const handleSectionChange = (section) => {
+    setActiveSection(section);
+    setMessage("");
+    setError("");
+  };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setMessage("");
@@ -139,8 +158,8 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
 
     try {
       const res = await api.post("users/create-user/", formData);
+
       setMessage(res.data.message || "User created successfully");
-      setError("");
 
       const createdRole = formData.role;
 
@@ -152,17 +171,25 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       });
 
       await fetchUsers();
+
       setActiveSection("manage");
-      setActiveCategory(createdRole);
-      localStorage.setItem("activeCategory", createdRole);
+      handleCategoryChange(createdRole);
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to create user");
+      setError(
+        err?.response?.data?.error ||
+          `Failed to create user (HTTP ${
+            err?.response?.status || "network error"
+          }).`
+      );
       setMessage("");
     }
   };
 
   const handleActAsUser = (selectedUser) => {
+    if (!onActAsUser) return;
+
     onActAsUser(selectedUser);
+
     navigate(
       selectedUser.is_superuser
         ? "/admin"
@@ -170,59 +197,116 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     );
   };
 
-  const handleRoleUpdate = async (userId, newRole, newIsSuperuser) => {
+  const handleRoleUpdate = async (
+    userId,
+    newRole,
+    newIsSuperuser
+  ) => {
+    setMessage("");
+    setError("");
+
     try {
       const res = await api.put(`users/update-user/${userId}/`, {
         role: newRole,
         is_superuser: newIsSuperuser,
       });
+
       setMessage(res.data.message || "User updated successfully");
-      setError("");
+
       await fetchUsers();
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to update user");
+      setError(
+        err?.response?.data?.error ||
+          "Failed to update user"
+      );
       setMessage("");
+      throw err;
     }
   };
 
   const handleDeleteUser = async (userId, username) => {
-    const confirmed = window.confirm(`Delete user "${username}"?`);
+    const confirmed = window.confirm(
+      `Delete user "${username}"?`
+    );
+
     if (!confirmed) return;
 
+    setMessage("");
+    setError("");
+
     try {
-      const res = await api.delete(`users/delete-user/${userId}/`);
-      setMessage(res.data.message || "User deleted successfully");
-      setError("");
+      const res = await api.delete(
+        `users/delete-user/${userId}/`
+      );
+
+      setMessage(
+        res.data.message || "User deleted successfully"
+      );
+
       await fetchUsers();
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to delete user");
+      setError(
+        err?.response?.data?.error ||
+          "Failed to delete user"
+      );
       setMessage("");
     }
   };
 
+  const renderPlaceholder = (heading, description) => (
+    <section
+      style={{
+        background: "#ffffff",
+        border: "1px solid #e2e8f0",
+        borderRadius: "18px",
+        padding: "28px",
+        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
+      }}
+    >
+      <h2 style={{ marginTop: 0, color: "#1e3a8a" }}>
+        {heading}
+      </h2>
+      <p style={{ color: "#64748b", lineHeight: 1.7 }}>
+        {description}
+      </p>
+      <p style={{ color: "#64748b", fontSize: "14px" }}>
+        This section still needs to be connected to its
+        existing page or backend functionality.
+      </p>
+    </section>
+  );
+
   return (
     <DashboardLayout
       title="Admin Dashboard"
-      subtitle={`Welcome, ${user?.username}`}
+      subtitle={`Welcome, ${user?.username || ""}`}
       accent="#1e3a8a"
       sidebarTitle="Admin Panel"
       sidebarItems={[
         { key: "create", label: "Create New User" },
         { key: "manage", label: "Manage Users" },
-        { key: "statistics", label: "Statistics Tracker" },
-        { key: "registration_tracker", label: "Registration Tracker" },
+        { key: "statistics", label: "Rehab Statistics" },
+        {
+          key: "registration_tracker",
+          label: "Registration History",
+        },
       ]}
       activeSection={activeSection}
-      setActiveSection={setActiveSection}
+      setActiveSection={handleSectionChange}
       onLogout={onLogout}
+      useAdminSidebar={true}
     >
-      {message ? (
-        <DashboardNotice type="success">{message}</DashboardNotice>
-      ) : null}
+      {message && (
+        <DashboardNotice type="success">
+          {message}
+        </DashboardNotice>
+      )}
 
-      {error ? (
-        <DashboardNotice type="error">{error}</DashboardNotice>
-      ) : null}
+      {error && (
+        <DashboardNotice type="error">
+          {error}
+        </DashboardNotice>
+      )}
 
       {activeSection === "create" && (
         <AdminCreateSection
@@ -250,11 +334,31 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         />
       )}
 
-      {activeSection === "statistics" && <AdminStatisticsSection />}
+      {activeSection === "statistics" && (
+        <AdminStatisticsSection />
+      )}
 
       {activeSection === "registration_tracker" && (
         <AdminRegistrationTrackerSection />
       )}
+
+      {activeSection === "add_patient" &&
+        renderPlaceholder(
+          "Add New Patient",
+          "This area will provide access to the patient entry function."
+        )}
+
+      {activeSection === "register_patient" &&
+        renderPlaceholder(
+          "Register New Patient",
+          "This area will provide access to the reception registration workflow."
+        )}
+
+      {activeSection === "evaluations" &&
+        renderPlaceholder(
+          "Evaluations",
+          "This area will provide access to rehabilitation evaluations."
+        )}
     </DashboardLayout>
   );
 }
