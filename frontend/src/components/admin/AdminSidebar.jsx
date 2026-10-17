@@ -2,7 +2,7 @@
 import React from "react";
 import SidebarCategory from "./SidebarCategory";
 import adminMenuConfig from "./adminMenuConfig";
-
+import "./AdminSidebar.css";
 export default function AdminSidebar({
   activeSection,
   onSelect,

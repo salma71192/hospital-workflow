@@ -1,30 +1,36 @@
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+
+const categoryIcons = {
+  users: "♙",
+  "clipboard-list": "▤",
+  activity: "▥",
+};
 
 export default function SidebarCategory({
   category,
   activeSection,
   onSelect,
-  defaultOpen = false,
 }) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-
   const hasActiveChild = category.children?.some(
     (item) => item.key === activeSection
   );
 
-  // Keep the active category expanded.
-  const expanded = isOpen || hasActiveChild;
+  const [isOpen, setIsOpen] = useState(
+    Boolean(category.defaultOpen || hasActiveChild)
+  );
 
-  const icons = {
-    users: "♙",
-    "clipboard-list": "▤",
-    activity: "▥",
-  };
+  useEffect(() => {
+    if (hasActiveChild) {
+      setIsOpen(true);
+    }
+  }, [hasActiveChild]);
+
+  const expanded = isOpen;
+  const submenuId = `sidebar-category-${category.key}`;
 
   return (
     <div className="admin-sidebar-category">
-      {/* Category Header */}
       <button
         type="button"
         className={`admin-sidebar-category__trigger ${
@@ -32,14 +38,14 @@ export default function SidebarCategory({
         }`}
         onClick={() => setIsOpen((previous) => !previous)}
         aria-expanded={expanded}
-        aria-controls={`sidebar-category-${category.key}`}
+        aria-controls={submenuId}
       >
         <span className="admin-sidebar-category__label">
           <span
             className="admin-sidebar-category__icon"
             aria-hidden="true"
           >
-            {icons[category.icon] || "•"}
+            {categoryIcons[category.icon] || "•"}
           </span>
 
           <span className="admin-sidebar-category__text">
@@ -57,9 +63,8 @@ export default function SidebarCategory({
         </span>
       </button>
 
-      {/* Submenu Items */}
       <div
-        id={`sidebar-category-${category.key}`}
+        id={submenuId}
         className={`admin-sidebar-category__children ${
           expanded ? "open" : "closed"
         }`}
