@@ -1,83 +1,19 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 
 function getTodayString() {
-  return new Date().toISOString().split("T")[0];
+  const now = new Date();
+  const localDate = new Date(
+    now.getTime() - now.getTimezoneOffset() * 60000
+  );
+  return localDate.toISOString().split("T")[0];
 }
 
 function getCurrentMonthString() {
   const now = new Date();
-  return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}`;
-}
-
-function getProgressColor(percent) {
-  if (percent >= 75) return "#16a34a";
-  if (percent >= 50) return "#3b82f6";
-  if (percent >= 25) return "#f59e0b";
-  return "#ef4444";
-}
-
-function getPillStyle(percent) {
-  if (percent >= 75) {
-    return {
-      background: "#ecfdf5",
-      color: "#166534",
-      border: "1px solid #bbf7d0",
-    };
-  }
-
-  if (percent >= 50) {
-    return {
-      background: "#eff6ff",
-      color: "#1d4ed8",
-      border: "1px solid #dbeafe",
-    };
-  }
-
-  if (percent >= 25) {
-    return {
-      background: "#fffbeb",
-      color: "#b45309",
-      border: "1px solid #fde68a",
-    };
-  }
-
-  return {
-    background: "#fef2f2",
-    color: "#991b1b",
-    border: "1px solid #fecaca",
-  };
-}
-
-function getTrendInfo(value) {
-  const safeValue = Number(value || 0);
-
-  if (safeValue > 0) {
-    return {
-      arrow: "▲",
-      label: `+${safeValue}`,
-      color: "#166534",
-      background: "#ecfdf5",
-      border: "#bbf7d0",
-    };
-  }
-
-  if (safeValue < 0) {
-    return {
-      arrow: "▼",
-      label: `${safeValue}`,
-      color: "#b91c1c",
-      background: "#fef2f2",
-      border: "#fecaca",
-    };
-  }
-
-  return {
-    arrow: "■",
-    label: "0",
-    color: "#475569",
-    background: "#f8fafc",
-    border: "#e2e8f0",
-  };
+  return `${now.getFullYear()}-${String(
+    now.getMonth() + 1
+  ).padStart(2, "0")}`;
 }
 
 export default function PhysioStatisticsTable({
@@ -92,18 +28,10 @@ export default function PhysioStatisticsTable({
 
   const [viewMode, setViewMode] = useState("day");
   const [selectedDay, setSelectedDay] = useState(getTodayString());
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthString());
+  const [selectedMonth, setSelectedMonth] = useState(
+    getCurrentMonthString()
+  );
   const [selectedPhysio, setSelectedPhysio] = useState("all");
-  const [collapsedRows, setCollapsedRows] = useState({});
-
-  useEffect(() => {
-    const next = {};
-    rows.forEach((row) => {
-      const key = String(row?.therapist_id || row?.therapist_name || "");
-      next[key] = true;
-    });
-    setCollapsedRows(next);
-  }, [rows]);
 
   useEffect(() => {
     if (typeof onChangeFilters === "function") {
@@ -114,16 +42,25 @@ export default function PhysioStatisticsTable({
         therapist_id: selectedPhysio,
       });
     }
-  }, [viewMode, selectedDay, selectedMonth, selectedPhysio, onChangeFilters]);
+  }, [
+    viewMode,
+    selectedDay,
+    selectedMonth,
+    selectedPhysio,
+    onChangeFilters,
+  ]);
 
   const physioOptions = useMemo(() => {
     const map = new Map();
 
     rows.forEach((row) => {
       const id = String(row?.therapist_id || "");
-      const name = row?.therapist_name || "-";
+
       if (id && !map.has(id)) {
-        map.set(id, { id, name });
+        map.set(id, {
+          id,
+          name: row?.therapist_name || "-",
+        });
       }
     });
 
@@ -134,11 +71,12 @@ export default function PhysioStatisticsTable({
     if (selectedPhysio === "all") return rows;
 
     return rows.filter(
-      (row) => String(row?.therapist_id) === String(selectedPhysio)
+      (row) =>
+        String(row?.therapist_id) === String(selectedPhysio)
     );
   }, [rows, selectedPhysio]);
 
-  const filteredTotals = useMemo(() => {
+  const calculatedTotals = useMemo(() => {
     if (!filteredRows.length) return totals;
 
     return filteredRows.reduce(
@@ -162,549 +100,500 @@ export default function PhysioStatisticsTable({
     );
   }, [filteredRows, totals]);
 
-  const toggleRow = (rowKey) => {
-    setCollapsedRows((prev) => ({
-      ...prev,
-      [rowKey]: !prev[rowKey],
-    }));
-  };
-
-  const handleExpandAll = () => {
-    const next = {};
-    filteredRows.forEach((row) => {
-      const key = String(row?.therapist_id || row?.therapist_name || "");
-      next[key] = false;
-    });
-    setCollapsedRows((prev) => ({ ...prev, ...next }));
-  };
-
-  const handleCollapseAll = () => {
-    const next = {};
-    filteredRows.forEach((row) => {
-      const key = String(row?.therapist_id || row?.therapist_name || "");
-      next[key] = true;
-    });
-    setCollapsedRows((prev) => ({ ...prev, ...next }));
-  };
-
   return (
-    <div style={styles.card}>
+    <div style={styles.container}>
       <div style={styles.header}>
         <div>
-          <div style={styles.title}>{title}</div>
-          {dateLabel ? <div style={styles.subtext}>{dateLabel}</div> : null}
+          <h2 style={styles.title}>{title}</h2>
+          <p style={styles.subtitle}>
+            All physiotherapists and their statistics
+            {dateLabel ? ` · ${dateLabel}` : ""}
+          </p>
         </div>
 
         <div style={styles.headerRight}>
-          {isLoading ? <div style={styles.loadingBadge}>Refreshing...</div> : null}
-          <div style={styles.badge}>{filteredRows.length} Physio</div>
+          {isLoading && (
+            <span style={styles.loadingBadge}>Updating...</span>
+          )}
+
+          <span style={styles.countBadge}>
+            {filteredRows.length}{" "}
+            {filteredRows.length === 1 ? "Therapist" : "Therapists"}
+          </span>
         </div>
       </div>
 
-      <div style={styles.filterBar}>
+      <div style={styles.filters}>
         <div style={styles.modeButtons}>
           <button
             type="button"
-            style={{
-              ...styles.modeBtn,
-              ...(viewMode === "day" ? styles.modeBtnActive : {}),
-            }}
             onClick={() => setViewMode("day")}
-          >
-            Day
-          </button>
-
-          <button
-            type="button"
             style={{
-              ...styles.modeBtn,
-              ...(viewMode === "month" ? styles.modeBtnActive : {}),
+              ...styles.modeButton,
+              ...(viewMode === "day" ? styles.activeMode : {}),
             }}
+          >
+            Daily
+          </button>
+
+          <button
+            type="button"
             onClick={() => setViewMode("month")}
+            style={{
+              ...styles.modeButton,
+              ...(viewMode === "month" ? styles.activeMode : {}),
+            }}
           >
-            Month
+            Monthly
           </button>
         </div>
 
-        {viewMode === "day" ? (
+        <label style={styles.field}>
+          <span style={styles.fieldLabel}>
+            {viewMode === "day" ? "Date" : "Month"}
+          </span>
+
           <input
-            type="date"
-            value={selectedDay}
-            onChange={(e) => setSelectedDay(e.target.value)}
+            type={viewMode === "day" ? "date" : "month"}
+            value={viewMode === "day" ? selectedDay : selectedMonth}
+            onChange={(event) =>
+              viewMode === "day"
+                ? setSelectedDay(event.target.value)
+                : setSelectedMonth(event.target.value)
+            }
             style={styles.input}
           />
-        ) : (
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
+        </label>
+
+        <label style={styles.field}>
+          <span style={styles.fieldLabel}>Physiotherapist</span>
+
+          <select
+            value={selectedPhysio}
+            onChange={(event) =>
+              setSelectedPhysio(event.target.value)
+            }
             style={styles.input}
-          />
-        )}
-
-        <select
-          value={selectedPhysio}
-          onChange={(e) => setSelectedPhysio(e.target.value)}
-          style={styles.input}
-        >
-          <option value="all">All Physio</option>
-          {physioOptions.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-
-        <div style={styles.actionBtns}>
-          <button
-            type="button"
-            style={styles.secondaryBtn}
-            onClick={handleExpandAll}
           >
-            Expand All
-          </button>
+            <option value="all">All physiotherapists</option>
 
-          <button
-            type="button"
-            style={styles.secondaryBtn}
-            onClick={handleCollapseAll}
-          >
-            Collapse All
-          </button>
-        </div>
+            {physioOptions.map((physio) => (
+              <option key={physio.id} value={physio.id}>
+                {physio.name}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      {filteredTotals ? (
-        <div style={styles.totalCard}>
-          <div style={styles.totalTop}>
-            <div>
-              <div style={styles.totalTitle}>Total</div>
-              <div style={styles.totalSubtitle}>
-                Summary for current filters
-              </div>
-            </div>
+      {calculatedTotals && (
+        <div style={styles.summary}>
+          <div style={styles.summaryTitle}>Team totals</div>
+
+          <div style={styles.summaryGrid}>
+            <SummaryItem
+              label="Available"
+              value={calculatedTotals.available_slots}
+            />
+            <SummaryItem
+              label="Booked"
+              value={calculatedTotals.booked}
+            />
+            <SummaryItem
+              label="Walk-ins"
+              value={calculatedTotals.walk_in}
+            />
+            <SummaryItem
+              label="Seen"
+              value={calculatedTotals.seen}
+            />
+            <SummaryItem
+              label="Initial evaluations"
+              value={calculatedTotals.initial_eval}
+            />
+            <SummaryItem
+              label="No-shows"
+              value={calculatedTotals.no_show}
+            />
           </div>
-
-          <div style={styles.statsGrid}>
-            <MiniStat label="Available" value={filteredTotals.available_slots} />
-            <MiniStat label="Booked" value={filteredTotals.booked} />
-            <MiniStat label="Walk In" value={filteredTotals.walk_in} />
-            <MiniStat label="Seen" value={filteredTotals.seen} />
-            <MiniStat label="Initial Eval" value={filteredTotals.initial_eval} />
-            <MiniStat label="No Show" value={filteredTotals.no_show} />
-          </div>
-        </div>
-      ) : null}
-
-      {!filteredRows.length ? (
-        <div style={styles.emptyState}>No statistics available.</div>
-      ) : (
-        <div style={styles.rowsWrap}>
-          {filteredRows.map((row) => {
-            const available = Number(row?.available_slots || 0);
-            const booked = Number(row?.booked || 0);
-            const walkIn = Number(row?.walk_in || 0);
-            const seen = Number(row?.seen || 0);
-            const initialEval = Number(row?.initial_eval || 0);
-            const noShow = Number(row?.no_show || 0);
-            const trendBooked = Number(row?.trend_booked || 0);
-            const capacityWarning = Boolean(row?.capacity_warning);
-
-            const bookedPercent =
-              available > 0
-                ? Math.min(100, Math.round((booked / available) * 100))
-                : 0;
-
-            const rowKey = String(
-              row?.therapist_id || row?.therapist_name || ""
-            );
-            const isCollapsed = collapsedRows[rowKey] ?? true;
-            const trend = getTrendInfo(trendBooked);
-
-            return (
-              <div key={rowKey} style={styles.rowCard}>
-                <button
-                  type="button"
-                  onClick={() => toggleRow(rowKey)}
-                  style={styles.rowToggle}
-                >
-                  <div style={styles.rowLeft}>
-                    <div style={styles.rowTitleLine}>
-                      <div style={styles.name}>{row?.therapist_name || "-"}</div>
-
-                      {capacityWarning ? (
-                        <div style={styles.warningBadge}>Near Full</div>
-                      ) : null}
-                    </div>
-
-                    <div style={styles.metaRow}>
-                      <div style={styles.meta}>
-                        {booked} booked out of {available} slots
-                      </div>
-
-                      <div
-                        style={{
-                          ...styles.trendBadge,
-                          color: trend.color,
-                          background: trend.background,
-                          borderColor: trend.border,
-                        }}
-                      >
-                        <span style={styles.trendArrow}>{trend.arrow}</span>
-                        <span>{trend.label} vs previous</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={styles.rowTopRight}>
-                    <div
-                      style={{
-                        ...styles.percentPill,
-                        ...getPillStyle(bookedPercent),
-                      }}
-                    >
-                      {bookedPercent}%
-                    </div>
-
-                    <div
-                      style={{
-                        ...styles.chevronWrap,
-                        ...(isCollapsed ? {} : styles.chevronWrapOpen),
-                      }}
-                    >
-                      <div style={styles.chevron}>❯</div>
-                    </div>
-                  </div>
-                </button>
-
-                {!isCollapsed ? (
-                  <>
-                    <div style={styles.progressTrack}>
-                      <div
-                        style={{
-                          ...styles.progressFill,
-                          width: `${bookedPercent}%`,
-                          background: getProgressColor(bookedPercent),
-                        }}
-                      />
-                    </div>
-
-                    <div style={styles.statsGrid}>
-                      <MiniStat label="Available" value={available} />
-                      <MiniStat label="Booked" value={booked} />
-                      <MiniStat label="Walk In" value={walkIn} />
-                      <MiniStat label="Seen" value={seen} />
-                      <MiniStat label="Initial Eval" value={initialEval} />
-                      <MiniStat label="No Show" value={noShow} />
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            );
-          })}
         </div>
       )}
+
+      <div style={styles.tableContainer}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={{ ...styles.th, ...styles.nameColumn }}>
+                Physiotherapist
+              </th>
+              <th style={styles.th}>Available</th>
+              <th style={styles.th}>Booked</th>
+              <th style={styles.th}>Walk-ins</th>
+              <th style={styles.th}>Initial Eval</th>
+              <th style={styles.th}>No-shows</th>
+              <th style={styles.th}>Seen</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {filteredRows.map((row, index) => {
+              const available = Number(row?.available_slots || 0);
+              const booked = Number(row?.booked || 0);
+
+              return (
+                <tr
+                  key={
+                    row?.therapist_id ||
+                    `${row?.therapist_name || "therapist"}-${index}`
+                  }
+                  style={
+                    index % 2 === 0
+                      ? styles.evenRow
+                      : styles.oddRow
+                  }
+                >
+                  <td style={{ ...styles.td, ...styles.nameColumn }}>
+                    <div style={styles.therapistName}>
+                      <span style={styles.avatar}>
+                        {(row?.therapist_name || "-")
+                          .trim()
+                          .charAt(0)
+                          .toUpperCase()}
+                      </span>
+
+                      <span>{row?.therapist_name || "-"}</span>
+                    </div>
+                  </td>
+
+                  <td style={styles.td}>{available}</td>
+
+                  <td style={styles.td}>
+                    <strong>{booked}</strong>
+                  </td>
+
+                  <td style={styles.td}>
+                    {Number(row?.walk_in || 0)}
+                  </td>
+
+                  <td style={styles.td}>
+                    {Number(row?.initial_eval || 0)}
+                  </td>
+
+                  <td style={styles.td}>
+                    {Number(row?.no_show || 0)}
+                  </td>
+
+                  <td style={styles.td}>
+                    {Number(row?.seen || 0)}
+                  </td>
+                </tr>
+              );
+            })}
+
+            {!filteredRows.length && (
+              <tr>
+                <td colSpan={7} style={styles.emptyCell}>
+                  {isLoading
+                    ? "Loading statistics..."
+                    : "No statistics available for the selected filters."}
+                </td>
+              </tr>
+            )}
+          </tbody>
+
+          {calculatedTotals && filteredRows.length > 0 && (
+            <tfoot>
+              <tr style={styles.totalRow}>
+                <td style={{ ...styles.td, ...styles.nameColumn }}>
+                  Team total
+                </td>
+
+                <td style={styles.td}>
+                  {calculatedTotals.available_slots}
+                </td>
+
+                <td style={styles.td}>
+                  {calculatedTotals.booked}
+                </td>
+
+                <td style={styles.td}>
+                  {calculatedTotals.walk_in}
+                </td>
+
+                <td style={styles.td}>
+                  {calculatedTotals.initial_eval}
+                </td>
+
+                <td style={styles.td}>
+                  {calculatedTotals.no_show}
+                </td>
+
+                <td style={styles.td}>
+                  {calculatedTotals.seen}
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
     </div>
   );
 }
 
-function MiniStat({ label, value }) {
+function SummaryItem({ label, value }) {
   return (
-    <div style={styles.statCard}>
-      <div style={styles.statLabel}>{label}</div>
-      <div style={styles.statValue}>{value}</div>
+    <div style={styles.summaryItem}>
+      <span style={styles.summaryLabel}>{label}</span>
+      <strong style={styles.summaryValue}>
+        {Number(value || 0).toLocaleString()}
+      </strong>
     </div>
   );
 }
 
 const styles = {
-  card: {
-    background: "#fff",
+  container: {
+    width: "100%",
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "18px",
+    padding: "20px",
     borderRadius: "18px",
-    padding: "18px",
-    border: "1px solid #e5e7eb",
-    boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)",
-    display: "grid",
-    gap: "16px",
+    border: "1px solid #e2e8f0",
+    background: "#ffffff",
+    boxShadow: "0 5px 18px rgba(15, 23, 42, 0.05)",
   },
+
   header: {
     display: "flex",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
     gap: "12px",
     flexWrap: "wrap",
   },
+
+  title: {
+    margin: 0,
+    fontSize: "21px",
+    fontWeight: 800,
+    color: "#1e293b",
+  },
+
+  subtitle: {
+    margin: "6px 0 0",
+    fontSize: "12px",
+    color: "#64748b",
+    lineHeight: 1.6,
+  },
+
   headerRight: {
     display: "flex",
     gap: "8px",
     alignItems: "center",
     flexWrap: "wrap",
   },
-  title: {
-    fontSize: "22px",
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  subtext: {
-    marginTop: "4px",
-    fontSize: "13px",
-    fontWeight: "600",
-    color: "#64748b",
-  },
-  badge: {
-    background: "#f8fafc",
-    color: "#334155",
-    border: "1px solid #e2e8f0",
-    borderRadius: "999px",
-    padding: "6px 12px",
+
+  countBadge: {
+    padding: "8px 12px",
+    borderRadius: "9px",
+    background: "#eff6ff",
+    color: "#1d4ed8",
     fontSize: "12px",
-    fontWeight: "800",
-    whiteSpace: "nowrap",
+    fontWeight: 800,
   },
+
   loadingBadge: {
+    padding: "8px 12px",
+    borderRadius: "9px",
     background: "#fffbeb",
-    color: "#b45309",
-    border: "1px solid #fde68a",
-    borderRadius: "999px",
-    padding: "6px 12px",
+    color: "#92400e",
     fontSize: "12px",
-    fontWeight: "800",
-    whiteSpace: "nowrap",
+    fontWeight: 700,
   },
-  filterBar: {
+
+  filters: {
     display: "flex",
-    gap: "10px",
+    alignItems: "end",
+    gap: "12px",
     flexWrap: "wrap",
-    alignItems: "center",
+    padding: "15px",
+    borderRadius: "13px",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
   },
+
   modeButtons: {
     display: "flex",
-    gap: "8px",
-  },
-  modeBtn: {
-    background: "#fff",
-    color: "#475569",
-    border: "1px solid #d1d5db",
+    gap: "5px",
+    padding: "4px",
+    background: "#e2e8f0",
     borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "700",
-    cursor: "pointer",
   },
-  modeBtnActive: {
-    background: "#f8fafc",
-    color: "#0f172a",
-    borderColor: "#94a3b8",
-  },
-  input: {
-    padding: "10px 12px",
-    borderRadius: "10px",
-    border: "1px solid #d1d5db",
-    fontSize: "14px",
-    background: "#fff",
-    outline: "none",
-    minWidth: "150px",
-  },
-  actionBtns: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
-  secondaryBtn: {
-    background: "#f8fafc",
-    color: "#0f172a",
-    border: "1px solid #e2e8f0",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  rowsWrap: {
-    display: "grid",
-    gap: "12px",
-  },
-  rowCard: {
-    background: "#fcfcfd",
-    border: "1px solid #e2e8f0",
-    borderRadius: "16px",
-    padding: "14px",
-    display: "grid",
-    gap: "12px",
-  },
-  rowToggle: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px",
-    flexWrap: "wrap",
-    background: "transparent",
+
+  modeButton: {
+    padding: "9px 15px",
     border: "none",
-    padding: 0,
+    borderRadius: "7px",
+    background: "transparent",
+    color: "#475569",
+    fontWeight: 700,
+    fontSize: "12px",
     cursor: "pointer",
-    textAlign: "left",
-    width: "100%",
   },
-  rowLeft: {
+
+  activeMode: {
+    background: "#2563eb",
+    color: "#ffffff",
+  },
+
+  field: {
     display: "grid",
-    gap: "8px",
-    flex: 1,
-    minWidth: "240px",
-  },
-  rowTitleLine: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    flexWrap: "wrap",
-  },
-  rowTopRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-  },
-  name: {
-    fontSize: "16px",
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  metaRow: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-    alignItems: "center",
-  },
-  meta: {
-    fontSize: "13px",
-    color: "#64748b",
-    fontWeight: "600",
-  },
-  trendBadge: {
-    display: "inline-flex",
-    alignItems: "center",
     gap: "6px",
-    padding: "5px 10px",
-    borderRadius: "999px",
-    border: "1px solid",
-    fontSize: "12px",
-    fontWeight: "800",
+    minWidth: "170px",
+    flex: "1 1 170px",
   },
-  trendArrow: {
-    fontSize: "12px",
-    lineHeight: 1,
+
+  fieldLabel: {
+    fontSize: "11px",
+    fontWeight: 700,
+    color: "#475569",
   },
-  warningBadge: {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "5px 10px",
-    borderRadius: "999px",
-    background: "#fff7ed",
-    color: "#c2410c",
-    border: "1px solid #fdba74",
-    fontSize: "12px",
-    fontWeight: "800",
-  },
-  percentPill: {
-    minWidth: "60px",
-    height: "32px",
-    padding: "0 12px",
-    borderRadius: "999px",
-    fontSize: "14px",
-    fontWeight: "800",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  chevronWrap: {
-    width: "42px",
-    height: "42px",
-    borderRadius: "999px",
-    background: "#e2e8f0",
-    border: "1px solid #cbd5e1",
-    boxShadow: "0 2px 6px rgba(15, 23, 42, 0.08)",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "transform 0.2s ease, background 0.2s ease",
-    flexShrink: 0,
-  },
-  chevronWrapOpen: {
-    transform: "rotate(90deg)",
-    background: "#cbd5e1",
-  },
-  chevron: {
-    color: "#0f172a",
-    fontSize: "20px",
-    fontWeight: "900",
-    lineHeight: 1,
-    marginLeft: "2px",
-  },
-  progressTrack: {
+
+  input: {
+    boxSizing: "border-box",
     width: "100%",
-    height: "12px",
-    borderRadius: "999px",
-    background: "#e2e8f0",
-    overflow: "hidden",
+    minWidth: 0,
+    height: "40px",
+    padding: "0 10px",
+    borderRadius: "8px",
+    border: "1px solid #cbd5e1",
+    background: "#ffffff",
+    color: "#0f172a",
+    fontSize: "12px",
   },
-  progressFill: {
-    height: "100%",
-    borderRadius: "999px",
-    transition: "width 0.25s ease",
-  },
-  statsGrid: {
+
+  summary: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+    gap: "12px",
+    padding: "16px",
+    borderRadius: "13px",
+    border: "1px solid #dbeafe",
+    background: "#f8fafc",
+  },
+
+  summaryTitle: {
+    fontSize: "14px",
+    fontWeight: 800,
+    color: "#1e293b",
+  },
+
+  summaryGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
     gap: "10px",
   },
-  statCard: {
+
+  summaryItem: {
+    display: "grid",
+    gap: "7px",
+    padding: "12px",
+    borderRadius: "10px",
     background: "#ffffff",
-    border: "1px solid #eef2f7",
-    borderRadius: "12px",
-    padding: "10px 12px",
-    display: "grid",
-    gap: "4px",
+    border: "1px solid #e2e8f0",
   },
-  statLabel: {
+
+  summaryLabel: {
+    fontSize: "11px",
+    color: "#64748b",
+    fontWeight: 600,
+  },
+
+  summaryValue: {
+    fontSize: "22px",
+    color: "#2563eb",
+    fontWeight: 800,
+  },
+
+  tableContainer: {
+    width: "100%",
+    overflowX: "auto",
+    borderRadius: "12px",
+    border: "1px solid #e2e8f0",
+  },
+
+  table: {
+    width: "100%",
+    borderCollapse: "separate",
+    borderSpacing: 0,
     fontSize: "12px",
-    fontWeight: "700",
-    color: "#64748b",
+    textAlign: "left",
+    whiteSpace: "nowrap",
+  },
+
+  th: {
+    padding: "14px 13px",
+    background: "#f1f5f9",
+    color: "#334155",
+    fontSize: "10px",
+    fontWeight: 800,
     textTransform: "uppercase",
+    letterSpacing: "0.4px",
+    borderBottom: "1px solid #e2e8f0",
   },
-  statValue: {
-    fontSize: "20px",
-    fontWeight: "800",
-    color: "#0f172a",
-    lineHeight: 1.1,
+
+  nameColumn: {
+    position: "sticky",
+    left: 0,
+    zIndex: 1,
+    minWidth: "200px",
   },
-  totalCard: {
-    background: "#fafafa",
-    border: "1px solid #e5e7eb",
-    borderRadius: "16px",
-    padding: "14px",
-    display: "grid",
-    gap: "12px",
+
+  td: {
+    padding: "13px",
+    color: "#334155",
+    borderBottom: "1px solid #eef2f7",
+    verticalAlign: "middle",
   },
-  totalTop: {
+
+  evenRow: {
+    background: "#ffffff",
+  },
+
+  oddRow: {
+    background: "#f8fafc",
+  },
+
+  therapistName: {
     display: "flex",
-    justifyContent: "space-between",
     alignItems: "center",
-    gap: "12px",
-    flexWrap: "wrap",
+    gap: "9px",
+    fontWeight: 700,
+    color: "#1e293b",
   },
-  totalTitle: {
-    fontSize: "16px",
-    fontWeight: "800",
-    color: "#0f172a",
+
+  avatar: {
+    width: "30px",
+    height: "30px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    borderRadius: "9px",
+    background: "#dbeafe",
+    color: "#1d4ed8",
+    fontWeight: 800,
+    fontSize: "12px",
   },
-  totalSubtitle: {
-    marginTop: "4px",
-    fontSize: "13px",
+
+  totalRow: {
+    background: "#eff6ff",
+    fontWeight: 800,
+  },
+
+  emptyCell: {
+    padding: "28px 16px",
+    textAlign: "center",
     color: "#64748b",
-    fontWeight: "600",
-  },
-  emptyState: {
-    padding: "18px",
-    borderRadius: "12px",
-    background: "#fafafa",
-    color: "#64748b",
-    border: "1px dashed #d1d5db",
-    fontWeight: "600",
   },
 };
