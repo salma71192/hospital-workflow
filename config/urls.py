@@ -1,7 +1,7 @@
+
 from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
-
 
 
 def home(request):
@@ -9,11 +9,16 @@ def home(request):
 
 
 urlpatterns = [
+    # Django admin panel
     path("admin-panel/", admin.site.urls),
+
+    # Application APIs
     path("api/users/", include("users.api_urls")),
     path("api/patients/", include("patients.api_urls")),
     path("api/reception/", include("reception.api_urls")),
     path("api/approvals/", include("approvals.api_urls")),
     path("api/callcenter/", include("callcenter.urls")),
+
+    # API root
     path("", home),
 ]

@@ -27,7 +27,7 @@ export default function RegistrationTrackerFilters({
   title,
   subtitle,
   today,
-  filter,
+  filter = {},
   setFilter,
   agents = [],
   therapists = [],
@@ -35,18 +35,23 @@ export default function RegistrationTrackerFilters({
 }) {
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const updateFilter = (key, value) => {
-    setFilter((prev) => ({
-      ...prev,
+    setFilter((previous) => ({
+      ...previous,
       [key]: value,
     }));
   };
+  const applyFilters = (nextFilters = filter, nextMode = mode) => {
+    onApplyFilters?.({ ...nextFilters }, nextMode);
+  };
   const applyPreset = (preset) => {
     const currentToday = today || getLocalDateString();
-    let nextMode;
+    let nextMode = mode;
     let nextFilters = { ...filter };
     if (preset === "today") {
       nextMode = "today";
       nextFilters.date = currentToday;
+      nextFilters.from_date = "";
+      nextFilters.to_date = "";
     } else if (preset === "week") {
       nextMode = "monthly";
       nextFilters.from_date = getDateOffset(-6);
@@ -58,22 +63,27 @@ export default function RegistrationTrackerFilters({
     } else {
       return;
     }
-    // Update the visible controls.
-    setFilter((prev) => ({
-      ...prev,
+    setFilter((previous) => ({
+      ...previous,
       ...nextFilters,
     }));
-    // Apply the exact new filter values, not stale state.
     onChangeMode?.(nextMode);
-    onApplyFilters?.(nextFilters, nextMode);
+    applyFilters(nextFilters, nextMode);
   };
   const clearExtraFilters = () => {
-    setFilter((prev) => ({
-      ...prev,
+    const nextFilters = {
+      ...filter,
+      user_id: "all",
+      therapist_id: "all",
+      patient: "",
+    };
+    setFilter((previous) => ({
+      ...previous,
       user_id: "all",
       therapist_id: "all",
       patient: "",
     }));
+    applyFilters(nextFilters, mode);
   };
   const isExtraFilterActive =
     (filter.user_id && filter.user_id !== "all") ||
@@ -94,7 +104,9 @@ export default function RegistrationTrackerFilters({
               ...styles.modeBtn,
               ...(mode === "today" ? styles.modeBtnActive : {}),
             }}
-            onClick={() => onChangeMode?.("today")}
+            onClick={() => {
+              onChangeMode?.("today");
+            }}
           >
             Same Day
           </button>
@@ -104,7 +116,9 @@ export default function RegistrationTrackerFilters({
               ...styles.modeBtn,
               ...(mode === "monthly" ? styles.modeBtnActive : {}),
             }}
-            onClick={() => onChangeMode?.("monthly")}
+            onClick={() => {
+              onChangeMode?.("monthly");
+            }}
           >
             Date Range
           </button>
@@ -139,33 +153,46 @@ export default function RegistrationTrackerFilters({
       <div style={styles.dateSection}>
         {mode === "today" ? (
           <div style={styles.dateField}>
-            <label style={styles.label} htmlFor="registration-date">
+            <label
+              style={styles.label}
+              htmlFor="registration-date"
+            >
               Registration Date
             </label>
             <input
               id="registration-date"
               type="date"
               value={filter.date || today || ""}
-              onChange={(e) => updateFilter("date", e.target.value)}
+              onChange={(event) =>
+                updateFilter("date", event.target.value)
+              }
               style={styles.input}
             />
           </div>
         ) : (
           <>
             <div style={styles.dateField}>
-              <label style={styles.label} htmlFor="registration-from-date">
+              <label
+                style={styles.label}
+                htmlFor="registration-from-date"
+              >
                 From Date
               </label>
               <input
                 id="registration-from-date"
                 type="date"
                 value={filter.from_date || ""}
-                onChange={(e) => updateFilter("from_date", e.target.value)}
+                onChange={(event) =>
+                  updateFilter("from_date", event.target.value)
+                }
                 style={styles.input}
               />
             </div>
             <div style={styles.dateField}>
-              <label style={styles.label} htmlFor="registration-to-date">
+              <label
+                style={styles.label}
+                htmlFor="registration-to-date"
+              >
                 To Date
               </label>
               <input
@@ -173,7 +200,9 @@ export default function RegistrationTrackerFilters({
                 type="date"
                 value={filter.to_date || ""}
                 min={filter.from_date || undefined}
-                onChange={(e) => updateFilter("to_date", e.target.value)}
+                onChange={(event) =>
+                  updateFilter("to_date", event.target.value)
+                }
                 style={styles.input}
               />
             </div>
@@ -184,14 +213,16 @@ export default function RegistrationTrackerFilters({
         <button
           type="button"
           style={styles.primaryButton}
-          onClick={() => onApplyFilters?.(filter, mode)}
+          onClick={() => applyFilters(filter, mode)}
         >
           Apply Filters
         </button>
         <button
           type="button"
           style={styles.secondaryButton}
-          onClick={() => setShowMoreFilters((prev) => !prev)}
+          onClick={() =>
+            setShowMoreFilters((previous) => !previous)
+          }
           aria-expanded={showMoreFilters}
         >
           {showMoreFilters ? "Hide More Filters" : "More Filters"}
@@ -202,7 +233,9 @@ export default function RegistrationTrackerFilters({
         <div style={styles.moreFilters}>
           <div style={styles.moreFiltersHeader}>
             <div>
-              <div style={styles.moreFiltersTitle}>Additional Filters</div>
+              <div style={styles.moreFiltersTitle}>
+                Additional Filters
+              </div>
               <div style={styles.moreFiltersSubtitle}>
                 Narrow results by user, physiotherapist, or patient.
               </div>
@@ -217,37 +250,55 @@ export default function RegistrationTrackerFilters({
           </div>
           <div style={styles.filterGrid}>
             <div style={styles.fieldGroup}>
-              <label style={styles.label} htmlFor="registration-user">
+              <label
+                style={styles.label}
+                htmlFor="registration-user"
+              >
                 User
               </label>
               <select
                 id="registration-user"
                 value={filter.user_id || "all"}
-                onChange={(e) => updateFilter("user_id", e.target.value)}
+                onChange={(event) =>
+                  updateFilter("user_id", event.target.value)
+                }
                 style={styles.input}
               >
                 <option value="all">All Users</option>
                 {agents.map((agent) => (
-                  <option key={agent.id} value={String(agent.id)}>
-                    {agent.name || agent.username}
+                  <option
+                    key={agent.id}
+                    value={String(agent.id)}
+                  >
+                    {agent.name || agent.username || `User ${agent.id}`}
                   </option>
                 ))}
               </select>
             </div>
             <div style={styles.fieldGroup}>
-              <label style={styles.label} htmlFor="registration-therapist">
+              <label
+                style={styles.label}
+                htmlFor="registration-therapist"
+              >
                 Physiotherapist
               </label>
               <select
                 id="registration-therapist"
                 value={filter.therapist_id || "all"}
-                onChange={(e) => updateFilter("therapist_id", e.target.value)}
+                onChange={(event) =>
+                  updateFilter("therapist_id", event.target.value)
+                }
                 style={styles.input}
               >
                 <option value="all">All Physiotherapists</option>
                 {therapists.map((therapist) => (
-                  <option key={therapist.id} value={String(therapist.id)}>
-                    {therapist.name || therapist.username}
+                  <option
+                    key={therapist.id}
+                    value={String(therapist.id)}
+                  >
+                    {therapist.name ||
+                      therapist.username ||
+                      `Therapist ${therapist.id}`}
                   </option>
                 ))}
               </select>
@@ -265,7 +316,7 @@ export default function RegistrationTrackerFilters({
             <button
               type="button"
               style={styles.primaryButton}
-              onClick={() => onApplyFilters?.(filter, mode)}
+              onClick={() => applyFilters(filter, mode)}
             >
               Apply All Filters
             </button>
