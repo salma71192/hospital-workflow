@@ -1,10 +1,5 @@
 
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import api from "../api/api";
@@ -35,7 +30,6 @@ export default function ReceptionRegistrationWorkspace({
 }) {
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
-
   const stats = useRegistrationStats();
 
   const {
@@ -45,14 +39,10 @@ export default function ReceptionRegistrationWorkspace({
     reload: reloadLeaderboard,
   } = useLeaderboard("reception");
 
-  // Display identity can change during impersonation.
+  // Only the authenticated account determines admin privileges.
+  const isAdmin = isAdminUser(user);
   const effectiveUser = actingAs || user;
   const effectiveRole = normalizeRole(effectiveUser?.role);
-
-  // Preserve administrator privileges while impersonating.
-  const isAdmin =
-    isAdminUser(user) || isAdminUser(actingAs);
-
   const isReception = isReceptionUser(effectiveUser);
 
   const welcomeName =
@@ -62,17 +52,10 @@ export default function ReceptionRegistrationWorkspace({
     "Reception User";
 
   const [activeSection, setActiveSection] = useState("register");
-  const [editingAssignmentId, setEditingAssignmentId] =
-    useState(null);
+  const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [trackerMode, setTrackerMode] = useState("today");
-
   const [selectedPatient, setSelectedPatient] = useState(null);
-
-  const [patientForm, setPatientForm] = useState({
-    name: "",
-    patient_id: "",
-  });
-
+  const [patientForm, setPatientForm] = useState({ name: "", patient_id: "" });
   const [assignmentForm, setAssignmentForm] = useState({
     patient_id: "",
     therapist_id: "",
@@ -81,7 +64,6 @@ export default function ReceptionRegistrationWorkspace({
     referring_physician: "",
     notes: "",
   });
-
   const [trackerFilter, setTrackerFilter] = useState({
     date: getTodayString(),
     from_date: getFirstDayOfMonthString(),
@@ -90,15 +72,12 @@ export default function ReceptionRegistrationWorkspace({
     patient: "",
     therapist_id: "all",
   });
-
   const [therapists, setTherapists] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [creatingPatient, setCreatingPatient] = useState(false);
-
   const [trackerAssignments, setTrackerAssignments] = useState([]);
   const [trackerAgents, setTrackerAgents] = useState([]);
-  const [trackerTarget, setTrackerTarget] = useState(50);
 
   const loadTherapists = useCallback(async () => {
     try {
@@ -114,105 +93,62 @@ export default function ReceptionRegistrationWorkspace({
     loadTherapists();
   }, [loadTherapists, actingAs, user]);
 
-  const loadAssignments = useCallback(
-    async ({
-      start_date = "",
-      end_date = "",
-      user_id = "all",
-      patient = "",
-      therapist_id = "all",
-    } = {}) => {
-      try {
-        const params = new URLSearchParams();
+  const loadAssignments = useCallback(async ({
+    start_date = "",
+    end_date = "",
+    user_id = "all",
+    patient = "",
+    therapist_id = "all",
+  } = {}) => {
+    try {
+      const params = new URLSearchParams();
 
-        if (start_date) {
-          params.append("start_date", start_date);
-        }
-
-        if (end_date) {
-          params.append("end_date", end_date);
-        }
-
-        if (user_id && user_id !== "all") {
-          params.append("user_id", user_id);
-        }
-
-        if (patient?.trim()) {
-          params.append("patient", patient.trim());
-        }
-
-        if (therapist_id && therapist_id !== "all") {
-          params.append("therapist_id", therapist_id);
-        }
-
-        // Only the real logged-in administrator sends
-        // impersonation context.
-        if (
-          actingAs &&
-          isAdminUser(user) &&
-          actingAs.id != null
-        ) {
-          params.append("viewed_user_id", String(actingAs.id));
-          params.append(
-            "viewed_user_role",
-            String(actingAs.role || "")
-          );
-        }
-
-        const query = params.toString();
-        const url = query
-          ? `reception/assignments/?${query}`
-          : "reception/assignments/";
-
-        const res = await api.get(url);
-
-        setTrackerAssignments(
-          Array.isArray(res.data?.assignments)
-            ? res.data.assignments
-            : []
-        );
-
-        setTrackerAgents(
-          Array.isArray(res.data?.agents)
-            ? res.data.agents
-            : []
-        );
-
-        setError("");
-      } catch (err) {
-        console.error(
-          "Failed to load assignments",
-          err?.response?.status,
-          err?.response?.data || err
-        );
-
-        setTrackerAssignments([]);
-        setTrackerAgents([]);
-
-        setError(
-          getApiError(err, "Failed to load registrations.")
-        );
-      }
-    },
-    [actingAs, user]
-  );
-
-  const handleApplyTrackerFilters = useCallback(
-    async (filters = trackerFilter) => {
-      if (trackerMode === "today") {
-        const safeDate = filters.date || getTodayString();
-
-        await loadAssignments({
-          start_date: safeDate,
-          end_date: safeDate,
-          user_id: filters.user_id,
-          patient: filters.patient,
-          therapist_id: filters.therapist_id,
-        });
-
-        return;
+      if (start_date) params.append("start_date", start_date);
+      if (end_date) params.append("end_date", end_date);
+      if (user_id && user_id !== "all") params.append("user_id", user_id);
+      if (patient?.trim()) params.append("patient", patient.trim());
+      if (therapist_id && therapist_id !== "all") {
+        params.append("therapist_id", therapist_id);
       }
 
+      // Send impersonation context only for the real administrator.
+      if (actingAs && isAdmin && actingAs.id != null) {
+        params.append("viewed_user_id", String(actingAs.id));
+        params.append("viewed_user_role", String(actingAs.role || ""));
+      }
+
+      const query = params.toString();
+      const url = query
+        ? `reception/assignments/?${query}`
+        : "reception/assignments/";
+
+      const res = await api.get(url);
+      setTrackerAssignments(
+        Array.isArray(res.data?.assignments) ? res.data.assignments : []
+      );
+      setTrackerAgents(
+        Array.isArray(res.data?.agents) ? res.data.agents : []
+      );
+      setError("");
+    } catch (err) {
+      console.error("Failed to load assignments", err?.response?.data || err);
+      setTrackerAssignments([]);
+      setTrackerAgents([]);
+      setError(getApiError(err, "Failed to load registrations."));
+    }
+  }, [actingAs, isAdmin]);
+
+  const handleApplyTrackerFilters = useCallback(async (filters = trackerFilter) => {
+    if (trackerMode === "today") {
+      const date = filters.date || getTodayString();
+      await loadAssignments({
+        start_date: date,
+        end_date: date,
+        user_id: filters.user_id,
+        patient: filters.patient,
+        therapist_id: filters.therapist_id,
+      });
+    } else {
       await loadAssignments({
         start_date: filters.from_date,
         end_date: filters.to_date,
@@ -220,9 +156,8 @@ export default function ReceptionRegistrationWorkspace({
         patient: filters.patient,
         therapist_id: filters.therapist_id,
       });
-    },
-    [trackerMode, trackerFilter, loadAssignments]
-  );
+    }
+  }, [trackerMode, trackerFilter, loadAssignments]);
 
   useEffect(() => {
     handleApplyTrackerFilters();
@@ -242,7 +177,6 @@ export default function ReceptionRegistrationWorkspace({
       referring_physician: "",
       notes: "",
     });
-
     setSelectedPatient(null);
     setEditingAssignmentId(null);
   };
@@ -251,67 +185,45 @@ export default function ReceptionRegistrationWorkspace({
     setMessage("");
     setError("");
     setSelectedPatient(patient);
-
-    setAssignmentForm((prev) => ({
+    setAssignmentForm(prev => ({
       ...prev,
       patient_id: patient.id,
       therapist_id: "",
     }));
-
     setEditingAssignmentId(null);
     setActiveSection("register");
 
     try {
-      const res = await api.get(
-        `reception/last-therapist/${patient.id}/`
-      );
-
+      const res = await api.get(`reception/last-therapist/${patient.id}/`);
       const therapist = res.data?.therapist;
 
       if (therapist) {
-        setAssignmentForm((prev) => ({
+        setAssignmentForm(prev => ({
           ...prev,
           therapist_id: String(therapist.id),
         }));
-
-        setMessage(
-          `Selected ${patient.name} (Previously with ${therapist.name})`
-        );
+        setMessage(`Selected ${patient.name} (Previously with ${therapist.name})`);
       } else {
-        setMessage(
-          `Selected ${patient.name} for assignment.`
-        );
+        setMessage(`Selected ${patient.name} for assignment.`);
       }
-    } catch (err) {
-      console.error("Failed to load last therapist", err);
-
-      setMessage(
-        `Selected ${patient.name} for assignment.`
-      );
+    } catch {
+      setMessage(`Selected ${patient.name} for assignment.`);
     }
 
     setTimeout(() => {
-      assignmentRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      assignmentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 200);
   };
 
   const handleCreatePatientFile = async (e) => {
     e.preventDefault();
-
     if (creatingPatient) return;
 
     const name = String(patientForm.name || "").trim();
-    const patientId = String(
-      patientForm.patient_id || ""
-    ).trim();
+    const patient_id = String(patientForm.patient_id || "").trim();
 
-    if (!name || !patientId) {
-      setError(
-        "Please enter both the patient name and patient ID."
-      );
+    if (!name || !patient_id) {
+      setError("Please enter both the patient name and patient ID.");
       setMessage("");
       return;
     }
@@ -321,51 +233,23 @@ export default function ReceptionRegistrationWorkspace({
     setError("");
 
     try {
-      const res = await api.post("patients/", {
-        name,
-        patient_id: patientId,
-      });
-
+      const res = await api.post("patients/", { name, patient_id });
       const data = res.data || {};
       const patient = data.patient || data;
 
-      setPatientForm({
-        name: "",
-        patient_id: "",
-      });
-
-      setMessage(
-        data.message || "Patient file created successfully."
-      );
-
+      setPatientForm({ name: "", patient_id: "" });
+      setMessage(data.message || "Patient file created successfully.");
       reloadLeaderboard?.();
 
       if (patient?.id) {
         await handleSelectPatient(patient);
-
-        setMessage(
-          data.message ||
-            `Patient file created successfully for ${
-              patient.name || name
-            }.`
-        );
+        setMessage(data.message || `Patient file created successfully for ${patient.name || name}.`);
       } else {
         setSelectedPatient(null);
       }
     } catch (err) {
-      console.error(
-        "Failed to create patient file:",
-        err?.response?.status,
-        err?.response?.data || err
-      );
-
-      setError(
-        getApiError(
-          err,
-          "Failed to create patient file. Please try again."
-        )
-      );
-
+      console.error("Failed to create patient file:", err?.response?.data || err);
+      setError(getApiError(err, "Failed to create patient file. Please try again."));
       setMessage("");
     } finally {
       setCreatingPatient(false);
@@ -379,33 +263,19 @@ export default function ReceptionRegistrationWorkspace({
 
     try {
       if (editingAssignmentId) {
-        const res = await api.put(
-          `reception/assignments/${editingAssignmentId}/`,
-          {
-            therapist_id: assignmentForm.therapist_id,
-            category: assignmentForm.category,
-            visit_number: assignmentForm.visit_number,
-            referring_physician:
-              assignmentForm.category === "initial_evaluation"
-                ? assignmentForm.referring_physician
-                : "",
-            notes: assignmentForm.notes,
-          }
-        );
-
-        setMessage(
-          res.data?.message ||
-            "Assignment updated successfully."
-        );
+        const res = await api.put(`reception/assignments/${editingAssignmentId}/`, {
+          therapist_id: assignmentForm.therapist_id,
+          category: assignmentForm.category,
+          visit_number: assignmentForm.visit_number,
+          referring_physician: assignmentForm.category === "initial_evaluation"
+            ? assignmentForm.referring_physician
+            : "",
+          notes: assignmentForm.notes,
+        });
+        setMessage(res.data?.message || "Assignment updated successfully.");
       } else {
-        const res = await api.post(
-          "reception/assignments/",
-          assignmentForm
-        );
-
-        setMessage(
-          res.data?.message || "Assigned successfully."
-        );
+        const res = await api.post("reception/assignments/", assignmentForm);
+        setMessage(res.data?.message || "Assigned successfully.");
       }
 
       resetAssignmentForm();
@@ -414,72 +284,44 @@ export default function ReceptionRegistrationWorkspace({
       setActiveSection("tracker");
     } catch (err) {
       console.error("Assignment failed", err);
-
-      setError(
-        getApiError(err, "Assignment failed.")
-      );
+      setError(getApiError(err, "Assignment failed."));
     }
   };
 
   const handleEditAssignment = (assignment) => {
-    // UI protection only; backend permissions remain authoritative.
-    if (
-      !isAdmin &&
-      !assignment.can_edit &&
-      !assignment.can_edit_today
-    ) {
-      setError(
-        "You do not have permission to edit this registration."
-      );
+    if (!isAdmin && !assignment.can_edit && !assignment.can_edit_today) {
+      setError("You do not have permission to edit this registration.");
       setMessage("");
       return;
     }
 
     setMessage("");
     setError("");
-
     setEditingAssignmentId(assignment.id);
-
     setSelectedPatient({
       id: assignment.patient_id,
       name: assignment.patient_name,
       patient_id: assignment.patient_file_id,
     });
-
     setAssignmentForm({
       patient_id: assignment.patient_id,
       therapist_id: String(assignment.therapist_id || ""),
       category: assignment.category || "appointment",
       visit_number: assignment.visit_number ?? "",
-      referring_physician:
-        assignment.referring_physician || "",
+      referring_physician: assignment.referring_physician || "",
       notes: assignment.notes || "",
     });
-
     setActiveSection("register");
-
-    setMessage(
-      `Editing assignment for ${assignment.patient_name}`
-    );
+    setMessage(`Editing assignment for ${assignment.patient_name}`);
 
     setTimeout(() => {
-      assignmentRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      assignmentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 200);
   };
 
   const handleCancelAssignment = async (assignment) => {
-    // UI protection only; backend permissions remain authoritative.
-    if (
-      !isAdmin &&
-      !assignment.can_delete &&
-      !assignment.can_cancel_today
-    ) {
-      setError(
-        "You do not have permission to delete this registration."
-      );
+    if (!isAdmin && !assignment.can_delete && !assignment.can_cancel_today) {
+      setError("You do not have permission to delete this registration.");
       setMessage("");
       return;
     }
@@ -488,39 +330,19 @@ export default function ReceptionRegistrationWorkspace({
       ? `dated ${assignment.assignment_date}`
       : "selected";
 
-    const confirmed = window.confirm(
+    if (!window.confirm(
       `Delete the registration for ${assignment.patient_name} (${dateLabel})?`
-    );
-
-    if (!confirmed) return;
+    )) return;
 
     try {
-      const res = await api.delete(
-        `reception/assignments/${assignment.id}/`
-      );
-
-      setMessage(
-        res.data?.message ||
-          "Registration deleted successfully."
-      );
-
+      const res = await api.delete(`reception/assignments/${assignment.id}/`);
+      setMessage(res.data?.message || "Registration deleted successfully.");
       setError("");
       await handleApplyTrackerFilters();
       reloadLeaderboard?.();
     } catch (err) {
-      console.error(
-        "Failed to delete registration",
-        err?.response?.status,
-        err?.response?.data || err
-      );
-
-      setError(
-        getApiError(
-          err,
-          "Failed to delete registration."
-        )
-      );
-
+      console.error("Failed to delete registration", err?.response?.data || err);
+      setError(getApiError(err, "Failed to delete registration."));
       setMessage("");
     }
   };
@@ -529,14 +351,8 @@ export default function ReceptionRegistrationWorkspace({
     { key: "home", label: "Home" },
     { key: "register", label: "Assign a Patient" },
     { key: "open_file", label: "Register New Patient" },
-    {
-      key: "tracker",
-      label: `Registration Tracker (${trackerAssignments.length})`,
-    },
-    {
-      key: "evaluation_tracker",
-      label: "Evaluation Tracker",
-    },
+    { key: "tracker", label: `Registration Tracker (${trackerAssignments.length})` },
+    { key: "evaluation_tracker", label: "Evaluation Tracker" },
     { key: "stats", label: "My Stats" },
     { key: "leaderboard", label: "Leaderboard" },
   ];
@@ -552,12 +368,10 @@ export default function ReceptionRegistrationWorkspace({
       setActiveSection={(key) => {
         setMessage("");
         setError("");
-
         if (key === "home") {
           navigate("/reception");
           return;
         }
-
         setActiveSection(key);
       }}
       onLogout={onLogout}
@@ -565,17 +379,8 @@ export default function ReceptionRegistrationWorkspace({
       actingAsName={welcomeName}
       onBackToAdmin={handleBackToAdmin}
     >
-      {message && (
-        <DashboardNotice type="success">
-          {message}
-        </DashboardNotice>
-      )}
-
-      {error && (
-        <DashboardNotice type="error">
-          {error}
-        </DashboardNotice>
-      )}
+      {message && <DashboardNotice type="success">{message}</DashboardNotice>}
+      {error && <DashboardNotice type="error">{error}</DashboardNotice>}
 
       <ReceptionPatientRegistration
         activeSection={activeSection}
@@ -605,8 +410,6 @@ export default function ReceptionRegistrationWorkspace({
         filter={trackerFilter}
         setFilter={setTrackerFilter}
         onApplyFilters={handleApplyTrackerFilters}
-        target={trackerTarget}
-        onChangeTarget={setTrackerTarget}
         onEditAssignment={handleEditAssignment}
         onCancelAssignment={handleCancelAssignment}
         userRole={effectiveRole}

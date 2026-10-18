@@ -1,3 +1,4 @@
+
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,7 +22,11 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    # Your apps
+    # REST Framework token authentication
+    "rest_framework",
+    "rest_framework.authtoken",
+
+    # Your existing apps
     "users",
     "patients",
     "reception",
@@ -39,6 +44,10 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+
+    # Token authentication must follow AuthenticationMiddleware
+    "users.token_middleware.TokenAuthenticationMiddleware",
+
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -72,13 +81,13 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # -------------------
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'hospital_workflow',
-        'USER': 'hospital_user',
-        'PASSWORD': 'hospital_password',
-        'HOST': 'db',
-        'PORT': '5432',
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "hospital_workflow",
+        "USER": "hospital_user",
+        "PASSWORD": "hospital_password",
+        "HOST": "db",
+        "PORT": "5432",
     }
 }
 
@@ -92,7 +101,6 @@ AUTH_PASSWORD_VALIDATORS = []
 # -------------------
 LANGUAGE_CODE = "en-us"
 
-# UAE timezone
 TIME_ZONE = "Asia/Dubai"
 
 USE_I18N = True
@@ -109,30 +117,46 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # -------------------
-# AUTH USER MODEL
+# Custom user model
 # -------------------
 AUTH_USER_MODEL = "users.User"
 
-# ===========================
+# -------------------
 # CORS + CSRF
-# ===========================
-FRONTEND_URL = "https://miniature-system-q7w4jrrr5v739w4j-3000.app.github.dev"
+# -------------------
+FRONTEND_URL = (
+    "https://miniature-system-q7w4jrrr5v739w4j-3000.app.github.dev"
+)
 
 CORS_ALLOWED_ORIGINS = [
     FRONTEND_URL,
     "http://localhost:3000",
 ]
 
-CORS_ALLOW_CREDENTIALS = True
+# The frontend uses Authorization tokens, not session cookies.
+CORS_ALLOW_CREDENTIALS = False
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
 
 CSRF_TRUSTED_ORIGINS = [
     FRONTEND_URL,
     "http://localhost:3000",
 ]
 
-# ===========================
-# COOKIES
-# ===========================
+# -------------------
+# Cookies
+# -------------------
+# Retained for Django admin and any existing session-based pages.
 SESSION_COOKIE_SAMESITE = "None"
 SESSION_COOKIE_SECURE = True
 

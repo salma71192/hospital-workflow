@@ -4,43 +4,74 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from "react-router-dom";
-
 import api from "./api/api";
-
-// pages
 import Login from "./pages/Login";
 import PatientDetails from "./pages/PatientDetails";
 import EditPatientFile from "./pages/EditPatientFile";
 import ReceptionHome from "./pages/ReceptionHome";
 import ReceptionRegistrationWorkspace from "./pages/ReceptionRegistrationWorkspace";
 import ReceptionBookingWorkspace from "./pages/ReceptionBookingWorkspace";
-
-// routing helpers
 import ProtectedRoute from "./components/routing/ProtectedRoute";
 import RoleRoute from "./components/routing/RoleRoute";
-
-// routes config
 import { dashboardRoutes } from "./routes/routesConfig";
-
-function App() {
+function normalizeRole(role) {
+  return String(role || "").trim().toLowerCase();
+}
+function getDashboardPath(user) {
+  if (!user) return "/login";
+  const role = normalizeRole(user.role);
+  if (user.is_superuser || role === "admin") {
+    return dashboardRoutes.find((route) => route.adminOnly)?.path || "/admin";
+  }
+  const matchingRoute = dashboardRoutes.find(
+    (route) =>
+      !route.adminOnly &&
+      Array.isArray(route.roles) &&
+      route.roles.some(
+        (allowedRole) => normalizeRole(allowedRole) === role
+      )
+  );
+  return matchingRoute?.path || null;
+}
+function AppContent() {
   const [user, setUser] = useState(null);
   const [actingAs, setActingAs] = useState(null);
   const [loading, setLoading] = useState(true);
-
+  const location = useLocation();
   useEffect(() => {
+    let mounted = true;
     api
       .get("users/me/")
-      .then((res) => setUser(res.data))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+      .then((response) => {
+        if (!mounted) return;
+        const authenticatedUser = response.data;
+        if (
+          authenticatedUser &&
+          authenticatedUser.id &&
+          authenticatedUser.username
+        ) {
+          setUser(authenticatedUser);
+        } else {
+          setUser(null);
+        }
+      })
+      .catch(() => {
+        if (mounted) setUser(null);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
   }, []);
-
   const handleLogin = (userData) => {
+    if (!userData) return;
     setUser(userData);
     setActingAs(null);
   };
-
   const handleLogout = async () => {
     try {
       await api.post("users/logout/");
@@ -49,159 +80,197 @@ function App() {
     } finally {
       setUser(null);
       setActingAs(null);
-      window.location.href = "/login";
     }
   };
-
-  const stopImpersonation = () => {
+  const handleStopImpersonation = () => {
     setActingAs(null);
   };
-
   const currentUser = actingAs || user;
-  const isAdmin = !!(user && (user.is_superuser || user.role === "admin"));
-
+  const isAdmin = Boolean(
+    user &&
+      (user.is_superuser || normalizeRole(user.role) === "admin")
+  );
+  const dashboardPath = getDashboardPath(currentUser);
   if (loading) {
-    return <div style={{ padding: "20px" }}>Loading...</div>;
+    return <div style={{ padding: 20 }}>Loading...</div>;
   }
-
   return (
-    <Router>
-      <Suspense fallback={<div style={{ padding: 20 }}>Loading page...</div>}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-
-          <Route path="/login" element={<Login onLogin={handleLogin} />} />
-
-          {dashboardRoutes.map((route) => {
-            const Component = route.component;
-
-            if (route.adminOnly) {
-              return (
-                <Route
-                  key={route.path}
-                  path={route.path}
-                  element={
-                    <ProtectedRoute isAllowed={isAdmin}>
-                      <Component
-                        user={user}
-                        onLogout={handleLogout}
-                        onActAsUser={setActingAs}
-                      />
-                    </ProtectedRoute>
-                  }
-                />
-              );
-            }
-
+    <Suspense fallback={<div style={{ padding: 20 }}>Loading page...</div>}>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            !user ? (
+              <Navigate to="/login" replace />
+            ) : dashboardPath ? (
+              <Navigate to={dashboardPath} replace />
+            ) : (
+              <div style={{ padding: 20 }}>
+                <h3>No dashboard configured for this account</h3>
+                <p>
+                  Your account role is "{user.role || "not assigned"}".
+                  Please contact the administrator.
+                </p>
+                <button onClick={handleLogout}>Log out</button>
+              </div>
+            )
+          }
+        />
+        <Route
+          path="/login"
+          element={
+            user ? (
+              dashboardPath ? (
+                <Navigate to={dashboardPath} replace />
+              ) : (
+                <div style={{ padding: 20 }}>
+                  <h3>No dashboard configured for this account</h3>
+                  <button onClick={handleLogout}>Log out</button>
+                </div>
+              )
+            ) : (
+              <Login onLogin={handleLogin} />
+            )
+          }
+        />
+        {dashboardRoutes.map((route) => {
+          const Component = route.component;
+          if (!Component) return null;
+          if (route.adminOnly) {
             return (
               <Route
                 key={route.path}
                 path={route.path}
                 element={
-                  <RoleRoute
-                    currentUser={currentUser}
-                    isAdmin={isAdmin}
-                    allowedRoles={route.roles}
-                  >
+                  <ProtectedRoute isAllowed={Boolean(user && isAdmin)}>
                     <Component
-                      user={currentUser}
+                      user={user}
                       onLogout={handleLogout}
-                      actingAs={actingAs}
-                      onStopImpersonation={stopImpersonation}
+                      onActAsUser={setActingAs}
                     />
-                  </RoleRoute>
+                  </ProtectedRoute>
                 }
               />
             );
-          })}
-
-          <Route
-            path="/reception"
-            element={
-              <RoleRoute
-                currentUser={currentUser}
-                isAdmin={isAdmin}
-                allowedRoles={["reception", "reception_supervisor"]}
-              >
-                <ReceptionHome
-                  user={currentUser}
-                  onLogout={handleLogout}
-                  actingAs={actingAs}
-                  onStopImpersonation={stopImpersonation}
-                />
-              </RoleRoute>
-            }
-          />
-
-          <Route
-            path="/reception/registration"
-            element={
-              <RoleRoute
-                currentUser={currentUser}
-                isAdmin={isAdmin}
-                allowedRoles={["reception", "reception_supervisor"]}
-              >
-                <ReceptionRegistrationWorkspace
-                  user={currentUser}
-                  onLogout={handleLogout}
-                  actingAs={actingAs}
-                  onStopImpersonation={stopImpersonation}
-                />
-              </RoleRoute>
-            }
-          />
-
-          <Route
-            path="/reception/booking"
-            element={
-              <RoleRoute
-                currentUser={currentUser}
-                isAdmin={isAdmin}
-                allowedRoles={["reception", "reception_supervisor"]}
-              >
-                <ReceptionBookingWorkspace
-                  user={currentUser}
-                  onLogout={handleLogout}
-                  actingAs={actingAs}
-                  onStopImpersonation={stopImpersonation}
-                />
-              </RoleRoute>
-            }
-          />
-
-          <Route
-            path="/patients/:id"
-            element={
-              <ProtectedRoute isAllowed={!!currentUser}>
-                <PatientDetails
-                  user={currentUser}
-                  onLogout={handleLogout}
-                  actingAs={actingAs}
-                  onStopImpersonation={stopImpersonation}
-                />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/patients/:id/edit"
-            element={
-              <ProtectedRoute isAllowed={!!currentUser}>
-                <EditPatientFile
-                  user={currentUser}
-                  actingAs={actingAs}
-                  onLogout={handleLogout}
-                  onStopImpersonation={stopImpersonation}
-                />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Suspense>
+          }
+          return (
+            <Route
+              key={route.path}
+              path={route.path}
+              element={
+                <RoleRoute
+                  currentUser={currentUser}
+                  isAdmin={isAdmin}
+                  allowedRoles={route.roles}
+                >
+                  <Component
+                    user={currentUser}
+                    onLogout={handleLogout}
+                    actingAs={actingAs}
+                    onStopImpersonation={handleStopImpersonation}
+                  />
+                </RoleRoute>
+              }
+            />
+          );
+        })}
+        <Route
+          path="/reception"
+          element={
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["reception", "reception_supervisor"]}
+            >
+              <ReceptionHome
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={handleStopImpersonation}
+              />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/reception/registration"
+          element={
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["reception", "reception_supervisor"]}
+            >
+              <ReceptionRegistrationWorkspace
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={handleStopImpersonation}
+              />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/reception/booking"
+          element={
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["reception", "reception_supervisor"]}
+            >
+              <ReceptionBookingWorkspace
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={handleStopImpersonation}
+              />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/patients/:id"
+          element={
+            <ProtectedRoute isAllowed={Boolean(currentUser)}>
+              <PatientDetails
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={handleStopImpersonation}
+              />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patients/:id/edit"
+          element={
+            <ProtectedRoute isAllowed={Boolean(currentUser)}>
+              <EditPatientFile
+                user={currentUser}
+                actingAs={actingAs}
+                onLogout={handleLogout}
+                onStopImpersonation={handleStopImpersonation}
+              />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="*"
+          element={
+            !user ? (
+              <Navigate to="/login" replace />
+            ) : dashboardPath ? (
+              <Navigate to={dashboardPath} replace />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+      </Routes>
+    </Suspense>
+  );
+}
+export default function App() {
+  return (
+    <Router>
+      <AppContent />
     </Router>
   );
 }
-
-export default App;

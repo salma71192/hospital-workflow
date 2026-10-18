@@ -13,43 +13,54 @@ export default function Login({ onLogin }) {
     setError("");
     setLoading(true);
     try {
+      // Remove any old token belonging to this tab.
+      sessionStorage.removeItem("authToken");
       const res = await api.post("users/login/", {
         username: username.trim(),
         password,
       });
       const userData = res.data;
+      // The backend must return a token for this to work.
+      if (!userData.token) {
+        throw new Error(
+          "The server did not return an authentication token. Please update the Django token authentication first."
+        );
+      }
+      // Save the token in this tab only.
+      sessionStorage.setItem("authToken", userData.token);
       onLogin(userData);
-      // Role-based navigation
-      const role = userData.role;
+      const role = String(userData.role || "").toLowerCase();
       if (userData.is_superuser || role === "admin") {
-        navigate("/admin");
+        navigate("/admin", { replace: true });
       } else if (role === "approvals") {
-        navigate("/approvals");
+        navigate("/approvals", { replace: true });
       } else if (role === "reception") {
-        navigate("/reception");
+        navigate("/reception", { replace: true });
       } else if (role === "reception_supervisor") {
-        navigate("/reception-supervisor");
+        navigate("/reception-supervisor", { replace: true });
       } else if (role === "physio") {
-        navigate("/physio");
+        navigate("/physio", { replace: true });
       } else if (role === "doctor") {
-        navigate("/doctor");
+        navigate("/doctor", { replace: true });
       } else if (role === "rcm") {
-        navigate("/rcm");
+        navigate("/rcm", { replace: true });
       } else if (role === "callcenter") {
-        navigate("/callcenter");
+        navigate("/callcenter", { replace: true });
       } else if (role === "callcenter_supervisor") {
-        navigate("/callcenter-supervisor");
+        navigate("/callcenter-supervisor", { replace: true });
       } else if (role === "visitor") {
-        navigate("/visitors");
+        navigate("/visitors", { replace: true });
       } else if (role === "visitor_ceo") {
-        navigate("/visitor-ceo");
+        navigate("/visitor-ceo", { replace: true });
       } else {
-        navigate("/");
+        navigate("/", { replace: true });
       }
     } catch (err) {
+      sessionStorage.removeItem("authToken");
       setError(
         err?.response?.data?.error ||
           err?.response?.data?.detail ||
+          err?.message ||
           "Invalid username or password. Please try again."
       );
     } finally {
@@ -61,7 +72,6 @@ export default function Login({ onLogin }) {
       <div style={styles.backgroundGlowBlue} />
       <div style={styles.backgroundGlowTeal} />
       <div style={styles.layout}>
-        {/* Welcome panel */}
         <section style={styles.welcomePanel}>
           <div style={styles.brand}>
             <div style={styles.brandIcon}>
@@ -106,9 +116,7 @@ export default function Login({ onLogin }) {
               <div style={styles.feature}>
                 <div style={styles.featureIcon}>🤝</div>
                 <div>
-                  <div style={styles.featureTitle}>
-                    Connected teams
-                  </div>
+                  <div style={styles.featureTitle}>Connected teams</div>
                   <div style={styles.featureDescription}>
                     Support coordination across hospital departments.
                   </div>
@@ -132,14 +140,11 @@ export default function Login({ onLogin }) {
             <span>Every detail matters in patient care.</span>
           </div>
         </section>
-        {/* Login panel */}
         <section style={styles.loginPanel}>
           <div style={styles.loginCard}>
             <div style={styles.mobileBrandIcon}>✚</div>
             <div style={styles.loginHeading}>
-              <div style={styles.loginEyebrow}>
-                SECURE SIGN IN
-              </div>
+              <div style={styles.loginEyebrow}>SECURE SIGN IN</div>
               <h2 style={styles.loginTitle}>Welcome back 👋</h2>
               <p style={styles.loginSubtitle}>
                 Enter your credentials to access your workspace.
@@ -198,12 +203,16 @@ export default function Login({ onLogin }) {
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword((current) => !current)}
+                    onClick={() =>
+                      setShowPassword((current) => !current)
+                    }
                     style={styles.passwordToggle}
                     aria-label={
                       showPassword ? "Hide password" : "Show password"
                     }
-                    title={showPassword ? "Hide password" : "Show password"}
+                    title={
+                      showPassword ? "Hide password" : "Show password"
+                    }
                     disabled={loading}
                   >
                     {showPassword ? "Hide" : "Show"}
