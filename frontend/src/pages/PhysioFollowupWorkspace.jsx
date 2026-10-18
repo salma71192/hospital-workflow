@@ -20,6 +20,7 @@ function getLocalDateString() {
 }
 
 function getArray(data, key) {
+  if (Array.isArray(data)) return data;
   return Array.isArray(data?.[key]) ? data[key] : [];
 }
 
@@ -55,6 +56,162 @@ function getCategory(item) {
     .replace(/[\s-]+/g, "_");
 }
 
+function getMonthLabel() {
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+}
+
+function getLeaderboardName(item) {
+  return (
+    item?.therapist_name ??
+    item?.physio_name ??
+    item?.physiotherapist_name ??
+    item?.display_name ??
+    item?.name ??
+    item?.username ??
+    item?.therapist?.name ??
+    item?.therapist?.username ??
+    "Unnamed therapist"
+  );
+}
+
+function getMonthlyPatientCount(item) {
+  const value =
+    item?.monthly_patients_seen ??
+    item?.patients_seen ??
+    item?.monthly_count ??
+    item?.monthly ??
+    item?.count ??
+    0;
+
+  const count = Number(value);
+  return Number.isFinite(count) && count >= 0 ? count : 0;
+}
+
+function getLeaderboardId(item, index) {
+  return (
+    item?.therapist_id ??
+    item?.physio_id ??
+    item?.physiotherapist_id ??
+    item?.user_id ??
+    item?.therapist?.id ??
+    item?.id ??
+    `${getLeaderboardName(item)}-${index}`
+  );
+}
+
+function MonthlyPhysioLeaderboard({
+  rows,
+  loading,
+  error,
+  onReload,
+}) {
+  const rankedRows = useMemo(
+    () =>
+      [...rows].sort(
+        (a, b) => getMonthlyPatientCount(b) - getMonthlyPatientCount(a)
+      ),
+    [rows]
+  );
+
+  return (
+    <section style={styles.card}>
+      <div style={styles.leaderboardHeader}>
+        <div>
+          <h2 style={styles.sectionTitle}>Physiotherapy Leaderboard</h2>
+          <p style={styles.mutedText}>
+            Patients seen during {getMonthLabel()}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onReload}
+          disabled={loading}
+          style={{
+            ...styles.reloadButton,
+            ...(loading ? styles.disabledButton : {}),
+          }}
+        >
+          {loading ? "Loading..." : "Refresh"}
+        </button>
+      </div>
+
+      <p style={styles.leaderboardDescription}>
+        Therapists are ranked by their monthly patient count. Counts should
+        represent completed patient visits, not reception registrations.
+      </p>
+
+      {error ? (
+        <div style={styles.inlineError}>
+          {error}
+        </div>
+      ) : null}
+
+      {loading && rows.length === 0 ? (
+        <p style={styles.emptyText}>Loading leaderboard...</p>
+      ) : null}
+
+      {!loading && !error && rankedRows.length === 0 ? (
+        <p style={styles.emptyText}>
+          No leaderboard data is available for this month.
+        </p>
+      ) : null}
+
+      {rankedRows.length > 0 ? (
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.headerCell}>Rank</th>
+                <th style={styles.headerCell}>Physiotherapist</th>
+                <th style={{ ...styles.headerCell, textAlign: "right" }}>
+                  Patients Seen
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rankedRows.map((item, index) => (
+                <tr key={getLeaderboardId(item, index)}>
+                  <td style={styles.cell}>
+                    <span style={styles.rankBadge}>
+                      {index + 1}
+                    </span>
+                  </td>
+
+                  <td style={styles.cell}>
+                    <span style={styles.therapistName}>
+                      {getLeaderboardName(item)}
+                    </span>
+                  </td>
+
+                  <td
+                    style={{
+                      ...styles.cell,
+                      textAlign: "right",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {getMonthlyPatientCount(item).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      <p style={styles.footerText}>
+        Monthly totals depend on the completed-visit records returned by the
+        backend.
+      </p>
+    </section>
+  );
+}
+
 export default function PhysioFollowupWorkspace({
   user,
   onLogout,
@@ -71,6 +228,10 @@ export default function PhysioFollowupWorkspace({
   const [todayStats, setTodayStats] = useState(null);
   const [patientTrackerRows, setPatientTrackerRows] = useState([]);
   const [todayAssignments, setTodayAssignments] = useState([]);
+
+  const [leaderboardRows, setLeaderboardRows] = useState([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState("");
 
   const today = getLocalDateString();
 
@@ -156,6 +317,51 @@ export default function PhysioFollowupWorkspace({
     }
   }, [today, selectedTherapistId]);
 
+  // ---------------- Load monthly physiotherapy leaderboard ----------------
+  const loadPhysioLeaderboard = useCallback(async () => {
+    setLeaderboardLoading(true);
+    setLeaderboardError("");
+
+    try {
+      /*
+       * This endpoint must return monthly completed-visit counts per
+       * physiotherapist. It is not the reception registration leaderboard.
+       *
+       * Expected response:
+       * {
+       *   "results": [
+       *     {
+       *       "therapist_id": 1,
+       *       "therapist_name": "Physiotherapist Name",
+       *       "monthly_patients_seen": 125
+       *     }
+       *   ]
+       * }
+       */
+      const res = await api.get("physio/leaderboard/monthly/");
+
+      const rows = getArray(res.data, "results").length
+        ? getArray(res.data, "results")
+        : getArray(res.data, "rows").length
+          ? getArray(res.data, "rows")
+          : getArray(res.data, "leaderboard");
+
+      setLeaderboardRows(rows);
+    } catch (err) {
+      console.error("Failed to load physiotherapy leaderboard:", err);
+      console.error("Leaderboard API error response:", err?.response?.data);
+
+      setLeaderboardRows([]);
+      setLeaderboardError(
+        err?.response?.status === 404
+          ? "The monthly physiotherapy leaderboard API is not configured yet. Add the Django endpoint physio/leaderboard/monthly/ that returns completed patient-visit counts."
+          : "Failed to load the physiotherapy leaderboard. Please try refreshing."
+      );
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
+
   // ---------------- Initial load ----------------
   useEffect(() => {
     loadTodayAppointments();
@@ -168,6 +374,13 @@ export default function PhysioFollowupWorkspace({
     loadPatientTracker,
     loadTodayAssignments,
   ]);
+
+  // Load leaderboard only when the section is opened.
+  useEffect(() => {
+    if (activeSection === "leaderboard") {
+      loadPhysioLeaderboard();
+    }
+  }, [activeSection, loadPhysioLeaderboard]);
 
   const handleBackToAdmin = useCallback(() => {
     onStopImpersonation?.();
@@ -209,7 +422,6 @@ export default function PhysioFollowupWorkspace({
     [physioAssignments]
   );
 
-  // Regular treatment registrations do not require a linked booking.
   const appointmentAssignments = useMemo(
     () =>
       physioAssignments.filter((item) =>
@@ -259,6 +471,7 @@ export default function PhysioFollowupWorkspace({
           label: `Statistics (${statisticsCount})`,
         },
         { key: "tracker", label: "Patient Tracker" },
+        { key: "leaderboard", label: "Physiotherapy Leaderboard" },
       ]}
       activeSection={activeSection}
       setActiveSection={(key) => {
@@ -308,6 +521,15 @@ export default function PhysioFollowupWorkspace({
           title="Patient Tracker"
         />
       )}
+
+      {activeSection === "leaderboard" && (
+        <MonthlyPhysioLeaderboard
+          rows={leaderboardRows}
+          loading={leaderboardLoading}
+          error={leaderboardError}
+          onReload={loadPhysioLeaderboard}
+        />
+      )}
     </DashboardLayout>
   );
 }
@@ -316,5 +538,109 @@ const styles = {
   stack: {
     display: "grid",
     gap: "16px",
+  },
+  card: {
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: "12px",
+    padding: "20px",
+    minWidth: 0,
+  },
+  leaderboardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "12px",
+    flexWrap: "wrap",
+  },
+  sectionTitle: {
+    margin: 0,
+    fontSize: "20px",
+    fontWeight: 700,
+    color: "#111827",
+  },
+  mutedText: {
+    margin: "6px 0 0",
+    color: "#6b7280",
+    fontSize: "14px",
+  },
+  leaderboardDescription: {
+    margin: "16px 0",
+    color: "#4b5563",
+    fontSize: "14px",
+    lineHeight: 1.5,
+  },
+  reloadButton: {
+    background: "#059669",
+    color: "#ffffff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "9px 14px",
+    fontSize: "14px",
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  disabledButton: {
+    opacity: 0.6,
+    cursor: "wait",
+  },
+  tableWrapper: {
+    width: "100%",
+    overflowX: "auto",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    textAlign: "left",
+  },
+  headerCell: {
+    padding: "12px 10px",
+    borderBottom: "1px solid #e5e7eb",
+    background: "#f9fafb",
+    color: "#4b5563",
+    fontSize: "13px",
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  },
+  cell: {
+    padding: "13px 10px",
+    borderBottom: "1px solid #f3f4f6",
+    color: "#111827",
+    fontSize: "14px",
+  },
+  rankBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "28px",
+    height: "28px",
+    borderRadius: "50%",
+    background: "#d1fae5",
+    color: "#065f46",
+    fontWeight: 700,
+  },
+  therapistName: {
+    fontWeight: 600,
+  },
+  emptyText: {
+    padding: "20px 0",
+    textAlign: "center",
+    color: "#6b7280",
+    fontSize: "14px",
+  },
+  inlineError: {
+    background: "#fef2f2",
+    color: "#991b1b",
+    border: "1px solid #fecaca",
+    borderRadius: "8px",
+    padding: "12px",
+    fontSize: "14px",
+    lineHeight: 1.5,
+  },
+  footerText: {
+    margin: "14px 0 0",
+    color: "#6b7280",
+    fontSize: "12px",
+    lineHeight: 1.5,
   },
 };
