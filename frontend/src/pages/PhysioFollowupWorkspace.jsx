@@ -10,24 +10,44 @@ import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 import PhysioTodayRegistrationsSection from "../components/physio/PhysioTodayRegistrationsSection";
+
 const styles = {
   stack: {
     display: "grid",
     gap: 16,
   },
 };
-function getLocalDateString() {
-  const now = new Date();
+
+function getLocalDateString(date = new Date()) {
   return [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0"),
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
   ].join("-");
 }
+
+function getLocalMonthString(date = new Date()) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+  ].join("-");
+}
+
+function getMonthDateRange(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+
+  return {
+    start_date: `${month}-01`,
+    end_date: `${month}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
 function getArray(data, key) {
   if (Array.isArray(data)) return data;
   return Array.isArray(data?.[key]) ? data[key] : [];
 }
+
 function getTherapistId(item) {
   return (
     item?.therapist_id ??
@@ -38,17 +58,20 @@ function getTherapistId(item) {
     null
   );
 }
+
 function belongsToTherapist(item, therapistId) {
   if (therapistId == null) return false;
   const id = getTherapistId(item);
   return id != null && String(id) === String(therapistId);
 }
+
 function getCategory(item) {
   return String(item?.category ?? item?.category_label ?? "")
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
 }
+
 const CATEGORIES = {
   walkIn: ["walk_in", "walkin", "walk_in_patient"],
   appointment: [
@@ -73,9 +96,11 @@ const CATEGORIES = {
   ],
   noShow: ["no_show", "noshow", "did_not_attend"],
 };
+
 function matchesCategory(item, categories) {
   return categories.includes(getCategory(item));
 }
+
 function isSeen(item) {
   const status = String(
     item?.status ??
@@ -87,6 +112,7 @@ function isSeen(item) {
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
+
   return (
     item?.seen === true ||
     item?.is_seen === true ||
@@ -96,6 +122,7 @@ function isSeen(item) {
     ["seen", "completed", "attended", "treated"].includes(status)
   );
 }
+
 function isNoShow(item) {
   const status = String(
     item?.status ??
@@ -107,26 +134,28 @@ function isNoShow(item) {
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
+
   return (
     item?.no_show === true ||
     item?.is_no_show === true ||
     CATEGORIES.noShow.includes(status)
   );
 }
+
 /*
  * Booked remains 0 until appointment-based booked counts
  * are connected later.
  *
- * Seen is the sum of qualifying appointments, evaluations,
- * cash registrations, and walk-ins.
- *
- * No-show registrations are excluded from Seen.
+ * Seen counts appointments, evaluations, cash registrations,
+ * and walk-ins, excluding no-shows.
  */
 function buildPhysioStatistics(assignments) {
   const grouped = new Map();
+
   assignments.forEach((item) => {
     const therapistId = getTherapistId(item);
     const therapist = item?.therapist ?? {};
+
     const therapistName =
       item?.therapist_name ??
       item?.physio_name ??
@@ -136,8 +165,10 @@ function buildPhysioStatistics(assignments) {
       therapist?.username ??
       item?.therapist_username ??
       "Unnamed therapist";
+
     const key =
       therapistId != null ? String(therapistId) : therapistName;
+
     if (!grouped.has(key)) {
       grouped.set(key, {
         therapist_id: therapistId ?? key,
@@ -151,37 +182,140 @@ function buildPhysioStatistics(assignments) {
         seen: 0,
       });
     }
+
     const row = grouped.get(key);
     const category = getCategory(item);
+
     const walkIn = CATEGORIES.walkIn.includes(category);
     const appointment = CATEGORIES.appointment.includes(category);
     const evaluation = CATEGORIES.evaluation.includes(category);
     const cash = CATEGORIES.cash.includes(category);
     const noShow = isNoShow(item);
+
     if (walkIn) row.walk_in += 1;
     if (evaluation) row.initial_eval += 1;
     if (cash) row.cash += 1;
     if (noShow) row.no_show += 1;
-    // Booked is intentionally zero for now.
+
     row.booked = 0;
-    // Count each qualifying registration once.
-    // A no-show must not be counted as seen.
+
     const qualifyingRegistration =
       appointment || evaluation || cash || walkIn;
+
     if (qualifyingRegistration && !noShow) {
       row.seen += 1;
     }
   });
+
   const rows = Array.from(grouped.values()).sort((a, b) =>
     a.therapist_name.localeCompare(b.therapist_name)
   );
+
   return { rows };
 }
+
+/* Shared date and month filters */
+function PhysioSharedFilters({
+  statisticsDate,
+  onStatisticsDateChange,
+  leaderboardMonth,
+  onLeaderboardMonthChange,
+}) {
+  const s = {
+    container: {
+      display: "flex",
+      flexWrap: "wrap",
+      alignItems: "end",
+      gap: 16,
+      padding: 18,
+      background: "#ffffff",
+      border: "1px solid #e2e8f0",
+      borderRadius: 14,
+      marginBottom: 16,
+      boxShadow: "0 4px 16px rgba(15, 23, 42, 0.035)",
+      fontFamily: "Inter, Arial, sans-serif",
+    },
+    heading: {
+      width: "100%",
+      margin: 0,
+      fontSize: 15,
+      fontWeight: 800,
+      color: "#16334f",
+    },
+    field: {
+      display: "grid",
+      gap: 6,
+    },
+    label: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: "#52647a",
+    },
+    input: {
+      padding: "10px 12px",
+      border: "1px solid #dbe4ee",
+      borderRadius: 9,
+      fontSize: 13,
+      background: "#ffffff",
+      color: "#243b53",
+      fontFamily: "inherit",
+      maxWidth: "100%",
+      boxSizing: "border-box",
+    },
+    hint: {
+      fontSize: 11,
+      color: "#8290a3",
+    },
+  };
+
+  return (
+    <section style={s.container}>
+      <h3 style={s.heading}>Report Filters</h3>
+
+      <label style={s.field}>
+        <span style={s.label}>Statistics date</span>
+        <input
+          type="date"
+          aria-label="Shared statistics date filter"
+          value={statisticsDate}
+          onChange={(event) =>
+            onStatisticsDateChange(event.target.value)
+          }
+          style={s.input}
+        />
+        <span style={s.hint}>
+          Select the day for registrations and statistics.
+        </span>
+      </label>
+
+      <label style={s.field}>
+        <span style={s.label}>Leaderboard month</span>
+        <input
+          type="month"
+          aria-label="Shared leaderboard month filter"
+          value={leaderboardMonth}
+          onChange={(event) =>
+            onLeaderboardMonthChange(event.target.value)
+          }
+          style={s.input}
+        />
+        <span style={s.hint}>
+          Select the month for therapist performance.
+        </span>
+      </label>
+    </section>
+  );
+}
+
 function PhysioStatisticsTable({
   stats,
   title = "Physio Statistics",
+  selectedDate,
+  onDateChange,
+  loading = false,
 }) {
   const rows = stats?.rows ?? [];
+
   const s = {
     card: {
       background: "#ffffff",
@@ -213,6 +347,22 @@ function PhysioStatisticsTable({
       fontSize: 13,
       color: "#718096",
       lineHeight: 1.5,
+    },
+    controls: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      flexWrap: "wrap",
+    },
+    dateInput: {
+      padding: "10px 12px",
+      border: "1px solid #dbe4ee",
+      borderRadius: 10,
+      background: "#ffffff",
+      color: "#243b53",
+      fontSize: 13,
+      fontFamily: "inherit",
+      maxWidth: "100%",
     },
     badge: {
       background: "#e9f9f1",
@@ -292,22 +442,52 @@ function PhysioStatisticsTable({
       lineHeight: 1.6,
     },
   };
+
   return (
     <section style={s.card}>
       <div style={s.heading}>
         <div>
           <h2 style={s.title}>{title}</h2>
           <div style={s.subtitle}>
-            Today's physiotherapy registrations
+            Physiotherapy registrations for{" "}
+            {selectedDate || "the selected date"}
           </div>
         </div>
-        <span style={s.badge}>
-          {rows.length} {rows.length === 1 ? "therapist" : "therapists"}
-        </span>
+
+        <div style={s.controls}>
+          <label>
+            <span
+              style={{
+                display: "block",
+                fontSize: 11,
+                fontWeight: 750,
+                color: "#718096",
+                marginBottom: 5,
+              }}
+            >
+              Select day
+            </span>
+            <input
+              type="date"
+              aria-label="Filter statistics by date"
+              value={selectedDate}
+              onChange={(event) => onDateChange(event.target.value)}
+              style={s.dateInput}
+            />
+          </label>
+
+          <span style={s.badge}>
+            {rows.length}{" "}
+            {rows.length === 1 ? "therapist" : "therapists"}
+          </span>
+        </div>
       </div>
-      {!rows.length ? (
+
+      {loading ? (
+        <div style={s.empty}>Loading statistics...</div>
+      ) : !rows.length ? (
         <div style={s.empty}>
-          No registration statistics are available for today.
+          No registration statistics are available for this date.
         </div>
       ) : (
         <div style={s.tableWrap}>
@@ -324,6 +504,7 @@ function PhysioStatisticsTable({
                 <th style={s.th}>Seen</th>
               </tr>
             </thead>
+
             <tbody>
               {rows.map((row) => (
                 <tr key={row.therapist_id}>
@@ -352,12 +533,18 @@ function PhysioStatisticsTable({
     </section>
   );
 }
-function getMonthLabel() {
+
+function getMonthLabel(month = getLocalMonthString()) {
+  if (!month) return "";
+
+  const [year, monthNumber] = month.split("-").map(Number);
+
   return new Intl.DateTimeFormat("en", {
     month: "long",
     year: "numeric",
-  }).format(new Date());
+  }).format(new Date(year, monthNumber - 1, 1));
 }
+
 function getLeaderboardName(item) {
   return (
     item?.therapist_name ??
@@ -371,6 +558,7 @@ function getLeaderboardName(item) {
     "Unnamed therapist"
   );
 }
+
 function getMonthlyPatientCount(item) {
   const value =
     item?.monthly_patients_seen ??
@@ -379,9 +567,12 @@ function getMonthlyPatientCount(item) {
     item?.monthly ??
     item?.count ??
     0;
+
   const count = Number(value);
+
   return Number.isFinite(count) && count >= 0 ? count : 0;
 }
+
 function getLeaderboardId(item, index) {
   return (
     item?.therapist_id ??
@@ -393,18 +584,24 @@ function getLeaderboardId(item, index) {
     `${getLeaderboardName(item)}-${index}`
   );
 }
+
 function getTarget(item) {
   const value = Number(item?.target ?? item?.monthly_target ?? 100);
+
   return Number.isFinite(value) && value > 0 ? value : 100;
 }
+
 function MonthlyPhysioLeaderboard({
   rows = [],
   loading = false,
   error = "",
   onReload,
+  selectedMonth,
+  onMonthChange,
 }) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("count");
+
   const rankedRows = useMemo(
     () =>
       [...rows].sort((a, b) =>
@@ -414,6 +611,7 @@ function MonthlyPhysioLeaderboard({
       ),
     [rows, sortBy]
   );
+
   const filteredRows = useMemo(
     () =>
       rankedRows.filter((row) =>
@@ -423,20 +621,26 @@ function MonthlyPhysioLeaderboard({
       ),
     [rankedRows, search]
   );
+
   const totalPatients = rows.reduce(
     (sum, row) => sum + getMonthlyPatientCount(row),
     0
   );
+
   const therapistCount = rows.length;
+
   const averagePatients = therapistCount
     ? Math.round(totalPatients / therapistCount)
     : 0;
+
   const completedTargets = rows.filter(
     (row) => getMonthlyPatientCount(row) >= getTarget(row)
   ).length;
+
   const topTherapist = [...rows].sort(
     (a, b) => getMonthlyPatientCount(b) - getMonthlyPatientCount(a)
   )[0];
+
   const s = {
     container: {
       background: "#f4f7fb",
@@ -582,43 +786,73 @@ function MonthlyPhysioLeaderboard({
       fontSize: 13,
     },
   };
+
   return (
     <section style={s.container}>
       <div style={s.header}>
         <div>
           <h2 style={s.title}>Physiotherapy Leaderboard</h2>
           <div style={s.subtitle}>
-            Monthly performance overview · {getMonthLabel()}
+            Monthly performance overview · {getMonthLabel(selectedMonth)}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onReload}
-          disabled={loading}
-          style={s.button}
-        >
-          {loading ? "Refreshing..." : "↻ Refresh"}
-        </button>
+
+        <div style={s.controls}>
+          <label>
+            <span
+              style={{
+                display: "block",
+                fontSize: 11,
+                fontWeight: 750,
+                color: "#718096",
+                marginBottom: 5,
+              }}
+            >
+              Select month
+            </span>
+            <input
+              type="month"
+              aria-label="Filter leaderboard by month"
+              value={selectedMonth}
+              onChange={(event) => onMonthChange(event.target.value)}
+              style={s.input}
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={onReload}
+            disabled={loading}
+            style={s.button}
+          >
+            {loading ? "Refreshing..." : "↻ Refresh"}
+          </button>
+        </div>
       </div>
+
       <div style={s.cards}>
         <div style={s.card}>
           <div style={s.label}>Total patients</div>
           <div style={s.value}>{totalPatients.toLocaleString()}</div>
         </div>
+
         <div style={s.card}>
           <div style={s.label}>Therapists</div>
           <div style={s.value}>{therapistCount}</div>
         </div>
+
         <div style={s.card}>
           <div style={s.label}>Average per therapist</div>
           <div style={s.value}>{averagePatients}</div>
         </div>
+
         <div style={s.card}>
           <div style={s.label}>Target achieved</div>
           <div style={s.value}>
             {completedTargets}/{therapistCount}
           </div>
         </div>
+
         <div style={{ ...s.card, background: "#eaf7f1" }}>
           <div style={{ ...s.label, color: "#378267" }}>
             Current leader
@@ -641,14 +875,16 @@ function MonthlyPhysioLeaderboard({
           </div>
         </div>
       </div>
+
       <div style={s.panel}>
         <div style={s.toolbar}>
           <div>
             <strong>Therapist performance</strong>
             <div style={s.subtitle}>
-              Search and compare monthly totals
+              Search and compare totals for {getMonthLabel(selectedMonth)}
             </div>
           </div>
+
           <div style={s.controls}>
             <input
               type="search"
@@ -658,6 +894,7 @@ function MonthlyPhysioLeaderboard({
               onChange={(event) => setSearch(event.target.value)}
               style={s.input}
             />
+
             <select
               aria-label="Sort leaderboard"
               value={sortBy}
@@ -669,21 +906,27 @@ function MonthlyPhysioLeaderboard({
             </select>
           </div>
         </div>
+
         {error ? (
           <div role="alert" style={s.error}>
             {error}
           </div>
         ) : null}
+
         {loading && rows.length === 0 ? (
           <div style={s.message}>Loading leaderboard...</div>
         ) : null}
+
         {!loading && !error && filteredRows.length === 0 ? (
           <div style={s.message}>
             {search
               ? "No therapists match your search."
-              : "No leaderboard data is available for this month."}
+              : `No leaderboard data is available for ${getMonthLabel(
+                  selectedMonth
+                )}.`}
           </div>
         ) : null}
+
         {filteredRows.length > 0 && (
           <div style={s.tableWrapper}>
             <table style={s.table}>
@@ -696,6 +939,7 @@ function MonthlyPhysioLeaderboard({
                   <th style={s.th}>Status</th>
                 </tr>
               </thead>
+
               <tbody>
                 {filteredRows.map((item, index) => {
                   const count = getMonthlyPatientCount(item);
@@ -703,11 +947,13 @@ function MonthlyPhysioLeaderboard({
                   const progress = Math.round((count / target) * 100);
                   const rank =
                     rankedRows.findIndex((row) => row === item) + 1;
+
                   return (
                     <tr key={getLeaderboardId(item, index)}>
                       <td style={s.td}>
                         <strong>{rank}</strong>
                       </td>
+
                       <td style={s.td}>
                         <strong>{getLeaderboardName(item)}</strong>
                         {item.username ? (
@@ -722,9 +968,11 @@ function MonthlyPhysioLeaderboard({
                           </div>
                         ) : null}
                       </td>
+
                       <td style={s.td}>
                         <strong>{count.toLocaleString()}</strong>
                       </td>
+
                       <td style={s.td}>
                         {progress}% of {target}
                         <div
@@ -753,6 +1001,7 @@ function MonthlyPhysioLeaderboard({
                           />
                         </div>
                       </td>
+
                       <td style={s.td}>
                         {progress >= 100
                           ? "Target reached"
@@ -769,6 +1018,7 @@ function MonthlyPhysioLeaderboard({
     </section>
   );
 }
+
 export default function PhysioFollowupWorkspace({
   user,
   onLogout,
@@ -776,15 +1026,26 @@ export default function PhysioFollowupWorkspace({
   onStopImpersonation,
 }) {
   const navigate = useNavigate();
+
   const [activeSection, setActiveSection] = useState("statistics");
   const [error, setError] = useState("");
   const [patientTrackerRows, setPatientTrackerRows] = useState([]);
   const [todayAssignments, setTodayAssignments] = useState([]);
+
+  const [statisticsDate, setStatisticsDate] = useState(
+    getLocalDateString()
+  );
+  const [statisticsLoading, setStatisticsLoading] = useState(false);
+
   const [leaderboardRows, setLeaderboardRows] = useState([]);
+  const [leaderboardMonth, setLeaderboardMonth] = useState(
+    getLocalMonthString()
+  );
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState("");
-  const today = getLocalDateString();
+
   const selectedTherapistId = actingAs?.id ?? user?.id ?? null;
+
   const loadPatientTracker = useCallback(async () => {
     try {
       const res = await api.get("patients/tracker/");
@@ -795,40 +1056,64 @@ export default function PhysioFollowupWorkspace({
       setError("Failed to load patient tracker.");
     }
   }, []);
+
   const loadTodayAssignments = useCallback(async () => {
+    if (!statisticsDate) return;
+
+    setStatisticsLoading(true);
+
     try {
       const params = new URLSearchParams({
-        start_date: today,
-        end_date: today,
+        start_date: statisticsDate,
+        end_date: statisticsDate,
       });
+
       const res = await api.get(
         `reception/assignments/?${params.toString()}`
       );
+
       setTodayAssignments(getArray(res.data, "assignments"));
       setError("");
     } catch (err) {
-      console.error("Failed to load today's registrations:", err);
+      console.error("Failed to load registrations:", err);
       console.error("Registration API error:", err?.response?.data);
       setTodayAssignments([]);
-      setError("Failed to load today's registrations.");
+      setError("Failed to load registrations for the selected date.");
+    } finally {
+      setStatisticsLoading(false);
     }
-  }, [today]);
+  }, [statisticsDate]);
+
   const loadPhysioLeaderboard = useCallback(async () => {
+    if (!leaderboardMonth) return;
+
     setLeaderboardLoading(true);
     setLeaderboardError("");
+
     try {
-      const res = await api.get("physio/leaderboard/monthly/");
+      const params = new URLSearchParams({
+        month: leaderboardMonth,
+      });
+
+      const res = await api.get(
+        `physio/leaderboard/monthly/?${params.toString()}`
+      );
+
       const results = getArray(res.data, "results");
+
       const rows = results.length
         ? results
         : getArray(res.data, "rows").length
           ? getArray(res.data, "rows")
           : getArray(res.data, "leaderboard");
+
       setLeaderboardRows(rows);
     } catch (err) {
       console.error("Failed to load physiotherapy leaderboard:", err);
       console.error("Leaderboard API error:", err?.response?.data);
+
       setLeaderboardRows([]);
+
       setLeaderboardError(
         err?.response?.status === 404
           ? "The monthly physiotherapy leaderboard API is not configured yet."
@@ -837,20 +1122,27 @@ export default function PhysioFollowupWorkspace({
     } finally {
       setLeaderboardLoading(false);
     }
-  }, []);
+  }, [leaderboardMonth]);
+
   useEffect(() => {
     loadPatientTracker();
+  }, [loadPatientTracker]);
+
+  useEffect(() => {
     loadTodayAssignments();
-  }, [loadPatientTracker, loadTodayAssignments]);
+  }, [loadTodayAssignments]);
+
   useEffect(() => {
     if (activeSection === "leaderboard") {
       loadPhysioLeaderboard();
     }
   }, [activeSection, loadPhysioLeaderboard]);
+
   const handleBackToAdmin = useCallback(() => {
     onStopImpersonation?.();
     navigate("/admin");
   }, [onStopImpersonation, navigate]);
+
   const physioPatientTrackerRows = useMemo(
     () =>
       patientTrackerRows.filter((item) =>
@@ -858,6 +1150,7 @@ export default function PhysioFollowupWorkspace({
       ),
     [patientTrackerRows, selectedTherapistId]
   );
+
   const physioAssignments = useMemo(
     () =>
       todayAssignments.filter((item) =>
@@ -865,10 +1158,12 @@ export default function PhysioFollowupWorkspace({
       ),
     [todayAssignments, selectedTherapistId]
   );
+
   const physioStatistics = useMemo(
     () => buildPhysioStatistics(physioAssignments),
     [physioAssignments]
   );
+
   const walkInAssignments = useMemo(
     () =>
       physioAssignments.filter((item) =>
@@ -876,6 +1171,7 @@ export default function PhysioFollowupWorkspace({
       ),
     [physioAssignments]
   );
+
   const appointmentAssignments = useMemo(
     () =>
       physioAssignments.filter((item) =>
@@ -883,6 +1179,7 @@ export default function PhysioFollowupWorkspace({
       ),
     [physioAssignments]
   );
+
   const initialEvalAssignments = useMemo(
     () =>
       physioAssignments.filter((item) =>
@@ -890,6 +1187,7 @@ export default function PhysioFollowupWorkspace({
       ),
     [physioAssignments]
   );
+
   const taskWithoutEligibilityAssignments = useMemo(
     () =>
       physioAssignments.filter((item) =>
@@ -901,7 +1199,9 @@ export default function PhysioFollowupWorkspace({
       ),
     [physioAssignments]
   );
+
   const statisticsCount = physioStatistics.rows.length;
+
   return (
     <DashboardLayout
       title="Patient Workflow"
@@ -922,6 +1222,7 @@ export default function PhysioFollowupWorkspace({
           navigate("/physio");
           return;
         }
+
         setActiveSection(key);
       }}
       onLogout={onLogout}
@@ -932,12 +1233,24 @@ export default function PhysioFollowupWorkspace({
       {error ? (
         <DashboardNotice type="error">{error}</DashboardNotice>
       ) : null}
+
+      <PhysioSharedFilters
+        statisticsDate={statisticsDate}
+        onStatisticsDateChange={setStatisticsDate}
+        leaderboardMonth={leaderboardMonth}
+        onLeaderboardMonthChange={setLeaderboardMonth}
+      />
+
       {activeSection === "statistics" && (
         <div style={styles.stack}>
           <PhysioStatisticsTable
             stats={physioStatistics}
             title="Physio Statistics"
+            selectedDate={statisticsDate}
+            onDateChange={setStatisticsDate}
+            loading={statisticsLoading}
           />
+
           <PhysioTodayRegistrationsSection
             walkInAssignments={walkInAssignments}
             appointmentAssignments={appointmentAssignments}
@@ -948,18 +1261,22 @@ export default function PhysioFollowupWorkspace({
           />
         </div>
       )}
+
       {activeSection === "tracker" && (
         <PatientTrackerTable
           patients={physioPatientTrackerRows}
           title="Patient Tracker"
         />
       )}
+
       {activeSection === "leaderboard" && (
         <MonthlyPhysioLeaderboard
           rows={leaderboardRows}
           loading={leaderboardLoading}
           error={leaderboardError}
           onReload={loadPhysioLeaderboard}
+          selectedMonth={leaderboardMonth}
+          onMonthChange={setLeaderboardMonth}
         />
       )}
     </DashboardLayout>
