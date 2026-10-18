@@ -1,9 +1,4 @@
-
-from .constants import (
-    ADMIN_ROLES,
-    PHYSIO_ROLES,
-    RECEPTION_ROLES,
-)
+from .constants import ADMIN_ROLES, PHYSIO_ROLES, RECEPTION_ROLES
 
 
 def normalise_role_value(value):
@@ -17,17 +12,13 @@ def normalise_role_value(value):
 
 
 def normalised_role(user):
-    return normalise_role_value(
-        getattr(user, "role", "")
-    )
+    return normalise_role_value(getattr(user, "role", ""))
 
 
 def is_admin_user(user):
     return (
         normalised_role(user) in ADMIN_ROLES
-        or bool(
-            getattr(user, "is_superuser", False)
-        )
+        or bool(getattr(user, "is_superuser", False))
     )
 
 
@@ -41,7 +32,6 @@ def is_physio_role(role):
 
 def is_allowed_viewer(user):
     role = normalised_role(user)
-
     return (
         is_admin_user(user)
         or is_reception_role(role)
@@ -49,19 +39,13 @@ def is_allowed_viewer(user):
     )
 
 
-def can_manage_assignment(
-    user,
-    assignment,
-    admin,
-    role,
-    today_value,
-):
-    # Admin can edit/delete any registration.
-    if admin:
+def can_manage_assignment(user, assignment, admin, role, today_value):
+    # Admin can manage any registration.
+    if admin or is_admin_user(user):
         return True
 
-    # Reception can manage only its own registrations
-    # dated today.
+    # Only reception can manage registrations, and only their own
+    # registrations created for today's date.
     if not is_reception_role(role):
         return False
 

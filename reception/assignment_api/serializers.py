@@ -1,5 +1,5 @@
 
-from .permissions import can_manage_assignment
+from .permissions import can_manage_assignment, is_admin_user
 
 
 def assignment_to_dict(
@@ -9,13 +9,18 @@ def assignment_to_dict(
     admin,
     role,
 ):
-    can_manage = can_manage_assignment(
-        user=user,
-        assignment=assignment,
-        admin=admin,
-        role=role,
-        today_value=today_value,
-    )
+    # Admins can edit and delete any registration.
+    if admin or is_admin_user(user):
+        can_manage = True
+    else:
+        # Reception can manage only its own registrations dated today.
+        can_manage = can_manage_assignment(
+            user=user,
+            assignment=assignment,
+            admin=False,
+            role=role,
+            today_value=today_value,
+        )
 
     patient = assignment.patient
     therapist = assignment.therapist

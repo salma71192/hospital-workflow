@@ -8,6 +8,7 @@ function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
+
   return `${year}-${month}-${day}`;
 }
 
@@ -24,6 +25,13 @@ function getPercent(value, total) {
 }
 
 function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function normalizeCategory(value) {
   return String(value || "")
     .trim()
     .toLowerCase()
@@ -49,7 +57,7 @@ export default function RegistrationTrackerSection({
   const today = getTodayString();
   const normalizedRole = normalizeRole(userRole);
 
-  // Determine permissions using the explicit props and role.
+  // Keep permission handling based on the existing props and role.
   const isAdmin =
     Boolean(adminProp) || normalizedRole === "admin";
 
@@ -78,32 +86,38 @@ export default function RegistrationTrackerSection({
   );
 
   const stats = useMemo(() => {
-    const total = assignments.length;
+    const safeAssignments = Array.isArray(assignments)
+      ? assignments
+      : [];
 
-    const walkIn = assignments.filter(
-      (assignment) => assignment.category === "walk_in"
+    const total = safeAssignments.length;
+
+    const walkIn = safeAssignments.filter((assignment) =>
+      ["walk_in"].includes(
+        normalizeCategory(assignment.category)
+      )
     ).length;
 
-    const appointment = assignments.filter((assignment) =>
+    const appointment = safeAssignments.filter((assignment) =>
       [
         "appointment",
         "has_appointment",
-        "has appointments",
-      ].includes(assignment.category)
+        "has_appointments",
+      ].includes(normalizeCategory(assignment.category))
     ).length;
 
-    const initialEval = assignments.filter((assignment) =>
+    const initialEval = safeAssignments.filter((assignment) =>
       [
         "initial_eval",
         "initial_evaluation",
-      ].includes(assignment.category)
+      ].includes(normalizeCategory(assignment.category))
     ).length;
 
-    const noEligibility = assignments.filter((assignment) =>
+    const noEligibility = safeAssignments.filter((assignment) =>
       [
         "task_without_eligibility",
         "no_eligibility",
-      ].includes(assignment.category)
+      ].includes(normalizeCategory(assignment.category))
     ).length;
 
     return {
@@ -131,8 +145,13 @@ export default function RegistrationTrackerSection({
       return `${fromDate} to ${toDate}`;
     }
 
-    if (fromDate) return `From ${fromDate}`;
-    if (toDate) return `Until ${toDate}`;
+    if (fromDate) {
+      return `From ${fromDate}`;
+    }
+
+    if (toDate) {
+      return `Until ${toDate}`;
+    }
 
     return "Select a date range";
   }, [

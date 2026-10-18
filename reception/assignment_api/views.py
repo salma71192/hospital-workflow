@@ -50,7 +50,10 @@ def therapists_api(request):
 
     return JsonResponse({
         "therapists": list(
-            physiotherapists_queryset().values("id", "username")
+            physiotherapists_queryset().values(
+                "id",
+                "username",
+            )
         )
     })
 
@@ -81,7 +84,9 @@ def staff_filters_api(request):
         .values("id", "username", "role")
     )
 
-    return JsonResponse({"users": list(users)})
+    return JsonResponse({
+        "users": list(users),
+    })
 
 
 @csrf_exempt
@@ -93,7 +98,9 @@ def assignments_api(request, assignment_id=None):
     admin = is_admin_user(request.user)
     today_value = timezone.localdate()
 
-    # GET: list and filter registrations.
+    # ---------------------------------------------------------
+    # GET: List and filter registrations.
+    # ---------------------------------------------------------
     if request.method == "GET":
         if not is_allowed_viewer(request.user):
             return error("Not allowed", 403)
@@ -110,18 +117,31 @@ def assignments_api(request, assignment_id=None):
         if date_error:
             return date_error
 
-        if start_date and end_date and start_date > end_date:
-            return error("Start date cannot be after end date")
+        if (
+            start_date
+            and end_date
+            and start_date > end_date
+        ):
+            return error(
+                "Start date cannot be after end date"
+            )
 
         qs = PatientAssignment.objects.select_related(
-            "patient", "therapist", "created_by"
+            "patient",
+            "therapist",
+            "created_by",
         )
 
+        # Apply the requested date filters.
         if start_date:
-            qs = qs.filter(assignment_date__gte=start_date)
+            qs = qs.filter(
+                assignment_date__gte=start_date
+            )
 
         if end_date:
-            qs = qs.filter(assignment_date__lte=end_date)
+            qs = qs.filter(
+                assignment_date__lte=end_date
+            )
 
         patient_search = (
             request.GET.get("patient") or ""
@@ -130,7 +150,9 @@ def assignments_api(request, assignment_id=None):
         if patient_search:
             qs = qs.filter(
                 Q(patient__name__icontains=patient_search)
-                | Q(patient__patient_id__icontains=patient_search)
+                | Q(
+                    patient__patient_id__icontains=patient_search
+                )
             )
 
         therapist_id = (
@@ -139,18 +161,25 @@ def assignments_api(request, assignment_id=None):
 
         if therapist_id and therapist_id.lower() != "all":
             try:
-                qs = qs.filter(therapist_id=int(therapist_id))
+                qs = qs.filter(
+                    therapist_id=int(therapist_id)
+                )
             except (ValueError, TypeError):
                 return error("Invalid therapist filter")
 
-        user_id = (request.GET.get("user_id") or "").strip()
+        user_id = (
+            request.GET.get("user_id") or ""
+        ).strip()
+
         viewed_user_id = (
             request.GET.get("viewed_user_id") or ""
         ).strip()
+
         viewed_user_role = normalise_role_value(
             request.GET.get("viewed_user_role") or ""
         )
 
+        # ADMIN: May view registrations across all dates.
         if admin:
             selected_user_id = (
                 user_id
@@ -158,7 +187,10 @@ def assignments_api(request, assignment_id=None):
                 else ""
             )
 
-            if viewed_user_id and viewed_user_id.lower() != "all":
+            if (
+                viewed_user_id
+                and viewed_user_id.lower() != "all"
+            ):
                 if (
                     viewed_user_role in RECEPTION_ROLES
                     or viewed_user_role in ADMIN_ROLES
@@ -171,7 +203,9 @@ def assignments_api(request, assignment_id=None):
                             therapist_id=int(viewed_user_id)
                         )
                     except (ValueError, TypeError):
-                        return error("Invalid viewed user filter")
+                        return error(
+                            "Invalid viewed user filter"
+                        )
 
             if selected_user_id:
                 try:
@@ -181,13 +215,19 @@ def assignments_api(request, assignment_id=None):
                 except (ValueError, TypeError):
                     return error("Invalid user filter")
 
+        # RECEPTION: Respect the selected date range.
+        # If no date filters are supplied, default to today.
         elif is_reception_role(role):
-            # Reception can view the full registration history.
-            # Per-record edit/delete permissions are set below.
-            pass
+            if not start_date and not end_date:
+                qs = qs.filter(
+                    assignment_date=today_value
+                )
 
+        # PHYSIOTHERAPIST: Only registrations assigned to them.
         elif is_physio_role(role):
-            qs = qs.filter(therapist_id=request.user.id)
+            qs = qs.filter(
+                therapist_id=request.user.id
+            )
 
         else:
             return error("Not allowed", 403)
@@ -201,20 +241,26 @@ def assignments_api(request, assignment_id=None):
                 role,
             )
             for assignment in qs.order_by(
-                "-assignment_date", "-created_at"
+                "-assignment_date",
+                "-created_at",
             )
         ]
 
         agents = list(
             User.objects.filter(
-                role__in=list(RECEPTION_ROLES | ADMIN_ROLES)
+                role__in=list(
+                    RECEPTION_ROLES | ADMIN_ROLES
+                )
             )
             .order_by("username")
             .values("id", "username", "role")
         )
 
         therapists = list(
-            physiotherapists_queryset().values("id", "username")
+            physiotherapists_queryset().values(
+                "id",
+                "username",
+            )
         )
 
         specialities = list(
@@ -232,13 +278,21 @@ def assignments_api(request, assignment_id=None):
             "therapists": therapists,
             "physicians": PHYSICIAN_NAMES,
             "specialities": specialities,
-            "start_date": str(start_date) if start_date else "",
-            "end_date": str(end_date) if end_date else "",
+            "start_date": (
+                str(start_date) if start_date else ""
+            ),
+            "end_date": (
+                str(end_date) if end_date else ""
+            ),
         })
 
-    # POST: create a registration.
+    # ---------------------------------------------------------
+    # POST: Create a registration.
+    # ---------------------------------------------------------
     if request.method == "POST":
-        if not (admin or is_reception_role(role)):
+        if not (
+            admin or is_reception_role(role)
+        ):
             return error("Not allowed", 403)
 
         data, body_error = read_json(request)
@@ -249,37 +303,52 @@ def assignments_api(request, assignment_id=None):
         therapist_id = data.get("therapist_id")
 
         if not patient_id or not therapist_id:
-            return error("Missing patient or therapist")
+            return error(
+                "Missing patient or therapist"
+            )
 
         fields, validation_error = validate_fields(data)
         if validation_error:
             return validation_error
 
+        # Only admins may choose a registration date.
         if admin:
-            submitted_date = data.get("assignment_date")
+            submitted_date = data.get(
+                "assignment_date"
+            )
 
             if submitted_date:
                 from reception.api_helpers import parse_date
 
-                assignment_date = parse_date(submitted_date)
+                assignment_date = parse_date(
+                    submitted_date
+                )
+
                 if not assignment_date:
-                    return error("Invalid assignment date")
+                    return error(
+                        "Invalid assignment date"
+                    )
             else:
                 assignment_date = today_value
         else:
-            # Reception may create registrations for today only.
             assignment_date = today_value
 
         try:
-            patient = Patient.objects.get(id=patient_id)
-            therapist = get_physio(therapist_id)
+            patient = Patient.objects.get(
+                id=patient_id
+            )
+            therapist = get_physio(
+                therapist_id
+            )
         except (
             Patient.DoesNotExist,
             User.DoesNotExist,
             ValueError,
             TypeError,
         ):
-            return error("Invalid patient or therapist")
+            return error(
+                "Invalid patient or therapist"
+            )
 
         with transaction.atomic():
             locked_patient = (
@@ -288,10 +357,14 @@ def assignments_api(request, assignment_id=None):
                 .get(id=patient.id)
             )
 
-            if PatientAssignment.objects.filter(
-                patient=locked_patient,
-                assignment_date=assignment_date,
-            ).exists():
+            already_assigned = (
+                PatientAssignment.objects.filter(
+                    patient=locked_patient,
+                    assignment_date=assignment_date,
+                ).exists()
+            )
+
+            if already_assigned:
                 return error(
                     "This patient is already assigned "
                     "on the selected date"
@@ -303,7 +376,9 @@ def assignments_api(request, assignment_id=None):
                 assignment_date=assignment_date,
                 category=fields["category"],
                 visit_number=fields["visit_number"],
-                referring_physician=fields["referring_physician"],
+                referring_physician=fields[
+                    "referring_physician"
+                ],
                 speciality=fields["speciality"],
                 notes=fields["notes"],
                 created_by=request.user,
@@ -320,25 +395,36 @@ def assignments_api(request, assignment_id=None):
             "success": True,
             "message": "Patient assigned successfully",
             "id": assignment.id,
-            "assignment_date": str(assignment.assignment_date),
+            "assignment_date": str(
+                assignment.assignment_date
+            ),
             "therapist_id": therapist.id,
             "therapist_name": therapist.username,
             "category": assignment.category,
             "visit_number": assignment.visit_number,
-            "referring_physician": assignment.referring_physician,
+            "referring_physician": (
+                assignment.referring_physician
+            ),
             "speciality": assignment.speciality,
             "specialty": assignment.speciality,
         })
 
-    # PUT: update a registration.
+    # ---------------------------------------------------------
+    # PUT: Update a registration.
+    # ---------------------------------------------------------
     if request.method == "PUT":
         if not assignment_id:
-            return error("Assignment ID is required")
+            return error(
+                "Assignment ID is required"
+            )
 
-        assignment, lookup_error = get_assignment(assignment_id)
+        assignment, lookup_error = get_assignment(
+            assignment_id
+        )
         if lookup_error:
             return lookup_error
 
+        # Preserve existing edit permissions.
         if not can_manage_assignment(
             request.user,
             assignment,
@@ -358,19 +444,26 @@ def assignments_api(request, assignment_id=None):
             return body_error
 
         fields, validation_error = validate_fields(
-            data, assignment=assignment
+            data,
+            assignment=assignment,
         )
         if validation_error:
             return validation_error
 
         new_assignment_date = assignment.assignment_date
 
+        # Only admins may change the date.
         if admin and "assignment_date" in data:
             from reception.api_helpers import parse_date
 
-            parsed_date = parse_date(data.get("assignment_date"))
+            parsed_date = parse_date(
+                data.get("assignment_date")
+            )
+
             if not parsed_date:
-                return error("Invalid assignment date")
+                return error(
+                    "Invalid assignment date"
+                )
 
             new_assignment_date = parsed_date
 
@@ -379,14 +472,28 @@ def assignments_api(request, assignment_id=None):
 
         if therapist_id:
             try:
-                new_therapist = get_physio(therapist_id)
-            except (User.DoesNotExist, ValueError, TypeError):
-                return error("Invalid therapist")
+                new_therapist = get_physio(
+                    therapist_id
+                )
+            except (
+                User.DoesNotExist,
+                ValueError,
+                TypeError,
+            ):
+                return error(
+                    "Invalid therapist"
+                )
 
-        if PatientAssignment.objects.filter(
-            patient_id=assignment.patient_id,
-            assignment_date=new_assignment_date,
-        ).exclude(id=assignment.id).exists():
+        duplicate_exists = (
+            PatientAssignment.objects.filter(
+                patient_id=assignment.patient_id,
+                assignment_date=new_assignment_date,
+            )
+            .exclude(id=assignment.id)
+            .exists()
+        )
+
+        if duplicate_exists:
             return error(
                 "This patient is already assigned "
                 "on the selected date"
@@ -395,7 +502,9 @@ def assignments_api(request, assignment_id=None):
         with transaction.atomic():
             assignment.therapist = new_therapist
             assignment.category = fields["category"]
-            assignment.visit_number = fields["visit_number"]
+            assignment.visit_number = fields[
+                "visit_number"
+            ]
             assignment.referring_physician = fields[
                 "referring_physician"
             ]
@@ -415,25 +524,36 @@ def assignments_api(request, assignment_id=None):
             "success": True,
             "message": "Assignment updated successfully",
             "id": assignment.id,
-            "assignment_date": str(assignment.assignment_date),
+            "assignment_date": str(
+                assignment.assignment_date
+            ),
             "therapist_id": new_therapist.id,
             "therapist_name": new_therapist.username,
             "category": assignment.category,
             "visit_number": assignment.visit_number,
-            "referring_physician": assignment.referring_physician,
+            "referring_physician": (
+                assignment.referring_physician
+            ),
             "speciality": assignment.speciality,
             "specialty": assignment.speciality,
         })
 
-    # DELETE: delete a registration.
+    # ---------------------------------------------------------
+    # DELETE: Delete a registration.
+    # ---------------------------------------------------------
     if request.method == "DELETE":
         if not assignment_id:
-            return error("Assignment ID is required")
+            return error(
+                "Assignment ID is required"
+            )
 
-        assignment, lookup_error = get_assignment(assignment_id)
+        assignment, lookup_error = get_assignment(
+            assignment_id
+        )
         if lookup_error:
             return lookup_error
 
+        # Preserve existing delete permissions.
         if not can_manage_assignment(
             request.user,
             assignment,
