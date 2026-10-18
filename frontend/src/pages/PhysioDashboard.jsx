@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -9,6 +10,10 @@ import PhysioTrackerSection from "../components/physio/PhysioTrackerSection";
 import PhysioAlerts from "../components/physio/PhysioAlerts";
 
 import usePhysioDashboard from "../components/physio/usePhysioDashboard";
+
+// Booking features are disabled but kept for future use.
+// import StatisticsSection from "../components/booking/StatisticsSection";
+// import TodayAppointmentsSection from "../components/booking/TodayAppointmentsSection";
 
 export default function PhysioDashboard({
   user,
@@ -33,18 +38,23 @@ export default function PhysioDashboard({
   } = usePhysioDashboard(user, actingAs);
 
   const handleBackToAdmin = () => {
-    onStopImpersonation();
+    if (onStopImpersonation) {
+      onStopImpersonation();
+    }
+
     navigate("/admin");
   };
 
   return (
     <DashboardLayout
       title="Physio Dashboard"
-      subtitle={`Welcome ${actingAs?.username || user?.username}`}
+      subtitle={`Welcome ${
+        actingAs?.username || user?.username || ""
+      }`}
       sidebarTitle="Physio Panel"
       sidebarItems={[
-        { key: "today", label: "Today's Assignments" },
-        { key: "history", label: "History" },
+        { key: "today", label: "Today's Registrations" },
+        { key: "history", label: "Registration History" },
         { key: "tracker", label: "Monthly Tracker" },
       ]}
       activeSection={activeSection}
@@ -53,24 +63,26 @@ export default function PhysioDashboard({
       actingAs={actingAs}
       onBackToAdmin={handleBackToAdmin}
     >
-      {/* 🔥 ALERTS */}
       <PhysioAlerts alerts={alerts} />
 
+      {/* REGISTRATION-ONLY DASHBOARD */}
       {activeSection === "today" && (
         <PhysioTodaySection
           today={today}
-          assignments={assignments}
+          assignments={assignments || []}
         />
       )}
 
+      {/* REGISTRATION HISTORY */}
       {activeSection === "history" && (
         <AssignmentHistory
-          title="Physio Assignment History"
+          title="Physio Registration History"
           currentUser={user}
           actingAs={actingAs}
         />
       )}
 
+      {/* MONTHLY PATIENT TRACKER */}
       {activeSection === "tracker" && (
         <PhysioTrackerSection
           trackerMonth={trackerMonth}
@@ -82,6 +94,17 @@ export default function PhysioDashboard({
           patientError={patientError}
         />
       )}
+
+      {/*
+        FUTURE BOOKING FEATURES — CURRENTLY DISABLED
+
+        <StatisticsSection stats={todayStats} />
+
+        <TodayAppointmentsSection
+          bookings={todayAppointments}
+          title="Today's Appointments"
+        />
+      */}
     </DashboardLayout>
   );
 }

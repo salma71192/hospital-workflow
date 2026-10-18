@@ -68,13 +68,10 @@ def is_admin_user(user):
     return user.is_superuser or role == "admin"
 def evaluation_tracker_api(request):
     """
-    Return initial-evaluation counts and evaluation details
-    for each physiotherapist.
+    Return initial-evaluation counts and details for each physiotherapist.
     Optional query parameters:
         start_date=YYYY-MM-DD
         end_date=YYYY-MM-DD
-    Only PatientAssignment records with category='initial_evaluation'
-    are included.
     """
     try:
         if not request.user.is_authenticated:
@@ -142,7 +139,7 @@ def evaluation_tracker_api(request):
         )
         evaluations = (
             PatientAssignment.objects.filter(
-                category="initial_evaluation",
+                category__in=["initial_evaluation", "initial_eval"],
                 assignment_date__gte=start_date,
                 assignment_date__lte=end_date,
                 therapist__in=therapists,
@@ -179,6 +176,7 @@ def evaluation_tracker_api(request):
                 "specialty": (
                     getattr(assignment, "speciality", "") or ""
                 ),
+                "category": assignment.category,
             }
             evaluations_by_therapist.setdefault(
                 therapist_id, []
@@ -243,8 +241,8 @@ def last_therapist_api(request, patient_id):
 def leaderboard_api(request):
     """
     Return today's and current month's counts by staff member.
-    Reception patient-file counts use Patient.registered_by_id.
-    Assignment counts use PatientAssignment.created_by_id.
+    Physio registrations are counted from PatientAssignment.
+    Appointment bookings are counted separately from Appointment.
     """
     try:
         if not request.user.is_authenticated:
@@ -298,7 +296,6 @@ def leaderboard_api(request):
                 | Q(role__iexact="registration")
             )
             for user in users:
-                # Patient model uses registered_by_id, not created_by_id.
                 today_files = safe_count(
                     Patient,
                     registered_by_id=user.id,
@@ -344,6 +341,19 @@ def leaderboard_api(request):
                 | Q(role__iexact="pt")
             )
             for user in users:
+                # Registration/assignment counts do not require a booking.
+                today_assignments = safe_count(
+                    PatientAssignment,
+                    therapist_id=user.id,
+                    assignment_date=today,
+                )
+                monthly_assignments = safe_count(
+                    PatientAssignment,
+                    therapist_id=user.id,
+                    assignment_date__gte=month_start,
+                    assignment_date__lte=today,
+                )
+                # Booking statistics are kept separate.
                 today_appointments = safe_count(
                     Appointment,
                     therapist_id=user.id,
@@ -362,25 +372,10 @@ def leaderboard_api(request):
                     appointment_date__lte=today,
                     attendance_status="attended",
                 )
-                today_assignments = safe_count(
-                    PatientAssignment,
-                    therapist_id=user.id,
-                    assignment_date=today,
-                )
-                monthly_assignments = safe_count(
-                    PatientAssignment,
-                    therapist_id=user.id,
-                    assignment_date__gte=month_start,
-                    assignment_date__lte=today,
-                )
-                today_total = today_appointments + today_assignments
-                monthly_total = (
-                    monthly_appointments + monthly_assignments
-                )
+                today_total = today_assignments
+                monthly_total = monthly_assignments
                 conversion = (
-                    round(
-                        monthly_attended / monthly_appointments * 100
-                    )
+                    round(monthly_attended / monthly_appointments * 100)
                     if monthly_appointments
                     else 0
                 )
@@ -397,7 +392,9 @@ def leaderboard_api(request):
                     "total": monthly_appointments,
                     "conversion": conversion,
                     "appointments": monthly_appointments,
+                    "today_appointments": today_appointments,
                     "assignments": monthly_assignments,
+                    "today_assignments": today_assignments,
                 })
         else:
             return JsonResponse(

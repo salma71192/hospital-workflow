@@ -1,10 +1,8 @@
 import React, { useMemo, useState } from "react";
-
 function getPercent(value, total) {
   if (!total) return 0;
   return Math.round((Number(value || 0) / Number(total)) * 100);
 }
-
 function getCategoryColor(key) {
   if (key === "walk_in") {
     return {
@@ -14,7 +12,6 @@ function getCategoryColor(key) {
       text: "#1d4ed8",
     };
   }
-
   if (key === "appointment") {
     return {
       dot: "#34d399",
@@ -23,7 +20,6 @@ function getCategoryColor(key) {
       text: "#047857",
     };
   }
-
   if (key === "initial_eval") {
     return {
       dot: "#a78bfa",
@@ -32,7 +28,6 @@ function getCategoryColor(key) {
       text: "#6d28d9",
     };
   }
-
   if (key === "no_eligibility") {
     return {
       dot: "#fbbf24",
@@ -41,7 +36,6 @@ function getCategoryColor(key) {
       text: "#b45309",
     };
   }
-
   return {
     dot: "#cbd5e1",
     bar: "#cbd5e1",
@@ -49,42 +43,32 @@ function getCategoryColor(key) {
     text: "#475569",
   };
 }
-
 export default function PhysioTodayRegistrationsSection({
   walkInAssignments = [],
+  appointmentAssignments = [],
   initialEvalAssignments = [],
   taskWithoutEligibilityAssignments = [],
-  appointmentCount = 0,
 }) {
   const [expanded, setExpanded] = useState(false);
-
   const stats = useMemo(() => {
     const walkIn = walkInAssignments.length;
+    const appointment = appointmentAssignments.length;
     const initialEval = initialEvalAssignments.length;
     const noEligibility = taskWithoutEligibilityAssignments.length;
-    const appointment = Number(appointmentCount || 0);
-
-    const total = walkIn + initialEval + noEligibility + appointment;
-    const other = Math.max(
-      total - walkIn - appointment - initialEval - noEligibility,
-      0
-    );
-
+    const total = walkIn + appointment + initialEval + noEligibility;
     return {
       total,
       walkIn,
       appointment,
       initialEval,
       noEligibility,
-      other,
     };
   }, [
     walkInAssignments,
+    appointmentAssignments,
     initialEvalAssignments,
     taskWithoutEligibilityAssignments,
-    appointmentCount,
   ]);
-
   const items = [
     {
       key: "walk_in",
@@ -110,14 +94,7 @@ export default function PhysioTodayRegistrationsSection({
       count: stats.noEligibility,
       percent: getPercent(stats.noEligibility, stats.total),
     },
-    {
-      key: "other",
-      label: "Other",
-      count: stats.other,
-      percent: getPercent(stats.other, stats.total),
-    },
   ];
-
   return (
     <div style={styles.card}>
       <button
@@ -128,10 +105,9 @@ export default function PhysioTodayRegistrationsSection({
         <div>
           <div style={styles.title}>Today Registrations</div>
           <div style={styles.subtitle}>
-            Category distribution for this physio today
+            Registered patients for this physio today
           </div>
         </div>
-
         <div style={styles.headerRight}>
           <div style={styles.totalBadge}>{stats.total} total</div>
           <div
@@ -144,11 +120,9 @@ export default function PhysioTodayRegistrationsSection({
           </div>
         </div>
       </button>
-
       <div style={styles.progressTrack}>
         {items.map((item) => {
           const colors = getCategoryColor(item.key);
-
           return (
             <div
               key={item.key}
@@ -161,11 +135,9 @@ export default function PhysioTodayRegistrationsSection({
           );
         })}
       </div>
-
       <div style={styles.list}>
         {items.map((item) => {
           const colors = getCategoryColor(item.key);
-
           return (
             <div key={item.key} style={styles.row}>
               <div style={styles.left}>
@@ -177,7 +149,6 @@ export default function PhysioTodayRegistrationsSection({
                 />
                 <span style={styles.label}>{item.label}</span>
               </div>
-
               <div style={styles.right}>
                 <span
                   style={{
@@ -194,28 +165,35 @@ export default function PhysioTodayRegistrationsSection({
           );
         })}
       </div>
-
-      {expanded ? (
+      {expanded && (
         <div style={styles.detailWrap}>
-          <RegistrationTable title="Walk In" rows={walkInAssignments} />
-          <RegistrationTable title="Initial Eval" rows={initialEvalAssignments} />
+          <RegistrationTable
+            title="Walk In"
+            rows={walkInAssignments}
+          />
+          <RegistrationTable
+            title="Has Appointment"
+            rows={appointmentAssignments}
+          />
+          <RegistrationTable
+            title="Initial Eval"
+            rows={initialEvalAssignments}
+          />
           <RegistrationTable
             title="No Eligibility"
             rows={taskWithoutEligibilityAssignments}
           />
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
-
 function RegistrationTable({ title, rows = [] }) {
   return (
     <div style={styles.innerCard}>
       <div style={styles.innerTitle}>
         {title} ({rows.length})
       </div>
-
       {rows.length === 0 ? (
         <div style={styles.emptyState}>No records found.</div>
       ) : (
@@ -232,10 +210,18 @@ function RegistrationTable({ title, rows = [] }) {
             <tbody>
               {rows.map((item) => (
                 <tr key={item.id}>
-                  <td style={styles.tdBold}>{item.patient_name}</td>
-                  <td style={styles.td}>{item.patient_file_id}</td>
-                  <td style={styles.td}>{item.assignment_date || "-"}</td>
-                  <td style={styles.td}>{item.created_by_name || "-"}</td>
+                  <td style={styles.tdBold}>
+                    {item.patient_name || item.patient?.name || "-"}
+                  </td>
+                  <td style={styles.td}>
+                    {item.patient_file_id || "-"}
+                  </td>
+                  <td style={styles.td}>
+                    {item.assignment_date || "-"}
+                  </td>
+                  <td style={styles.td}>
+                    {item.created_by_name || "-"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -245,7 +231,6 @@ function RegistrationTable({ title, rows = [] }) {
     </div>
   );
 }
-
 const styles = {
   card: {
     background: "#fff",
