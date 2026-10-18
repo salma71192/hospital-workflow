@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 const normalizeRole = (value) =>
   String(value || "")
     .trim()
@@ -14,11 +14,9 @@ export default function RegistrationListSection({
   user = null,
   currentUser = null,
 }) {
+  const [processingId, setProcessingId] = useState(null);
   const role = normalizeRole(
-    userRole ||
-      user?.role ||
-      currentUser?.role ||
-      ""
+    userRole || user?.role || currentUser?.role || ""
   );
   const isAdmin =
     Boolean(adminProp) ||
@@ -33,6 +31,40 @@ export default function RegistrationListSection({
       "reception_supervisor",
     ].includes(role);
   const backendAllows = (value) => value === true;
+  const handleEdit = async (item) => {
+    if (!onEditAssignment || processingId !== null) {
+      return;
+    }
+    try {
+      setProcessingId(item.id);
+      await onEditAssignment(item);
+    } catch (error) {
+      console.error("Failed to open registration editor:", error);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+  const handleCancel = async (item) => {
+    if (!onCancelAssignment || processingId !== null) {
+      return;
+    }
+    const patientName = item.patient_name || "this patient";
+    const confirmed = window.confirm(
+      `Are you sure you want to cancel/delete the registration for ${patientName} on ${item.assignment_date || "the selected date"}?`
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setProcessingId(item.id);
+      // The parent component must provide the real API handler.
+      await onCancelAssignment(item);
+    } catch (error) {
+      console.error("Failed to cancel registration:", error);
+    } finally {
+      setProcessingId(null);
+    }
+  };
   return (
     <div style={styles.card}>
       <div style={styles.sectionHeader}>
@@ -66,29 +98,22 @@ export default function RegistrationListSection({
             </thead>
             <tbody>
               {assignments.map((item) => {
-                // Admin can manage records from any date.
                 const canEdit =
                   isAdmin ||
-                  (
-                    isReception &&
-                    (
-                      backendAllows(item.can_edit) ||
-                      backendAllows(item.can_edit_today)
-                    )
-                  );
+                  (isReception &&
+                    (backendAllows(item.can_edit) ||
+                      backendAllows(item.can_edit_today)));
                 const canDelete =
                   isAdmin ||
-                  (
-                    isReception &&
-                    (
-                      backendAllows(item.can_delete) ||
-                      backendAllows(item.can_cancel_today)
-                    )
-                  );
+                  (isReception &&
+                    (backendAllows(item.can_delete) ||
+                      backendAllows(item.can_cancel_today)));
                 const showEdit =
                   Boolean(onEditAssignment) && canEdit;
                 const showDelete =
                   Boolean(onCancelAssignment) && canDelete;
+                const isProcessing =
+                  processingId === item.id;
                 return (
                   <tr key={item.id}>
                     <td style={styles.tdBold}>
@@ -123,16 +148,12 @@ export default function RegistrationListSection({
                         <button
                           type="button"
                           style={
-                            showEdit
+                            showEdit && !isProcessing
                               ? styles.editBtn
                               : styles.disabledBtn
                           }
-                          disabled={!showEdit}
-                          onClick={() => {
-                            if (showEdit) {
-                              onEditAssignment(item);
-                            }
-                          }}
+                          disabled={!showEdit || isProcessing}
+                          onClick={() => handleEdit(item)}
                           aria-label={`Edit registration ${item.id}`}
                           title={
                             showEdit
@@ -145,24 +166,20 @@ export default function RegistrationListSection({
                         <button
                           type="button"
                           style={
-                            showDelete
+                            showDelete && !isProcessing
                               ? styles.deleteBtn
                               : styles.disabledDeleteBtn
                           }
-                          disabled={!showDelete}
-                          onClick={() => {
-                            if (showDelete) {
-                              onCancelAssignment(item);
-                            }
-                          }}
-                          aria-label={`Delete registration ${item.id}`}
+                          disabled={!showDelete || isProcessing}
+                          onClick={() => handleCancel(item)}
+                          aria-label={`Cancel registration ${item.id}`}
                           title={
                             showDelete
-                              ? "Delete registration"
-                              : "You do not have permission to delete this registration"
+                              ? "Cancel registration"
+                              : "You do not have permission to cancel this registration"
                           }
                         >
-                          Delete
+                          {isProcessing ? "Processing..." : "Cancel"}
                         </button>
                       </div>
                     </td>

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
@@ -45,7 +44,9 @@ function getApiError(err, fallback) {
     if (details) return details;
   }
 
-  return err?.message ? `${fallback}: ${err.message}` : fallback;
+  return err?.message
+    ? `${fallback}: ${err.message}`
+    : fallback;
 }
 
 function hasAdminPermissions(user) {
@@ -342,8 +343,6 @@ export default function AdminDashboard({
     }
   };
 
-  // Update a user's editable profile fields.
-  // Adjust the payload to match the fields accepted by your backend.
   const handleEditUser = async (userId, updates) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
@@ -378,8 +377,6 @@ export default function AdminDashboard({
     }
   };
 
-  // Activate or deactivate an account without deleting its records.
-  // This expects the backend update endpoint to support is_active.
   const handleSetUserActive = async (userId, isActive) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
@@ -414,7 +411,6 @@ export default function AdminDashboard({
     }
   };
 
-  // Admin resets another user's password without needing their current password.
   const handleChangeUserPassword = async (userId, newPassword) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
@@ -569,6 +565,122 @@ export default function AdminDashboard({
     }
   };
 
+  /*
+   * Edit a registration using the existing PUT API.
+   * The selected registration is supplied by the tracker.
+   */
+  const handleEditRegistration = async (assignment) => {
+    if (!isAdmin) {
+      setError("Administrator permissions are required.");
+      setMessage("");
+      return false;
+    }
+
+    if (!assignment?.id) {
+      setError("Could not identify the registration to edit.");
+      setMessage("");
+      return false;
+    }
+
+    const currentCategory = assignment.category ?? "appointment";
+    const currentVisitNumber = assignment.visit_number ?? "";
+    const currentPhysician =
+      assignment.referring_physician ?? "";
+    const currentNotes = assignment.notes ?? "";
+
+    const category = window.prompt(
+      "Registration category:",
+      String(currentCategory)
+    );
+    if (category === null) return false;
+
+    const visitNumber = window.prompt(
+      "Visit number:",
+      String(currentVisitNumber)
+    );
+    if (visitNumber === null) return false;
+
+    const referringPhysician = window.prompt(
+      "Referring physician:",
+      String(currentPhysician)
+    );
+    if (referringPhysician === null) return false;
+
+    const notes = window.prompt(
+      "Notes:",
+      String(currentNotes)
+    );
+    if (notes === null) return false;
+
+    setMessage("");
+    setError("");
+
+    try {
+      const res = await api.put(
+        `reception/assignments/${assignment.id}/`,
+        {
+          category: category.trim(),
+          visit_number: visitNumber.trim(),
+          referring_physician: referringPhysician.trim(),
+          notes: notes.trim(),
+        }
+      );
+
+      setMessage(
+        res.data?.message || "Registration updated successfully."
+      );
+
+      return true;
+    } catch (err) {
+      console.error("Failed to update registration:", err);
+      setError(
+        getApiError(err, "Failed to update registration.")
+      );
+      setMessage("");
+      return false;
+    }
+  };
+
+  /*
+   * Permanently delete a registration using the existing DELETE API.
+   * Existing tracker confirmation behavior is left unchanged.
+   */
+  const handleCancelRegistration = async (assignment) => {
+    if (!isAdmin) {
+      setError("Administrator permissions are required.");
+      setMessage("");
+      return false;
+    }
+
+    if (!assignment?.id) {
+      setError("Could not identify the registration to delete.");
+      setMessage("");
+      return false;
+    }
+
+    setMessage("");
+    setError("");
+
+    try {
+      const res = await api.delete(
+        `reception/assignments/${assignment.id}/`
+      );
+
+      setMessage(
+        res.data?.message || "Registration permanently deleted."
+      );
+
+      return true;
+    } catch (err) {
+      console.error("Failed to delete registration:", err);
+      setError(
+        getApiError(err, "Failed to delete registration.")
+      );
+      setMessage("");
+      return false;
+    }
+  };
+
   const renderPlaceholder = (heading, description) => (
     <section style={styles.card}>
       <h2 style={styles.heading}>{heading}</h2>
@@ -664,6 +776,8 @@ export default function AdminDashboard({
             isAdmin={isAdmin}
             isReception={false}
             currentUserId={user?.id}
+            onEditAssignment={handleEditRegistration}
+            onCancelAssignment={handleCancelRegistration}
           />
         )}
 

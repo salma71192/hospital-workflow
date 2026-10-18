@@ -132,7 +132,6 @@ def assignments_api(request, assignment_id=None):
             "created_by",
         )
 
-        # Apply the requested date filters.
         if start_date:
             qs = qs.filter(
                 assignment_date__gte=start_date
@@ -179,7 +178,6 @@ def assignments_api(request, assignment_id=None):
             request.GET.get("viewed_user_role") or ""
         )
 
-        # ADMIN: May view registrations across all dates.
         if admin:
             selected_user_id = (
                 user_id
@@ -215,15 +213,12 @@ def assignments_api(request, assignment_id=None):
                 except (ValueError, TypeError):
                     return error("Invalid user filter")
 
-        # RECEPTION: Respect the selected date range.
-        # If no date filters are supplied, default to today.
         elif is_reception_role(role):
             if not start_date and not end_date:
                 qs = qs.filter(
                     assignment_date=today_value
                 )
 
-        # PHYSIOTHERAPIST: Only registrations assigned to them.
         elif is_physio_role(role):
             qs = qs.filter(
                 therapist_id=request.user.id
@@ -311,7 +306,6 @@ def assignments_api(request, assignment_id=None):
         if validation_error:
             return validation_error
 
-        # Only admins may choose a registration date.
         if admin:
             submitted_date = data.get(
                 "assignment_date"
@@ -424,7 +418,6 @@ def assignments_api(request, assignment_id=None):
         if lookup_error:
             return lookup_error
 
-        # Preserve existing edit permissions.
         if not can_manage_assignment(
             request.user,
             assignment,
@@ -452,7 +445,6 @@ def assignments_api(request, assignment_id=None):
 
         new_assignment_date = assignment.assignment_date
 
-        # Only admins may change the date.
         if admin and "assignment_date" in data:
             from reception.api_helpers import parse_date
 
@@ -539,7 +531,7 @@ def assignments_api(request, assignment_id=None):
         })
 
     # ---------------------------------------------------------
-    # DELETE: Delete a registration.
+    # DELETE: Permanently delete a registration.
     # ---------------------------------------------------------
     if request.method == "DELETE":
         if not assignment_id:
@@ -553,7 +545,6 @@ def assignments_api(request, assignment_id=None):
         if lookup_error:
             return lookup_error
 
-        # Preserve existing delete permissions.
         if not can_manage_assignment(
             request.user,
             assignment,
@@ -568,11 +559,13 @@ def assignments_api(request, assignment_id=None):
                 403,
             )
 
+        deleted_id = assignment.id
         assignment.delete()
 
         return JsonResponse({
             "success": True,
-            "message": "Assignment deleted successfully",
+            "message": "Assignment permanently deleted",
+            "id": deleted_id,
         })
 
     return error("Method not allowed", 405)
