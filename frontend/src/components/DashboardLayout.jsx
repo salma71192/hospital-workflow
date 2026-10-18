@@ -1,6 +1,7 @@
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import AdminSidebar from "./admin/AdminSidebar";
+import api from "../api/api";
 import "./DashboardLayout.css";
 
 export default function DashboardLayout({
@@ -90,69 +91,52 @@ export default function DashboardLayout({
     setPasswordLoading(true);
 
     try {
-      // Use the existing backend authentication token.
-      const tokenKeys = [
-        "token",
-        "authToken",
-        "auth_token",
-        "access_token",
-      ];
-
-      let token = null;
-
-      for (const key of tokenKeys) {
-        token =
-          sessionStorage.getItem(key) ||
-          localStorage.getItem(key);
-
-        if (token) break;
-      }
-
-      const response = await fetch(
-        "/api/users/change-my-password/",
+      const response = await api.post(
+        "users/change-my-password/",
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token
-              ? { Authorization: `Token ${token}` }
-              : {}),
-          },
-          credentials: "same-origin",
-          body: JSON.stringify({
-            current_password: currentPassword,
-            new_password: newPassword,
-            confirm_password: confirmPassword,
-          }),
+          current_password: currentPassword,
+          new_password: newPassword,
+          confirm_password: confirmPassword,
         }
       );
 
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        const detail =
-          data.error ||
-          data.detail ||
-          data.message ||
-          (typeof data === "object"
-            ? Object.values(data).flat().join(" ")
-            : "");
-
-        throw new Error(
-          detail || `Password change failed (${response.status}).`
-        );
-      }
-
       setPasswordMessage(
-        data.message || "Your password has been changed successfully."
+        response.data?.message ||
+          "Your password has been changed successfully."
       );
 
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (error) {
+      console.error("Failed to change password:", error);
+
+      const data = error?.response?.data;
+      let detail = "";
+
+      if (typeof data?.error === "string") {
+        detail = data.error;
+      } else if (typeof data?.detail === "string") {
+        detail = data.detail;
+      } else if (typeof data?.message === "string") {
+        detail = data.message;
+      } else if (data && typeof data === "object") {
+        detail = Object.entries(data)
+          .map(([field, value]) => {
+            const text = Array.isArray(value)
+              ? value.join(", ")
+              : typeof value === "string"
+              ? value
+              : JSON.stringify(value);
+
+            return `${field}: ${text}`;
+          })
+          .join(" | ");
+      }
+
       setPasswordError(
-        error.message ||
+        detail ||
+          error?.message ||
           "Unable to change your password. Please try again."
       );
     } finally {
@@ -510,7 +494,7 @@ function StandardSidebarGroup({
     Boolean(item.defaultOpen || hasActiveChild)
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (hasActiveChild) {
       setIsOpen(true);
     }
