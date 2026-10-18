@@ -1,20 +1,35 @@
+
 import React, { useMemo } from "react";
 import RegistrationTrackerFilters from "./RegistrationTrackerFilters";
 import RegistrationMixSection from "./RegistrationMixSection";
 import RegistrationListSection from "./RegistrationListSection";
+
 function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
 function getTodayString() {
   return formatLocalDate(new Date());
 }
+
 function getPercent(value, total) {
   if (!total) return 0;
-  return Math.round((Number(value || 0) / Number(total)) * 100);
+
+  return Math.round(
+    (Number(value || 0) / Number(total)) * 100
+  );
 }
+
+function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
 export default function RegistrationTrackerSection({
   mode = "today",
   onChangeMode,
@@ -26,8 +41,26 @@ export default function RegistrationTrackerSection({
   onApplyFilters,
   onEditAssignment,
   onCancelAssignment,
+  userRole = "",
+  isAdmin: adminProp = false,
+  isReception: receptionProp = false,
+  currentUserId,
 }) {
   const today = getTodayString();
+  const normalizedRole = normalizeRole(userRole);
+
+  // Determine permissions using the explicit props and role.
+  const isAdmin =
+    Boolean(adminProp) || normalizedRole === "admin";
+
+  const isReception =
+    Boolean(receptionProp) ||
+    [
+      "reception",
+      "receptionist",
+      "reception_supervisor",
+    ].includes(normalizedRole);
+
   const title = useMemo(
     () =>
       mode === "monthly"
@@ -35,6 +68,7 @@ export default function RegistrationTrackerSection({
         : "Today's Registrations",
     [mode]
   );
+
   const subtitle = useMemo(
     () =>
       mode === "monthly"
@@ -42,11 +76,14 @@ export default function RegistrationTrackerSection({
         : "Review registrations recorded for the selected day.",
     [mode]
   );
+
   const stats = useMemo(() => {
     const total = assignments.length;
+
     const walkIn = assignments.filter(
       (assignment) => assignment.category === "walk_in"
     ).length;
+
     const appointment = assignments.filter((assignment) =>
       [
         "appointment",
@@ -54,18 +91,21 @@ export default function RegistrationTrackerSection({
         "has appointments",
       ].includes(assignment.category)
     ).length;
+
     const initialEval = assignments.filter((assignment) =>
       [
         "initial_eval",
         "initial_evaluation",
       ].includes(assignment.category)
     ).length;
+
     const noEligibility = assignments.filter((assignment) =>
       [
         "task_without_eligibility",
         "no_eligibility",
       ].includes(assignment.category)
     ).length;
+
     return {
       total,
       walkIn,
@@ -78,17 +118,22 @@ export default function RegistrationTrackerSection({
       noEligibilityPct: getPercent(noEligibility, total),
     };
   }, [assignments]);
+
   const dateSummary = useMemo(() => {
     if (mode === "today") {
       return filter?.date || today;
     }
+
     const fromDate = filter?.from_date || "";
     const toDate = filter?.to_date || "";
+
     if (fromDate && toDate) {
       return `${fromDate} to ${toDate}`;
     }
+
     if (fromDate) return `From ${fromDate}`;
     if (toDate) return `Until ${toDate}`;
+
     return "Select a date range";
   }, [
     mode,
@@ -97,6 +142,7 @@ export default function RegistrationTrackerSection({
     filter?.to_date,
     today,
   ]);
+
   const statCards = [
     {
       key: "appointment",
@@ -143,6 +189,7 @@ export default function RegistrationTrackerSection({
       progressStyle: styles.progressOrange,
     },
   ];
+
   return (
     <div style={styles.page}>
       {/* Page heading */}
@@ -151,34 +198,43 @@ export default function RegistrationTrackerSection({
           <div style={styles.eyebrow}>
             🏥 RECEPTION WORKSPACE
           </div>
+
           <h2 style={styles.heading}>{title}</h2>
+
           <p style={styles.subtitle}>{subtitle}</p>
         </div>
+
         <div style={styles.dateBadge}>
           <div style={styles.dateBadgeIcon}>📅</div>
+
           <div style={styles.dateBadgeContent}>
             <span style={styles.dateLabel}>
               Selected Period
             </span>
+
             <strong style={styles.dateValue}>
               {dateSummary}
             </strong>
           </div>
         </div>
       </section>
+
       {/* Filters */}
       <section style={styles.filtersCard}>
         <div style={styles.sectionHeading}>
           <div style={styles.sectionIcon}>🔎</div>
+
           <div style={styles.sectionHeadingText}>
             <h3 style={styles.sectionTitle}>
               Registration Filters
             </h3>
+
             <p style={styles.sectionDescription}>
               Find registrations using dates and staff filters.
             </p>
           </div>
         </div>
+
         <RegistrationTrackerFilters
           mode={mode}
           onChangeMode={onChangeMode}
@@ -192,6 +248,7 @@ export default function RegistrationTrackerSection({
           onApplyFilters={onApplyFilters}
         />
       </section>
+
       {/* Summary */}
       <section style={styles.summaryCard}>
         <div style={styles.summaryTop}>
@@ -199,45 +256,52 @@ export default function RegistrationTrackerSection({
             <div style={styles.summaryEyebrow}>
               📊 REGISTRATION OVERVIEW
             </div>
+
             <h3 style={styles.summaryTitle}>
               Registration Summary
             </h3>
+
             <p style={styles.summarySubtitle}>
               An overview of registrations in the selected period.
             </p>
           </div>
+
           <div style={styles.totalCard}>
             <div style={styles.totalIcon}>📋</div>
+
             <div style={styles.totalContent}>
               <div style={styles.totalLabel}>
                 Total Registrations
               </div>
+
               <div style={styles.totalNumber}>
                 {stats.total}
               </div>
             </div>
           </div>
         </div>
+
         <div style={styles.summaryDetails}>
           {statCards.map((card) => (
-            <div
-              key={card.key}
-              style={card.cardStyle}
-            >
+            <div key={card.key} style={card.cardStyle}>
               <div style={styles.statCardHeader}>
                 <div style={card.iconStyle}>
                   {card.icon}
                 </div>
+
                 <span style={card.percentageStyle}>
                   {card.percentage}%
                 </span>
               </div>
+
               <div style={styles.statLabel}>
                 {card.label}
               </div>
+
               <div style={styles.statNumber}>
                 {card.value}
               </div>
+
               <div
                 style={styles.progressTrack}
                 aria-label={`${card.label}: ${card.percentage}%`}
@@ -252,53 +316,73 @@ export default function RegistrationTrackerSection({
             </div>
           ))}
         </div>
+
         <div style={styles.summaryFooter}>
           <span style={styles.footerIcon}>💙</span>
+
           <span>
             Use these figures to monitor registration activity
             and support a smooth reception workflow.
           </span>
         </div>
       </section>
+
       {/* Registration mix */}
       {stats.total > 0 && (
         <section style={styles.contentCard}>
           <div style={styles.sectionHeading}>
             <div style={styles.sectionIcon}>📈</div>
+
             <div style={styles.sectionHeadingText}>
               <h3 style={styles.sectionTitle}>
                 Registration Mix
               </h3>
+
               <p style={styles.sectionDescription}>
                 Review how registrations are distributed by category.
               </p>
             </div>
           </div>
+
           <RegistrationMixSection stats={stats} />
         </section>
       )}
+
       {/* Registration records */}
       <section style={styles.contentCard}>
         <div style={styles.sectionHeading}>
           <div style={styles.sectionIcon}>🗂️</div>
+
           <div style={styles.sectionHeadingText}>
             <h3 style={styles.sectionTitle}>
               Registration Records
             </h3>
+
             <p style={styles.sectionDescription}>
-              Review, edit, or cancel registration records.
+              {isAdmin
+                ? "Administrators can manage all registration records."
+                : isReception
+                ? "All registrations are visible. Reception can manage only their own registrations created today."
+                : "Available actions depend on your permissions."}
             </p>
           </div>
         </div>
+
         <RegistrationListSection
           assignments={assignments}
           onEditAssignment={onEditAssignment}
           onCancelAssignment={onCancelAssignment}
+          userRole={normalizedRole}
+          isAdmin={isAdmin}
+          isReception={isReception}
+          currentUserId={currentUserId}
+          today={today}
         />
       </section>
     </div>
   );
 }
+
 const styles = {
   page: {
     display: "grid",
@@ -529,15 +613,6 @@ const styles = {
       "repeat(auto-fit, minmax(min(100%, 190px), 1fr))",
     gap: "14px",
     minWidth: 0,
-  },
-  statCardBase: {
-    display: "grid",
-    gap: "12px",
-    padding: "18px",
-    borderRadius: "18px",
-    minWidth: 0,
-    boxSizing: "border-box",
-    transition: "transform 0.2s ease, box-shadow 0.2s ease",
   },
   statCardBlue: {
     display: "grid",
