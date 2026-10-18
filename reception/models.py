@@ -8,6 +8,7 @@ class PatientAssignment(models.Model):
     CATEGORY_CHOICES = [
         ("appointment", "Has Appointment"),
         ("walk_in", "Walk In"),
+        ("cash", "Cash"),
         ("initial_evaluation", "Initial Evaluation"),
         ("task_without_eligibility", "Task Without Eligibility"),
     ]
@@ -55,7 +56,6 @@ class PatientAssignment(models.Model):
     )
 
     # Optional speciality saved separately for each assignment.
-    # Previously used values can be suggested by the frontend.
     speciality = models.CharField(
         max_length=150,
         blank=True,
