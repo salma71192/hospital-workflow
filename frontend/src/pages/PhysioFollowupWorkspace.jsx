@@ -10,6 +10,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 import PhysioTodayRegistrationsSection from "../components/physio/PhysioTodayRegistrationsSection";
+import LeaderboardSection from "../components/common/LeaderboardSection";
 
 const styles = {
   stack: {
@@ -61,7 +62,9 @@ function getTherapistId(item) {
 
 function belongsToTherapist(item, therapistId) {
   if (therapistId == null) return false;
+
   const id = getTherapistId(item);
+
   return id != null && String(id) === String(therapistId);
 }
 
@@ -101,28 +104,6 @@ function matchesCategory(item, categories) {
   return categories.includes(getCategory(item));
 }
 
-function isSeen(item) {
-  const status = String(
-    item?.status ??
-      item?.appointment_status ??
-      item?.visit_status ??
-      item?.registration_status ??
-      ""
-  )
-    .trim()
-    .toLowerCase()
-    .replace(/[\s-]+/g, "_");
-
-  return (
-    item?.seen === true ||
-    item?.is_seen === true ||
-    item?.attended === true ||
-    item?.is_completed === true ||
-    item?.completed === true ||
-    ["seen", "completed", "attended", "treated"].includes(status)
-  );
-}
-
 function isNoShow(item) {
   const status = String(
     item?.status ??
@@ -142,13 +123,6 @@ function isNoShow(item) {
   );
 }
 
-/*
- * Booked remains 0 until appointment-based booked counts
- * are connected later.
- *
- * Seen counts appointments, evaluations, cash registrations,
- * and walk-ins, excluding no-shows.
- */
 function buildPhysioStatistics(assignments) {
   const grouped = new Map();
 
@@ -197,344 +171,25 @@ function buildPhysioStatistics(assignments) {
     if (cash) row.cash += 1;
     if (noShow) row.no_show += 1;
 
+    // Retain existing behavior until booked counts are provided by the API.
     row.booked = 0;
 
-    const qualifyingRegistration =
-      appointment || evaluation || cash || walkIn;
-
-    if (qualifyingRegistration && !noShow) {
+    if (
+      (appointment || evaluation || cash || walkIn) &&
+      !noShow
+    ) {
       row.seen += 1;
     }
   });
 
-  const rows = Array.from(grouped.values()).sort((a, b) =>
-    a.therapist_name.localeCompare(b.therapist_name)
-  );
-
-  return { rows };
-}
-
-/* Shared date and month filters */
-function PhysioSharedFilters({
-  statisticsDate,
-  onStatisticsDateChange,
-  leaderboardMonth,
-  onLeaderboardMonthChange,
-}) {
-  const s = {
-    container: {
-      display: "flex",
-      flexWrap: "wrap",
-      alignItems: "end",
-      gap: 16,
-      padding: 18,
-      background: "#ffffff",
-      border: "1px solid #e2e8f0",
-      borderRadius: 14,
-      marginBottom: 16,
-      boxShadow: "0 4px 16px rgba(15, 23, 42, 0.035)",
-      fontFamily: "Inter, Arial, sans-serif",
-    },
-    heading: {
-      width: "100%",
-      margin: 0,
-      fontSize: 15,
-      fontWeight: 800,
-      color: "#16334f",
-    },
-    field: {
-      display: "grid",
-      gap: 6,
-    },
-    label: {
-      fontSize: 12,
-      fontWeight: 700,
-      color: "#52647a",
-    },
-    input: {
-      padding: "10px 12px",
-      border: "1px solid #dbe4ee",
-      borderRadius: 9,
-      fontSize: 13,
-      background: "#ffffff",
-      color: "#243b53",
-      fontFamily: "inherit",
-      maxWidth: "100%",
-      boxSizing: "border-box",
-    },
-    hint: {
-      fontSize: 11,
-      color: "#8290a3",
-    },
+  return {
+    rows: Array.from(grouped.values()).sort((a, b) =>
+      a.therapist_name.localeCompare(b.therapist_name)
+    ),
   };
-
-  return (
-    <section style={s.container}>
-      <h3 style={s.heading}>Report Filters</h3>
-
-      <label style={s.field}>
-        <span style={s.label}>Statistics date</span>
-        <input
-          type="date"
-          aria-label="Shared statistics date filter"
-          value={statisticsDate}
-          onChange={(event) =>
-            onStatisticsDateChange(event.target.value)
-          }
-          style={s.input}
-        />
-        <span style={s.hint}>
-          Select the day for registrations and statistics.
-        </span>
-      </label>
-
-      <label style={s.field}>
-        <span style={s.label}>Leaderboard month</span>
-        <input
-          type="month"
-          aria-label="Shared leaderboard month filter"
-          value={leaderboardMonth}
-          onChange={(event) =>
-            onLeaderboardMonthChange(event.target.value)
-          }
-          style={s.input}
-        />
-        <span style={s.hint}>
-          Select the month for therapist performance.
-        </span>
-      </label>
-    </section>
-  );
 }
 
-function PhysioStatisticsTable({
-  stats,
-  title = "Physio Statistics",
-  selectedDate,
-  onDateChange,
-  loading = false,
-}) {
-  const rows = stats?.rows ?? [];
-
-  const s = {
-    card: {
-      background: "#ffffff",
-      border: "1px solid #e2e8f0",
-      borderRadius: 18,
-      padding: 22,
-      boxShadow: "0 8px 26px rgba(15, 23, 42, 0.05)",
-      display: "grid",
-      gap: 18,
-      minWidth: 0,
-      fontFamily: "Inter, Arial, sans-serif",
-    },
-    heading: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      flexWrap: "wrap",
-      gap: 12,
-    },
-    title: {
-      margin: 0,
-      fontSize: 23,
-      fontWeight: 800,
-      color: "#10243e",
-      letterSpacing: "-0.4px",
-    },
-    subtitle: {
-      marginTop: 6,
-      fontSize: 13,
-      color: "#718096",
-      lineHeight: 1.5,
-    },
-    controls: {
-      display: "flex",
-      gap: 10,
-      alignItems: "center",
-      flexWrap: "wrap",
-    },
-    dateInput: {
-      padding: "10px 12px",
-      border: "1px solid #dbe4ee",
-      borderRadius: 10,
-      background: "#ffffff",
-      color: "#243b53",
-      fontSize: 13,
-      fontFamily: "inherit",
-      maxWidth: "100%",
-    },
-    badge: {
-      background: "#e9f9f1",
-      color: "#08784f",
-      padding: "8px 12px",
-      borderRadius: 999,
-      fontSize: 12,
-      fontWeight: 800,
-      whiteSpace: "nowrap",
-    },
-    tableWrap: {
-      width: "100%",
-      overflowX: "auto",
-      border: "1px solid #e3eaf2",
-      borderRadius: 13,
-    },
-    table: {
-      width: "100%",
-      minWidth: 760,
-      borderCollapse: "separate",
-      borderSpacing: 0,
-      background: "#ffffff",
-    },
-    th: {
-      textAlign: "left",
-      padding: "14px 15px",
-      background: "#f4f7fb",
-      color: "#52647a",
-      fontSize: 11,
-      fontWeight: 800,
-      textTransform: "uppercase",
-      letterSpacing: "0.45px",
-      whiteSpace: "nowrap",
-      borderBottom: "1px solid #e1e8f0",
-    },
-    td: {
-      padding: "15px",
-      color: "#465970",
-      fontSize: 13,
-      borderBottom: "1px solid #edf1f6",
-      whiteSpace: "nowrap",
-    },
-    therapist: {
-      color: "#16334f",
-      fontWeight: 750,
-    },
-    numberBadge: {
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      minWidth: 30,
-      padding: "6px 9px",
-      borderRadius: 8,
-      background: "#edf3fa",
-      color: "#254866",
-      fontWeight: 800,
-    },
-    seenBadge: {
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      minWidth: 38,
-      padding: "7px 11px",
-      borderRadius: 9,
-      background: "#dff7e9",
-      color: "#08784f",
-      fontSize: 14,
-      fontWeight: 850,
-    },
-    empty: {
-      padding: 28,
-      borderRadius: 12,
-      border: "1px dashed #cbd5e1",
-      background: "#f8fafc",
-      color: "#64748b",
-      textAlign: "center",
-      lineHeight: 1.6,
-    },
-  };
-
-  return (
-    <section style={s.card}>
-      <div style={s.heading}>
-        <div>
-          <h2 style={s.title}>{title}</h2>
-          <div style={s.subtitle}>
-            Physiotherapy registrations for{" "}
-            {selectedDate || "the selected date"}
-          </div>
-        </div>
-
-        <div style={s.controls}>
-          <label>
-            <span
-              style={{
-                display: "block",
-                fontSize: 11,
-                fontWeight: 750,
-                color: "#718096",
-                marginBottom: 5,
-              }}
-            >
-              Select day
-            </span>
-            <input
-              type="date"
-              aria-label="Filter statistics by date"
-              value={selectedDate}
-              onChange={(event) => onDateChange(event.target.value)}
-              style={s.dateInput}
-            />
-          </label>
-
-          <span style={s.badge}>
-            {rows.length}{" "}
-            {rows.length === 1 ? "therapist" : "therapists"}
-          </span>
-        </div>
-      </div>
-
-      {loading ? (
-        <div style={s.empty}>Loading statistics...</div>
-      ) : !rows.length ? (
-        <div style={s.empty}>
-          No registration statistics are available for this date.
-        </div>
-      ) : (
-        <div style={s.tableWrap}>
-          <table style={s.table}>
-            <thead>
-              <tr>
-                <th style={s.th}>Therapist</th>
-                <th style={s.th}>Available Slots</th>
-                <th style={s.th}>Booked</th>
-                <th style={s.th}>Walk In</th>
-                <th style={s.th}>Initial Eval</th>
-                <th style={s.th}>Cash</th>
-                <th style={s.th}>No Show</th>
-                <th style={s.th}>Seen</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.therapist_id}>
-                  <td style={{ ...s.td, ...s.therapist }}>
-                    {row.therapist_name}
-                  </td>
-                  <td style={s.td}>
-                    <span style={s.numberBadge}>
-                      {row.available_slots}
-                    </span>
-                  </td>
-                  <td style={s.td}>{row.booked}</td>
-                  <td style={s.td}>{row.walk_in}</td>
-                  <td style={s.td}>{row.initial_eval}</td>
-                  <td style={s.td}>{row.cash}</td>
-                  <td style={s.td}>{row.no_show}</td>
-                  <td style={s.td}>
-                    <span style={s.seenBadge}>{row.seen}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function getMonthLabel(month = getLocalMonthString()) {
+function getMonthLabel(month) {
   if (!month) return "";
 
   const [year, monthNumber] = month.split("-").map(Number);
@@ -559,7 +214,7 @@ function getLeaderboardName(item) {
   );
 }
 
-function getMonthlyPatientCount(item) {
+function getLeaderboardPatientCount(item) {
   const value =
     item?.monthly_patients_seen ??
     item?.patients_seen ??
@@ -573,7 +228,7 @@ function getMonthlyPatientCount(item) {
   return Number.isFinite(count) && count >= 0 ? count : 0;
 }
 
-function getLeaderboardId(item, index) {
+function getLeaderboardId(item) {
   return (
     item?.therapist_id ??
     item?.physio_id ??
@@ -581,440 +236,172 @@ function getLeaderboardId(item, index) {
     item?.user_id ??
     item?.therapist?.id ??
     item?.id ??
-    `${getLeaderboardName(item)}-${index}`
+    getLeaderboardName(item)
   );
 }
 
-function getTarget(item) {
-  const value = Number(item?.target ?? item?.monthly_target ?? 100);
-
-  return Number.isFinite(value) && value > 0 ? value : 100;
-}
-
-function MonthlyPhysioLeaderboard({
-  rows = [],
+function PhysioStatisticsTable({
+  stats,
+  title,
+  selectedLabel,
   loading = false,
-  error = "",
-  onReload,
-  selectedMonth,
-  onMonthChange,
 }) {
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("count");
-
-  const rankedRows = useMemo(
-    () =>
-      [...rows].sort((a, b) =>
-        sortBy === "name"
-          ? getLeaderboardName(a).localeCompare(getLeaderboardName(b))
-          : getMonthlyPatientCount(b) - getMonthlyPatientCount(a)
-      ),
-    [rows, sortBy]
-  );
-
-  const filteredRows = useMemo(
-    () =>
-      rankedRows.filter((row) =>
-        getLeaderboardName(row)
-          .toLowerCase()
-          .includes(search.trim().toLowerCase())
-      ),
-    [rankedRows, search]
-  );
-
-  const totalPatients = rows.reduce(
-    (sum, row) => sum + getMonthlyPatientCount(row),
-    0
-  );
-
-  const therapistCount = rows.length;
-
-  const averagePatients = therapistCount
-    ? Math.round(totalPatients / therapistCount)
-    : 0;
-
-  const completedTargets = rows.filter(
-    (row) => getMonthlyPatientCount(row) >= getTarget(row)
-  ).length;
-
-  const topTherapist = [...rows].sort(
-    (a, b) => getMonthlyPatientCount(b) - getMonthlyPatientCount(a)
-  )[0];
+  const rows = stats?.rows ?? [];
 
   const s = {
-    container: {
-      background: "#f4f7fb",
-      border: "1px solid #e8edf4",
+    card: {
+      background: "#fff",
+      border: "1px solid #e2e8f0",
       borderRadius: 18,
       padding: 22,
-      color: "#172033",
+      boxShadow: "0 8px 26px rgba(15, 23, 42, 0.05)",
+      display: "grid",
+      gap: 18,
+      minWidth: 0,
       fontFamily: "Inter, Arial, sans-serif",
-      width: "100%",
-      boxSizing: "border-box",
-    },
-    header: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 14,
-      flexWrap: "wrap",
-      marginBottom: 22,
     },
     title: {
       margin: 0,
-      fontSize: 24,
+      fontSize: 23,
       fontWeight: 800,
-      color: "#172b4d",
+      color: "#10243e",
     },
     subtitle: {
-      color: "#7b879a",
-      fontSize: 13,
-      lineHeight: 1.6,
       marginTop: 6,
-    },
-    button: {
-      border: "1px solid #dbe4ee",
-      borderRadius: 10,
-      padding: "10px 15px",
-      background: "#ffffff",
-      color: "#243b53",
       fontSize: 13,
-      fontWeight: 700,
-      cursor: loading ? "wait" : "pointer",
-      opacity: loading ? 0.65 : 1,
+      color: "#718096",
+      lineHeight: 1.5,
     },
-    cards: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-      gap: 14,
-      marginBottom: 20,
-    },
-    card: {
-      background: "#ffffff",
-      border: "1px solid #e6ecf3",
-      borderRadius: 15,
-      padding: 17,
-      minWidth: 0,
-    },
-    label: {
-      color: "#77859a",
-      fontSize: 11,
-      fontWeight: 750,
-      letterSpacing: "0.5px",
-      marginBottom: 13,
-      textTransform: "uppercase",
-    },
-    value: {
-      color: "#1d3150",
-      fontSize: 28,
+    badge: {
+      background: "#e9f9f1",
+      color: "#08784f",
+      padding: "8px 12px",
+      borderRadius: 999,
+      fontSize: 12,
       fontWeight: 800,
-      overflowWrap: "anywhere",
+      whiteSpace: "nowrap",
     },
-    panel: {
-      background: "#ffffff",
-      border: "1px solid #e4eaf2",
-      borderRadius: 15,
-      overflow: "hidden",
-    },
-    toolbar: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 14,
-      flexWrap: "wrap",
-      padding: 18,
-      borderBottom: "1px solid #edf1f6",
-    },
-    controls: {
-      display: "flex",
-      gap: 9,
-      flexWrap: "wrap",
-      alignItems: "center",
-    },
-    input: {
-      border: "1px solid #dce4ee",
-      borderRadius: 9,
-      padding: "10px 12px",
-      background: "#ffffff",
-      color: "#243b53",
-      fontSize: 13,
-      minWidth: 170,
-      maxWidth: "100%",
-      boxSizing: "border-box",
-    },
-    tableWrapper: {
+    tableWrap: {
       width: "100%",
       overflowX: "auto",
+      border: "1px solid #e3eaf2",
+      borderRadius: 13,
     },
     table: {
       width: "100%",
-      minWidth: 680,
-      borderCollapse: "collapse",
-      textAlign: "left",
+      minWidth: 760,
+      borderCollapse: "separate",
+      borderSpacing: 0,
+      background: "#fff",
     },
     th: {
-      padding: "13px 16px",
-      background: "#f8fafd",
-      color: "#77859a",
-      fontSize: 10,
+      textAlign: "left",
+      padding: "14px 15px",
+      background: "#f4f7fb",
+      color: "#52647a",
+      fontSize: 11,
       fontWeight: 800,
       textTransform: "uppercase",
+      letterSpacing: "0.45px",
       whiteSpace: "nowrap",
-      borderBottom: "1px solid #e9eef5",
+      borderBottom: "1px solid #e1e8f0",
     },
     td: {
-      padding: "15px 16px",
-      borderBottom: "1px solid #f0f3f7",
-      color: "#34445c",
+      padding: 15,
+      color: "#465970",
       fontSize: 13,
-      verticalAlign: "middle",
+      borderBottom: "1px solid #edf1f6",
+      whiteSpace: "nowrap",
     },
-    message: {
+    empty: {
+      padding: 28,
+      borderRadius: 12,
+      border: "1px dashed #cbd5e1",
+      background: "#f8fafc",
+      color: "#64748b",
       textAlign: "center",
-      padding: 30,
-      color: "#7b879a",
-      fontSize: 13,
       lineHeight: 1.6,
-    },
-    error: {
-      margin: 16,
-      padding: 13,
-      borderRadius: 10,
-      border: "1px solid #fecaca",
-      background: "#fff1f2",
-      color: "#b42318",
-      fontSize: 13,
     },
   };
 
   return (
-    <section style={s.container}>
-      <div style={s.header}>
+    <section style={s.card}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
         <div>
-          <h2 style={s.title}>Physiotherapy Leaderboard</h2>
+          <h2 style={s.title}>{title}</h2>
           <div style={s.subtitle}>
-            Monthly performance overview · {getMonthLabel(selectedMonth)}
+            Physiotherapy registrations for {selectedLabel}
           </div>
         </div>
 
-        <div style={s.controls}>
-          <label>
-            <span
-              style={{
-                display: "block",
-                fontSize: 11,
-                fontWeight: 750,
-                color: "#718096",
-                marginBottom: 5,
-              }}
-            >
-              Select month
-            </span>
-            <input
-              type="month"
-              aria-label="Filter leaderboard by month"
-              value={selectedMonth}
-              onChange={(event) => onMonthChange(event.target.value)}
-              style={s.input}
-            />
-          </label>
-
-          <button
-            type="button"
-            onClick={onReload}
-            disabled={loading}
-            style={s.button}
-          >
-            {loading ? "Refreshing..." : "↻ Refresh"}
-          </button>
-        </div>
+        <span style={s.badge}>
+          {rows.length} {rows.length === 1 ? "therapist" : "therapists"}
+        </span>
       </div>
 
-      <div style={s.cards}>
-        <div style={s.card}>
-          <div style={s.label}>Total patients</div>
-          <div style={s.value}>{totalPatients.toLocaleString()}</div>
+      {loading ? (
+        <div style={s.empty}>Loading statistics...</div>
+      ) : !rows.length ? (
+        <div style={s.empty}>
+          No registration statistics are available for {selectedLabel}.
         </div>
+      ) : (
+        <div style={s.tableWrap}>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>Therapist</th>
+                <th style={s.th}>Available Slots</th>
+                <th style={s.th}>Booked</th>
+                <th style={s.th}>Walk In</th>
+                <th style={s.th}>Initial Eval</th>
+                <th style={s.th}>Cash</th>
+                <th style={s.th}>No Show</th>
+                <th style={s.th}>Seen</th>
+              </tr>
+            </thead>
 
-        <div style={s.card}>
-          <div style={s.label}>Therapists</div>
-          <div style={s.value}>{therapistCount}</div>
-        </div>
-
-        <div style={s.card}>
-          <div style={s.label}>Average per therapist</div>
-          <div style={s.value}>{averagePatients}</div>
-        </div>
-
-        <div style={s.card}>
-          <div style={s.label}>Target achieved</div>
-          <div style={s.value}>
-            {completedTargets}/{therapistCount}
-          </div>
-        </div>
-
-        <div style={{ ...s.card, background: "#eaf7f1" }}>
-          <div style={{ ...s.label, color: "#378267" }}>
-            Current leader
-          </div>
-          <div
-            style={{
-              ...s.value,
-              fontSize: 17,
-              color: "#146c50",
-            }}
-          >
-            {topTherapist
-              ? getLeaderboardName(topTherapist)
-              : "No data yet"}
-          </div>
-          <div style={{ ...s.subtitle, color: "#378267" }}>
-            {topTherapist
-              ? `${getMonthlyPatientCount(topTherapist)} patients`
-              : "Monthly ranking"}
-          </div>
-        </div>
-      </div>
-
-      <div style={s.panel}>
-        <div style={s.toolbar}>
-          <div>
-            <strong>Therapist performance</strong>
-            <div style={s.subtitle}>
-              Search and compare totals for {getMonthLabel(selectedMonth)}
-            </div>
-          </div>
-
-          <div style={s.controls}>
-            <input
-              type="search"
-              aria-label="Search physiotherapists"
-              placeholder="Search therapist..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              style={s.input}
-            />
-
-            <select
-              aria-label="Sort leaderboard"
-              value={sortBy}
-              onChange={(event) => setSortBy(event.target.value)}
-              style={s.input}
-            >
-              <option value="count">Highest count</option>
-              <option value="name">Name A–Z</option>
-            </select>
-          </div>
-        </div>
-
-        {error ? (
-          <div role="alert" style={s.error}>
-            {error}
-          </div>
-        ) : null}
-
-        {loading && rows.length === 0 ? (
-          <div style={s.message}>Loading leaderboard...</div>
-        ) : null}
-
-        {!loading && !error && filteredRows.length === 0 ? (
-          <div style={s.message}>
-            {search
-              ? "No therapists match your search."
-              : `No leaderboard data is available for ${getMonthLabel(
-                  selectedMonth
-                )}.`}
-          </div>
-        ) : null}
-
-        {filteredRows.length > 0 && (
-          <div style={s.tableWrapper}>
-            <table style={s.table}>
-              <thead>
-                <tr>
-                  <th style={s.th}>Rank</th>
-                  <th style={s.th}>Physiotherapist</th>
-                  <th style={s.th}>Monthly patients</th>
-                  <th style={s.th}>Target progress</th>
-                  <th style={s.th}>Status</th>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.therapist_id}>
+                  <td
+                    style={{
+                      ...s.td,
+                      fontWeight: 750,
+                      color: "#16334f",
+                    }}
+                  >
+                    {row.therapist_name}
+                  </td>
+                  <td style={s.td}>{row.available_slots}</td>
+                  <td style={s.td}>{row.booked}</td>
+                  <td style={s.td}>{row.walk_in}</td>
+                  <td style={s.td}>{row.initial_eval}</td>
+                  <td style={s.td}>{row.cash}</td>
+                  <td style={s.td}>{row.no_show}</td>
+                  <td
+                    style={{
+                      ...s.td,
+                      fontWeight: 850,
+                      color: "#08784f",
+                    }}
+                  >
+                    {row.seen}
+                  </td>
                 </tr>
-              </thead>
-
-              <tbody>
-                {filteredRows.map((item, index) => {
-                  const count = getMonthlyPatientCount(item);
-                  const target = getTarget(item);
-                  const progress = Math.round((count / target) * 100);
-                  const rank =
-                    rankedRows.findIndex((row) => row === item) + 1;
-
-                  return (
-                    <tr key={getLeaderboardId(item, index)}>
-                      <td style={s.td}>
-                        <strong>{rank}</strong>
-                      </td>
-
-                      <td style={s.td}>
-                        <strong>{getLeaderboardName(item)}</strong>
-                        {item.username ? (
-                          <div
-                            style={{
-                              color: "#929daf",
-                              fontSize: 11,
-                              marginTop: 3,
-                            }}
-                          >
-                            @{item.username}
-                          </div>
-                        ) : null}
-                      </td>
-
-                      <td style={s.td}>
-                        <strong>{count.toLocaleString()}</strong>
-                      </td>
-
-                      <td style={s.td}>
-                        {progress}% of {target}
-                        <div
-                          style={{
-                            height: 7,
-                            width: 125,
-                            maxWidth: "100%",
-                            borderRadius: 20,
-                            background: "#e9eef5",
-                            overflow: "hidden",
-                            marginTop: 7,
-                          }}
-                        >
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${Math.min(progress, 100)}%`,
-                              background:
-                                progress >= 100
-                                  ? "#15966a"
-                                  : progress >= 70
-                                    ? "#3978e5"
-                                    : "#e5a23b",
-                              borderRadius: 20,
-                            }}
-                          />
-                        </div>
-                      </td>
-
-                      <td style={s.td}>
-                        {progress >= 100
-                          ? "Target reached"
-                          : `${Math.max(target - count, 0)} to target`}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
@@ -1029,38 +416,64 @@ export default function PhysioFollowupWorkspace({
 
   const [activeSection, setActiveSection] = useState("statistics");
   const [error, setError] = useState("");
+
   const [patientTrackerRows, setPatientTrackerRows] = useState([]);
-  const [todayAssignments, setTodayAssignments] = useState([]);
+  const [trackerMonth, setTrackerMonth] = useState(
+    getLocalMonthString()
+  );
 
   const [statisticsDate, setStatisticsDate] = useState(
     getLocalDateString()
   );
-  const [statisticsLoading, setStatisticsLoading] = useState(false);
+  const [statisticsMonth, setStatisticsMonth] = useState(
+    getLocalMonthString()
+  );
 
-  const [leaderboardRows, setLeaderboardRows] = useState([]);
+  const [dailyAssignments, setDailyAssignments] = useState([]);
+  const [monthlyAssignments, setMonthlyAssignments] = useState([]);
+
+  const [dailyStatisticsLoading, setDailyStatisticsLoading] =
+    useState(false);
+  const [monthlyStatisticsLoading, setMonthlyStatisticsLoading] =
+    useState(false);
+
   const [leaderboardMonth, setLeaderboardMonth] = useState(
     getLocalMonthString()
   );
-  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [leaderboardError, setLeaderboardError] = useState("");
+  const [monthlyLeaderboardRows, setMonthlyLeaderboardRows] = useState([]);
+  const [monthlyLeaderboardLoading, setMonthlyLeaderboardLoading] =
+    useState(false);
+  const [monthlyLeaderboardError, setMonthlyLeaderboardError] =
+    useState("");
 
   const selectedTherapistId = actingAs?.id ?? user?.id ?? null;
 
   const loadPatientTracker = useCallback(async () => {
+    if (!trackerMonth) return;
+
     try {
-      const res = await api.get("patients/tracker/");
+      const params = new URLSearchParams({
+        month: trackerMonth,
+      });
+
+      const res = await api.get(
+        `patients/tracker/?${params.toString()}`
+      );
+
       setPatientTrackerRows(getArray(res.data, "patients"));
+      setError("");
     } catch (err) {
       console.error("Failed to load patient tracker:", err);
+      console.error("Patient tracker API error:", err?.response?.data);
       setPatientTrackerRows([]);
       setError("Failed to load patient tracker.");
     }
-  }, []);
+  }, [trackerMonth]);
 
-  const loadTodayAssignments = useCallback(async () => {
+  const loadDailyStatistics = useCallback(async () => {
     if (!statisticsDate) return;
 
-    setStatisticsLoading(true);
+    setDailyStatisticsLoading(true);
 
     try {
       const params = new URLSearchParams({
@@ -1072,23 +485,49 @@ export default function PhysioFollowupWorkspace({
         `reception/assignments/?${params.toString()}`
       );
 
-      setTodayAssignments(getArray(res.data, "assignments"));
+      setDailyAssignments(getArray(res.data, "assignments"));
       setError("");
     } catch (err) {
-      console.error("Failed to load registrations:", err);
-      console.error("Registration API error:", err?.response?.data);
-      setTodayAssignments([]);
-      setError("Failed to load registrations for the selected date.");
+      console.error("Failed to load daily registrations:", err);
+      console.error("Daily statistics API error:", err?.response?.data);
+
+      setDailyAssignments([]);
+      setError("Failed to load daily registrations for the selected date.");
     } finally {
-      setStatisticsLoading(false);
+      setDailyStatisticsLoading(false);
     }
   }, [statisticsDate]);
 
-  const loadPhysioLeaderboard = useCallback(async () => {
+  const loadMonthlyStatistics = useCallback(async () => {
+    if (!statisticsMonth) return;
+
+    setMonthlyStatisticsLoading(true);
+
+    try {
+      const range = getMonthDateRange(statisticsMonth);
+      const params = new URLSearchParams(range);
+
+      const res = await api.get(
+        `reception/assignments/?${params.toString()}`
+      );
+
+      setMonthlyAssignments(getArray(res.data, "assignments"));
+    } catch (err) {
+      console.error("Failed to load monthly registrations:", err);
+      console.error("Monthly statistics API error:", err?.response?.data);
+
+      setMonthlyAssignments([]);
+      setError("Failed to load monthly registrations for the selected month.");
+    } finally {
+      setMonthlyStatisticsLoading(false);
+    }
+  }, [statisticsMonth]);
+
+  const loadMonthlyLeaderboard = useCallback(async () => {
     if (!leaderboardMonth) return;
 
-    setLeaderboardLoading(true);
-    setLeaderboardError("");
+    setMonthlyLeaderboardLoading(true);
+    setMonthlyLeaderboardError("");
 
     try {
       const params = new URLSearchParams({
@@ -1099,28 +538,27 @@ export default function PhysioFollowupWorkspace({
         `physio/leaderboard/monthly/?${params.toString()}`
       );
 
-      const results = getArray(res.data, "results");
+      const rows =
+        getArray(res.data, "results").length
+          ? getArray(res.data, "results")
+          : getArray(res.data, "rows").length
+            ? getArray(res.data, "rows")
+            : getArray(res.data, "leaderboard");
 
-      const rows = results.length
-        ? results
-        : getArray(res.data, "rows").length
-          ? getArray(res.data, "rows")
-          : getArray(res.data, "leaderboard");
-
-      setLeaderboardRows(rows);
+      setMonthlyLeaderboardRows(rows);
     } catch (err) {
-      console.error("Failed to load physiotherapy leaderboard:", err);
-      console.error("Leaderboard API error:", err?.response?.data);
+      console.error("Failed to load monthly leaderboard:", err);
+      console.error("Monthly leaderboard API error:", err?.response?.data);
 
-      setLeaderboardRows([]);
+      setMonthlyLeaderboardRows([]);
 
-      setLeaderboardError(
+      setMonthlyLeaderboardError(
         err?.response?.status === 404
           ? "The monthly physiotherapy leaderboard API is not configured yet."
-          : "Failed to load the physiotherapy leaderboard. Please try refreshing."
+          : "Failed to load the monthly leaderboard. Please try refreshing."
       );
     } finally {
-      setLeaderboardLoading(false);
+      setMonthlyLeaderboardLoading(false);
     }
   }, [leaderboardMonth]);
 
@@ -1129,14 +567,18 @@ export default function PhysioFollowupWorkspace({
   }, [loadPatientTracker]);
 
   useEffect(() => {
-    loadTodayAssignments();
-  }, [loadTodayAssignments]);
+    loadDailyStatistics();
+  }, [loadDailyStatistics]);
+
+  useEffect(() => {
+    loadMonthlyStatistics();
+  }, [loadMonthlyStatistics]);
 
   useEffect(() => {
     if (activeSection === "leaderboard") {
-      loadPhysioLeaderboard();
+      loadMonthlyLeaderboard();
     }
-  }, [activeSection, loadPhysioLeaderboard]);
+  }, [activeSection, loadMonthlyLeaderboard]);
 
   const handleBackToAdmin = useCallback(() => {
     onStopImpersonation?.();
@@ -1151,56 +593,100 @@ export default function PhysioFollowupWorkspace({
     [patientTrackerRows, selectedTherapistId]
   );
 
-  const physioAssignments = useMemo(
+  const physioDailyAssignments = useMemo(
     () =>
-      todayAssignments.filter((item) =>
+      dailyAssignments.filter((item) =>
         belongsToTherapist(item, selectedTherapistId)
       ),
-    [todayAssignments, selectedTherapistId]
+    [dailyAssignments, selectedTherapistId]
   );
 
-  const physioStatistics = useMemo(
-    () => buildPhysioStatistics(physioAssignments),
-    [physioAssignments]
+  const physioMonthlyAssignments = useMemo(
+    () =>
+      monthlyAssignments.filter((item) =>
+        belongsToTherapist(item, selectedTherapistId)
+      ),
+    [monthlyAssignments, selectedTherapistId]
+  );
+
+  const dailyStatistics = useMemo(
+    () => buildPhysioStatistics(physioDailyAssignments),
+    [physioDailyAssignments]
+  );
+
+  const monthlyStatistics = useMemo(
+    () => buildPhysioStatistics(physioMonthlyAssignments),
+    [physioMonthlyAssignments]
   );
 
   const walkInAssignments = useMemo(
     () =>
-      physioAssignments.filter((item) =>
+      physioDailyAssignments.filter((item) =>
         matchesCategory(item, CATEGORIES.walkIn)
       ),
-    [physioAssignments]
+    [physioDailyAssignments]
   );
 
   const appointmentAssignments = useMemo(
     () =>
-      physioAssignments.filter((item) =>
+      physioDailyAssignments.filter((item) =>
         matchesCategory(item, CATEGORIES.appointment)
       ),
-    [physioAssignments]
+    [physioDailyAssignments]
   );
 
   const initialEvalAssignments = useMemo(
     () =>
-      physioAssignments.filter((item) =>
+      physioDailyAssignments.filter((item) =>
         matchesCategory(item, CATEGORIES.evaluation)
       ),
-    [physioAssignments]
+    [physioDailyAssignments]
   );
 
   const taskWithoutEligibilityAssignments = useMemo(
     () =>
-      physioAssignments.filter((item) =>
+      physioDailyAssignments.filter((item) =>
         [
           "task_without_eligibility",
           "no_eligibility",
           "without_eligibility",
         ].includes(getCategory(item))
       ),
-    [physioAssignments]
+    [physioDailyAssignments]
   );
 
-  const statisticsCount = physioStatistics.rows.length;
+  const statisticsCount = dailyStatistics.rows.length;
+
+  const filterStyle = {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "end",
+    gap: 16,
+    padding: 18,
+    background: "#fff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 14,
+  };
+
+  const filterLabelStyle = {
+    display: "grid",
+    gap: 6,
+  };
+
+  const filterCaptionStyle = {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#334155",
+  };
+
+  const filterInputStyle = {
+    padding: "9px 11px",
+    border: "1px solid #cbd5e1",
+    borderRadius: 8,
+    fontSize: 14,
+    color: "#243b53",
+    background: "#fff",
+  };
 
   return (
     <DashboardLayout
@@ -1214,7 +700,7 @@ export default function PhysioFollowupWorkspace({
         { key: "home", label: "Home" },
         { key: "statistics", label: `Statistics (${statisticsCount})` },
         { key: "tracker", label: "Patient Tracker" },
-        { key: "leaderboard", label: "Physiotherapy Leaderboard" },
+        { key: "leaderboard", label: "Monthly Physiotherapy Leaderboard" },
       ]}
       activeSection={activeSection}
       setActiveSection={(key) => {
@@ -1234,21 +720,60 @@ export default function PhysioFollowupWorkspace({
         <DashboardNotice type="error">{error}</DashboardNotice>
       ) : null}
 
-      <PhysioSharedFilters
-        statisticsDate={statisticsDate}
-        onStatisticsDateChange={setStatisticsDate}
-        leaderboardMonth={leaderboardMonth}
-        onLeaderboardMonthChange={setLeaderboardMonth}
-      />
-
       {activeSection === "statistics" && (
         <div style={styles.stack}>
+          <section style={filterStyle}>
+            <h3
+              style={{
+                width: "100%",
+                margin: 0,
+                color: "#16334f",
+              }}
+            >
+              Statistics Filters
+            </h3>
+
+            <label style={filterLabelStyle}>
+              <span style={filterCaptionStyle}>
+                Daily statistics date
+              </span>
+              <input
+                type="date"
+                value={statisticsDate}
+                onChange={(event) =>
+                  setStatisticsDate(event.target.value)
+                }
+                style={filterInputStyle}
+              />
+            </label>
+
+            <label style={filterLabelStyle}>
+              <span style={filterCaptionStyle}>
+                Monthly statistics month
+              </span>
+              <input
+                type="month"
+                value={statisticsMonth}
+                onChange={(event) =>
+                  setStatisticsMonth(event.target.value)
+                }
+                style={filterInputStyle}
+              />
+            </label>
+          </section>
+
           <PhysioStatisticsTable
-            stats={physioStatistics}
-            title="Physio Statistics"
-            selectedDate={statisticsDate}
-            onDateChange={setStatisticsDate}
-            loading={statisticsLoading}
+            stats={dailyStatistics}
+            title="Daily Physio Statistics"
+            selectedLabel={statisticsDate}
+            loading={dailyStatisticsLoading}
+          />
+
+          <PhysioStatisticsTable
+            stats={monthlyStatistics}
+            title="Monthly Physio Statistics"
+            selectedLabel={getMonthLabel(statisticsMonth)}
+            loading={monthlyStatisticsLoading}
           />
 
           <PhysioTodayRegistrationsSection
@@ -1266,18 +791,60 @@ export default function PhysioFollowupWorkspace({
         <PatientTrackerTable
           patients={physioPatientTrackerRows}
           title="Patient Tracker"
+          selectedMonth={trackerMonth}
+          onMonthChange={setTrackerMonth}
+          monthLabel={getMonthLabel(trackerMonth)}
         />
       )}
 
       {activeSection === "leaderboard" && (
-        <MonthlyPhysioLeaderboard
-          rows={leaderboardRows}
-          loading={leaderboardLoading}
-          error={leaderboardError}
-          onReload={loadPhysioLeaderboard}
-          selectedMonth={leaderboardMonth}
-          onMonthChange={setLeaderboardMonth}
-        />
+        <div style={styles.stack}>
+          <section style={filterStyle}>
+            <h3
+              style={{
+                width: "100%",
+                margin: 0,
+                color: "#16334f",
+              }}
+            >
+              Monthly Leaderboard Filters
+            </h3>
+
+            <label style={filterLabelStyle}>
+              <span style={filterCaptionStyle}>
+                Leaderboard month
+              </span>
+              <input
+                type="month"
+                value={leaderboardMonth}
+                onChange={(event) =>
+                  setLeaderboardMonth(event.target.value)
+                }
+                style={filterInputStyle}
+              />
+            </label>
+          </section>
+
+          <LeaderboardSection
+            title="Leaderboard"
+            department={`Physiotherapy · ${getMonthLabel(leaderboardMonth)}`}
+            rows={monthlyLeaderboardRows}
+            loading={monthlyLeaderboardLoading}
+            error={monthlyLeaderboardError}
+            onReload={loadMonthlyLeaderboard}
+            target={400}
+            showTarget
+            todayLabel="TODAY"
+            monthlyLabel="THIS MONTH"
+            countLabel="patients"
+            emptyMessage={`No leaderboard data is available for ${getMonthLabel(
+              leaderboardMonth
+            )}.`}
+            getName={getLeaderboardName}
+            getMonthly={getLeaderboardPatientCount}
+            getId={getLeaderboardId}
+          />
+        </div>
       )}
     </DashboardLayout>
   );
