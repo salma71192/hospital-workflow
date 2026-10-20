@@ -1,4 +1,3 @@
-
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -31,6 +30,7 @@ const createEmptyAssignmentForm = () => ({
   referring_physician: "",
   speciality: "",
   notes: "",
+  assignment_date: "",
   with_another_therapist: false,
   additional_therapist_ids: [],
 });
@@ -68,10 +68,12 @@ export default function ReceptionRegistrationWorkspace({
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [trackerMode, setTrackerMode] = useState("today");
   const [selectedPatient, setSelectedPatient] = useState(null);
+
   const [patientForm, setPatientForm] = useState({
     name: "",
     patient_id: "",
   });
+
   const [assignmentForm, setAssignmentForm] = useState(
     createEmptyAssignmentForm
   );
@@ -99,6 +101,7 @@ export default function ReceptionRegistrationWorkspace({
   const loadTherapists = useCallback(async () => {
     try {
       const res = await api.get("reception/therapists/");
+
       setTherapists(
         Array.isArray(res.data?.therapists) ? res.data.therapists : []
       );
@@ -160,7 +163,6 @@ export default function ReceptionRegistrationWorkspace({
           Array.isArray(data.agents) ? data.agents : []
         );
 
-        // The assignments endpoint may provide these lists.
         if (Array.isArray(data.physicians)) {
           setPhysicians(data.physicians);
         }
@@ -239,15 +241,10 @@ export default function ReceptionRegistrationWorkspace({
     setSelectedPatient(patient);
     setEditingAssignmentId(null);
 
-    setAssignmentForm((prev) => ({
+    setAssignmentForm({
       ...createEmptyAssignmentForm(),
-      ...prev,
       patient_id: patient.id,
-      therapist_id: "",
-      speciality: prev.speciality || "",
-      additional_therapist_ids: [],
-      with_another_therapist: false,
-    }));
+    });
 
     setActiveSection("register");
 
@@ -256,13 +253,15 @@ export default function ReceptionRegistrationWorkspace({
       const data = res.data || {};
       const therapist = data.therapist;
 
-      setAssignmentForm((prev) => ({
-        ...prev,
-        therapist_id: therapist?.id ? String(therapist.id) : prev.therapist_id,
+      setAssignmentForm((previous) => ({
+        ...previous,
+        therapist_id: therapist?.id
+          ? String(therapist.id)
+          : previous.therapist_id,
         speciality:
           data.speciality ??
           data.assignment?.speciality ??
-          prev.speciality ??
+          previous.speciality ??
           "",
       }));
 
@@ -309,6 +308,7 @@ export default function ReceptionRegistrationWorkspace({
 
       if (patient?.id) {
         await handleSelectPatient(patient);
+
         setMessage(
           data.message ||
             `Patient file created successfully for ${patient.name || name}.`
@@ -349,6 +349,17 @@ export default function ReceptionRegistrationWorkspace({
       return;
     }
 
+    const additionalTherapistIds = Array.isArray(
+      assignmentForm.additional_therapist_ids
+    )
+      ? assignmentForm.additional_therapist_ids
+          .map(String)
+          .filter(
+            (id) => id && id !== String(assignmentForm.therapist_id)
+          )
+          .slice(0, 1)
+      : [];
+
     const payload = {
       ...assignmentForm,
       patient_id: assignmentForm.patient_id,
@@ -361,15 +372,14 @@ export default function ReceptionRegistrationWorkspace({
           : "",
       speciality: assignmentForm.speciality || "",
       notes: assignmentForm.notes || "",
-      with_another_therapist: Boolean(
-        assignmentForm.with_another_therapist
-      ),
-      additional_therapist_ids: Array.isArray(
-        assignmentForm.additional_therapist_ids
-      )
-        ? assignmentForm.additional_therapist_ids
-        : [],
+      with_another_therapist: additionalTherapistIds.length > 0,
+      additional_therapist_ids: additionalTherapistIds,
     };
+
+    // Admins may set an assignment date. Do not send an empty date.
+    if (isAdmin && assignmentForm.assignment_date) {
+      payload.assignment_date = assignmentForm.assignment_date;
+    }
 
     setSavingAssignment(true);
 
@@ -423,7 +433,7 @@ export default function ReceptionRegistrationWorkspace({
     const additionalTherapistIds = Array.isArray(
       assignment.additional_therapist_ids
     )
-      ? assignment.additional_therapist_ids.map(String)
+      ? assignment.additional_therapist_ids.map(String).slice(0, 1)
       : [];
 
     setAssignmentForm({
@@ -436,9 +446,7 @@ export default function ReceptionRegistrationWorkspace({
       speciality: assignment.speciality || assignment.specialty || "",
       notes: assignment.notes || "",
       assignment_date: assignment.assignment_date || "",
-      with_another_therapist:
-        assignment.with_another_therapist ??
-        additionalTherapistIds.length > 0,
+      with_another_therapist: additionalTherapistIds.length > 0,
       additional_therapist_ids: additionalTherapistIds,
     });
 

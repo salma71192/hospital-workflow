@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 
@@ -19,7 +20,11 @@ const emptyAssignmentForm = {
   category: "appointment",
   visit_number: "",
   referring_physician: "",
+  speciality: "",
   notes: "",
+  assignment_date: "",
+  with_another_therapist: false,
+  additional_therapist_ids: [],
 };
 
 function getApiError(err, fallback) {
@@ -44,9 +49,7 @@ function getApiError(err, fallback) {
     if (details) return details;
   }
 
-  return err?.message
-    ? `${fallback}: ${err.message}`
-    : fallback;
+  return err?.message ? `${fallback}: ${err.message}` : fallback;
 }
 
 function hasAdminPermissions(user) {
@@ -57,11 +60,7 @@ function hasAdminPermissions(user) {
   );
 }
 
-export default function AdminDashboard({
-  user,
-  onLogout,
-  onActAsUser,
-}) {
+export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
 
@@ -80,10 +79,14 @@ export default function AdminDashboard({
   const [activeSection, setActiveSection] = useState("manage");
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [therapists, setTherapists] = useState([]);
+  const [physicians, setPhysicians] = useState([]);
+  const [specialities, setSpecialities] = useState([]);
   const [assignmentForm, setAssignmentForm] = useState({
     ...emptyAssignmentForm,
   });
   const [newlyCreatedPatient, setNewlyCreatedPatient] = useState(null);
+  const [editingAssignmentId, setEditingAssignmentId] = useState(null);
+  const [savingAssignment, setSavingAssignment] = useState(false);
 
   const [activeCategory, setActiveCategory] = useState(() => {
     try {
@@ -155,7 +158,7 @@ export default function AdminDashboard({
     { key: "evaluations", label: "Evaluations" },
   ];
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const res = await api.get("users/list-users/");
       setUsers(res.data?.users || []);
@@ -164,35 +167,30 @@ export default function AdminDashboard({
       console.error("Failed to load users:", err);
       setError(getApiError(err, "Failed to load users."));
     }
-  };
+  }, []);
 
-  const loadTherapists = async () => {
+  const loadTherapists = useCallback(async () => {
     try {
       const res = await api.get("reception/therapists/");
-      setTherapists(res.data?.therapists || []);
+      setTherapists(
+        Array.isArray(res.data?.therapists) ? res.data.therapists : []
+      );
     } catch (err) {
       console.error("Failed to load therapists:", err);
       setTherapists([]);
-      setError(
-        getApiError(err, "Failed to load physiotherapists.")
-      );
+      setError(getApiError(err, "Failed to load physiotherapists."));
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (isAdmin) {
-      fetchUsers();
-    }
-  }, [isAdmin]);
+    if (isAdmin) fetchUsers();
+  }, [isAdmin, fetchUsers]);
 
   useEffect(() => {
-    if (
-      activeSection === "register_patient" ||
-      activeSection === "open_file"
-    ) {
+    if (activeSection === "register_patient" || activeSection === "open_file") {
       loadTherapists();
     }
-  }, [activeSection]);
+  }, [activeSection, loadTherapists]);
 
   const groupedUsers = useMemo(() => {
     const groups = {
@@ -211,11 +209,8 @@ export default function AdminDashboard({
     };
 
     users.forEach((item) => {
-      if (groups[item.role]) {
-        groups[item.role].push(item);
-      } else {
-        groups.no_role.push(item);
-      }
+      if (groups[item.role]) groups[item.role].push(item);
+      else groups.no_role.push(item);
     });
 
     return groups;
@@ -246,7 +241,22 @@ export default function AdminDashboard({
     }
   };
 
+  const resetAssignmentEditor = () => {
+    setEditingAssignmentId(null);
+    setSelectedPatient(null);
+    setAssignmentForm({ ...emptyAssignmentForm });
+  };
+
   const handleSectionChange = (section) => {
+    if (editingAssignmentId && section !== "register_patient") {
+      const confirmed = window.confirm(
+        "Leave the assignment edit without saving your changes?"
+      );
+
+      if (!confirmed) return;
+      resetAssignmentEditor();
+    }
+
     setActiveSection(section);
     setMessage("");
     setError("");
@@ -254,10 +264,11 @@ export default function AdminDashboard({
     if (section === "open_file") {
       setNewlyCreatedPatient(null);
       setSelectedPatient(null);
+      setEditingAssignmentId(null);
       setAssignmentForm({ ...emptyAssignmentForm });
     }
 
-    if (section === "register_patient") {
+    if (section === "register_patient" && !editingAssignmentId) {
       setSelectedPatient(newlyCreatedPatient || null);
       setAssignmentForm({
         ...emptyAssignmentForm,
@@ -274,9 +285,7 @@ export default function AdminDashboard({
     try {
       const res = await api.post("users/create-user/", formData);
 
-      setMessage(
-        res.data?.message || "User created successfully."
-      );
+      setMessage(res.data?.message || "User created successfully.");
 
       const createdRole = formData.role;
 
@@ -308,11 +317,7 @@ export default function AdminDashboard({
     );
   };
 
-  const handleRoleUpdate = async (
-    userId,
-    newRole,
-    newIsSuperuser
-  ) => {
+  const handleRoleUpdate = async (userId, newRole, newIsSuperuser) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return false;
@@ -322,18 +327,12 @@ export default function AdminDashboard({
     setError("");
 
     try {
-      const res = await api.put(
-        `users/update-user/${userId}/`,
-        {
-          role: newRole,
-          is_superuser: newIsSuperuser,
-        }
-      );
+      const res = await api.put(`users/update-user/${userId}/`, {
+        role: newRole,
+        is_superuser: newIsSuperuser,
+      });
 
-      setMessage(
-        res.data?.message || "User updated successfully."
-      );
-
+      setMessage(res.data?.message || "User updated successfully.");
       await fetchUsers();
       return true;
     } catch (err) {
@@ -358,15 +357,9 @@ export default function AdminDashboard({
     setError("");
 
     try {
-      const res = await api.put(
-        `users/update-user/${userId}/`,
-        updates
-      );
+      const res = await api.put(`users/update-user/${userId}/`, updates);
 
-      setMessage(
-        res.data?.message || "User details saved successfully."
-      );
-
+      setMessage(res.data?.message || "User details saved successfully.");
       await fetchUsers();
       return true;
     } catch (err) {
@@ -387,10 +380,9 @@ export default function AdminDashboard({
     setError("");
 
     try {
-      const res = await api.put(
-        `users/update-user/${userId}/`,
-        { is_active: Boolean(isActive) }
-      );
+      const res = await api.put(`users/update-user/${userId}/`, {
+        is_active: Boolean(isActive),
+      });
 
       setMessage(
         res.data?.message ||
@@ -403,9 +395,7 @@ export default function AdminDashboard({
       return true;
     } catch (err) {
       console.error("Failed to update user status:", err);
-      setError(
-        getApiError(err, "Failed to update user status.")
-      );
+      setError(getApiError(err, "Failed to update user status."));
       setMessage("");
       return false;
     }
@@ -426,21 +416,17 @@ export default function AdminDashboard({
     setError("");
 
     try {
-      const res = await api.post(
-        `users/change-password/${userId}/`,
-        { new_password: newPassword }
-      );
+      const res = await api.post(`users/change-password/${userId}/`, {
+        new_password: newPassword,
+      });
 
       setMessage(
         res.data?.message || "User password updated successfully."
       );
-
       return true;
     } catch (err) {
       console.error("Failed to change user password:", err);
-      setError(
-        getApiError(err, "Failed to change user password.")
-      );
+      setError(getApiError(err, "Failed to change user password."));
       setMessage("");
       return false;
     }
@@ -462,14 +448,9 @@ export default function AdminDashboard({
     setError("");
 
     try {
-      const res = await api.delete(
-        `users/delete-user/${userId}/`
-      );
+      const res = await api.delete(`users/delete-user/${userId}/`);
 
-      setMessage(
-        res.data?.message || "User deactivated successfully."
-      );
-
+      setMessage(res.data?.message || "User deactivated successfully.");
       await fetchUsers();
     } catch (err) {
       console.error("Failed to deactivate user:", err);
@@ -486,15 +467,15 @@ export default function AdminDashboard({
 
     setMessage("");
     setError("");
+    setEditingAssignmentId(null);
     setSelectedPatient(patient);
 
-    setAssignmentForm((prev) => ({
-      ...prev,
+    setAssignmentForm({
+      ...emptyAssignmentForm,
       patient_id: patient.id,
-      therapist_id: "",
-    }));
+    });
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       assignmentRef.current?.scrollIntoView({
         behavior: "smooth",
         block: "start",
@@ -513,6 +494,7 @@ export default function AdminDashboard({
 
     setNewlyCreatedPatient(patient);
     setSelectedPatient(patient);
+    setEditingAssignmentId(null);
 
     setAssignmentForm({
       ...emptyAssignmentForm,
@@ -529,8 +511,16 @@ export default function AdminDashboard({
     setActiveSection("register_patient");
   };
 
-  const handleCreateAssignment = async (e) => {
+  const handleCreateOrUpdateAssignment = async (e) => {
     e.preventDefault();
+
+    if (!isAdmin) {
+      setError("Administrator permissions are required.");
+      return;
+    }
+
+    if (savingAssignment) return;
+
     setMessage("");
     setError("");
 
@@ -544,119 +534,161 @@ export default function AdminDashboard({
       return;
     }
 
+    const additionalTherapistIds = Array.isArray(
+      assignmentForm.additional_therapist_ids
+    )
+      ? assignmentForm.additional_therapist_ids
+          .map(String)
+          .filter(
+            (id) =>
+              id &&
+              id !== String(assignmentForm.therapist_id)
+          )
+          .slice(0, 1)
+      : [];
+
+    const payload = {
+      ...assignmentForm,
+      patient_id: assignmentForm.patient_id,
+      therapist_id: assignmentForm.therapist_id,
+      category: assignmentForm.category || "appointment",
+      visit_number: assignmentForm.visit_number,
+      referring_physician:
+        assignmentForm.category === "initial_evaluation"
+          ? assignmentForm.referring_physician || ""
+          : "",
+      speciality: assignmentForm.speciality || "",
+      notes: assignmentForm.notes || "",
+      additional_therapist_ids: additionalTherapistIds,
+      with_another_therapist: additionalTherapistIds.length > 0,
+    };
+
+    if (assignmentForm.assignment_date) {
+      payload.assignment_date = assignmentForm.assignment_date;
+    } else {
+      delete payload.assignment_date;
+    }
+
+    setSavingAssignment(true);
+
     try {
-      const res = await api.post(
-        "reception/assignments/",
-        assignmentForm
-      );
+      const res = editingAssignmentId
+        ? await api.put(
+            `reception/assignments/${editingAssignmentId}/`,
+            payload
+          )
+        : await api.post("reception/assignments/", payload);
 
       setMessage(
-        res.data?.message || "Patient assigned successfully."
+        res.data?.message ||
+          (editingAssignmentId
+            ? "Assignment updated successfully."
+            : "Patient assigned successfully.")
       );
 
-      setSelectedPatient(null);
+      resetAssignmentEditor();
       setNewlyCreatedPatient(null);
-      setAssignmentForm({ ...emptyAssignmentForm });
       setActiveSection("registration_tracker");
     } catch (err) {
-      console.error("Failed to assign patient:", err);
-      setError(getApiError(err, "Failed to assign patient."));
+      console.error(
+        "Failed to save assignment:",
+        err?.response?.data || err
+      );
+
+      setError(
+        getApiError(
+          err,
+          editingAssignmentId
+            ? "Failed to update assignment."
+            : "Failed to assign patient."
+        )
+      );
       setMessage("");
+    } finally {
+      setSavingAssignment(false);
     }
   };
 
-  /*
-   * Edit a registration using the existing PUT API.
-   * The selected registration is supplied by the tracker.
-   */
   const handleEditRegistration = async (assignment) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       setMessage("");
-      return false;
+      return;
     }
 
-    if (!assignment?.id) {
-      setError("Could not identify the registration to edit.");
+    if (!assignment?.id || !assignment.patient_id) {
+      setError(
+        "The registration is missing its assignment ID or patient ID."
+      );
       setMessage("");
-      return false;
+      return;
     }
-
-    const currentCategory = assignment.category ?? "appointment";
-    const currentVisitNumber = assignment.visit_number ?? "";
-    const currentPhysician =
-      assignment.referring_physician ?? "";
-    const currentNotes = assignment.notes ?? "";
-
-    const category = window.prompt(
-      "Registration category:",
-      String(currentCategory)
-    );
-    if (category === null) return false;
-
-    const visitNumber = window.prompt(
-      "Visit number:",
-      String(currentVisitNumber)
-    );
-    if (visitNumber === null) return false;
-
-    const referringPhysician = window.prompt(
-      "Referring physician:",
-      String(currentPhysician)
-    );
-    if (referringPhysician === null) return false;
-
-    const notes = window.prompt(
-      "Notes:",
-      String(currentNotes)
-    );
-    if (notes === null) return false;
 
     setMessage("");
     setError("");
 
-    try {
-      const res = await api.put(
-        `reception/assignments/${assignment.id}/`,
-        {
-          category: category.trim(),
-          visit_number: visitNumber.trim(),
-          referring_physician: referringPhysician.trim(),
-          notes: notes.trim(),
-        }
-      );
+    const additionalTherapistIds = Array.isArray(
+      assignment.additional_therapist_ids
+    )
+      ? assignment.additional_therapist_ids.map(String).slice(0, 1)
+      : [];
 
-      setMessage(
-        res.data?.message || "Registration updated successfully."
-      );
+    setEditingAssignmentId(assignment.id);
 
-      return true;
-    } catch (err) {
-      console.error("Failed to update registration:", err);
-      setError(
-        getApiError(err, "Failed to update registration.")
-      );
-      setMessage("");
-      return false;
-    }
+    setSelectedPatient({
+      id: assignment.patient_id,
+      name: assignment.patient_name || "",
+      patient_id: assignment.patient_file_id || "",
+    });
+
+    setAssignmentForm({
+      ...emptyAssignmentForm,
+      patient_id: String(assignment.patient_id),
+      therapist_id: String(assignment.therapist_id || ""),
+      category: assignment.category || "appointment",
+      visit_number: assignment.visit_number ?? "",
+      referring_physician: assignment.referring_physician || "",
+      speciality: assignment.speciality || assignment.specialty || "",
+      notes: assignment.notes || "",
+      assignment_date: assignment.assignment_date || "",
+      additional_therapist_ids: additionalTherapistIds,
+      with_another_therapist: additionalTherapistIds.length > 0,
+    });
+
+    setActiveSection("register_patient");
+
+    window.setTimeout(() => {
+      assignmentRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 200);
   };
 
-  /*
-   * Permanently delete a registration using the existing DELETE API.
-   * Existing tracker confirmation behavior is left unchanged.
-   */
   const handleCancelRegistration = async (assignment) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       setMessage("");
-      return false;
+      return;
     }
 
     if (!assignment?.id) {
       setError("Could not identify the registration to delete.");
       setMessage("");
-      return false;
+      return;
     }
+
+    const confirmed = window.confirm(
+      `Delete the registration for ${
+        assignment.patient_name || "this patient"
+      }${
+        assignment.assignment_date
+          ? ` dated ${assignment.assignment_date}`
+          : ""
+      }?`
+    );
+
+    if (!confirmed) return;
 
     setMessage("");
     setError("");
@@ -667,17 +699,14 @@ export default function AdminDashboard({
       );
 
       setMessage(
-        res.data?.message || "Registration permanently deleted."
+        res.data?.message || "Registration deleted successfully."
       );
-
-      return true;
     } catch (err) {
       console.error("Failed to delete registration:", err);
       setError(
         getApiError(err, "Failed to delete registration.")
       );
       setMessage("");
-      return false;
     }
   };
 
@@ -686,8 +715,8 @@ export default function AdminDashboard({
       <h2 style={styles.heading}>{heading}</h2>
       <p style={styles.description}>{description}</p>
       <p style={styles.helperText}>
-        This section still needs to be connected to its
-        existing page or backend functionality.
+        This section still needs to be connected to its existing
+        page or backend functionality.
       </p>
     </section>
   );
@@ -696,7 +725,9 @@ export default function AdminDashboard({
     return (
       <section style={styles.permissionPage}>
         <h2>Access denied</h2>
-        <p>An administrator account is required to view this page.</p>
+        <p>
+          An administrator account is required to view this page.
+        </p>
         <button
           type="button"
           style={styles.primaryButton}
@@ -712,7 +743,11 @@ export default function AdminDashboard({
     <DashboardLayout
       title="Admin Dashboard"
       subtitle={`Welcome, ${
-        user?.name || user?.full_name || user?.username || "Admin"
+        user?.display_name ||
+        user?.name ||
+        user?.full_name ||
+        user?.username ||
+        "Admin"
       }`}
       accent="#1e3a8a"
       sidebarTitle="Admin Panel"
@@ -777,7 +812,9 @@ export default function AdminDashboard({
             isReception={false}
             currentUserId={user?.id}
             onEditAssignment={handleEditRegistration}
+            onEditRegistration={handleEditRegistration}
             onCancelAssignment={handleCancelRegistration}
+            onDeleteAssignment={handleCancelRegistration}
           />
         )}
 
@@ -798,9 +835,7 @@ export default function AdminDashboard({
                 physiotherapist.
               </p>
 
-              <OpenNewFile
-                onPatientCreated={handlePatientCreated}
-              />
+              <OpenNewFile onPatientCreated={handlePatientCreated} />
 
               {newlyCreatedPatient && (
                 <button
@@ -819,27 +854,31 @@ export default function AdminDashboard({
 
         {activeSection === "register_patient" && (
           <div style={styles.stack}>
-            <section style={styles.card}>
-              <h2 style={styles.heading}>Assign a Patient</h2>
+            {!editingAssignmentId && (
+              <section style={styles.card}>
+                <h2 style={styles.heading}>
+                  Assign a Patient
+                </h2>
 
-              <p style={styles.description}>
-                Search for an existing patient, select the
-                patient, and assign them to a physiotherapist.
-              </p>
+                <p style={styles.description}>
+                  Search for an existing patient, select the
+                  patient, and assign them to a physiotherapist.
+                </p>
 
-              <UnifiedPatientSearch
-                title="Find Existing Patient"
-                placeholder="Search patient name or ID"
-                actionLabel="Select Patient"
-                onSelectPatient={handleSelectPatient}
-                emptyText="Start typing to search patients."
-                noResultsText="No patients found. Use Open New File to create a patient record."
-                onRegisterNew={() =>
-                  handleSectionChange("open_file")
-                }
-                registerButtonLabel="Open New File"
-              />
-            </section>
+                <UnifiedPatientSearch
+                  title="Find Existing Patient"
+                  placeholder="Search patient name or ID"
+                  actionLabel="Select Patient"
+                  onSelectPatient={handleSelectPatient}
+                  emptyText="Start typing to search patients."
+                  noResultsText="No patients found. Use Open New File to create a patient record."
+                  onRegisterNew={() =>
+                    handleSectionChange("open_file")
+                  }
+                  registerButtonLabel="Open New File"
+                />
+              </section>
+            )}
 
             {selectedPatient && (
               <section
@@ -847,7 +886,9 @@ export default function AdminDashboard({
                 style={styles.card}
               >
                 <h2 style={styles.heading}>
-                  Assign Patient to Physiotherapist
+                  {editingAssignmentId
+                    ? "Edit Patient Assignment"
+                    : "Assign Patient to Physiotherapist"}
                 </h2>
 
                 <p style={styles.description}>
@@ -863,7 +904,12 @@ export default function AdminDashboard({
                   assignmentForm={assignmentForm}
                   setAssignmentForm={setAssignmentForm}
                   therapists={therapists}
-                  onSubmit={handleCreateAssignment}
+                  physicians={physicians}
+                  specialities={specialities}
+                  editingAssignmentId={editingAssignmentId}
+                  savingAssignment={savingAssignment}
+                  onSubmit={handleCreateOrUpdateAssignment}
+                  onCancelEdit={resetAssignmentEditor}
                   userRole="admin"
                   isAdmin={isAdmin}
                 />

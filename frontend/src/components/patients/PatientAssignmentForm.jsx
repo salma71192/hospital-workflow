@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState, useEffect } from "react";
 
 const DEFAULT_PHYSICIANS = [
@@ -94,9 +93,6 @@ export default function PatientAssignmentForm({
   const isAdmin = effectiveRole === "admin";
   const isEditing = Boolean(editingAssignmentId);
   const isEvaluation = assignmentForm.category === "initial_evaluation";
-  const withAnotherTherapist = Boolean(
-    assignmentForm.with_another_therapist
-  );
 
   const therapistLabel = (therapist) =>
     therapist.display_name ||
@@ -121,8 +117,7 @@ export default function PatientAssignmentForm({
     [assignmentForm.additional_therapist_ids]
   );
 
-  // Suggest the previously selected therapist only when no therapist
-  // has already been selected. Never overwrite the therapist in edit mode.
+  // Restore the previously selected therapist for a new assignment.
   useEffect(() => {
     if (
       isEditing ||
@@ -158,7 +153,7 @@ export default function PatientAssignmentForm({
     }
   }, [selectedTherapist, therapistMenuOpen]);
 
-  // Initialize today's date only for administrators.
+  // Initialize today's date for administrators.
   useEffect(() => {
     if (
       isAdmin &&
@@ -186,15 +181,16 @@ export default function PatientAssignmentForm({
 
   const availablePhysicians = useMemo(() => {
     const names = Array.isArray(physicians) ? physicians : [];
-
     const currentPhysician = assignmentForm.referring_physician;
 
     return Array.from(
-      new Set([
-        ...DEFAULT_PHYSICIANS,
-        ...names,
-        ...(currentPhysician ? [currentPhysician] : []),
-      ].filter(Boolean))
+      new Set(
+        [
+          ...DEFAULT_PHYSICIANS,
+          ...names,
+          ...(currentPhysician ? [currentPhysician] : []),
+        ].filter(Boolean)
+      )
     );
   }, [physicians, assignmentForm.referring_physician]);
 
@@ -216,11 +212,9 @@ export default function PatientAssignmentForm({
   const chooseTherapist = (therapist) => {
     const therapistId = String(therapist.id);
 
-    updateField("therapist_id", therapistId);
     setTherapistSearch(therapistLabel(therapist));
     setTherapistMenuOpen(false);
 
-    // The main therapist should not also be selected as an additional one.
     setAssignmentForm((previous) => ({
       ...previous,
       therapist_id: therapistId,
@@ -236,35 +230,13 @@ export default function PatientAssignmentForm({
     }
   };
 
-  const toggleAdditionalTherapist = (therapistId, checked) => {
-    const id = String(therapistId);
+  const handleAdditionalTherapistChange = (event) => {
+    const therapistId = event.target.value;
 
-    setAssignmentForm((previous) => {
-      const existing = Array.isArray(previous.additional_therapist_ids)
-        ? previous.additional_therapist_ids.map(String)
-        : [];
-
-      const nextIds = checked
-        ? [...new Set([...existing, id])]
-        : existing.filter((item) => item !== id);
-
-      return {
-        ...previous,
-        with_another_therapist: nextIds.length > 0,
-        additional_therapist_ids: nextIds,
-      };
-    });
-  };
-
-  const handleWithAnotherTherapistChange = (checked) => {
     setAssignmentForm((previous) => ({
       ...previous,
-      with_another_therapist: checked,
-      additional_therapist_ids: checked
-        ? Array.isArray(previous.additional_therapist_ids)
-          ? previous.additional_therapist_ids
-          : []
-        : [],
+      with_another_therapist: Boolean(therapistId),
+      additional_therapist_ids: therapistId ? [therapistId] : [],
     }));
   };
 
@@ -388,13 +360,12 @@ export default function PatientAssignmentForm({
 
           <div style={styles.sectionSubtitle}>
             Select the therapist and visit information.
-            {isAdmin
-              ? " Admin can also set the assignment date."
-              : ""}
+            {isAdmin ? " Admin can also set the assignment date." : ""}
           </div>
         </div>
       </div>
 
+      {/* Main physiotherapist */}
       <div style={styles.field}>
         <label style={styles.label}>
           Physiotherapist <span style={styles.required}>*</span>
@@ -495,73 +466,44 @@ export default function PatientAssignmentForm({
         )}
       </div>
 
+      {/* Additional physiotherapist dropdown */}
       <div style={styles.field}>
-        <label style={styles.checkboxRow}>
-          <input
-            type="checkbox"
-            checked={withAnotherTherapist}
-            onChange={(event) =>
-              handleWithAnotherTherapistChange(event.target.checked)
-            }
-            disabled={loading}
-          />
-
-          <span style={styles.label}>
-            With Another Therapist
-          </span>
+        <label
+          style={styles.label}
+          htmlFor="additional_therapist_id"
+        >
+          With Another Therapist
         </label>
 
-        <p style={styles.helperText}>
-          Select additional physiotherapists who should receive credit for
-          this assignment in their statistics.
-        </p>
+        <select
+          id="additional_therapist_id"
+          value={additionalTherapistIds[0] || ""}
+          onChange={handleAdditionalTherapistChange}
+          style={styles.select}
+          disabled={loading}
+        >
+          <option value="">None</option>
 
-        {withAnotherTherapist && (
-          <div style={styles.additionalTherapists}>
-            {therapists.filter(
+          {therapists
+            .filter(
               (therapist) =>
                 String(therapist.id) !==
                 String(assignmentForm.therapist_id)
-            ).length > 0 ? (
-              therapists
-                .filter(
-                  (therapist) =>
-                    String(therapist.id) !==
-                    String(assignmentForm.therapist_id)
-                )
-                .map((therapist) => {
-                  const checked = additionalTherapistIds.includes(
-                    String(therapist.id)
-                  );
+            )
+            .map((therapist) => (
+              <option
+                key={therapist.id}
+                value={String(therapist.id)}
+              >
+                {therapistLabel(therapist)}
+              </option>
+            ))}
+        </select>
 
-                  return (
-                    <label
-                      key={therapist.id}
-                      style={styles.additionalTherapistOption}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(event) =>
-                          toggleAdditionalTherapist(
-                            therapist.id,
-                            event.target.checked
-                          )
-                        }
-                        disabled={loading}
-                      />
-
-                      <span>{therapistLabel(therapist)}</span>
-                    </label>
-                  );
-                })
-            ) : (
-              <p style={styles.helperText}>
-                No additional physiotherapists are available.
-              </p>
-            )}
-          </div>
-        )}
+        <p style={styles.helperText}>
+          Select one additional physiotherapist for this assignment.
+          Choose None to remove the selection.
+        </p>
       </div>
 
       {/* Only Admin sees the assignment date field. */}
@@ -642,6 +584,7 @@ export default function PatientAssignmentForm({
         </div>
       </div>
 
+      {/* Referring physician */}
       {isEvaluation && (
         <>
           <div style={styles.sectionHeading}>
@@ -685,6 +628,7 @@ export default function PatientAssignmentForm({
         </>
       )}
 
+      {/* Speciality and notes */}
       <details
         style={styles.optional}
         open={Boolean(assignmentForm.speciality || assignmentForm.notes)}
@@ -707,13 +651,13 @@ export default function PatientAssignmentForm({
               style={styles.select}
               disabled={loading}
             >
-              <option value="">None</option>
-
               {availableSpecialities.map((speciality) => (
                 <option key={speciality} value={speciality}>
                   {speciality}
                 </option>
               ))}
+
+              <option value="">None</option>
             </select>
 
             <p style={styles.helperText}>
@@ -751,7 +695,9 @@ export default function PatientAssignmentForm({
           {loading ? (
             <span style={styles.buttonContent}>
               <span style={styles.spinner} />
-              {isEditing ? "Updating assignment..." : "Saving assignment..."}
+              {isEditing
+                ? "Updating assignment..."
+                : "Saving assignment..."}
             </span>
           ) : (
             <>
@@ -1157,41 +1103,11 @@ const styles = {
     fontSize: "11px",
   },
 
-  checkboxRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    cursor: "pointer",
-  },
-
   helperText: {
     margin: 0,
     color: "#7C7194",
     fontSize: "12px",
     lineHeight: 1.5,
-  },
-
-  additionalTherapists: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
-    gap: "8px",
-    padding: "12px",
-    border: "1px solid #DDD6FE",
-    borderRadius: "12px",
-    background: "#FCFAFF",
-  },
-
-  additionalTherapistOption: {
-    display: "flex",
-    alignItems: "center",
-    gap: "9px",
-    padding: "9px",
-    borderRadius: "8px",
-    background: "#FFFFFF",
-    border: "1px solid #E9DDFB",
-    color: "#4C3A65",
-    fontSize: "12px",
-    cursor: "pointer",
   },
 
   optional: {

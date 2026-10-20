@@ -1,3 +1,4 @@
+
 import React, {
   useCallback,
   useEffect,
@@ -10,12 +11,40 @@ import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 import PhysioTodayRegistrationsSection from "../components/physio/PhysioTodayRegistrationsSection";
+import EvaluationTrackerSection from "../components/physio/EvaluationTrackerSection";
 import LeaderboardSection from "../components/common/LeaderboardSection";
 
 const styles = {
   stack: {
     display: "grid",
     gap: 16,
+  },
+  filter: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "end",
+    gap: 16,
+    padding: 18,
+    background: "#fff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 14,
+  },
+  filterLabel: {
+    display: "grid",
+    gap: 6,
+  },
+  filterCaption: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#334155",
+  },
+  filterInput: {
+    padding: "9px 11px",
+    border: "1px solid #cbd5e1",
+    borderRadius: 8,
+    fontSize: 14,
+    color: "#243b53",
+    background: "#fff",
   },
 };
 
@@ -171,7 +200,7 @@ function buildPhysioStatistics(assignments) {
     if (cash) row.cash += 1;
     if (noShow) row.no_show += 1;
 
-    // Retain existing behavior until booked counts are provided by the API.
+    // Preserve existing behavior until the API provides booked counts.
     row.booked = 0;
 
     if (
@@ -248,7 +277,7 @@ function PhysioStatisticsTable({
 }) {
   const rows = stats?.rows ?? [];
 
-  const s = {
+  const tableStyles = {
     card: {
       background: "#fff",
       border: "1px solid #e2e8f0",
@@ -325,7 +354,7 @@ function PhysioStatisticsTable({
   };
 
   return (
-    <section style={s.card}>
+    <section style={tableStyles.card}>
       <div
         style={{
           display: "flex",
@@ -336,36 +365,36 @@ function PhysioStatisticsTable({
         }}
       >
         <div>
-          <h2 style={s.title}>{title}</h2>
-          <div style={s.subtitle}>
+          <h2 style={tableStyles.title}>{title}</h2>
+          <div style={tableStyles.subtitle}>
             Physiotherapy registrations for {selectedLabel}
           </div>
         </div>
 
-        <span style={s.badge}>
+        <span style={tableStyles.badge}>
           {rows.length} {rows.length === 1 ? "therapist" : "therapists"}
         </span>
       </div>
 
       {loading ? (
-        <div style={s.empty}>Loading statistics...</div>
+        <div style={tableStyles.empty}>Loading statistics...</div>
       ) : !rows.length ? (
-        <div style={s.empty}>
+        <div style={tableStyles.empty}>
           No registration statistics are available for {selectedLabel}.
         </div>
       ) : (
-        <div style={s.tableWrap}>
-          <table style={s.table}>
+        <div style={tableStyles.tableWrap}>
+          <table style={tableStyles.table}>
             <thead>
               <tr>
-                <th style={s.th}>Therapist</th>
-                <th style={s.th}>Available Slots</th>
-                <th style={s.th}>Booked</th>
-                <th style={s.th}>Walk In</th>
-                <th style={s.th}>Initial Eval</th>
-                <th style={s.th}>Cash</th>
-                <th style={s.th}>No Show</th>
-                <th style={s.th}>Seen</th>
+                <th style={tableStyles.th}>Therapist</th>
+                <th style={tableStyles.th}>Available Slots</th>
+                <th style={tableStyles.th}>Booked</th>
+                <th style={tableStyles.th}>Walk In</th>
+                <th style={tableStyles.th}>Initial Eval</th>
+                <th style={tableStyles.th}>Cash</th>
+                <th style={tableStyles.th}>No Show</th>
+                <th style={tableStyles.th}>Seen</th>
               </tr>
             </thead>
 
@@ -374,22 +403,22 @@ function PhysioStatisticsTable({
                 <tr key={row.therapist_id}>
                   <td
                     style={{
-                      ...s.td,
+                      ...tableStyles.td,
                       fontWeight: 750,
                       color: "#16334f",
                     }}
                   >
                     {row.therapist_name}
                   </td>
-                  <td style={s.td}>{row.available_slots}</td>
-                  <td style={s.td}>{row.booked}</td>
-                  <td style={s.td}>{row.walk_in}</td>
-                  <td style={s.td}>{row.initial_eval}</td>
-                  <td style={s.td}>{row.cash}</td>
-                  <td style={s.td}>{row.no_show}</td>
+                  <td style={tableStyles.td}>{row.available_slots}</td>
+                  <td style={tableStyles.td}>{row.booked}</td>
+                  <td style={tableStyles.td}>{row.walk_in}</td>
+                  <td style={tableStyles.td}>{row.initial_eval}</td>
+                  <td style={tableStyles.td}>{row.cash}</td>
+                  <td style={tableStyles.td}>{row.no_show}</td>
                   <td
                     style={{
-                      ...s.td,
+                      ...tableStyles.td,
                       fontWeight: 850,
                       color: "#08784f",
                     }}
@@ -445,6 +474,13 @@ export default function PhysioFollowupWorkspace({
     useState(false);
   const [monthlyLeaderboardError, setMonthlyLeaderboardError] =
     useState("");
+
+  const [evaluationMonth, setEvaluationMonth] = useState(
+    getLocalMonthString()
+  );
+  const [evaluationAssignments, setEvaluationAssignments] = useState([]);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState("");
 
   const selectedTherapistId = actingAs?.id ?? user?.id ?? null;
 
@@ -523,6 +559,34 @@ export default function PhysioFollowupWorkspace({
     }
   }, [statisticsMonth]);
 
+  const loadEvaluationTracker = useCallback(async () => {
+    if (!evaluationMonth) return;
+
+    setEvaluationLoading(true);
+    setEvaluationError("");
+
+    try {
+      const range = getMonthDateRange(evaluationMonth);
+      const params = new URLSearchParams(range);
+
+      const res = await api.get(
+        `reception/assignments/?${params.toString()}`
+      );
+
+      setEvaluationAssignments(getArray(res.data, "assignments"));
+    } catch (err) {
+      console.error("Failed to load evaluation tracker:", err);
+      console.error("Evaluation tracker API error:", err?.response?.data);
+
+      setEvaluationAssignments([]);
+      setEvaluationError(
+        "Failed to load evaluations for the selected month."
+      );
+    } finally {
+      setEvaluationLoading(false);
+    }
+  }, [evaluationMonth]);
+
   const loadMonthlyLeaderboard = useCallback(async () => {
     if (!leaderboardMonth) return;
 
@@ -538,12 +602,12 @@ export default function PhysioFollowupWorkspace({
         `physio/leaderboard/monthly/?${params.toString()}`
       );
 
-      const rows =
-        getArray(res.data, "results").length
-          ? getArray(res.data, "results")
-          : getArray(res.data, "rows").length
-            ? getArray(res.data, "rows")
-            : getArray(res.data, "leaderboard");
+      const results = getArray(res.data, "results");
+      const rows = results.length
+        ? results
+        : getArray(res.data, "rows").length
+          ? getArray(res.data, "rows")
+          : getArray(res.data, "leaderboard");
 
       setMonthlyLeaderboardRows(rows);
     } catch (err) {
@@ -580,6 +644,12 @@ export default function PhysioFollowupWorkspace({
     }
   }, [activeSection, loadMonthlyLeaderboard]);
 
+  useEffect(() => {
+    if (activeSection === "evaluation-tracker") {
+      loadEvaluationTracker();
+    }
+  }, [activeSection, loadEvaluationTracker]);
+
   const handleBackToAdmin = useCallback(() => {
     onStopImpersonation?.();
     navigate("/admin");
@@ -607,6 +677,14 @@ export default function PhysioFollowupWorkspace({
         belongsToTherapist(item, selectedTherapistId)
       ),
     [monthlyAssignments, selectedTherapistId]
+  );
+
+  const physioEvaluationAssignments = useMemo(
+    () =>
+      evaluationAssignments.filter((item) =>
+        belongsToTherapist(item, selectedTherapistId)
+      ),
+    [evaluationAssignments, selectedTherapistId]
   );
 
   const dailyStatistics = useMemo(
@@ -657,37 +735,6 @@ export default function PhysioFollowupWorkspace({
 
   const statisticsCount = dailyStatistics.rows.length;
 
-  const filterStyle = {
-    display: "flex",
-    flexWrap: "wrap",
-    alignItems: "end",
-    gap: 16,
-    padding: 18,
-    background: "#fff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 14,
-  };
-
-  const filterLabelStyle = {
-    display: "grid",
-    gap: 6,
-  };
-
-  const filterCaptionStyle = {
-    fontSize: 12,
-    fontWeight: 700,
-    color: "#334155",
-  };
-
-  const filterInputStyle = {
-    padding: "9px 11px",
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    fontSize: 14,
-    color: "#243b53",
-    background: "#fff",
-  };
-
   return (
     <DashboardLayout
       title="Patient Workflow"
@@ -700,7 +747,8 @@ export default function PhysioFollowupWorkspace({
         { key: "home", label: "Home" },
         { key: "statistics", label: `Statistics (${statisticsCount})` },
         { key: "tracker", label: "Patient Tracker" },
-        { key: "leaderboard", label: "Monthly Physiotherapy Leaderboard" },
+        { key: "evaluation-tracker", label: "Evaluation Tracker" },
+        { key: "leaderboard", label: "Leaderboard" },
       ]}
       activeSection={activeSection}
       setActiveSection={(key) => {
@@ -722,7 +770,7 @@ export default function PhysioFollowupWorkspace({
 
       {activeSection === "statistics" && (
         <div style={styles.stack}>
-          <section style={filterStyle}>
+          <section style={styles.filter}>
             <h3
               style={{
                 width: "100%",
@@ -733,8 +781,8 @@ export default function PhysioFollowupWorkspace({
               Statistics Filters
             </h3>
 
-            <label style={filterLabelStyle}>
-              <span style={filterCaptionStyle}>
+            <label style={styles.filterLabel}>
+              <span style={styles.filterCaption}>
                 Daily statistics date
               </span>
               <input
@@ -743,12 +791,12 @@ export default function PhysioFollowupWorkspace({
                 onChange={(event) =>
                   setStatisticsDate(event.target.value)
                 }
-                style={filterInputStyle}
+                style={styles.filterInput}
               />
             </label>
 
-            <label style={filterLabelStyle}>
-              <span style={filterCaptionStyle}>
+            <label style={styles.filterLabel}>
+              <span style={styles.filterCaption}>
                 Monthly statistics month
               </span>
               <input
@@ -757,7 +805,7 @@ export default function PhysioFollowupWorkspace({
                 onChange={(event) =>
                   setStatisticsMonth(event.target.value)
                 }
-                style={filterInputStyle}
+                style={styles.filterInput}
               />
             </label>
           </section>
@@ -797,9 +845,22 @@ export default function PhysioFollowupWorkspace({
         />
       )}
 
+      {activeSection === "evaluation-tracker" && (
+        <div style={styles.stack}>
+          <EvaluationTrackerSection
+            assignments={physioEvaluationAssignments}
+            month={evaluationMonth}
+            onMonthChange={setEvaluationMonth}
+            loading={evaluationLoading}
+            error={evaluationError}
+            onReload={loadEvaluationTracker}
+          />
+        </div>
+      )}
+
       {activeSection === "leaderboard" && (
         <div style={styles.stack}>
-          <section style={filterStyle}>
+          <section style={styles.filter}>
             <h3
               style={{
                 width: "100%",
@@ -807,11 +868,11 @@ export default function PhysioFollowupWorkspace({
                 color: "#16334f",
               }}
             >
-              Monthly Leaderboard Filters
+              Leaderboard Filters
             </h3>
 
-            <label style={filterLabelStyle}>
-              <span style={filterCaptionStyle}>
+            <label style={styles.filterLabel}>
+              <span style={styles.filterCaption}>
                 Leaderboard month
               </span>
               <input
@@ -820,7 +881,7 @@ export default function PhysioFollowupWorkspace({
                 onChange={(event) =>
                   setLeaderboardMonth(event.target.value)
                 }
-                style={filterInputStyle}
+                style={styles.filterInput}
               />
             </label>
           </section>

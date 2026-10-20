@@ -36,10 +36,15 @@ export default function AdminRegistrationTrackerSection({
   currentUser,
   currentUserId,
   onEditAssignment,
+  onEditRegistration,
   onCancelAssignment,
+  onDeleteAssignment,
 }) {
   const activeUser = currentUser || user;
   const adminUserId = currentUserId ?? activeUser?.id;
+
+  const editHandler = onEditAssignment || onEditRegistration;
+  const deleteHandler = onCancelAssignment || onDeleteAssignment;
 
   const [trackerMode, setTrackerMode] = useState("today");
 
@@ -55,93 +60,124 @@ export default function AdminRegistrationTrackerSection({
   const [assignments, setAssignments] = useState([]);
   const [agents, setAgents] = useState([]);
   const [therapists, setTherapists] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const loadTherapists = useCallback(async () => {
     try {
       const res = await api.get("reception/therapists/");
-      setTherapists(res.data?.therapists || []);
+
+      setTherapists(
+        Array.isArray(res.data?.therapists)
+          ? res.data.therapists
+          : []
+      );
     } catch (err) {
       console.error("Failed to load therapists", err);
       setTherapists([]);
     }
   }, []);
 
-  const loadAssignments = useCallback(async ({
-    start_date = "",
-    end_date = "",
-    user_id = "all",
-    patient = "",
-    therapist_id = "all",
-  } = {}) => {
-    try {
-      const params = new URLSearchParams();
+  const loadAssignments = useCallback(
+    async ({
+      start_date = "",
+      end_date = "",
+      user_id = "all",
+      patient = "",
+      therapist_id = "all",
+    } = {}) => {
+      setLoading(true);
 
-      if (start_date) {
-        params.append("start_date", start_date);
+      try {
+        const params = new URLSearchParams();
+
+        if (start_date) {
+          params.append("start_date", start_date);
+        }
+
+        if (end_date) {
+          params.append("end_date", end_date);
+        }
+
+        if (user_id && user_id !== "all") {
+          params.append("user_id", user_id);
+        }
+
+        if (patient?.trim()) {
+          params.append("patient", patient.trim());
+        }
+
+        if (therapist_id && therapist_id !== "all") {
+          params.append("therapist_id", therapist_id);
+        }
+
+        const query = params.toString();
+        const url = query
+          ? `reception/assignments/?${query}`
+          : "reception/assignments/";
+
+        const res = await api.get(url);
+        const data = res.data || {};
+
+        setAssignments(
+          Array.isArray(data.assignments)
+            ? data.assignments
+            : []
+        );
+
+        setAgents(
+          Array.isArray(data.agents)
+            ? data.agents
+            : []
+        );
+
+        setLoadError("");
+      } catch (err) {
+        console.error(
+          "Failed to load assignments",
+          err?.response?.data || err
+        );
+
+        setAssignments([]);
+        setAgents([]);
+        setLoadError(
+          err?.response?.data?.detail ||
+            err?.response?.data?.error ||
+            "Failed to load registration history."
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  const handleApplyFilters = useCallback(
+    async (filters = trackerFilter, mode = trackerMode) => {
+      if (mode === "today") {
+        const date = filters.date || getTodayString();
+
+        await loadAssignments({
+          start_date: date,
+          end_date: date,
+          user_id: filters.user_id,
+          patient: filters.patient,
+          therapist_id: filters.therapist_id,
+        });
+
+        return;
       }
 
-      if (end_date) {
-        params.append("end_date", end_date);
-      }
-
-      if (user_id !== "all") {
-        params.append("user_id", user_id);
-      }
-
-      if (patient?.trim()) {
-        params.append("patient", patient.trim());
-      }
-
-      if (therapist_id !== "all") {
-        params.append("therapist_id", therapist_id);
-      }
-
-      const query = params.toString();
-      const url = query
-        ? `reception/assignments/?${query}`
-        : "reception/assignments/";
-
-      const res = await api.get(url);
-
-      setAssignments(
-        Array.isArray(res.data?.assignments)
-          ? res.data.assignments
-          : []
-      );
-
-      setAgents(
-        Array.isArray(res.data?.agents)
-          ? res.data.agents
-          : []
-      );
-    } catch (err) {
-      console.error("Failed to load assignments", err);
-      setAssignments([]);
-      setAgents([]);
-    }
-  }, []);
-
-  const handleApplyFilters = useCallback(async () => {
-    if (trackerMode === "today") {
       await loadAssignments({
-        start_date: trackerFilter.date,
-        end_date: trackerFilter.date,
-        user_id: trackerFilter.user_id,
-        patient: trackerFilter.patient,
-        therapist_id: trackerFilter.therapist_id,
+        start_date: filters.from_date,
+        end_date: filters.to_date,
+        user_id: filters.user_id,
+        patient: filters.patient,
+        therapist_id: filters.therapist_id,
       });
-
-      return;
-    }
-
-    await loadAssignments({
-      start_date: trackerFilter.from_date,
-      end_date: trackerFilter.to_date,
-      user_id: trackerFilter.user_id,
-      patient: trackerFilter.patient,
-      therapist_id: trackerFilter.therapist_id,
-    });
-  }, [trackerMode, trackerFilter, loadAssignments]);
+    },
+    [trackerFilter, trackerMode, loadAssignments]
+  );
 
   useEffect(() => {
     loadTherapists();
@@ -151,53 +187,95 @@ export default function AdminRegistrationTrackerSection({
     handleApplyFilters();
   }, [handleApplyFilters]);
 
-  // Reload the visible records after a successful edit or cancellation.
   const handleEditAssignment = useCallback(
-    async (...args) => {
-      if (typeof onEditAssignment !== "function") {
-        console.warn(
-          "Registration editing is not connected. Supply onEditAssignment from the parent."
+    async (assignment, ...rest) => {
+      if (typeof editHandler !== "function") {
+        console.error(
+          "Admin assignment editing is not connected. " +
+            "Pass onEditAssignment from AdminDashboard."
         );
-        return;
+        return false;
       }
 
-      await onEditAssignment(...args);
-      await handleApplyFilters();
+      try {
+        // The parent opens the shared assignment editor.
+        await editHandler(assignment, ...rest);
+        return true;
+      } catch (err) {
+        console.error("Failed to open assignment editor", err);
+        return false;
+      }
     },
-    [onEditAssignment, handleApplyFilters]
+    [editHandler]
   );
 
   const handleCancelAssignment = useCallback(
-    async (...args) => {
-      if (typeof onCancelAssignment !== "function") {
-        console.warn(
-          "Registration cancellation is not connected. Supply onCancelAssignment from the parent."
+    async (assignment, ...rest) => {
+      if (typeof deleteHandler !== "function") {
+        console.error(
+          "Admin registration deletion is not connected. " +
+            "Pass onCancelAssignment from AdminDashboard."
         );
-        return;
+        return false;
       }
 
-      await onCancelAssignment(...args);
-      await handleApplyFilters();
+      try {
+        const result = await deleteHandler(assignment, ...rest);
+
+        // Refresh only when the parent reports a successful deletion.
+        if (result !== false) {
+          await handleApplyFilters();
+        }
+
+        return result;
+      } catch (err) {
+        console.error("Failed to delete registration", err);
+        return false;
+      }
     },
-    [onCancelAssignment, handleApplyFilters]
+    [deleteHandler, handleApplyFilters]
   );
 
   return (
-    <RegistrationTrackerSection
-      mode={trackerMode}
-      onChangeMode={setTrackerMode}
-      assignments={assignments}
-      agents={agents}
-      therapists={therapists}
-      filter={trackerFilter}
-      setFilter={setTrackerFilter}
-      onApplyFilters={handleApplyFilters}
-      onEditAssignment={handleEditAssignment}
-      onCancelAssignment={handleCancelAssignment}
-      userRole="admin"
-      isAdmin={true}
-      isReception={false}
-      currentUserId={adminUserId}
-    />
+    <div>
+      {loadError && (
+        <div
+          role="alert"
+          style={{
+            padding: "12px 16px",
+            marginBottom: "12px",
+            color: "#991b1b",
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: "8px",
+          }}
+        >
+          {loadError}
+        </div>
+      )}
+
+      {loading && (
+        <p role="status" style={{ color: "#64748b" }}>
+          Loading registration history...
+        </p>
+      )}
+
+      <RegistrationTrackerSection
+        mode={trackerMode}
+        onChangeMode={setTrackerMode}
+        assignments={assignments}
+        agents={agents}
+        therapists={therapists}
+        filter={trackerFilter}
+        setFilter={setTrackerFilter}
+        onApplyFilters={handleApplyFilters}
+        onEditAssignment={handleEditAssignment}
+        onCancelAssignment={handleCancelAssignment}
+        userRole="admin"
+        isAdmin={true}
+        isReception={false}
+        currentUserId={adminUserId}
+      />
+    </div>
   );
 }
