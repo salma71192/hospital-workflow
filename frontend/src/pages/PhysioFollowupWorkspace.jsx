@@ -10,41 +10,59 @@ import api from "../api/api";
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 import PatientTrackerTable from "../components/patients/PatientTrackerTable";
-import PhysioTodayRegistrationsSection from "../components/physio/PhysioTodayRegistrationsSection";
+import PhysioStatisticsSection from "../components/physio/PhysioStatisticsSection";
 import EvaluationTrackerSection from "../components/physio/EvaluationTrackerSection";
 import LeaderboardSection from "../components/common/LeaderboardSection";
 
 const styles = {
   stack: {
     display: "grid",
-    gap: 16,
+    gap: 20,
+    minWidth: 0,
   },
   filter: {
-    display: "flex",
-    flexWrap: "wrap",
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     alignItems: "end",
     gap: 16,
-    padding: 18,
-    background: "#fff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 14,
+    padding: 22,
+    background: "#ffffff",
+    border: "1px solid #e5eaf1",
+    borderRadius: 18,
+    boxShadow: "0 5px 20px rgba(15, 23, 42, 0.035)",
+  },
+  filterHeading: {
+    gridColumn: "1 / -1",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    margin: 0,
+    color: "#142d4e",
+    fontSize: 18,
+    fontWeight: 800,
   },
   filterLabel: {
     display: "grid",
-    gap: 6,
+    gap: 8,
+    minWidth: 0,
   },
   filterCaption: {
     fontSize: 12,
-    fontWeight: 700,
-    color: "#334155",
+    fontWeight: 750,
+    color: "#53657b",
   },
   filterInput: {
-    padding: "9px 11px",
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
+    boxSizing: "border-box",
+    width: "100%",
+    minHeight: 43,
+    padding: "10px 12px",
+    border: "1px solid #d6deea",
+    borderRadius: 10,
     fontSize: 14,
-    color: "#243b53",
-    background: "#fff",
+    fontWeight: 600,
+    color: "#203650",
+    background: "#ffffff",
+    outlineColor: "#059669",
   },
 };
 
@@ -269,172 +287,6 @@ function getLeaderboardId(item) {
   );
 }
 
-function PhysioStatisticsTable({
-  stats,
-  title,
-  selectedLabel,
-  loading = false,
-}) {
-  const rows = stats?.rows ?? [];
-
-  const tableStyles = {
-    card: {
-      background: "#fff",
-      border: "1px solid #e2e8f0",
-      borderRadius: 18,
-      padding: 22,
-      boxShadow: "0 8px 26px rgba(15, 23, 42, 0.05)",
-      display: "grid",
-      gap: 18,
-      minWidth: 0,
-      fontFamily: "Inter, Arial, sans-serif",
-    },
-    title: {
-      margin: 0,
-      fontSize: 23,
-      fontWeight: 800,
-      color: "#10243e",
-    },
-    subtitle: {
-      marginTop: 6,
-      fontSize: 13,
-      color: "#718096",
-      lineHeight: 1.5,
-    },
-    badge: {
-      background: "#e9f9f1",
-      color: "#08784f",
-      padding: "8px 12px",
-      borderRadius: 999,
-      fontSize: 12,
-      fontWeight: 800,
-      whiteSpace: "nowrap",
-    },
-    tableWrap: {
-      width: "100%",
-      overflowX: "auto",
-      border: "1px solid #e3eaf2",
-      borderRadius: 13,
-    },
-    table: {
-      width: "100%",
-      minWidth: 760,
-      borderCollapse: "separate",
-      borderSpacing: 0,
-      background: "#fff",
-    },
-    th: {
-      textAlign: "left",
-      padding: "14px 15px",
-      background: "#f4f7fb",
-      color: "#52647a",
-      fontSize: 11,
-      fontWeight: 800,
-      textTransform: "uppercase",
-      letterSpacing: "0.45px",
-      whiteSpace: "nowrap",
-      borderBottom: "1px solid #e1e8f0",
-    },
-    td: {
-      padding: 15,
-      color: "#465970",
-      fontSize: 13,
-      borderBottom: "1px solid #edf1f6",
-      whiteSpace: "nowrap",
-    },
-    empty: {
-      padding: 28,
-      borderRadius: 12,
-      border: "1px dashed #cbd5e1",
-      background: "#f8fafc",
-      color: "#64748b",
-      textAlign: "center",
-      lineHeight: 1.6,
-    },
-  };
-
-  return (
-    <section style={tableStyles.card}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        <div>
-          <h2 style={tableStyles.title}>{title}</h2>
-          <div style={tableStyles.subtitle}>
-            Physiotherapy registrations for {selectedLabel}
-          </div>
-        </div>
-
-        <span style={tableStyles.badge}>
-          {rows.length} {rows.length === 1 ? "therapist" : "therapists"}
-        </span>
-      </div>
-
-      {loading ? (
-        <div style={tableStyles.empty}>Loading statistics...</div>
-      ) : !rows.length ? (
-        <div style={tableStyles.empty}>
-          No registration statistics are available for {selectedLabel}.
-        </div>
-      ) : (
-        <div style={tableStyles.tableWrap}>
-          <table style={tableStyles.table}>
-            <thead>
-              <tr>
-                <th style={tableStyles.th}>Therapist</th>
-                <th style={tableStyles.th}>Available Slots</th>
-                <th style={tableStyles.th}>Booked</th>
-                <th style={tableStyles.th}>Walk In</th>
-                <th style={tableStyles.th}>Initial Eval</th>
-                <th style={tableStyles.th}>Cash</th>
-                <th style={tableStyles.th}>No Show</th>
-                <th style={tableStyles.th}>Seen</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.therapist_id}>
-                  <td
-                    style={{
-                      ...tableStyles.td,
-                      fontWeight: 750,
-                      color: "#16334f",
-                    }}
-                  >
-                    {row.therapist_name}
-                  </td>
-                  <td style={tableStyles.td}>{row.available_slots}</td>
-                  <td style={tableStyles.td}>{row.booked}</td>
-                  <td style={tableStyles.td}>{row.walk_in}</td>
-                  <td style={tableStyles.td}>{row.initial_eval}</td>
-                  <td style={tableStyles.td}>{row.cash}</td>
-                  <td style={tableStyles.td}>{row.no_show}</td>
-                  <td
-                    style={{
-                      ...tableStyles.td,
-                      fontWeight: 850,
-                      color: "#08784f",
-                    }}
-                  >
-                    {row.seen}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
 export default function PhysioFollowupWorkspace({
   user,
   onLogout,
@@ -501,6 +353,7 @@ export default function PhysioFollowupWorkspace({
     } catch (err) {
       console.error("Failed to load patient tracker:", err);
       console.error("Patient tracker API error:", err?.response?.data);
+
       setPatientTrackerRows([]);
       setError("Failed to load patient tracker.");
     }
@@ -769,70 +622,25 @@ export default function PhysioFollowupWorkspace({
       ) : null}
 
       {activeSection === "statistics" && (
-        <div style={styles.stack}>
-          <section style={styles.filter}>
-            <h3
-              style={{
-                width: "100%",
-                margin: 0,
-                color: "#16334f",
-              }}
-            >
-              Statistics Filters
-            </h3>
-
-            <label style={styles.filterLabel}>
-              <span style={styles.filterCaption}>
-                Daily statistics date
-              </span>
-              <input
-                type="date"
-                value={statisticsDate}
-                onChange={(event) =>
-                  setStatisticsDate(event.target.value)
-                }
-                style={styles.filterInput}
-              />
-            </label>
-
-            <label style={styles.filterLabel}>
-              <span style={styles.filterCaption}>
-                Monthly statistics month
-              </span>
-              <input
-                type="month"
-                value={statisticsMonth}
-                onChange={(event) =>
-                  setStatisticsMonth(event.target.value)
-                }
-                style={styles.filterInput}
-              />
-            </label>
-          </section>
-
-          <PhysioStatisticsTable
-            stats={dailyStatistics}
-            title="Daily Physio Statistics"
-            selectedLabel={statisticsDate}
-            loading={dailyStatisticsLoading}
-          />
-
-          <PhysioStatisticsTable
-            stats={monthlyStatistics}
-            title="Monthly Physio Statistics"
-            selectedLabel={getMonthLabel(statisticsMonth)}
-            loading={monthlyStatisticsLoading}
-          />
-
-          <PhysioTodayRegistrationsSection
-            walkInAssignments={walkInAssignments}
-            appointmentAssignments={appointmentAssignments}
-            initialEvalAssignments={initialEvalAssignments}
-            taskWithoutEligibilityAssignments={
-              taskWithoutEligibilityAssignments
-            }
-          />
-        </div>
+        <PhysioStatisticsSection
+          statisticsDate={statisticsDate}
+          setStatisticsDate={setStatisticsDate}
+          statisticsMonth={statisticsMonth}
+          setStatisticsMonth={setStatisticsMonth}
+          dailyStatistics={dailyStatistics}
+          monthlyStatistics={monthlyStatistics}
+          dailyStatisticsLoading={dailyStatisticsLoading}
+          monthlyStatisticsLoading={monthlyStatisticsLoading}
+          monthlyLabel={getMonthLabel(statisticsMonth)}
+          walkInAssignments={walkInAssignments}
+          appointmentAssignments={appointmentAssignments}
+          initialEvalAssignments={initialEvalAssignments}
+          taskWithoutEligibilityAssignments={
+            taskWithoutEligibilityAssignments
+          }
+          dailyAssignments={physioDailyAssignments}
+          monthlyAssignments={physioMonthlyAssignments}
+        />
       )}
 
       {activeSection === "tracker" && (
@@ -861,13 +669,23 @@ export default function PhysioFollowupWorkspace({
       {activeSection === "leaderboard" && (
         <div style={styles.stack}>
           <section style={styles.filter}>
-            <h3
-              style={{
-                width: "100%",
-                margin: 0,
-                color: "#16334f",
-              }}
-            >
+            <h3 style={styles.filterHeading}>
+              <span
+                aria-hidden="true"
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  width: 35,
+                  height: 35,
+                  borderRadius: 10,
+                  background: "#ecfdf5",
+                  color: "#059669",
+                  fontSize: 18,
+                }}
+              >
+                ◷
+              </span>
+
               Leaderboard Filters
             </h3>
 
@@ -875,6 +693,7 @@ export default function PhysioFollowupWorkspace({
               <span style={styles.filterCaption}>
                 Leaderboard month
               </span>
+
               <input
                 type="month"
                 value={leaderboardMonth}
