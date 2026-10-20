@@ -1,5 +1,6 @@
 
 import React from "react";
+
 import DashboardNotice from "../common/DashboardNotice";
 import PatientRegisterForm from "../patients/PatientRegisterForm";
 import PatientAssignmentForm from "../patients/PatientAssignmentForm";
@@ -12,19 +13,30 @@ export default function ReceptionPatientRegistration({
   setPatientForm,
   assignmentForm,
   setAssignmentForm,
-  therapists,
+  therapists = [],
+  physicians = [],
+  specialities = [],
+  editingAssignmentId = null,
+  savingAssignment = false,
   assignmentRef,
   creatingPatient,
   onSelectPatient,
   onCreatePatient,
   onSubmitAssignment,
+  onCancelEdit,
   setMessage,
   setError,
   setActiveSection,
 }) {
+  const isEditing = Boolean(editingAssignmentId);
+
   const handleRegisterNew = () => {
     setMessage("");
     setError("");
+
+    if (isEditing && onCancelEdit) {
+      onCancelEdit();
+    }
 
     setPatientForm({
       name: "",
@@ -39,9 +51,9 @@ export default function ReceptionPatientRegistration({
     return (
       <div style={styles.stack}>
         <UnifiedPatientSearch
-          title="Assign a Patient"
+          title={isEditing ? "Edit Assignment" : "Assign a Patient"}
           placeholder="Search patient name or ID"
-          actionLabel="Assign to Physio"
+          actionLabel={isEditing ? "Update Assignment" : "Assign to Physio"}
           onSelectPatient={onSelectPatient}
           emptyText="Start typing to search patients."
           noResultsText="No patients found. Register a new patient if needed."
@@ -56,20 +68,27 @@ export default function ReceptionPatientRegistration({
               assignmentForm={assignmentForm}
               setAssignmentForm={setAssignmentForm}
               therapists={therapists}
+              physicians={physicians}
+              specialities={specialities}
+              editingAssignmentId={editingAssignmentId}
+              loading={savingAssignment}
               onSubmit={onSubmitAssignment}
+              onCancelEdit={onCancelEdit}
             />
           </div>
         ) : (
           <div style={styles.helperCard}>
             <strong>Patient Assignment</strong>
+
             <p style={styles.helperText}>
-              Search for a patient above and select the correct
-              patient to continue with physiotherapist assignment.
+              Search for a patient above and select the correct patient to
+              continue with physiotherapist assignment.
             </p>
+
             <p style={styles.helperText}>
               If the patient is not found, select{" "}
-              <strong>Register New Patient</strong> to create a
-              patient file first.
+              <strong>Register New Patient</strong> to create a patient file
+              first.
             </p>
           </div>
         )}
@@ -83,12 +102,11 @@ export default function ReceptionPatientRegistration({
       <div style={styles.stack}>
         <div style={styles.header}>
           <div>
-            <h2 style={styles.heading}>
-              Register New Patient
-            </h2>
+            <h2 style={styles.heading}>Register New Patient</h2>
+
             <p style={styles.subtitle}>
-              Create a patient file before assigning the patient
-              to a physiotherapist.
+              Create a patient file before assigning the patient to a
+              physiotherapist.
             </p>
           </div>
 

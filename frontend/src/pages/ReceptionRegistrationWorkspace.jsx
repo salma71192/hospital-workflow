@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -21,6 +22,18 @@ import {
   isReceptionUser,
   getApiError,
 } from "../components/reception/receptionUtils";
+
+const createEmptyAssignmentForm = () => ({
+  patient_id: "",
+  therapist_id: "",
+  category: "appointment",
+  visit_number: "",
+  referring_physician: "",
+  speciality: "",
+  notes: "",
+  with_another_therapist: false,
+  additional_therapist_ids: [],
+});
 
 export default function ReceptionRegistrationWorkspace({
   user,
@@ -55,15 +68,14 @@ export default function ReceptionRegistrationWorkspace({
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [trackerMode, setTrackerMode] = useState("today");
   const [selectedPatient, setSelectedPatient] = useState(null);
-  const [patientForm, setPatientForm] = useState({ name: "", patient_id: "" });
-  const [assignmentForm, setAssignmentForm] = useState({
+  const [patientForm, setPatientForm] = useState({
+    name: "",
     patient_id: "",
-    therapist_id: "",
-    category: "appointment",
-    visit_number: "",
-    referring_physician: "",
-    notes: "",
   });
+  const [assignmentForm, setAssignmentForm] = useState(
+    createEmptyAssignmentForm
+  );
+
   const [trackerFilter, setTrackerFilter] = useState({
     date: getTodayString(),
     from_date: getFirstDayOfMonthString(),
@@ -72,17 +84,24 @@ export default function ReceptionRegistrationWorkspace({
     patient: "",
     therapist_id: "all",
   });
+
   const [therapists, setTherapists] = useState([]);
+  const [physicians, setPhysicians] = useState([]);
+  const [specialities, setSpecialities] = useState([]);
+
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [creatingPatient, setCreatingPatient] = useState(false);
+  const [savingAssignment, setSavingAssignment] = useState(false);
   const [trackerAssignments, setTrackerAssignments] = useState([]);
   const [trackerAgents, setTrackerAgents] = useState([]);
 
   const loadTherapists = useCallback(async () => {
     try {
       const res = await api.get("reception/therapists/");
-      setTherapists(res.data?.therapists || []);
+      setTherapists(
+        Array.isArray(res.data?.therapists) ? res.data.therapists : []
+      );
     } catch (err) {
       console.error("Failed to load therapists", err);
       setTherapists([]);
@@ -106,12 +125,15 @@ export default function ReceptionRegistrationWorkspace({
 
         if (start_date) params.append("start_date", start_date);
         if (end_date) params.append("end_date", end_date);
+
         if (user_id && user_id !== "all") {
           params.append("user_id", user_id);
         }
+
         if (patient?.trim()) {
           params.append("patient", patient.trim());
         }
+
         if (therapist_id && therapist_id !== "all") {
           params.append("therapist_id", therapist_id);
         }
@@ -128,19 +150,32 @@ export default function ReceptionRegistrationWorkspace({
           : "reception/assignments/";
 
         const res = await api.get(url);
+        const data = res.data || {};
 
         setTrackerAssignments(
-          Array.isArray(res.data?.assignments) ? res.data.assignments : []
+          Array.isArray(data.assignments) ? data.assignments : []
         );
+
         setTrackerAgents(
-          Array.isArray(res.data?.agents) ? res.data.agents : []
+          Array.isArray(data.agents) ? data.agents : []
         );
+
+        // The assignments endpoint may provide these lists.
+        if (Array.isArray(data.physicians)) {
+          setPhysicians(data.physicians);
+        }
+
+        if (Array.isArray(data.specialities)) {
+          setSpecialities(data.specialities);
+        }
+
         setError("");
       } catch (err) {
         console.error(
           "Failed to load assignments",
           err?.response?.data || err
         );
+
         setTrackerAssignments([]);
         setTrackerAgents([]);
         setError(getApiError(err, "Failed to load registrations."));
@@ -184,42 +219,54 @@ export default function ReceptionRegistrationWorkspace({
   };
 
   const resetAssignmentForm = () => {
-    setAssignmentForm({
-      patient_id: "",
-      therapist_id: "",
-      category: "appointment",
-      visit_number: "",
-      referring_physician: "",
-      notes: "",
-    });
+    setAssignmentForm(createEmptyAssignmentForm());
     setSelectedPatient(null);
     setEditingAssignmentId(null);
+  };
+
+  const scrollToAssignmentForm = () => {
+    window.setTimeout(() => {
+      assignmentRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 200);
   };
 
   const handleSelectPatient = async (patient) => {
     setMessage("");
     setError("");
     setSelectedPatient(patient);
+    setEditingAssignmentId(null);
 
     setAssignmentForm((prev) => ({
+      ...createEmptyAssignmentForm(),
       ...prev,
       patient_id: patient.id,
       therapist_id: "",
+      speciality: prev.speciality || "",
+      additional_therapist_ids: [],
+      with_another_therapist: false,
     }));
 
-    setEditingAssignmentId(null);
     setActiveSection("register");
 
     try {
       const res = await api.get(`reception/last-therapist/${patient.id}/`);
-      const therapist = res.data?.therapist;
+      const data = res.data || {};
+      const therapist = data.therapist;
+
+      setAssignmentForm((prev) => ({
+        ...prev,
+        therapist_id: therapist?.id ? String(therapist.id) : prev.therapist_id,
+        speciality:
+          data.speciality ??
+          data.assignment?.speciality ??
+          prev.speciality ??
+          "",
+      }));
 
       if (therapist) {
-        setAssignmentForm((prev) => ({
-          ...prev,
-          therapist_id: String(therapist.id),
-        }));
-
         setMessage(
           `Selected ${patient.name} (Previously with ${therapist.name})`
         );
@@ -230,16 +277,12 @@ export default function ReceptionRegistrationWorkspace({
       setMessage(`Selected ${patient.name} for assignment.`);
     }
 
-    setTimeout(() => {
-      assignmentRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 200);
+    scrollToAssignmentForm();
   };
 
   const handleCreatePatientFile = async (e) => {
     e.preventDefault();
+
     if (creatingPatient) return;
 
     const name = String(patientForm.name || "").trim();
@@ -278,6 +321,7 @@ export default function ReceptionRegistrationWorkspace({
         "Failed to create patient file:",
         err?.response?.data || err
       );
+
       setError(
         getApiError(err, "Failed to create patient file. Please try again.")
       );
@@ -289,31 +333,56 @@ export default function ReceptionRegistrationWorkspace({
 
   const handleCreateOrUpdateAssignment = async (e) => {
     e.preventDefault();
+
+    if (savingAssignment) return;
+
     setMessage("");
     setError("");
+
+    if (!assignmentForm.patient_id) {
+      setError("Please select a patient first.");
+      return;
+    }
+
+    if (!assignmentForm.therapist_id) {
+      setError("Please select a physiotherapist.");
+      return;
+    }
+
+    const payload = {
+      ...assignmentForm,
+      patient_id: assignmentForm.patient_id,
+      therapist_id: assignmentForm.therapist_id,
+      category: assignmentForm.category || "appointment",
+      visit_number: assignmentForm.visit_number,
+      referring_physician:
+        assignmentForm.category === "initial_evaluation"
+          ? assignmentForm.referring_physician
+          : "",
+      speciality: assignmentForm.speciality || "",
+      notes: assignmentForm.notes || "",
+      with_another_therapist: Boolean(
+        assignmentForm.with_another_therapist
+      ),
+      additional_therapist_ids: Array.isArray(
+        assignmentForm.additional_therapist_ids
+      )
+        ? assignmentForm.additional_therapist_ids
+        : [],
+    };
+
+    setSavingAssignment(true);
 
     try {
       if (editingAssignmentId) {
         const res = await api.put(
           `reception/assignments/${editingAssignmentId}/`,
-          {
-            therapist_id: assignmentForm.therapist_id,
-            category: assignmentForm.category,
-            visit_number: assignmentForm.visit_number,
-            referring_physician:
-              assignmentForm.category === "initial_evaluation"
-                ? assignmentForm.referring_physician
-                : "",
-            notes: assignmentForm.notes,
-          }
+          payload
         );
 
         setMessage(res.data?.message || "Assignment updated successfully.");
       } else {
-        const res = await api.post(
-          "reception/assignments/",
-          assignmentForm
-        );
+        const res = await api.post("reception/assignments/", payload);
 
         setMessage(res.data?.message || "Assigned successfully.");
       }
@@ -323,8 +392,14 @@ export default function ReceptionRegistrationWorkspace({
       reloadLeaderboard?.();
       setActiveSection("tracker");
     } catch (err) {
-      console.error("Assignment failed", err);
+      console.error(
+        "Assignment failed",
+        err?.response?.data || err
+      );
+
       setError(getApiError(err, "Assignment failed."));
+    } finally {
+      setSavingAssignment(false);
     }
   };
 
@@ -345,24 +420,32 @@ export default function ReceptionRegistrationWorkspace({
       patient_id: assignment.patient_file_id,
     });
 
+    const additionalTherapistIds = Array.isArray(
+      assignment.additional_therapist_ids
+    )
+      ? assignment.additional_therapist_ids.map(String)
+      : [];
+
     setAssignmentForm({
+      ...createEmptyAssignmentForm(),
       patient_id: assignment.patient_id,
       therapist_id: String(assignment.therapist_id || ""),
       category: assignment.category || "appointment",
       visit_number: assignment.visit_number ?? "",
       referring_physician: assignment.referring_physician || "",
+      speciality: assignment.speciality || assignment.specialty || "",
       notes: assignment.notes || "",
+      assignment_date: assignment.assignment_date || "",
+      with_another_therapist:
+        assignment.with_another_therapist ??
+        additionalTherapistIds.length > 0,
+      additional_therapist_ids: additionalTherapistIds,
     });
 
     setActiveSection("register");
     setMessage(`Editing assignment for ${assignment.patient_name}`);
 
-    setTimeout(() => {
-      assignmentRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 200);
+    scrollToAssignmentForm();
   };
 
   const handleCancelAssignment = async (assignment) => {
@@ -398,6 +481,7 @@ export default function ReceptionRegistrationWorkspace({
         "Failed to delete registration",
         err?.response?.data || err
       );
+
       setError(getApiError(err, "Failed to delete registration."));
       setMessage("");
     }
@@ -428,6 +512,17 @@ export default function ReceptionRegistrationWorkspace({
         setMessage("");
         setError("");
 
+        // Avoid accidentally losing an in-progress edit when navigating away.
+        if (key !== "register" && editingAssignmentId) {
+          const leaveEdit = window.confirm(
+            "Leave the assignment edit without saving your changes?"
+          );
+
+          if (!leaveEdit) return;
+
+          resetAssignmentForm();
+        }
+
         if (key === "home") {
           navigate("/reception");
           return;
@@ -451,11 +546,16 @@ export default function ReceptionRegistrationWorkspace({
         assignmentForm={assignmentForm}
         setAssignmentForm={setAssignmentForm}
         therapists={therapists}
+        physicians={physicians}
+        specialities={specialities}
+        editingAssignmentId={editingAssignmentId}
+        savingAssignment={savingAssignment}
         assignmentRef={assignmentRef}
         creatingPatient={creatingPatient}
         onSelectPatient={handleSelectPatient}
         onCreatePatient={handleCreatePatientFile}
         onSubmitAssignment={handleCreateOrUpdateAssignment}
+        onCancelEdit={resetAssignmentForm}
         setMessage={setMessage}
         setError={setError}
         setActiveSection={setActiveSection}
