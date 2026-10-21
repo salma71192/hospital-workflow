@@ -1,5 +1,5 @@
 
-import React, { useEffect, useId, useState } from "react";
+import React, { useId, useState } from "react";
 
 const categoryIcons = {
   users: "♙",
@@ -15,6 +15,7 @@ export default function SidebarCategory({
   const generatedId = useId();
 
   const categoryKey = category?.key || generatedId;
+
   const children = Array.isArray(category?.children)
     ? category.children
     : [];
@@ -23,15 +24,11 @@ export default function SidebarCategory({
     (item) => item?.key === activeSection
   );
 
+  // Expand only when explicitly requested by the category config.
+  // Categories remain closed by default, even when a child is active.
   const [isOpen, setIsOpen] = useState(
-    Boolean(category?.defaultOpen || hasActiveChild)
+    () => category?.defaultOpen === true
   );
-
-  useEffect(() => {
-    if (hasActiveChild) {
-      setIsOpen(true);
-    }
-  }, [hasActiveChild]);
 
   const expanded = isOpen;
   const submenuId = `sidebar-category-${categoryKey}`;
@@ -47,7 +44,7 @@ export default function SidebarCategory({
       onSelect(item.key);
     }
 
-    // Keep the submenu open after selecting a child.
+    // Keep the submenu open after selecting one of its children.
     setIsOpen(true);
   };
 

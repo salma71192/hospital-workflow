@@ -17,27 +17,52 @@ from rest_framework.authtoken.models import Token
 from .models import User
 
 
+# Roles available for new users and role changes.
 ALLOWED_ROLES = [
     "admin",
     "approvals",
     "physio",
     "reception",
     "reception_supervisor",
-    "visitor",
-    "visitor_ceo",
-    "doctor",
+    "ceo",
+    "physician",
     "rcm",
     "callcenter",
     "callcenter_supervisor",
 ]
 
+# Roles that may still exist on older user records.
+# These are retained only for backward compatibility when
+# the existing role is not being changed.
+LEGACY_ROLES = {
+    "doctor",
+    "visitor",
+    "visitor_ceo",
+}
+
+
+def normalize_role(role):
+    """
+    Convert the old doctor role to physician.
+    Visitor roles are not automatically converted to CEO,
+    because they may represent different permissions.
+    """
+    role = str(role or "").strip().lower()
+
+    if role == "doctor":
+        return "physician"
+
+    return role
+
 
 def is_admin_user(user):
-    return (
-        user.is_authenticated
+    return bool(
+        user
+        and user.is_authenticated
         and (
             user.is_superuser
-            or getattr(user, "role", "") == "admin"
+            or str(getattr(user, "role", "")).strip().lower()
+            == "admin"
         )
     )
 
@@ -45,12 +70,15 @@ def is_admin_user(user):
 def parse_json_body(request):
     try:
         data = json.loads(request.body or b"{}")
+
         if not isinstance(data, dict):
             return None, JsonResponse(
                 {"error": "JSON body must be an object"},
                 status=400,
             )
+
         return data, None
+
     except (json.JSONDecodeError, UnicodeDecodeError):
         return None, JsonResponse(
             {"error": "Invalid JSON"},
@@ -60,11 +88,17 @@ def parse_json_body(request):
 
 def get_authenticated_user(request):
     """
-    Return the user authenticated by the existing middleware
+    Return the user authenticated by Django middleware
     or by a valid DRF Token in the Authorization header.
     """
-    if request.user.is_authenticated:
-        return request.user
+    request_user = getattr(request, "user", None)
+
+    if (
+        request_user is not None
+        and request_user.is_authenticated
+        and request_user.is_active
+    ):
+        return request_user
 
     authorization = request.headers.get("Authorization", "")
     parts = authorization.split()
@@ -112,6 +146,21 @@ def is_last_active_superuser(user):
     ).exclude(id=user.id).exists()
 
 
+def serialize_user(user):
+    """
+    Return the user fields needed by the frontend.
+    The doctor role is returned as physician for compatibility.
+    """
+    return {
+        "id": user.id,
+        "username": user.username,
+        "role": normalize_role(getattr(user, "role", "")),
+        "is_superuser": user.is_superuser,
+        "is_staff": user.is_staff,
+        "is_active": user.is_active,
+    }
+
+
 @csrf_exempt
 def login_api(request):
     if request.method != "POST":
@@ -121,6 +170,7 @@ def login_api(request):
         )
 
     data, error = parse_json_body(request)
+
     if error:
         return error
 
@@ -156,17 +206,14 @@ def login_api(request):
             status=403,
         )
 
+    # Normalize the old doctor role in the database.
+    if getattr(user, "role", "") == "doctor":
+        user.role = "physician"
+        user.save(update_fields=["role"])
+
     login(request, user)
     token, _ = Token.objects.get_or_create(user=user)
-
-    user_data = {
-        "id": user.id,
-        "username": user.username,
-        "role": getattr(user, "role", ""),
-        "is_superuser": user.is_superuser,
-        "is_staff": user.is_staff,
-        "is_active": user.is_active,
-    }
+    user_data = serialize_user(user)
 
     return JsonResponse({
         "success": True,
@@ -185,6 +232,7 @@ def logout_api(request):
         )
 
     logout(request)
+
     return JsonResponse({"success": True})
 
 
@@ -197,14 +245,13 @@ def current_user_api(request):
             status=401,
         )
 
-    return JsonResponse({
-        "id": user.id,
-        "username": user.username,
-        "role": getattr(user, "role", ""),
-        "is_superuser": user.is_superuser,
-        "is_staff": user.is_staff,
-        "is_active": user.is_active,
-    })
+    if getattr(user, "role", "") == "doctor":
+        user.role = "physician"
+        user.save(update_fields=["role"])
+
+    user_data = serialize_user(user)
+
+    return JsonResponse(user_data)
 
 
 @csrf_exempt
@@ -215,11 +262,16 @@ def create_user_api(request):
             status=405,
         )
 
-    permission_error = admin_error_response(request, "create users")
+    permission_error = admin_error_response(
+        request,
+        "create users",
+    )
+
     if permission_error:
         return permission_error
 
     data, error = parse_json_body(request)
+
     if error:
         return error
 
@@ -241,6 +293,7 @@ def create_user_api(request):
         )
 
     username = username.strip()
+    role = normalize_role(role)
 
     if role not in ALLOWED_ROLES:
         return JsonResponse(
@@ -264,6 +317,7 @@ def create_user_api(request):
         username=username,
         password=password,
     )
+
     user.role = role
     user.is_superuser = is_superuser
     user.is_staff = is_superuser or role == "admin"
@@ -277,9 +331,17 @@ def create_user_api(request):
 
 
 def list_users_api(request):
-    permission_error = admin_error_response(request, "view users")
+    permission_error = admin_error_response(
+        request,
+        "view users",
+    )
+
     if permission_error:
         return permission_error
+
+    # Migrate existing doctor records to physician.
+    # Do not automatically assign visitor accounts to CEO.
+    User.objects.filter(role="doctor").update(role="physician")
 
     users = list(
         User.objects.values(
@@ -292,6 +354,10 @@ def list_users_api(request):
         ).order_by("username")
     )
 
+    # Normalize any legacy doctor values in the response as well.
+    for item in users:
+        item["role"] = normalize_role(item.get("role"))
+
     return JsonResponse({"users": users})
 
 
@@ -303,7 +369,11 @@ def update_user_api(request, user_id):
             status=405,
         )
 
-    permission_error = admin_error_response(request, "update users")
+    permission_error = admin_error_response(
+        request,
+        "update users",
+    )
+
     if permission_error:
         return permission_error
 
@@ -316,12 +386,19 @@ def update_user_api(request, user_id):
         )
 
     data, error = parse_json_body(request)
+
     if error:
         return error
 
-    new_username = data.get("username", target_user.username)
+    new_username = data.get(
+        "username",
+        target_user.username,
+    )
 
-    if not isinstance(new_username, str) or not new_username.strip():
+    if (
+        not isinstance(new_username, str)
+        or not new_username.strip()
+    ):
         return JsonResponse(
             {"error": "Username is required"},
             status=400,
@@ -339,15 +416,34 @@ def update_user_api(request, user_id):
             status=400,
         )
 
-    new_role = data.get("role", target_user.role)
+    role_was_supplied = "role" in data
+
+    new_role = normalize_role(
+        data.get("role", target_user.role)
+    )
+
     new_is_superuser = data.get(
         "is_superuser",
         target_user.is_superuser,
     )
 
-    if new_role not in ALLOWED_ROLES:
+    # New assignments must use supported roles.
+    # An unchanged legacy role is allowed temporarily so
+    # existing accounts can still have other details edited.
+    if (
+        new_role not in ALLOWED_ROLES
+        and (
+            role_was_supplied
+            or new_role not in LEGACY_ROLES
+        )
+    ):
         return JsonResponse(
-            {"error": "Invalid role"},
+            {
+                "error": (
+                    "Invalid role. Choose one of the "
+                    "currently supported roles."
+                )
+            },
             status=400,
         )
 
@@ -378,6 +474,7 @@ def update_user_api(request, user_id):
     target_user.is_staff = (
         new_is_superuser or new_role == "admin"
     )
+
     target_user.save()
 
     return JsonResponse({
@@ -386,6 +483,7 @@ def update_user_api(request, user_id):
             f"User '{target_user.username}' updated successfully"
         ),
         "username": target_user.username,
+        "role": normalize_role(target_user.role),
     })
 
 
@@ -405,6 +503,7 @@ def delete_user_api(request, user_id):
         request,
         "deactivate users",
     )
+
     if permission_error:
         return permission_error
 
@@ -442,8 +541,11 @@ def delete_user_api(request, user_id):
         )
 
     username = target_user.username
+
     target_user.is_active = False
     target_user.save(update_fields=["is_active"])
+
+    # Revoke API access without deleting the user or their records.
     Token.objects.filter(user=target_user).delete()
 
     return JsonResponse({
@@ -468,6 +570,7 @@ def set_user_active_api(request, user_id):
         request,
         "change account status",
     )
+
     if permission_error:
         return permission_error
 
@@ -480,6 +583,7 @@ def set_user_active_api(request, user_id):
         )
 
     data, error = parse_json_body(request)
+
     if error:
         return error
 
@@ -540,6 +644,7 @@ def change_user_password_api(request, user_id):
         request,
         "change user passwords",
     )
+
     if permission_error:
         return permission_error
 
@@ -552,12 +657,16 @@ def change_user_password_api(request, user_id):
         )
 
     data, error = parse_json_body(request)
+
     if error:
         return error
 
     new_password = data.get("new_password")
 
-    if not isinstance(new_password, str) or not new_password.strip():
+    if (
+        not isinstance(new_password, str)
+        or not new_password.strip()
+    ):
         return JsonResponse(
             {"error": "A new password is required"},
             status=400,
@@ -573,6 +682,7 @@ def change_user_password_api(request, user_id):
 
     target_user.set_password(new_password)
     target_user.save(update_fields=["password"])
+
     Token.objects.filter(user=target_user).delete()
 
     return JsonResponse({
@@ -610,6 +720,7 @@ def change_my_password_api(request):
         )
 
     data, error = parse_json_body(request)
+
     if error:
         return error
 

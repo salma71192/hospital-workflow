@@ -103,21 +103,32 @@ export default function AdminDashboard({
 
   const [activeCategory, setActiveCategory] = useState(() => {
     try {
-      return localStorage.getItem("activeCategory") || "admin";
+      const savedCategory = localStorage.getItem("activeCategory");
+
+      // Prevent an obsolete role filter from remaining selected.
+      if (
+        savedCategory === "visitor" ||
+        savedCategory === "visitor_ceo" ||
+        savedCategory === "doctor"
+      ) {
+        return savedCategory === "doctor" ? "physician" : "admin";
+      }
+
+      return savedCategory || "admin";
     } catch {
       return "admin";
     }
   });
 
+  // Roles available for creating and managing users.
   const roles = [
     "admin",
     "approvals",
     "physio",
     "reception",
     "reception_supervisor",
-    "visitor",
-    "visitor_ceo",
-    "doctor",
+    "ceo",
+    "physician",
     "rcm",
     "callcenter",
     "callcenter_supervisor",
@@ -129,9 +140,8 @@ export default function AdminDashboard({
     physio: "Physio",
     reception: "Reception",
     reception_supervisor: "Reception Supervisor",
-    visitor: "Visitors",
-    visitor_ceo: "Visitor CEO",
-    doctor: "Doctor",
+    ceo: "CEO",
+    physician: "Physicians",
     rcm: "RCM",
     callcenter: "Call Center",
     callcenter_supervisor: "Call Center Supervisor",
@@ -144,16 +154,15 @@ export default function AdminDashboard({
     physio: "/physio",
     reception: "/reception",
     reception_supervisor: "/reception-supervisor",
-    visitor: "/visitors",
-    visitor_ceo: "/visitor-ceo",
-    doctor: "/doctor",
+    ceo: "/ceo",
+    // Retain the existing dashboard path until the React route
+    // configuration is updated to use /physician.
+    physician: "/doctor",
     rcm: "/rcm",
     callcenter: "/callcenter",
     callcenter_supervisor: "/callcenter-supervisor",
   };
 
-  // Sidebar items are merged with the existing admin menu.
-  // Keep these keys consistent with the rendering conditions below.
   const sidebarItems = [
     { key: "create", label: "Create New User" },
     { key: "manage", label: "Manage Users" },
@@ -170,19 +179,17 @@ export default function AdminDashboard({
       key: "reception_management",
       label: "Reception Management",
       icon: "clipboard-list",
-      defaultOpen: true,
+      defaultOpen: false,
       children: [
         { key: "open_file", label: "Open New File" },
         { key: "register_patient", label: "Assign a Patient" },
       ],
     },
-
-    // NEW: Patient Management > Patients File
     {
       key: "patient_management",
       label: "Patient Management",
       icon: "users",
-      defaultOpen: true,
+      defaultOpen: false,
       children: [
         {
           key: "patients_file",
@@ -190,14 +197,24 @@ export default function AdminDashboard({
         },
       ],
     },
-
     { key: "evaluations", label: "Evaluations" },
   ];
 
   const fetchUsers = useCallback(async () => {
     try {
       const res = await api.get("users/list-users/");
-      setUsers(res.data?.users || []);
+      const fetchedUsers = Array.isArray(res.data?.users)
+        ? res.data.users
+        : [];
+
+      // Normalize legacy roles in the frontend response.
+      // This does not automatically turn visitor accounts into CEOs.
+      const normalizedUsers = fetchedUsers.map((item) => ({
+        ...item,
+        role: item.role === "doctor" ? "physician" : item.role,
+      }));
+
+      setUsers(normalizedUsers);
       setError("");
     } catch (err) {
       console.error("Failed to load users:", err);
@@ -242,18 +259,20 @@ export default function AdminDashboard({
       reception: [],
       reception_supervisor: [],
       physio: [],
-      doctor: [],
+      ceo: [],
+      physician: [],
       rcm: [],
       callcenter: [],
       callcenter_supervisor: [],
-      visitor: [],
-      visitor_ceo: [],
       no_role: [],
     };
 
     users.forEach((item) => {
-      if (groups[item.role]) {
-        groups[item.role].push(item);
+      const normalizedRole =
+        item.role === "doctor" ? "physician" : item.role;
+
+      if (groups[normalizedRole]) {
+        groups[normalizedRole].push(item);
       } else {
         groups.no_role.push(item);
       }
@@ -268,20 +287,45 @@ export default function AdminDashboard({
     "reception",
     "reception_supervisor",
     "physio",
-    "doctor",
+    "ceo",
+    "physician",
     "rcm",
     "callcenter",
     "callcenter_supervisor",
-    "visitor",
-    "visitor_ceo",
     "no_role",
   ];
 
   const handleCategoryChange = (category) => {
-    setActiveCategory(category);
+    const allowedCategories = [
+      ...roles,
+      "no_role",
+    ];
+
+    const normalizedCategory =
+      category === "doctor" ? "physician" : category;
+
+    if (!allowedCategories.includes(normalizedCategory)) {
+      setActiveCategory("admin");
+
+      try {
+        localStorage.setItem("activeCategory", "admin");
+      } catch (storageError) {
+        console.warn(
+          "Could not save active category:",
+          storageError
+        );
+      }
+
+      return;
+    }
+
+    setActiveCategory(normalizedCategory);
 
     try {
-      localStorage.setItem("activeCategory", category);
+      localStorage.setItem(
+        "activeCategory",
+        normalizedCategory
+      );
     } catch (storageError) {
       console.warn(
         "Could not save active category:",
@@ -370,10 +414,15 @@ export default function AdminDashboard({
 
     onActAsUser(selectedUser);
 
+    const normalizedRole =
+      selectedUser.role === "doctor"
+        ? "physician"
+        : selectedUser.role;
+
     navigate(
       selectedUser.is_superuser
         ? "/admin"
-        : roleRoutes[selectedUser.role] || "/admin"
+        : roleRoutes[normalizedRole] || "/admin"
     );
   };
 
@@ -390,11 +439,14 @@ export default function AdminDashboard({
     setMessage("");
     setError("");
 
+    const normalizedRole =
+      newRole === "doctor" ? "physician" : newRole;
+
     try {
       const res = await api.put(
         `users/update-user/${userId}/`,
         {
-          role: newRole,
+          role: normalizedRole,
           is_superuser: newIsSuperuser,
         }
       );
@@ -426,10 +478,16 @@ export default function AdminDashboard({
     setMessage("");
     setError("");
 
+    const normalizedUpdates = { ...updates };
+
+    if (normalizedUpdates.role === "doctor") {
+      normalizedUpdates.role = "physician";
+    }
+
     try {
       const res = await api.put(
         `users/update-user/${userId}/`,
-        updates
+        normalizedUpdates
       );
 
       setMessage(
@@ -933,7 +991,6 @@ export default function AdminDashboard({
           <EvaluationTrackerSection user={user} />
         )}
 
-        {/* NEW: Patient Management > Patients File */}
         {activeSection === "patients_file" && (
           <AdminPatientFilesSection />
         )}
