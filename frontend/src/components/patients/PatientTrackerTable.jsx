@@ -1,6 +1,120 @@
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
+
+const STATUS_OPTIONS = [
+  { value: "inactive", label: "Inactive" },
+  { value: "low", label: "Low" },
+  { value: "moderate", label: "Moderate" },
+  { value: "high", label: "High" },
+  { value: "with_another_therapist", label: "With Another Therapist" },
+];
+
+function getStatusLabel(status) {
+  const value = String(status || "inactive").toLowerCase();
+  const found = STATUS_OPTIONS.find(
+    (item) => item.value === value || item.label.toLowerCase() === value
+  );
+  return found?.label || "Inactive";
+}
+
+function getStatusColors(status) {
+  switch (getStatusLabel(status)) {
+    case "High":
+      return { background: "#dcfce7", color: "#166534", dot: "#16a34a" };
+    case "Moderate":
+      return { background: "#dbeafe", color: "#1d4ed8", dot: "#2563eb" };
+    case "Low":
+      return { background: "#fef3c7", color: "#92400e", dot: "#d97706" };
+    case "With Another Therapist":
+      return { background: "#f3e8ff", color: "#6b21a8", dot: "#9333ea" };
+    default:
+      return { background: "#f1f5f9", color: "#475569", dot: "#94a3b8" };
+  }
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
+}
+
+function normalizeMonth(value) {
+  if (!value) return "";
+  const match = String(value).match(/^(\d{4})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}` : "";
+}
+
+function getInitials(name) {
+  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+}
+
+function getSessions(patient) {
+  const raw =
+    patient?.utilized_sessions ??
+    patient?.utilizedSessions ??
+    patient?.sessions_used ??
+    patient?.session_count ??
+    patient?.sessions_count ??
+    0;
+
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function getSpeciality(patient) {
+  const assignment =
+    patient?.latest_assignment ||
+    patient?.latestAssignment ||
+    patient?.assignment ||
+    {};
+
+  const values = [
+    patient?.speciality,
+    patient?.specialty,
+    patient?.speciality_name,
+    patient?.specialty_name,
+    patient?.speciality_display,
+    patient?.specialty_display,
+    patient?.assigned_speciality,
+    patient?.assigned_specialty,
+    patient?.department_name,
+    patient?.department,
+    patient?.service_name,
+    assignment?.speciality,
+    assignment?.specialty,
+    assignment?.speciality_name,
+    assignment?.specialty_name,
+    assignment?.department,
+    assignment?.department_name,
+  ];
+
+  const found = values.find(
+    (value) =>
+      value !== null &&
+      value !== undefined &&
+      String(value).trim() !== ""
+  );
+
+  return found ? String(found).trim() : "-";
+}
+
+function getApiBaseUrl() {
+  return String(axios.defaults.baseURL || "").replace(/\/+$/, "");
+}
+
+async function sendTrackerAction(payload) {
+  const baseUrl = getApiBaseUrl();
+  const url = /\/api$/i.test(baseUrl)
+    ? `${baseUrl}/patients/tracker/`
+    : `${baseUrl}/api/patients/tracker/`;
+
+  const response = await axios.post(url, payload);
+  return response.data;
+}
 
 export default function PatientTrackerTable({
   patients = [],
@@ -8,268 +122,166 @@ export default function PatientTrackerTable({
   monthLabel = "",
   selectedMonth = "",
   onMonthChange,
+  onRefresh,
 }) {
   const navigate = useNavigate();
 
-  const getValue = (row, keys, fallback = "") => {
-    for (const key of keys) {
-      const value = row?.[key];
+  const [busyAction, setBusyAction] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [searchName, setSearchName] = useState("");
+  const [selectedSpeciality, setSelectedSpeciality] = useState("all");
 
-      if (value !== undefined && value !== null && value !== "") {
-        return value;
-      }
-    }
+  // Create a speciality list from the patients currently supplied to the table.
+  const specialityOptions = useMemo(() => {
+    return [...new Set(
+      patients
+        .map((patient) => getSpeciality(patient))
+        .filter((speciality) => speciality !== "-")
+    )].sort((a, b) => a.localeCompare(b));
+  }, [patients]);
 
-    return fallback;
-  };
+  // Apply both filters to the table.
+  const filteredPatients = useMemo(() => {
+    const search = searchName.trim().toLowerCase();
 
-  const getNumber = (row, keys) => {
-    const value = getValue(row, keys, 0);
-    const number = Number(value);
-    return Number.isFinite(number) ? number : 0;
-  };
+    return patients.filter((patient) => {
+      const name = String(patient.name || "").toLowerCase();
+      const speciality = getSpeciality(patient);
 
-  // Only walk-ins and appointments count toward utilized sessions.
-  const getUtilizedSessions = (row) => {
-    const walkIns = getNumber(row, [
-      "walk_in_sessions",
-      "walkin_sessions",
-      "walk_in_count",
-      "walkin_count",
-      "utilized_walk_ins",
-    ]);
+      const matchesName = !search || name.includes(search);
+      const matchesSpeciality =
+        selectedSpeciality === "all" ||
+        speciality === selectedSpeciality;
 
-    const appointments = getNumber(row, [
-      "appointment_sessions",
-      "appointments_utilized",
-      "utilized_appointments",
-      "appointment_count",
-    ]);
+      return matchesName && matchesSpeciality;
+    });
+  }, [patients, searchName, selectedSpeciality]);
 
-    const hasSeparateCounts = [
-      "walk_in_sessions",
-      "walkin_sessions",
-      "walk_in_count",
-      "walkin_count",
-      "utilized_walk_ins",
-      "appointment_sessions",
-      "appointments_utilized",
-      "utilized_appointments",
-      "appointment_count",
-    ].some((key) => row?.[key] !== undefined && row?.[key] !== null);
-
-    if (hasSeparateCounts) {
-      return walkIns + appointments;
-    }
-
-    return getNumber(row, [
-      "qualifying_utilized_sessions",
-      "walkin_appointment_sessions",
-    ]);
-  };
-
-  const getActivityStatus = (sessions) => {
-    if (sessions <= 0) return "Inactive";
-    if (sessions <= 2) return "Low";
-    if (sessions <= 5) return "Moderate";
-    return "High";
-  };
-
-  const getTherapist = (row) =>
-    getValue(
-      row,
-      [
-        "last_treated_by_name",
-        "last_therapist_name",
-        "latest_therapist_name",
-        "current_therapist_name",
-        "therapist_name",
-        "physiotherapist_name",
-        "therapist",
-      ],
-      "Not assigned"
-    );
-
-  const formatDate = (value) => {
-    if (!value) return "-";
-
-    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-
-    if (match) {
-      return `${match[3]}/${match[2]}/${match[1]}`;
-    }
-
-    return value;
-  };
-
-  const getStatusColors = (status) => {
-    switch (status) {
-      case "High":
-        return {
-          background: "#dcfce7",
-          color: "#166534",
-          dot: "#16a34a",
-        };
-      case "Moderate":
-        return {
-          background: "#dbeafe",
-          color: "#1d4ed8",
-          dot: "#2563eb",
-        };
-      case "Low":
-        return {
-          background: "#fef3c7",
-          color: "#92400e",
-          dot: "#d97706",
-        };
-      default:
-        return {
-          background: "#f1f5f9",
-          color: "#475569",
-          dot: "#94a3b8",
-        };
-    }
-  };
-
+  // Summary cards intentionally use all patients, not the filtered results.
   const summary = useMemo(() => {
-    const rows = patients.map((patient) => ({
-      sessions: getUtilizedSessions(patient),
-    }));
-
-    const active = rows.filter((row) => row.sessions > 0).length;
-    const totalSessions = rows.reduce(
-      (sum, row) => sum + row.sessions,
-      0
-    );
-
-    const inactive = rows.length - active;
+    const activeStatuses = new Set(["low", "moderate", "high"]);
 
     return {
-      totalPatients: rows.length,
-      activePatients: active,
-      inactivePatients: inactive,
-      totalSessions,
+      totalPatients: patients.length,
+      activePatients: patients.filter((patient) =>
+        activeStatuses.has(String(patient.status || "").toLowerCase())
+      ).length,
+      inactivePatients: patients.filter(
+        (patient) =>
+          String(patient.status || "").toLowerCase() === "inactive"
+      ).length,
+      totalSessions: patients.reduce(
+        (sum, patient) => sum + getSessions(patient),
+        0
+      ),
     };
   }, [patients]);
 
-  const getInitials = (name) => {
-    const words = String(name).trim().split(/\s+/).filter(Boolean);
-
-    if (!words.length) return "?";
-
-    return words
-      .slice(0, 2)
-      .map((word) => word[0])
-      .join("")
-      .toUpperCase();
+  const refreshTracker = async () => {
+    if (typeof onRefresh === "function") {
+      await onRefresh();
+    }
   };
 
-  const renderSummaryIcon = (type) => {
-    const common = {
-      width: 22,
-      height: 22,
-      viewBox: "0 0 24 24",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: 1.8,
-      strokeLinecap: "round",
-      strokeLinejoin: "round",
-      "aria-hidden": true,
-    };
+  const openPatientFile = (patient) => {
+    if (patient?.id) {
+      navigate(`/patients/${patient.id}`);
+    }
+  };
 
-    if (type === "patients") {
-      return (
-        <svg {...common}>
-          <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="10" cy="7" r="4" />
-          <path d="M20 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-      );
+  const rolloverMonth = async () => {
+    if (!selectedMonth) {
+      setErrorMessage("Please select a month before running rollover.");
+      setSuccessMessage("");
+      return;
     }
 
-    if (type === "active") {
-      return (
-        <svg {...common}>
-          <path d="M20 6 9 17l-5-5" />
-          <circle cx="12" cy="12" r="10" />
-        </svg>
-      );
-    }
-
-    if (type === "sessions") {
-      return (
-        <svg {...common}>
-          <rect x="3" y="4" width="18" height="17" rx="2" />
-          <path d="M16 2v4M8 2v4M3 10h18M8 14h3M8 17h6" />
-        </svg>
-      );
-    }
-
-    return (
-      <svg {...common}>
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 8v4M12 16h.01" />
-      </svg>
+    const confirmed = window.confirm(
+      `Carry eligible patients from ${selectedMonth} into the next month? Patients marked Inactive or With Another Therapist will be excluded.`
     );
+
+    if (!confirmed) return;
+
+    setErrorMessage("");
+    setSuccessMessage("");
+    setBusyAction("rollover");
+
+    try {
+      const result = await sendTrackerAction({
+        action: "rollover",
+        month: selectedMonth,
+      });
+
+      setSuccessMessage(result?.message || "Monthly rollover completed.");
+      await refreshTracker();
+    } catch (error) {
+      setErrorMessage(
+        error?.response?.data?.error ||
+          "Monthly rollover failed. Please try again."
+      );
+    } finally {
+      setBusyAction("");
+    }
   };
 
   const summaryCards = [
     {
       label: "Total Patients",
       value: summary.totalPatients,
-      type: "patients",
-      color: "#2563eb",
+      icon: "♧",
+      color: "#1d4ed8",
       background: "#eff6ff",
     },
     {
       label: "Active Patients",
       value: summary.activePatients,
-      type: "active",
-      color: "#059669",
+      icon: "✓",
+      color: "#047857",
       background: "#ecfdf5",
     },
     {
       label: "Utilized Sessions",
       value: summary.totalSessions,
-      type: "sessions",
-      color: "#7c3aed",
+      icon: "▤",
+      color: "#6d28d9",
       background: "#f5f3ff",
     },
     {
       label: "Inactive Patients",
       value: summary.inactivePatients,
-      type: "inactive",
-      color: "#d97706",
+      icon: "!",
+      color: "#b45309",
       background: "#fffbeb",
     },
   ];
 
+  const clearFilters = () => {
+    setSearchName("");
+    setSelectedSpeciality("all");
+  };
+
   return (
     <section style={styles.page}>
       <div style={styles.card}>
-        {/* Main heading */}
-        <div style={styles.header}>
+        <header style={styles.header}>
           <div style={styles.headingContent}>
             <div style={styles.eyebrow}>PATIENT MANAGEMENT</div>
-
             <h2 style={styles.title}>{title}</h2>
-
             <p style={styles.subtitle}>
-              Track patient activity, utilized sessions, and follow-up
-              status.
+              Monitor patient activity, utilized sessions, and follow-up
+              status in one place.
             </p>
           </div>
 
           <div style={styles.headerRight}>
             {onMonthChange && (
               <label style={styles.monthFilter}>
-                <span style={styles.monthLabel}>Reporting Month</span>
+                <span style={styles.monthLabel}>REPORTING MONTH</span>
                 <input
                   type="month"
                   value={selectedMonth}
-                  onChange={(event) =>
-                    onMonthChange(event.target.value)
-                  }
+                  onChange={(event) => onMonthChange(event.target.value)}
                   style={styles.monthInput}
                 />
               </label>
@@ -282,15 +294,23 @@ export default function PatientTrackerTable({
               </span>
             )}
           </div>
-        </div>
+        </header>
 
-        {/* Summary cards */}
+        {errorMessage && (
+          <div role="alert" style={styles.errorMessage}>
+            {errorMessage}
+          </div>
+        )}
+
+        {successMessage && (
+          <div role="status" style={styles.successMessage}>
+            {successMessage}
+          </div>
+        )}
+
         <div style={styles.summaryGrid}>
           {summaryCards.map((item) => (
-            <div
-              key={item.label}
-              style={styles.summaryCard}
-            >
+            <div key={item.label} style={styles.summaryCard}>
               <div
                 style={{
                   ...styles.summaryIcon,
@@ -298,121 +318,189 @@ export default function PatientTrackerTable({
                   background: item.background,
                 }}
               >
-                {renderSummaryIcon(item.type)}
+                {item.icon}
               </div>
-
               <div style={styles.summaryContent}>
-                <div style={styles.summaryLabel}>{item.label}</div>
-                <div style={styles.summaryValue}>
+                <span style={styles.summaryLabel}>{item.label}</span>
+                <strong style={styles.summaryValue}>
                   {item.value.toLocaleString()}
-                </div>
+                </strong>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Table heading */}
         <div style={styles.tableHeading}>
           <div>
             <h3 style={styles.tableTitle}>Patient Records</h3>
             <p style={styles.tableSubtitle}>
-              Individual patient follow-up information
+              View patient details and open individual files.
             </p>
           </div>
 
-          <span style={styles.recordCount}>
-            {patients.length}{" "}
-            {patients.length === 1 ? "record" : "records"}
-          </span>
+          <div style={styles.headingActions}>
+            <button
+              type="button"
+              style={{
+                ...styles.rolloverButton,
+                opacity: busyAction === "rollover" ? 0.65 : 1,
+              }}
+              onClick={rolloverMonth}
+              disabled={busyAction === "rollover" || !selectedMonth}
+            >
+              <span aria-hidden="true">↻</span>
+              {busyAction === "rollover" ? "Processing..." : "Monthly Rollover"}
+            </button>
+          </div>
         </div>
 
-        {/* Patient table */}
-        {patients.length > 0 ? (
+        {/* Patient name and speciality filters */}
+        <div style={styles.filterPanel}>
+          <label style={styles.filterField}>
+            <span style={styles.filterLabel}>SEARCH PATIENT NAME</span>
+            <div style={styles.searchInputWrap}>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                style={styles.searchIcon}
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-4-4" />
+              </svg>
+              <input
+                type="search"
+                value={searchName}
+                onChange={(event) => setSearchName(event.target.value)}
+                placeholder="Type patient name..."
+                style={styles.searchInput}
+                aria-label="Search patient name"
+              />
+            </div>
+          </label>
+
+          <label style={styles.filterField}>
+            <span style={styles.filterLabel}>FILTER BY SPECIALITY</span>
+            <select
+              value={selectedSpeciality}
+              onChange={(event) => setSelectedSpeciality(event.target.value)}
+              style={styles.specialitySelect}
+              aria-label="Filter by speciality"
+            >
+              <option value="all">All Specialities</option>
+              {specialityOptions.map((speciality) => (
+                <option key={speciality} value={speciality}>
+                  {speciality}
+                </option>
+              ))}
+              {patients.some((patient) => getSpeciality(patient) === "-") && (
+                <option value="-">Not Specified</option>
+              )}
+            </select>
+          </label>
+
+          <div style={styles.filterResult}>
+            <span style={styles.resultNumber}>
+              {filteredPatients.length}
+            </span>
+            <span>
+              {filteredPatients.length === 1 ? "patient found" : "patients found"}
+            </span>
+          </div>
+
+          {(searchName || selectedSpeciality !== "all") && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              style={styles.clearFiltersButton}
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+
+        {filteredPatients.length > 0 ? (
           <div style={styles.tableWrap}>
             <table style={styles.table}>
+              <colgroup>
+                <col style={{ width: 390 }} />
+                <col style={{ width: 155 }} />
+                <col style={{ width: 145 }} />
+                <col style={{ width: 165 }} />
+                <col style={{ width: 170 }} />
+                <col style={{ width: 125 }} />
+                <col style={{ width: 135 }} />
+              </colgroup>
+
               <thead>
                 <tr>
-                  <th style={styles.th}>Patient</th>
-                  <th style={styles.th}>File Number</th>
-                  <th style={styles.th}>Utilized Sessions</th>
-                  <th style={styles.th}>Last Seen</th>
-                  <th style={styles.th}>Therapist</th>
-                  <th style={styles.th}>Activity Status</th>
-                  <th style={styles.th}>Speciality</th>
+                  <th style={{ ...styles.th, minWidth: 390 }}>PATIENT</th>
+                  <th style={{ ...styles.th, minWidth: 155 }}>FILE NUMBER</th>
+                  <th style={{ ...styles.th, minWidth: 145 }}>UTILIZED SESSIONS</th>
+                  <th style={{ ...styles.th, minWidth: 165 }}>STATUS</th>
+                  <th style={{ ...styles.th, minWidth: 170 }}>SPECIALITY</th>
+                  <th style={{ ...styles.th, minWidth: 125 }}>LAST SEEN</th>
+                  <th
+                    style={{
+                      ...styles.th,
+                      minWidth: 135,
+                      textAlign: "center",
+                    }}
+                  >
+                    PATIENT FILE
+                  </th>
                 </tr>
               </thead>
 
               <tbody>
-                {patients.map((row, index) => {
-                  const utilizedSessions = getUtilizedSessions(row);
-                  const activityStatus =
-                    getActivityStatus(utilizedSessions);
-                  const statusColors = getStatusColors(activityStatus);
+                {filteredPatients.map((patient, index) => {
+                  const sessions = getSessions(patient);
+                  const statusLabel = getStatusLabel(patient.status);
+                  const statusColors = getStatusColors(patient.status);
+                  const patientMonth = normalizeMonth(patient.month);
+                  const displayMonth = normalizeMonth(selectedMonth);
 
-                  const patientName = getValue(
-                    row,
-                    ["name", "patient_name", "full_name"],
-                    "Unnamed patient"
-                  );
+                  const isNewEvaluation =
+                    Boolean(patient.is_new_evaluation) &&
+                    Boolean(patientMonth) &&
+                    (!displayMonth || patientMonth === displayMonth);
 
-                  const fileNumber = getValue(
-                    row,
-                    [
-                      "file_number",
-                      "file_no",
-                      "medical_record_number",
-                      "mrn",
-                      "patient_id",
-                    ],
-                    "-"
-                  );
+                  const fileNumber =
+                    patient.file_number || patient.patient_id || "-";
 
-                  const lastSeen = getValue(
-                    row,
-                    [
-                      "latest_seen_date",
-                      "last_seen_date",
-                      "last_session_date",
-                      "last_visit_date",
-                    ],
-                    ""
-                  );
-
-                  const speciality = getValue(
-                    row,
-                    [
-                      "speciality",
-                      "specialty",
-                      "speciality_name",
-                      "specialty_name",
-                    ],
-                    "-"
-                  );
-
-                  const patientId = getValue(row, ["id"], null);
-
-                  const progress = Math.min(
-                    (utilizedSessions / 6) * 100,
-                    100
-                  );
+                  const speciality = getSpeciality(patient);
+                  const lastSeen =
+                    patient.last_seen_date || patient.latest_seen_date || null;
+                  const progress = Math.min((sessions / 6) * 100, 100);
 
                   return (
                     <tr
-                      key={patientId ?? `${fileNumber}-${index}`}
+                      key={patient.id ?? `${fileNumber}-${index}`}
                       style={styles.tr}
                     >
-                      <td style={styles.td}>
+                      <td style={styles.patientTd}>
                         <div style={styles.patientCell}>
                           <div style={styles.avatar}>
-                            {getInitials(patientName)}
+                            {getInitials(patient.name)}
                           </div>
-
                           <div style={styles.patientInfo}>
-                            <span style={styles.patientName}>
-                              {patientName}
-                            </span>
-                            <span style={styles.patientCaption}>
-                              Patient
+                            <strong style={styles.patientName}>
+                              {patient.name || "Unnamed patient"}
+                            </strong>
+                            <span
+                              style={
+                                isNewEvaluation
+                                  ? styles.newBadge
+                                  : styles.oldBadge
+                              }
+                            >
+                              {isNewEvaluation ? "NEW EVALUATION" : "OLD"}
                             </span>
                           </div>
                         </div>
@@ -420,45 +508,56 @@ export default function PatientTrackerTable({
 
                       <td style={styles.td}>
                         <span style={styles.fileNumber}>
-                          {fileNumber}
+                          <svg
+                            width="15"
+                            height="15"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <rect x="3" y="4" width="18" height="16" rx="3" />
+                            <circle cx="8" cy="10" r="2" />
+                            <path d="M5.5 16a2.5 2.5 0 0 1 5 0" />
+                            <path d="M13 9h4" />
+                            <path d="M13 13h4" />
+                          </svg>
+                          <span>{fileNumber}</span>
                         </span>
                       </td>
 
                       <td style={styles.td}>
                         <div style={styles.sessionsCell}>
-                          <span style={styles.sessionCount}>
-                            {utilizedSessions}
-                          </span>
-
-                          <div style={styles.progressTrack}>
+                          <div style={styles.sessionsTop}>
+                            <strong style={styles.sessionCount}>{sessions}</strong>
+                            <span style={styles.sessionUnit}>
+                              {sessions === 1 ? "session" : "sessions"}
+                            </span>
+                          </div>
+                          <div
+                            style={styles.progressTrack}
+                            role="img"
+                            aria-label={`${sessions} utilized sessions`}
+                          >
                             <div
                               style={{
                                 ...styles.progressFill,
                                 width: `${progress}%`,
                                 background:
-                                  utilizedSessions > 5
+                                  sessions >= 6
                                     ? "#059669"
-                                    : utilizedSessions > 2
+                                    : sessions >= 3
                                       ? "#3b82f6"
-                                      : utilizedSessions > 0
+                                      : sessions > 0
                                         ? "#d97706"
                                         : "#cbd5e1",
                               }}
                             />
                           </div>
                         </div>
-                      </td>
-
-                      <td style={styles.td}>
-                        <span style={styles.dateText}>
-                          {formatDate(lastSeen)}
-                        </span>
-                      </td>
-
-                      <td style={styles.td}>
-                        <span style={styles.therapistText}>
-                          {getTherapist(row)}
-                        </span>
                       </td>
 
                       <td style={styles.td}>
@@ -475,29 +574,55 @@ export default function PatientTrackerTable({
                               background: statusColors.dot,
                             }}
                           />
-                          {activityStatus}
+                          {statusLabel}
                         </span>
                       </td>
 
                       <td style={styles.td}>
-                        <div style={styles.specialityCell}>
-                          <span style={styles.specialityText}>
-                            {speciality}
-                          </span>
+                        <span
+                          style={styles.specialityText}
+                          title={speciality !== "-" ? speciality : ""}
+                        >
+                          {speciality === "-" ? "Not Specified" : speciality}
+                        </span>
+                      </td>
 
-                          {patientId && (
-                            <button
-                              type="button"
-                              style={styles.openButton}
-                              onClick={() =>
-                                navigate(`/patients/${patientId}`)
-                              }
+                      <td style={styles.td}>
+                        <span style={styles.dateText}>{formatDate(lastSeen)}</span>
+                      </td>
+
+                      <td style={{ ...styles.td, textAlign: "center" }}>
+                        <button
+                          type="button"
+                          style={styles.openButton}
+                          onClick={() => openPatientFile(patient)}
+                          disabled={!patient.id}
+                          title={
+                            patient.id
+                              ? `Open file for ${patient.name || "patient"}`
+                              : "Patient file unavailable"
+                          }
+                        >
+                          <span style={styles.fileIcon} aria-hidden="true">
+                            <svg
+                              width="17"
+                              height="17"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
                             >
-                              Open File
-                              <span aria-hidden="true"> ↗</span>
-                            </button>
-                          )}
-                        </div>
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                              <path d="M14 2v6h6" />
+                              <path d="M8 13h8" />
+                              <path d="M8 17h5" />
+                            </svg>
+                          </span>
+                          <span style={styles.openButtonText}>Open File</span>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -507,26 +632,35 @@ export default function PatientTrackerTable({
           </div>
         ) : (
           <div style={styles.emptyState}>
-            <div style={styles.emptyIcon}>
-              {renderSummaryIcon("patients")}
-            </div>
-
-            <h3 style={styles.emptyTitle}>No patients found</h3>
-
+            <div style={styles.emptyIcon}>♧</div>
+            <h3 style={styles.emptyTitle}>
+              {patients.length === 0 ? "No patients found" : "No matching patients"}
+            </h3>
             <p style={styles.emptyText}>
-              There are no patient records to display for this selection.
-              Try selecting another month or adjusting your filters.
+              {patients.length === 0
+                ? "There are no patient records to display for this month. Try selecting another reporting month."
+                : "No patients match your search and speciality filters. Try changing your search or clearing the filters."}
             </p>
+            {(searchName || selectedSpeciality !== "all") && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                style={styles.clearFiltersButton}
+              >
+                Clear Filters
+              </button>
+            )}
           </div>
         )}
 
-        <div style={styles.footer}>
-          <div style={styles.footerDot} />
+        <footer style={styles.footer}>
+          <span style={styles.footerDot} />
           <span>
-            Activity status is based on qualifying utilized sessions.
-            Only walk-ins and appointments are counted.
+            Utilized sessions are monthly tracker counts, independent of
+            appointment records. Status levels: Inactive = 0, Low = 1–2,
+            Moderate = 3–5, High = 6 or more sessions.
           </span>
-        </div>
+        </footer>
       </div>
     </section>
   );
@@ -539,56 +673,46 @@ const styles = {
     fontFamily: "Inter, Arial, sans-serif",
     color: "#10243e",
   },
-
   card: {
     display: "grid",
     gap: 24,
     minWidth: 0,
-    padding: "clamp(16px, 2.5vw, 26px)",
+    padding: "clamp(16px, 2.5vw, 28px)",
     background: "#ffffff",
-    border: "1px solid #e1eaf4",
+    border: "1px solid #e2eaf3",
     borderRadius: 20,
-    boxShadow: "0 8px 28px rgba(15, 23, 42, 0.05)",
+    boxShadow: "0 8px 28px rgba(15, 35, 65, 0.055)",
   },
-
   header: {
     display: "flex",
     alignItems: "flex-start",
     justifyContent: "space-between",
     flexWrap: "wrap",
     gap: 20,
-    paddingBottom: 20,
+    paddingBottom: 22,
     borderBottom: "1px solid #edf2f7",
   },
-
-  headingContent: {
-    flex: "1 1 280px",
-    minWidth: 0,
-  },
-
+  headingContent: { flex: "1 1 280px", minWidth: 0 },
   eyebrow: {
     marginBottom: 8,
     color: "#07856f",
-    fontSize: 11,
-    fontWeight: 800,
-    letterSpacing: "1.2px",
+    fontSize: 8,
+    fontWeight: 850,
+    letterSpacing: "1.4px",
   },
-
   title: {
     margin: 0,
     color: "#10243e",
-    fontSize: "clamp(21px, 2.5vw, 27px)",
+    fontSize: "clamp(20px, 2.5vw, 26px)",
     fontWeight: 800,
     lineHeight: 1.3,
   },
-
   subtitle: {
     margin: "8px 0 0",
-    color: "#718096",
-    fontSize: 13,
+    color: "#748398",
+    fontSize: 11,
     lineHeight: 1.6,
   },
-
   headerRight: {
     display: "flex",
     alignItems: "flex-end",
@@ -597,279 +721,396 @@ const styles = {
     gap: 12,
     minWidth: 0,
   },
-
-  monthFilter: {
-    display: "grid",
-    gap: 7,
-  },
-
+  monthFilter: { display: "grid", gap: 7 },
   monthLabel: {
     color: "#52647a",
-    fontSize: 11,
+    fontSize: 8,
     fontWeight: 800,
+    letterSpacing: "0.5px",
   },
-
   monthInput: {
-    width: "100%",
+    minHeight: 40,
     boxSizing: "border-box",
-    minHeight: 42,
-    padding: "9px 12px",
+    padding: "8px 10px",
     border: "1px solid #d5e0ec",
     borderRadius: 10,
     background: "#ffffff",
     color: "#243b53",
-    fontSize: 13,
+    fontSize: 11,
     fontFamily: "inherit",
   },
-
   monthBadge: {
     display: "inline-flex",
     alignItems: "center",
     gap: 8,
     minHeight: 22,
-    padding: "9px 12px",
+    padding: "8px 10px",
     borderRadius: 999,
     border: "1px solid #ccefe0",
     background: "#e9f9f1",
     color: "#08784f",
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 800,
     whiteSpace: "nowrap",
   },
-
   monthBadgeDot: {
     width: 7,
     height: 7,
     borderRadius: "50%",
     background: "#10b981",
   },
-
+  errorMessage: {
+    padding: "10px 12px",
+    border: "1px solid #fecaca",
+    borderRadius: 10,
+    background: "#fef2f2",
+    color: "#b91c1c",
+    fontSize: 10,
+  },
+  successMessage: {
+    padding: "10px 12px",
+    border: "1px solid #bbf7d0",
+    borderRadius: 10,
+    background: "#f0fdf4",
+    color: "#166534",
+    fontSize: 10,
+  },
   summaryGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 185px), 1fr))",
     gap: 14,
     minWidth: 0,
   },
-
   summaryCard: {
     display: "flex",
     alignItems: "center",
     gap: 14,
     minWidth: 0,
-    padding: "18px 16px",
+    padding: "16px 14px",
     border: "1px solid #e8eef5",
     borderRadius: 15,
     background: "#ffffff",
-    boxShadow: "0 3px 10px rgba(15, 23, 42, 0.025)",
+    boxShadow: "0 3px 12px rgba(15, 23, 42, 0.025)",
   },
-
   summaryIcon: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 46,
-    height: 46,
+    width: 44,
+    height: 44,
     flexShrink: 0,
-    borderRadius: 13,
+    borderRadius: 14,
+    fontSize: 22,
+    fontWeight: 800,
   },
-
-  summaryContent: {
-    display: "grid",
-    gap: 5,
-    minWidth: 0,
-  },
-
+  summaryContent: { display: "grid", gap: 6, minWidth: 0 },
   summaryLabel: {
     color: "#718096",
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: 700,
     lineHeight: 1.4,
   },
-
   summaryValue: {
     color: "#10243e",
-    fontSize: 25,
+    fontSize: 23,
     fontWeight: 850,
     lineHeight: 1.1,
     fontVariantNumeric: "tabular-nums",
   },
-
   tableHeading: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 14,
   },
-
   tableTitle: {
     margin: 0,
     color: "#10243e",
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: 800,
   },
-
   tableSubtitle: {
     margin: "5px 0 0",
     color: "#718096",
-    fontSize: 12,
+    fontSize: 10,
     lineHeight: 1.5,
   },
-
-  recordCount: {
-    padding: "8px 12px",
-    borderRadius: 999,
-    background: "#eff6ff",
-    border: "1px solid #dbeafe",
-    color: "#1d4ed8",
-    fontSize: 12,
+  headingActions: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  rolloverButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 38,
+    padding: "9px 12px",
+    border: "1px solid #c7d2fe",
+    borderRadius: 10,
+    background: "#eef2ff",
+    color: "#3730a3",
+    fontSize: 9,
     fontWeight: 800,
+    fontFamily: "inherit",
+    cursor: "pointer",
+  },
+
+  // Filter controls
+  filterPanel: {
+    display: "flex",
+    alignItems: "flex-end",
+    flexWrap: "wrap",
+    gap: 14,
+    padding: 16,
+    border: "1px solid #dfe7f1",
+    borderRadius: 14,
+    background: "#f8fafc",
+  },
+  filterField: {
+    display: "grid",
+    gap: 7,
+    flex: "1 1 230px",
+    minWidth: 190,
+  },
+  filterLabel: {
+    color: "#52647a",
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: "0.4px",
+  },
+  searchInputWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    minHeight: 44,
+    boxSizing: "border-box",
+    padding: "0 12px",
+    border: "1px solid #cbd8e6",
+    borderRadius: 10,
+    background: "#ffffff",
+  },
+  searchIcon: {
+    flexShrink: 0,
+    color: "#64748b",
+  },
+  searchInput: {
+    width: "100%",
+    minWidth: 0,
+    height: 42,
+    padding: 0,
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    color: "#16334f",
+    fontSize: 13,
+    fontFamily: "inherit",
+  },
+  specialitySelect: {
+    width: "100%",
+    minHeight: 44,
+    boxSizing: "border-box",
+    padding: "9px 12px",
+    border: "1px solid #cbd8e6",
+    borderRadius: 10,
+    background: "#ffffff",
+    color: "#16334f",
+    fontSize: 13,
+    fontFamily: "inherit",
+    cursor: "pointer",
+  },
+  filterResult: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 44,
+    color: "#64748b",
+    fontSize: 11,
     whiteSpace: "nowrap",
+  },
+  resultNumber: {
+    color: "#17365d",
+    fontSize: 17,
+    fontWeight: 850,
+    fontVariantNumeric: "tabular-nums",
+  },
+  clearFiltersButton: {
+    minHeight: 38,
+    padding: "8px 12px",
+    border: "1px solid #cbd8e6",
+    borderRadius: 9,
+    background: "#ffffff",
+    color: "#334e68",
+    fontSize: 11,
+    fontWeight: 750,
+    fontFamily: "inherit",
+    cursor: "pointer",
   },
 
   tableWrap: {
     width: "100%",
     minWidth: 0,
     overflowX: "auto",
-    border: "1px solid #e3eaf2",
-    borderRadius: 14,
+    border: "1px solid #dfe7f1",
+    borderRadius: 15,
     background: "#ffffff",
   },
-
   table: {
     width: "100%",
-    minWidth: 1000,
+    minWidth: 1285,
+    tableLayout: "fixed",
     borderCollapse: "separate",
     borderSpacing: 0,
     background: "#ffffff",
   },
-
   th: {
-    padding: "15px 16px",
+    position: "sticky",
+    top: 0,
+    padding: "13px 12px",
     textAlign: "left",
-    background: "#f4f7fb",
-    color: "#52647a",
-    fontSize: 10,
-    fontWeight: 800,
-    textTransform: "uppercase",
-    letterSpacing: "0.65px",
+    background: "#f3f7fc",
+    color: "#61738a",
+    fontSize: 8,
+    fontWeight: 850,
+    letterSpacing: "0.5px",
     whiteSpace: "nowrap",
-    borderBottom: "1px solid #e1e8f0",
+    borderBottom: "1px solid #dfe7f1",
   },
-
-  tr: {
-    background: "#ffffff",
-  },
-
+  tr: { background: "#ffffff" },
   td: {
-    padding: "15px 16px",
+    padding: "15px 12px",
     color: "#465970",
-    fontSize: 12,
+    fontSize: 10,
+    verticalAlign: "middle",
+    borderBottom: "1px solid #edf1f6",
+    overflowWrap: "anywhere",
+  },
+  patientTd: {
+    padding: "16px 14px",
+    color: "#465970",
+    fontSize: 10,
     verticalAlign: "middle",
     borderBottom: "1px solid #edf1f6",
   },
-
   patientCell: {
     display: "flex",
     alignItems: "center",
-    gap: 11,
-    minWidth: 160,
+    gap: 12,
+    width: "100%",
+    minWidth: 0,
   },
-
   avatar: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 38,
-    height: 38,
+    width: 42,
+    height: 42,
     flexShrink: 0,
     borderRadius: 12,
-    background: "#e7f2fc",
-    color: "#176b9b",
-    fontSize: 12,
+    background: "linear-gradient(135deg, #e0f2fe, #dbeafe)",
+    color: "#075985",
+    fontSize: 11,
     fontWeight: 850,
+    border: "1px solid #cce7f7",
   },
-
   patientInfo: {
     display: "grid",
-    gap: 4,
+    justifyItems: "start",
+    gap: 6,
     minWidth: 0,
+    flex: 1,
   },
-
   patientName: {
+    display: "block",
+    width: "100%",
     color: "#16334f",
     fontSize: 12,
     fontWeight: 800,
-    lineHeight: 1.4,
+    lineHeight: 1.6,
+    overflowWrap: "anywhere",
+    whiteSpace: "normal",
   },
-
-  patientCaption: {
-    color: "#94a3b8",
-    fontSize: 10,
+  newBadge: {
+    width: "fit-content",
+    padding: "3px 6px",
+    borderRadius: 6,
+    background: "#fff7ed",
+    color: "#c2410c",
+    border: "1px solid #fed7aa",
+    fontSize: 7,
+    fontWeight: 850,
+    letterSpacing: "0.25px",
   },
-
-  fileNumber: {
-    display: "inline-block",
-    padding: "6px 9px",
+  oldBadge: {
+    width: "fit-content",
+    padding: "3px 6px",
+    borderRadius: 6,
+    background: "#f1f5f9",
+    color: "#64748b",
     border: "1px solid #e2e8f0",
-    borderRadius: 7,
-    background: "#f8fafc",
-    color: "#52647a",
-    fontSize: 11,
-    fontWeight: 700,
+    fontSize: 7,
+    fontWeight: 850,
+    letterSpacing: "0.25px",
   },
-
-  sessionsCell: {
-    display: "grid",
-    gridTemplateColumns: "30px 65px",
+  fileNumber: {
+    display: "inline-flex",
     alignItems: "center",
-    gap: 9,
+    gap: 6,
+    maxWidth: "100%",
+    padding: "8px 9px",
+    border: "1px solid #cfe2f7",
+    borderRadius: 9,
+    background: "#f0f7ff",
+    color: "#174a7e",
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1.4,
+    fontVariantNumeric: "tabular-nums",
+    overflowWrap: "anywhere",
   },
-
+  sessionsCell: { display: "grid", gap: 8, minWidth: 0 },
+  sessionsTop: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 5,
+    flexWrap: "wrap",
+  },
   sessionCount: {
     color: "#16334f",
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 850,
+    lineHeight: 1.2,
     fontVariantNumeric: "tabular-nums",
   },
-
+  sessionUnit: { color: "#94a3b8", fontSize: 8, fontWeight: 650 },
   progressTrack: {
-    width: 65,
-    height: 6,
+    width: 90,
+    maxWidth: "100%",
+    height: 5,
     overflow: "hidden",
     borderRadius: 999,
     background: "#e9eef5",
   },
-
   progressFill: {
     height: "100%",
     borderRadius: 999,
     transition: "width 0.2s ease",
   },
-
-  dateText: {
-    color: "#52647a",
-    fontSize: 12,
-    whiteSpace: "nowrap",
-  },
-
-  therapistText: {
-    color: "#465970",
-    fontSize: 12,
-    fontWeight: 600,
-  },
-
   statusBadge: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 7,
-    padding: "7px 10px",
+    gap: 6,
+    width: "fit-content",
+    maxWidth: "100%",
+    padding: "7px 8px",
     borderRadius: 999,
-    fontSize: 11,
+    fontSize: 8,
     fontWeight: 800,
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
   },
-
   statusDot: {
     width: 6,
     height: 6,
@@ -877,72 +1118,95 @@ const styles = {
     flexShrink: 0,
   },
 
-  specialityCell: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    minWidth: 150,
-  },
-
+  // Larger, clearer speciality text
   specialityText: {
-    color: "#52647a",
-    fontSize: 11,
+    display: "block",
+    maxWidth: "100%",
+    color: "#334e68",
+    fontSize: 12,
+    fontWeight: 650,
+    lineHeight: 1.6,
+    overflowWrap: "anywhere",
   },
-
+  dateText: {
+    display: "inline-block",
+    color: "#334e68",
+    fontSize: 11,
+    fontWeight: 700,
+    lineHeight: 1.5,
+    whiteSpace: "nowrap",
+    fontVariantNumeric: "tabular-nums",
+  },
   openButton: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "8px 11px",
-    border: "1px solid #cce8f8",
+    gap: 7,
+    minWidth: 110,
+    minHeight: 40,
+    padding: "7px 10px",
+    border: "1px solid #1e3a5f",
     borderRadius: 9,
-    background: "#eff8ff",
-    color: "#0369a1",
-    fontSize: 11,
+    background: "#17365d",
+    color: "#ffffff",
+    fontSize: 10,
     fontWeight: 800,
     fontFamily: "inherit",
     cursor: "pointer",
+    textAlign: "center",
+    boxShadow: "0 3px 8px rgba(23, 54, 93, 0.16)",
+    transition: "background 0.2s ease, box-shadow 0.2s ease",
+  },
+  fileIcon: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 22,
+    height: 22,
+    flexShrink: 0,
+    color: "#ffffff",
+  },
+  openButtonText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1.2,
     whiteSpace: "nowrap",
   },
-
   emptyState: {
     display: "grid",
     justifyItems: "center",
     gap: 10,
-    padding: "42px 20px",
+    padding: "38px 18px",
     border: "1px dashed #cbd8e6",
     borderRadius: 15,
     background: "#f8fafc",
     textAlign: "center",
   },
-
   emptyIcon: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 54,
-    height: 54,
+    width: 50,
+    height: 50,
     borderRadius: 16,
     background: "#e7f2fc",
     color: "#176b9b",
+    fontSize: 26,
   },
-
   emptyTitle: {
     margin: 0,
     color: "#16334f",
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 800,
   },
-
   emptyText: {
     maxWidth: 380,
     margin: 0,
     color: "#718096",
-    fontSize: 12,
+    fontSize: 10,
     lineHeight: 1.7,
   },
-
   footer: {
     display: "flex",
     alignItems: "flex-start",
@@ -950,10 +1214,9 @@ const styles = {
     paddingTop: 14,
     borderTop: "1px solid #edf2f7",
     color: "#718096",
-    fontSize: 11,
+    fontSize: 9,
     lineHeight: 1.7,
   },
-
   footerDot: {
     width: 7,
     height: 7,

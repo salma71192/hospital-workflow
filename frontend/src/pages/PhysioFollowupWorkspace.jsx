@@ -336,6 +336,7 @@ export default function PhysioFollowupWorkspace({
 
   const selectedTherapistId = actingAs?.id ?? user?.id ?? null;
 
+  // Independent monthly tracker: this endpoint does not use appointments.
   const loadPatientTracker = useCallback(async () => {
     if (!trackerMonth) return;
 
@@ -508,14 +509,7 @@ export default function PhysioFollowupWorkspace({
     navigate("/admin");
   }, [onStopImpersonation, navigate]);
 
-  const physioPatientTrackerRows = useMemo(
-    () =>
-      patientTrackerRows.filter((item) =>
-        belongsToTherapist(item, selectedTherapistId)
-      ),
-    [patientTrackerRows, selectedTherapistId]
-  );
-
+  // Assignments remain filtered by therapist for statistics and evaluations.
   const physioDailyAssignments = useMemo(
     () =>
       dailyAssignments.filter((item) =>
@@ -645,11 +639,12 @@ export default function PhysioFollowupWorkspace({
 
       {activeSection === "tracker" && (
         <PatientTrackerTable
-          patients={physioPatientTrackerRows}
+          patients={patientTrackerRows}
           title="Patient Tracker"
           selectedMonth={trackerMonth}
           onMonthChange={setTrackerMonth}
           monthLabel={getMonthLabel(trackerMonth)}
+          onRefresh={loadPatientTracker}
         />
       )}
 
