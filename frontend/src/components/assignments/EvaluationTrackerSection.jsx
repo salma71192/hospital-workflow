@@ -1,9 +1,9 @@
-
 import React, { useCallback, useEffect, useState } from "react";
 import api from "../../api/api";
 
 const MONTHLY_EVALUATION_TARGET = 30;
 const DAILY_EVALUATION_TARGET = 4;
+const REHAB_MANAGER_NAME = "Mohammed Mahmoud - Rehab Manager";
 
 function formatLocalDate(date) {
   const year = date.getFullYear();
@@ -18,9 +18,7 @@ function getTodayString() {
 
 function getFirstDayOfMonthString() {
   const now = new Date();
-  return formatLocalDate(
-    new Date(now.getFullYear(), now.getMonth(), 1)
-  );
+  return formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
 }
 
 function getDateOffset(days) {
@@ -33,6 +31,8 @@ function getDisplayName(row) {
   return (
     row?.therapist_name ||
     row?.name ||
+    row?.display_name ||
+    row?.full_name ||
     row?.username ||
     "Unknown Therapist"
   );
@@ -75,15 +75,13 @@ function getEvaluationStatus(count, period) {
 }
 
 function getEvaluationPercentage(count, period) {
-  const target = getEvaluationTarget(period);
-  return Math.round((count / target) * 100);
+  return Math.round((count / getEvaluationTarget(period)) * 100);
 }
 
 function formatDateLabel(value) {
   if (!value) return "Not selected";
 
   const date = new Date(`${value}T12:00:00`);
-
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleDateString(undefined, {
@@ -108,17 +106,16 @@ function getField(record, fields) {
   for (const field of fields) {
     const value = record?.[field];
 
-    if (
-      value !== undefined &&
-      value !== null &&
-      value !== ""
-    ) {
+    if (value !== undefined && value !== null && value !== "") {
       if (typeof value === "object") {
         return (
           value.name ??
           value.full_name ??
           value.username ??
           value.display_name ??
+          value.number ??
+          value.visit_number ??
+          value.visit_no ??
           ""
         );
       }
@@ -140,7 +137,6 @@ function formatRecordDate(value) {
   }
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return dateString;
 
   return date.toLocaleDateString(undefined, {
@@ -148,6 +144,44 @@ function formatRecordDate(value) {
     month: "short",
     year: "numeric",
   });
+}
+
+/*
+ * Ensure Mohammed Mahmoud - Rehab Manager appears in the statistics.
+ * If the API already returns the manager, retain the real API data.
+ * Otherwise, display a placeholder with zero evaluations.
+ */
+function includeRehabManager(therapists) {
+  const rows = Array.isArray(therapists) ? [...therapists] : [];
+
+  const managerExists = rows.some((row) => {
+    const name = getDisplayName(row).trim().toLowerCase();
+    const role = String(row?.role || row?.user_role || "").toLowerCase();
+
+    return (
+      name === REHAB_MANAGER_NAME.toLowerCase() ||
+      name === "mohammed mahmoud" ||
+      name === "rehab manager" ||
+      role === "rehab_manager" ||
+      role === "rehab manager"
+    );
+  });
+
+  if (!managerExists) {
+    rows.push({
+      id: "static-rehab-manager",
+      therapist_id: "static-rehab-manager",
+      name: REHAB_MANAGER_NAME,
+      therapist_name: REHAB_MANAGER_NAME,
+      role: "physio",
+      count: 0,
+      total: 0,
+      evaluations: [],
+      is_static_placeholder: true,
+    });
+  }
+
+  return rows;
 }
 
 export default function EvaluationTrackerSection({
@@ -179,13 +213,8 @@ export default function EvaluationTrackerSection({
     try {
       const params = new URLSearchParams();
 
-      if (fromDate) {
-        params.set("start_date", fromDate);
-      }
-
-      if (toDate) {
-        params.set("end_date", toDate);
-      }
+      if (fromDate) params.set("start_date", fromDate);
+      if (toDate) params.set("end_date", toDate);
 
       if (
         actingAs &&
@@ -193,27 +222,22 @@ export default function EvaluationTrackerSection({
           String(user?.role || "").toLowerCase() === "admin")
       ) {
         params.set("viewed_user_id", String(actingAs.id));
-        params.set(
-          "viewed_user_role",
-          String(actingAs.role || "")
-        );
+        params.set("viewed_user_role", String(actingAs.role || ""));
       }
 
       const response = await api.get(
         `reception/evaluation-tracker/?${params.toString()}`
       );
 
-      setRows(
-        Array.isArray(response.data?.therapists)
-          ? response.data.therapists
-          : []
-      );
+      const apiRows = Array.isArray(response.data?.therapists)
+        ? response.data.therapists
+        : [];
 
+      setRows(includeRehabManager(apiRows));
       setTotal(Number(response.data?.total || 0));
       setExpandedTherapist(null);
     } catch (err) {
       console.error("Failed to load Evaluation Tracker", err);
-
       setRows([]);
       setTotal(0);
 
@@ -243,10 +267,7 @@ export default function EvaluationTrackerSection({
       setFromDate(getDateOffset(-6));
       setToDate(currentDate);
     } else if (preset === "month") {
-      // Always calculate the first day of the current month.
-      const firstDay = getFirstDayOfMonthString();
-
-      setFromDate(firstDay);
+      setFromDate(getFirstDayOfMonthString());
       setToDate(currentDate);
     }
   };
@@ -298,7 +319,6 @@ export default function EvaluationTrackerSection({
       <div style={styles.hero}>
         <div style={styles.heroContent}>
           <div style={styles.eyebrow}>WORKSPACE / REPORTS</div>
-
           <h2 style={styles.heroTitle}>Evaluation Tracker</h2>
 
           <p style={styles.heroDescription}>
@@ -516,31 +536,22 @@ export default function EvaluationTrackerSection({
               <thead>
                 <tr>
                   <th style={styles.tableHeaderCell}>#</th>
-                  <th style={styles.tableHeaderCell}>
-                    Physiotherapist
-                  </th>
-                  <th style={styles.tableHeaderCell}>
-                    Initial evaluations
-                  </th>
+                  <th style={styles.tableHeaderCell}>Physiotherapist</th>
+                  <th style={styles.tableHeaderCell}>Initial evaluations</th>
                   <th style={styles.tableHeaderCell}>
                     {period === "today"
                       ? "Daily target progress"
                       : "Monthly target progress"}
                   </th>
                   <th style={styles.tableHeaderCell}>Status</th>
-                  <th style={styles.tableHeaderActionCell}>
-                    Details
-                  </th>
+                  <th style={styles.tableHeaderActionCell}>Details</th>
                 </tr>
               </thead>
 
               <tbody>
                 {filteredRows.map((row, index) => {
                   const count = Number(row.count ?? row.total ?? 0);
-                  const percentage = getEvaluationPercentage(
-                    count,
-                    period
-                  );
+                  const percentage = getEvaluationPercentage(count, period);
                   const color = getEvaluationColor(count, period);
                   const status = getEvaluationStatus(count, period);
 
@@ -550,9 +561,7 @@ export default function EvaluationTrackerSection({
                     row.username ??
                     getDisplayName(row);
 
-                  const isExpanded =
-                    expandedTherapist === therapistKey;
-
+                  const isExpanded = expandedTherapist === therapistKey;
                   const evaluations = getEvaluationRecords(row);
 
                   return (
@@ -747,6 +756,9 @@ export default function EvaluationTrackerSection({
                                           File number
                                         </th>
                                         <th style={styles.detailsTh}>
+                                          Visit Number
+                                        </th>
+                                        <th style={styles.detailsTh}>
                                           Registered by
                                         </th>
                                         <th style={styles.detailsTh}>
@@ -786,6 +798,23 @@ export default function EvaluationTrackerSection({
                                                 "patient_file_number",
                                                 "medical_record_number",
                                                 "mrn",
+                                              ]) || "—"}
+                                            </td>
+
+                                            <td style={styles.detailsTd}>
+                                              {getField(record, [
+                                                "visit_number",
+                                                "visit_no",
+                                                "visit_num",
+                                                "visit_number_display",
+                                                "visit_id",
+                                                "visit",
+                                                "appointment_number",
+                                                "appointment_no",
+                                                "encounter_number",
+                                                "encounter_id",
+                                                "session_number",
+                                                "registration_number",
                                               ]) || "—"}
                                             </td>
 
@@ -897,10 +926,7 @@ const styles = {
     boxShadow: "0 12px 30px rgba(15, 39, 71, 0.14)",
     color: "#ffffff",
   },
-  heroContent: {
-    minWidth: 0,
-    flex: "1 1 360px",
-  },
+  heroContent: { minWidth: 0, flex: "1 1 360px" },
   eyebrow: {
     fontSize: "10px",
     fontWeight: "800",
@@ -956,14 +982,8 @@ const styles = {
     cursor: "pointer",
     whiteSpace: "nowrap",
   },
-  refreshIcon: {
-    fontSize: "19px",
-    lineHeight: 1,
-  },
-  disabledButton: {
-    opacity: 0.6,
-    cursor: "not-allowed",
-  },
+  refreshIcon: { fontSize: "19px", lineHeight: 1 },
+  disabledButton: { opacity: 0.6, cursor: "not-allowed" },
   filterCard: {
     display: "grid",
     gap: "17px",
@@ -1001,11 +1021,7 @@ const styles = {
     color: "#11727b",
     fontSize: "21px",
   },
-  presets: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "8px",
-  },
+  presets: { display: "flex", flexWrap: "wrap", gap: "8px" },
   presetButton: {
     display: "inline-flex",
     alignItems: "center",
@@ -1024,10 +1040,7 @@ const styles = {
     borderColor: "#83c7cc",
     color: "#116b75",
   },
-  presetCheck: {
-    fontSize: "13px",
-    fontWeight: "900",
-  },
+  presetCheck: { fontSize: "13px", fontWeight: "900" },
   dateFilters: {
     display: "grid",
     gridTemplateColumns:
@@ -1035,11 +1048,7 @@ const styles = {
     gap: "13px",
     alignItems: "end",
   },
-  dateField: {
-    display: "grid",
-    gap: "7px",
-    minWidth: 0,
-  },
+  dateField: { display: "grid", gap: "7px", minWidth: 0 },
   dateLabel: {
     fontSize: "10px",
     fontWeight: "800",
@@ -1074,10 +1083,7 @@ const styles = {
     cursor: "pointer",
     whiteSpace: "nowrap",
   },
-  buttonArrow: {
-    fontSize: "17px",
-    lineHeight: 1,
-  },
+  buttonArrow: { fontSize: "17px", lineHeight: 1 },
   errorBox: {
     display: "flex",
     alignItems: "flex-start",
@@ -1101,10 +1107,7 @@ const styles = {
     color: "#b91c1c",
     fontWeight: "900",
   },
-  errorTitle: {
-    display: "block",
-    marginBottom: "3px",
-  },
+  errorTitle: { display: "block", marginBottom: "3px" },
   tableCard: {
     minWidth: 0,
     overflow: "hidden",
@@ -1165,11 +1168,7 @@ const styles = {
     borderRadius: "9px",
     background: "#ffffff",
   },
-  searchIcon: {
-    color: "#8090a3",
-    fontSize: "22px",
-    lineHeight: 1,
-  },
+  searchIcon: { color: "#8090a3", fontSize: "22px", lineHeight: 1 },
   searchInput: {
     width: "100%",
     minWidth: 0,
@@ -1180,11 +1179,7 @@ const styles = {
     color: "#334155",
     fontSize: "12px",
   },
-  sortWrapper: {
-    display: "flex",
-    alignItems: "center",
-    gap: "9px",
-  },
+  sortWrapper: { display: "flex", alignItems: "center", gap: "9px" },
   sortLabel: {
     color: "#718096",
     fontSize: "11px",
@@ -1201,15 +1196,8 @@ const styles = {
     fontSize: "11px",
     fontWeight: "600",
   },
-  tableScroll: {
-    width: "100%",
-    overflowX: "auto",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    textAlign: "left",
-  },
+  tableScroll: { width: "100%", overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", textAlign: "left" },
   tableHeaderCell: {
     padding: "13px 17px",
     background: "#f6f9fc",
@@ -1231,9 +1219,7 @@ const styles = {
     textAlign: "right",
     whiteSpace: "nowrap",
   },
-  tableRow: {
-    transition: "background 150ms ease",
-  },
+  tableRow: { transition: "background 150ms ease" },
   rankCell: {
     padding: "14px 17px",
     borderBottom: "1px solid #edf1f6",
@@ -1267,21 +1253,14 @@ const styles = {
     fontSize: "14px",
     fontWeight: "800",
   },
-  therapistNameBlock: {
-    display: "grid",
-    gap: "4px",
-    minWidth: 0,
-  },
+  therapistNameBlock: { display: "grid", gap: "4px", minWidth: 0 },
   therapistName: {
     color: "#243b53",
     fontSize: "12px",
     fontWeight: "800",
     overflowWrap: "anywhere",
   },
-  therapistSubtext: {
-    color: "#94a3b8",
-    fontSize: "10px",
-  },
+  therapistSubtext: { color: "#94a3b8", fontSize: "10px" },
   actionCell: {
     padding: "14px 20px 14px 12px",
     borderBottom: "1px solid #edf1f6",
@@ -1321,11 +1300,7 @@ const styles = {
     background: "#f8fafc",
     borderBottom: "1px solid #e2e8f0",
   },
-  detailsPanel: {
-    padding: "20px",
-    display: "grid",
-    gap: "15px",
-  },
+  detailsPanel: { padding: "20px", display: "grid", gap: "15px" },
   detailsHeading: {
     display: "flex",
     alignItems: "center",
@@ -1407,7 +1382,7 @@ const styles = {
     width: "100%",
     borderCollapse: "collapse",
     textAlign: "left",
-    minWidth: "850px",
+    minWidth: "1050px",
   },
   detailsTh: {
     padding: "12px",
@@ -1489,11 +1464,7 @@ const styles = {
     fontSize: "10px",
     fontWeight: "800",
   },
-  statusDot: {
-    width: "6px",
-    height: "6px",
-    borderRadius: "50%",
-  },
+  statusDot: { width: "6px", height: "6px", borderRadius: "50%" },
   totalFooterCell: {
     padding: "15px 17px",
     background: "#f6f9fc",

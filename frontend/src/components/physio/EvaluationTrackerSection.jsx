@@ -1,6 +1,4 @@
-
 import React, { useMemo } from "react";
-
 function firstValue(...values) {
   return values.find(
     (value) =>
@@ -9,14 +7,11 @@ function firstValue(...values) {
       String(value).trim() !== ""
   );
 }
-
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-
 function getPatientObject(item) {
   if (!isObject(item)) return {};
-
   const possiblePatients = [
     item.patient,
     item.patient_details,
@@ -36,20 +31,16 @@ function getPatientObject(item) {
     item.assignment?.patient,
     item.patient_assignment?.patient,
   ];
-
   return possiblePatients.find(isObject) || {};
 }
-
 /**
  * Collects possible patient and assignment objects from common API formats.
  * Scalar IDs are deliberately excluded.
  */
 function getPatientSources(item) {
   if (!isObject(item)) return [];
-
   const sources = [];
   const visited = new Set();
-
   const relatedKeys = [
     "patient",
     "patient_details",
@@ -71,28 +62,21 @@ function getPatientSources(item) {
     "medical_record",
     "identification",
   ];
-
   function visit(source, depth = 0) {
     if (!isObject(source) || visited.has(source) || depth > 4) return;
-
     visited.add(source);
     sources.push(source);
-
     relatedKeys.forEach((key) => {
       if (isObject(source[key])) {
         visit(source[key], depth + 1);
       }
     });
   }
-
   visit(item);
-
   return sources;
 }
-
 function getPatientName(item) {
   const sources = getPatientSources(item);
-
   for (const source of sources) {
     const fullName = firstValue(
       source.first_name && source.last_name
@@ -102,7 +86,6 @@ function getPatientName(item) {
         ? `${source.firstName} ${source.lastName}`
         : undefined
     );
-
     const name = firstValue(
       source.patient_name,
       source.patient_full_name,
@@ -113,20 +96,16 @@ function getPatientName(item) {
       source.name,
       fullName
     );
-
     if (name !== undefined) return String(name);
   }
-
   return "Patient";
 }
-
 /**
  * Extracts the actual patient file number from the API response.
  * Never substitutes patient.id, patient.pk, or assignment.id.
  */
 function getFileNumber(item) {
   const sources = getPatientSources(item);
-
   const fileNumberFields = [
     "file_number",
     "file_no",
@@ -183,7 +162,6 @@ function getFileNumber(item) {
     "clinicFileNumber",
     "emrNumber",
   ];
-
   const nestedNumberFields = [
     "file_number",
     "file_no",
@@ -197,52 +175,35 @@ function getFileNumber(item) {
     "display",
     "text",
   ];
-
   function extractNumber(value, depth = 0) {
-    if (
-      value === undefined ||
-      value === null ||
-      depth > 3
-    ) {
+    if (value === undefined || value === null || depth > 3) {
       return undefined;
     }
-
     if (typeof value === "string" || typeof value === "number") {
       const text = String(value).trim();
       return text ? text : undefined;
     }
-
     if (isObject(value)) {
       for (const field of nestedNumberFields) {
         if (value[field] === undefined || value[field] === null) {
           continue;
         }
-
         const extracted = extractNumber(value[field], depth + 1);
-
         if (extracted !== undefined) return extracted;
       }
     }
-
     return undefined;
   }
-
-  // First search known patient and assignment objects.
   for (const source of sources) {
     for (const field of fileNumberFields) {
       if (source[field] === undefined || source[field] === null) {
         continue;
       }
-
       const extracted = extractNumber(source[field]);
-
       if (extracted !== undefined) return extracted;
     }
   }
-
-  // Check additional common registration and medical-record structures.
   const patient = getPatientObject(item);
-
   const nestedSources = [
     patient.registration,
     patient.patient_registration,
@@ -259,24 +220,18 @@ function getFileNumber(item) {
     item?.data?.patient,
     item?.data?.patient_details,
   ];
-
   for (const source of nestedSources) {
     if (!isObject(source)) continue;
-
     for (const field of fileNumberFields) {
       if (source[field] === undefined || source[field] === null) {
         continue;
       }
-
       const extracted = extractNumber(source[field]);
-
       if (extracted !== undefined) return extracted;
     }
   }
-
   return "—";
 }
-
 function getEvaluationDate(item) {
   return (
     firstValue(
@@ -288,21 +243,28 @@ function getEvaluationDate(item) {
     ) ?? null
   );
 }
-
+/**
+ * Supports several common API field names for visit number.
+ */
 function getVisitNumber(item) {
-  return (
-    firstValue(
-      item?.visit_number,
-      item?.first_visit_number,
-      item?.visit_no,
-      item?.session_number
-    ) ?? "—"
-  );
+  const sources = getPatientSources(item);
+  for (const source of sources) {
+    const visitNumber = firstValue(
+      source.visit_number,
+      source.first_visit_number,
+      source.visit_no,
+      source.session_number,
+      source.visitNumber,
+      source.firstVisitNumber,
+      source.visitNo,
+      source.sessionNumber
+    );
+    if (visitNumber !== undefined) return visitNumber;
+  }
+  return "—";
 }
-
 function getPhysician(item) {
   const sources = getPatientSources(item);
-
   for (const source of sources) {
     const physician = firstValue(
       source.referring_physician,
@@ -312,16 +274,12 @@ function getPhysician(item) {
       source.physician?.name,
       source.doctor?.name
     );
-
     if (physician !== undefined) return physician;
   }
-
   return "—";
 }
-
 function getSpecialty(item) {
   const sources = getPatientSources(item);
-
   for (const source of sources) {
     const specialty = firstValue(
       source.specialty,
@@ -334,13 +292,10 @@ function getSpecialty(item) {
       source.doctor?.specialty,
       source.doctor?.speciality
     );
-
     if (specialty !== undefined) return specialty;
   }
-
   return "—";
 }
-
 function getStatus(item) {
   const rawStatus = String(
     firstValue(
@@ -350,11 +305,8 @@ function getStatus(item) {
       item?.registration_status
     ) ?? ""
   ).trim();
-
   if (!rawStatus) return "Pending";
-
   const normalized = rawStatus.toLowerCase();
-
   if (
     normalized.includes("not started") ||
     normalized.includes("did not start") ||
@@ -362,7 +314,6 @@ function getStatus(item) {
   ) {
     return "Pending";
   }
-
   if (
     normalized.includes("transfer") ||
     normalized.includes("another therapist")
@@ -373,58 +324,43 @@ function getStatus(item) {
         item?.other_therapist_name,
         item?.treatment_therapist_name
       ) ?? "";
-
     return therapist ? `Transferred – ${therapist}` : "Transferred";
   }
-
   if (
     normalized === "started" ||
     normalized.includes("started with evaluating therapist")
   ) {
     return "Started";
   }
-
   return rawStatus;
 }
-
 function getStatusType(status) {
   const normalized = String(status).toLowerCase();
-
   if (normalized === "started") return "started";
   if (normalized.includes("transfer")) return "transferred";
-
   return "pending";
 }
-
 function formatDate(value) {
   if (!value) return "—";
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return String(value);
   }
-
   return date.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
 }
-
 function getMonthLabel(month) {
   if (!month) return "Selected month";
-
   const [year, monthNumber] = month.split("-").map(Number);
-
   if (!year || !monthNumber) return month;
-
   return new Intl.DateTimeFormat("en", {
     month: "long",
     year: "numeric",
   }).format(new Date(year, monthNumber - 1, 1));
 }
-
 function getStatusColors(type) {
   const colors = {
     started: {
@@ -443,10 +379,8 @@ function getStatusColors(type) {
       border: "1px solid #e6d2ff",
     },
   };
-
   return colors[type] || colors.pending;
 }
-
 function SummaryCard({ label, value, percentage, type }) {
   const cardStyles = {
     total: {
@@ -478,13 +412,11 @@ function SummaryCard({ label, value, percentage, type }) {
       symbol: "◷",
     },
   };
-
   const config = cardStyles[type] || cardStyles.total;
   const safePercentage = Math.min(
     Math.max(Number(percentage) || 0, 0),
     100
   );
-
   return (
     <div
       style={{
@@ -531,7 +463,6 @@ function SummaryCard({ label, value, percentage, type }) {
           >
             {config.symbol}
           </div>
-
           <div
             style={{
               color: "#526985",
@@ -543,7 +474,6 @@ function SummaryCard({ label, value, percentage, type }) {
             {label}
           </div>
         </div>
-
         <span
           style={{
             background: config.iconBackground,
@@ -558,7 +488,6 @@ function SummaryCard({ label, value, percentage, type }) {
           {safePercentage}%
         </span>
       </div>
-
       <div
         style={{
           fontSize: 32,
@@ -570,7 +499,6 @@ function SummaryCard({ label, value, percentage, type }) {
       >
         {value}
       </div>
-
       <div
         style={{
           height: 5,
@@ -592,7 +520,27 @@ function SummaryCard({ label, value, percentage, type }) {
     </div>
   );
 }
-
+/**
+ * Static role options.
+ * Include "Rehab Manager" as a physiotherapy role.
+ *
+ * If your app uses a separate role dropdown or backend role list,
+ * add "rehab_manager" to that source as well.
+ */
+export const STATIC_ROLE_OPTIONS = [
+  { value: "admin", label: "Admin" },
+  { value: "physio", label: "Physiotherapist" },
+  { value: "rehab_manager", label: "Rehab Manager" },
+  { value: "approvals", label: "Approvals" },
+  { value: "reception", label: "Reception" },
+  { value: "reception_supervisor", label: "Reception Supervisor" },
+  { value: "visitor", label: "Visitor" },
+  { value: "visitor_ceo", label: "Visitor CEO" },
+  { value: "doctor", label: "Doctor" },
+  { value: "rcm", label: "RCM" },
+  { value: "callcenter", label: "Call Center" },
+  { value: "callcenter_supervisor", label: "Call Center Supervisor" },
+];
 export default function EvaluationTrackerSection({
   assignments = [],
   month = "",
@@ -608,11 +556,9 @@ export default function EvaluationTrackerSection({
       "evaluation",
       "eval",
     ];
-
     const safeAssignments = Array.isArray(assignments)
       ? assignments
       : [];
-
     return safeAssignments
       .filter((item) => {
         const category = String(
@@ -624,7 +570,6 @@ export default function EvaluationTrackerSection({
           .trim()
           .toLowerCase()
           .replace(/[\s-]+/g, "_");
-
         return evaluationCategories.includes(category);
       })
       .sort((a, b) =>
@@ -633,7 +578,6 @@ export default function EvaluationTrackerSection({
         )
       );
   }, [assignments]);
-
   const statistics = useMemo(() => {
     const counts = {
       total: evaluations.length,
@@ -641,10 +585,8 @@ export default function EvaluationTrackerSection({
       transferred: 0,
       pending: 0,
     };
-
     evaluations.forEach((item) => {
       const type = getStatusType(getStatus(item));
-
       if (type === "started") {
         counts.started += 1;
       } else if (type === "transferred") {
@@ -653,15 +595,12 @@ export default function EvaluationTrackerSection({
         counts.pending += 1;
       }
     });
-
     return counts;
   }, [evaluations]);
-
   const getPercentage = (value) => {
     if (!statistics.total) return 0;
     return Math.round((value / statistics.total) * 1000) / 10;
   };
-
   const styles = {
     page: {
       background: "linear-gradient(135deg, #f0f5fc 0%, #f8faff 100%)",
@@ -861,13 +800,11 @@ export default function EvaluationTrackerSection({
       fontSize: 12,
     },
   };
-
   function renderStatus(item) {
     const status = getStatus(item);
     const type = getStatusType(status);
     const symbol =
       type === "started" ? "✓" : type === "transferred" ? "⇄" : "◷";
-
     return (
       <span
         style={{
@@ -881,7 +818,6 @@ export default function EvaluationTrackerSection({
       </span>
     );
   }
-
   return (
     <section style={styles.page}>
       <div style={styles.header}>
@@ -892,7 +828,6 @@ export default function EvaluationTrackerSection({
             Track initial evaluations and patient follow-up status.
           </p>
         </div>
-
         <label style={styles.monthLabel}>
           Evaluation Month
           <input
@@ -903,7 +838,6 @@ export default function EvaluationTrackerSection({
           />
         </label>
       </div>
-
       <div style={styles.statsPanel}>
         <div style={styles.statsGrid}>
           <SummaryCard
@@ -932,9 +866,7 @@ export default function EvaluationTrackerSection({
           />
         </div>
       </div>
-
       {error ? <div style={styles.error}>{error}</div> : null}
-
       <div style={styles.recordsPanel}>
         <div style={styles.recordsHeader}>
           <div>
@@ -943,7 +875,6 @@ export default function EvaluationTrackerSection({
               Showing initial evaluations for {getMonthLabel(month)}.
             </p>
           </div>
-
           {onReload && (
             <button
               type="button"
@@ -956,7 +887,6 @@ export default function EvaluationTrackerSection({
             </button>
           )}
         </div>
-
         {loading ? (
           <div style={styles.emptyState}>Loading evaluations...</div>
         ) : evaluations.length === 0 ? (
@@ -977,7 +907,6 @@ export default function EvaluationTrackerSection({
                   <th style={styles.th}>Status</th>
                 </tr>
               </thead>
-
               <tbody>
                 {evaluations.map((item, index) => (
                   <tr
@@ -1000,7 +929,9 @@ export default function EvaluationTrackerSection({
                         {getFileNumber(item)}
                       </span>
                     </td>
-                    <td style={styles.td}>{getVisitNumber(item)}</td>
+                    <td style={styles.td}>
+                      {getVisitNumber(item)}
+                    </td>
                     <td style={styles.td}>{getPhysician(item)}</td>
                     <td style={styles.td}>{getSpecialty(item)}</td>
                     <td style={styles.td}>{renderStatus(item)}</td>
@@ -1010,7 +941,6 @@ export default function EvaluationTrackerSection({
             </table>
           </div>
         )}
-
         <div style={styles.footer}>
           <span>
             Showing {evaluations.length}{" "}

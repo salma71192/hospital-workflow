@@ -23,11 +23,21 @@ const STATUS_OPTIONS = [
 
 const COLORS = {
   navy: "#17365d",
-  text: "#16334f",
-  muted: "#718096",
-  border: "#dfe7f1",
-  background: "#f8fafc",
-  green: "#047857",
+  text: "#243b5a",
+  muted: "#7185a3",
+  border: "#dce6f2",
+  white: "#ffffff",
+  blue: "#3268f5",
+  blueLight: "#eff6ff",
+  blueBorder: "#d6e7ff",
+  purple: "#8b32ed",
+  purpleLight: "#f7f1ff",
+  purpleBorder: "#e8d4ff",
+  orange: "#e76a16",
+  orangeLight: "#fff7ed",
+  orangeBorder: "#ffd8ad",
+  green: "#059669",
+  greenLight: "#ecfdf5",
   red: "#b91c1c",
 };
 
@@ -66,7 +76,7 @@ function getInsurance(patient) {
 function getInsuranceLabel(value) {
   return (
     INSURANCE_OPTIONS.find((item) => item.value === value)?.label ||
-    (value === "not_set" ? "Not Set" : "Not Set")
+    "Not Set"
   );
 }
 
@@ -97,8 +107,6 @@ function getCategorySessions(patient, category) {
     }
   }
 
-  // Do not assume all sessions are cash sessions just because a patient
-  // is marked as Cash. Mixed payment types require backend category totals.
   return 0;
 }
 
@@ -116,15 +124,40 @@ function getStatusLabel(status) {
 function getStatusStyle(status) {
   switch (getStatusLabel(status)) {
     case "High":
-      return { background: "#dcfce7", color: "#166534", dot: "#16a34a" };
+      return {
+        background: "#ecfdf5",
+        color: "#047857",
+        dot: "#059669",
+        border: "#a7f3d0",
+      };
     case "Moderate":
-      return { background: "#dbeafe", color: "#1d4ed8", dot: "#2563eb" };
+      return {
+        background: "#eff6ff",
+        color: "#1d4ed8",
+        dot: "#3268f5",
+        border: "#bfdbfe",
+      };
     case "Low":
-      return { background: "#fef3c7", color: "#92400e", dot: "#d97706" };
+      return {
+        background: "#fff7ed",
+        color: "#9a3412",
+        dot: "#e76a16",
+        border: "#fed7aa",
+      };
     case "With Another Therapist":
-      return { background: "#f3e8ff", color: "#6b21a8", dot: "#9333ea" };
+      return {
+        background: "#f7f1ff",
+        color: "#7435db",
+        dot: "#8b32ed",
+        border: "#e8d4ff",
+      };
     default:
-      return { background: "#f1f5f9", color: "#475569", dot: "#94a3b8" };
+      return {
+        background: "#f1f5f9",
+        color: "#64748b",
+        dot: "#94a3b8",
+        border: "#dce6f2",
+      };
   }
 }
 
@@ -231,24 +264,735 @@ async function sendTrackerAction(payload) {
 
 const INSURANCE_BADGE_STYLES = {
   thiqa: {
-    background: "#dcfce7",
-    color: "#166534",
-    border: "1px solid #bbf7d0",
+    background: "#ecfdf5",
+    color: "#047857",
+    border: "1px solid #a7f3d0",
   },
   daman: {
-    background: "#dbeafe",
+    background: "#eff6ff",
     color: "#1d4ed8",
     border: "1px solid #bfdbfe",
   },
   cash: {
-    background: "#ffedd5",
+    background: "#fff7ed",
     color: "#9a3412",
     border: "1px solid #fed7aa",
   },
   not_set: {
     background: "#f1f5f9",
     color: "#64748b",
+    border: "1px solid #dce6f2",
+  },
+};
+
+const styles = {
+  page: {
+    display: "grid",
+    gap: 24,
+    width: "100%",
+    minWidth: 0,
+    boxSizing: "border-box",
+    color: COLORS.text,
+    fontFamily: "Inter, Arial, sans-serif",
+  },
+  card: {
+    display: "grid",
+    gap: 24,
+    minWidth: 0,
+    padding: "clamp(16px, 2.5vw, 28px)",
+    background: COLORS.white,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 17,
+    boxShadow: "0 8px 25px rgba(31, 55, 89, 0.035)",
+    boxSizing: "border-box",
+  },
+  header: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 18,
+    paddingBottom: 22,
+    borderBottom: "1px solid #edf2f7",
+  },
+  headingContent: {
+    display: "grid",
+    gap: 8,
+    flex: "1 1 300px",
+    minWidth: 0,
+  },
+  eyebrow: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    justifySelf: "start",
+    padding: "7px 13px",
+    borderRadius: 9,
+    background: "#eee8ff",
+    color: "#7435db",
+    fontSize: 11,
+    fontWeight: 850,
+    letterSpacing: "0.8px",
+    textTransform: "uppercase",
+  },
+  title: {
+    margin: 0,
+    color: COLORS.navy,
+    fontSize: "clamp(22px, 2.5vw, 28px)",
+    fontWeight: 850,
+    letterSpacing: "-0.7px",
+    lineHeight: 1.25,
+    overflowWrap: "anywhere",
+  },
+  subtitle: {
+    margin: 0,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 1.7,
+    maxWidth: 720,
+  },
+  headerRight: {
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: 12,
+    minWidth: 0,
+  },
+  monthFilter: {
+    display: "grid",
+    gap: 7,
+  },
+  fieldLabel: {
+    display: "block",
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: "0.4px",
+    textTransform: "uppercase",
+  },
+  monthInput: {
+    minHeight: 43,
+    minWidth: 175,
+    boxSizing: "border-box",
+    padding: "9px 12px",
+    border: `1px solid ${COLORS.blueBorder}`,
+    borderRadius: 10,
+    background: "#f8fbff",
+    color: COLORS.navy,
+    fontSize: 13,
+    fontWeight: 750,
+    fontFamily: "inherit",
+    outlineColor: COLORS.blue,
+  },
+  monthBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 39,
+    padding: "8px 13px",
+    borderRadius: 24,
+    border: `1px solid ${COLORS.purpleBorder}`,
+    background: COLORS.purpleLight,
+    color: COLORS.purple,
+    fontSize: 12,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+  monthBadgeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    background: COLORS.purple,
+    flexShrink: 0,
+  },
+  errorMessage: {
+    padding: 14,
+    border: "1px solid #fecdd3",
+    borderRadius: 13,
+    background: "#fff1f2",
+    color: COLORS.red,
+    fontSize: 13,
+    lineHeight: 1.7,
+  },
+  successMessage: {
+    padding: 14,
+    border: "1px solid #bbf7d0",
+    borderRadius: 13,
+    background: COLORS.greenLight,
+    color: "#166534",
+    fontSize: 13,
+    lineHeight: 1.7,
+  },
+  summaryGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))",
+    gap: 14,
+    minWidth: 0,
+  },
+  summaryCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+    minWidth: 0,
+    padding: "17px 15px",
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 15,
+    background: COLORS.white,
+    boxShadow: "0 3px 12px rgba(31, 55, 89, 0.025)",
+  },
+  summaryIcon: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 45,
+    height: 45,
+    flexShrink: 0,
+    borderRadius: 13,
+    fontSize: 22,
+    fontWeight: 800,
+  },
+  summaryContent: {
+    display: "grid",
+    gap: 6,
+    minWidth: 0,
+  },
+  summaryLabel: {
+    color: COLORS.muted,
+    fontSize: 11,
+    fontWeight: 750,
+    lineHeight: 1.5,
+  },
+  summaryValue: {
+    color: COLORS.navy,
+    fontSize: 25,
+    fontWeight: 850,
+    lineHeight: 1.1,
+    fontVariantNumeric: "tabular-nums",
+  },
+  sectionHeading: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  sectionTitle: {
+    margin: 0,
+    color: COLORS.navy,
+    fontSize: 18,
+    fontWeight: 850,
+  },
+  sectionSubtitle: {
+    margin: "6px 0 0",
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 1.65,
+  },
+  sectionBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "8px 13px",
+    borderRadius: 24,
+    background: COLORS.purpleLight,
+    color: COLORS.purple,
+    fontSize: 11,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+  insuranceSummary: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))",
+    gap: 14,
+    minWidth: 0,
+  },
+  insuranceCard: {
+    display: "grid",
+    justifyItems: "start",
+    alignContent: "start",
+    gap: 8,
+    minWidth: 0,
+    padding: 17,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 14,
+    background: "#f8fbff",
+    color: COLORS.navy,
+    textAlign: "left",
+    boxSizing: "border-box",
+  },
+  insuranceCardLabel: {
+    color: COLORS.muted,
+    fontSize: 11,
+    fontWeight: 850,
+    letterSpacing: "0.6px",
+  },
+  insuranceCardValue: {
+    color: COLORS.navy,
+    fontSize: 27,
+    fontWeight: 850,
+    fontVariantNumeric: "tabular-nums",
+  },
+  insuranceCardHint: {
+    color: COLORS.muted,
+    fontSize: 12,
+    lineHeight: 1.5,
+  },
+  tableHeading: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 16,
+  },
+  tableHeadingIntro: {
+    display: "grid",
+    gap: 6,
+    minWidth: 0,
+  },
+  tableTitle: {
+    margin: 0,
+    color: COLORS.navy,
+    fontSize: 18,
+    fontWeight: 850,
+  },
+  tableSubtitle: {
+    margin: 0,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 1.65,
+  },
+  headingActions: {
+    display: "flex",
+    alignItems: "flex-end",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  importTypeField: {
+    display: "grid",
+    gap: 6,
+    minWidth: 110,
+  },
+  toolbarSelect: {
+    minHeight: 42,
+    boxSizing: "border-box",
+    padding: "9px 12px",
+    border: `1px solid ${COLORS.blueBorder}`,
+    borderRadius: 10,
+    background: "#f8fbff",
+    color: COLORS.navy,
+    fontSize: 13,
+    fontFamily: "inherit",
+    cursor: "pointer",
+  },
+  importButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 42,
+    padding: "10px 15px",
+    border: "1px solid #a7f3d0",
+    borderRadius: 24,
+    background: COLORS.greenLight,
+    color: "#047857",
+    fontSize: 12,
+    fontWeight: 800,
+    fontFamily: "inherit",
+    cursor: "pointer",
+  },
+  rolloverButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 42,
+    padding: "10px 15px",
+    border: `1px solid ${COLORS.purpleBorder}`,
+    borderRadius: 24,
+    background: COLORS.purpleLight,
+    color: COLORS.purple,
+    fontSize: 12,
+    fontWeight: 800,
+    fontFamily: "inherit",
+    cursor: "pointer",
+  },
+  importResult: {
+    display: "grid",
+    gap: 7,
+    padding: 15,
+    border: "1px solid #bbf7d0",
+    borderRadius: 13,
+    background: COLORS.greenLight,
+    color: "#166534",
+    fontSize: 12,
+    lineHeight: 1.7,
+  },
+  importWarning: {
+    color: "#92400e",
+    fontWeight: 750,
+  },
+  filterPanel: {
+    display: "flex",
+    alignItems: "flex-end",
+    flexWrap: "wrap",
+    gap: 14,
+    padding: 18,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 15,
+    background: "#f8fbff",
+    boxSizing: "border-box",
+  },
+  filterField: {
+    display: "grid",
+    gap: 7,
+    flex: "1 1 210px",
+    minWidth: 0,
+  },
+  input: {
+    width: "100%",
+    minHeight: 44,
+    boxSizing: "border-box",
+    padding: "10px 13px",
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 10,
+    background: COLORS.white,
+    color: COLORS.text,
+    fontSize: 13,
+    fontFamily: "inherit",
+    outlineColor: COLORS.blue,
+  },
+  select: {
+    width: "100%",
+    minHeight: 44,
+    boxSizing: "border-box",
+    padding: "9px 12px",
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 10,
+    background: COLORS.white,
+    color: COLORS.text,
+    fontSize: 13,
+    fontFamily: "inherit",
+    cursor: "pointer",
+    outlineColor: COLORS.blue,
+  },
+  filterResult: {
+    display: "flex",
+    alignItems: "center",
+    gap: 7,
+    minHeight: 44,
+    color: COLORS.muted,
+    fontSize: 12,
+    whiteSpace: "nowrap",
+  },
+  filterResultNumber: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 30,
+    height: 30,
+    padding: "0 8px",
+    borderRadius: 9,
+    background: COLORS.blueLight,
+    color: COLORS.blue,
+    fontSize: 13,
+    fontWeight: 850,
+  },
+  clearFiltersButton: {
+    minHeight: 40,
+    padding: "9px 14px",
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 24,
+    background: COLORS.white,
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: 750,
+    fontFamily: "inherit",
+    cursor: "pointer",
+  },
+  tableWrap: {
+    width: "100%",
+    minWidth: 0,
+    overflowX: "auto",
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 15,
+    background: COLORS.white,
+  },
+  table: {
+    width: "100%",
+    minWidth: 1240,
+    tableLayout: "fixed",
+    borderCollapse: "separate",
+    borderSpacing: 0,
+    background: COLORS.white,
+  },
+  th: {
+    position: "sticky",
+    top: 0,
+    padding: "14px 12px",
+    textAlign: "left",
+    background: "#f3f7fc",
+    color: "#61738a",
+    fontSize: 10,
+    fontWeight: 850,
+    letterSpacing: "0.4px",
+    whiteSpace: "nowrap",
+    borderBottom: `1px solid ${COLORS.border}`,
+  },
+  tr: {
+    background: COLORS.white,
+  },
+  td: {
+    padding: "15px 12px",
+    color: "#465970",
+    fontSize: 12,
+    verticalAlign: "middle",
+    borderBottom: "1px solid #edf2f7",
+    overflowWrap: "anywhere",
+  },
+  patientTd: {
+    padding: "15px 14px",
+    color: "#465970",
+    fontSize: 12,
+    verticalAlign: "middle",
+    borderBottom: "1px solid #edf2f7",
+  },
+  patientCell: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    width: "100%",
+    minWidth: 0,
+  },
+  avatar: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 42,
+    height: 42,
+    flexShrink: 0,
+    borderRadius: 12,
+    background: "linear-gradient(135deg, #eff6ff, #eee8ff)",
+    color: COLORS.navy,
+    fontSize: 12,
+    fontWeight: 850,
+    border: `1px solid ${COLORS.blueBorder}`,
+  },
+  patientInfo: {
+    display: "grid",
+    justifyItems: "start",
+    gap: 6,
+    minWidth: 0,
+    flex: 1,
+  },
+  patientName: {
+    display: "block",
+    width: "100%",
+    color: COLORS.navy,
+    fontSize: 12,
+    fontWeight: 800,
+    lineHeight: 1.6,
+    overflowWrap: "anywhere",
+    whiteSpace: "normal",
+  },
+  newBadge: {
+    width: "fit-content",
+    padding: "4px 7px",
+    borderRadius: 7,
+    background: COLORS.orangeLight,
+    color: "#c2410c",
+    border: `1px solid ${COLORS.orangeBorder}`,
+    fontSize: 8,
+    fontWeight: 850,
+    letterSpacing: "0.3px",
+  },
+  oldBadge: {
+    width: "fit-content",
+    padding: "4px 7px",
+    borderRadius: 7,
+    background: "#f1f5f9",
+    color: "#64748b",
     border: "1px solid #e2e8f0",
+    fontSize: 8,
+    fontWeight: 850,
+    letterSpacing: "0.3px",
+  },
+  fileNumber: {
+    display: "inline-flex",
+    alignItems: "center",
+    maxWidth: "100%",
+    padding: "8px 9px",
+    border: `1px solid ${COLORS.blueBorder}`,
+    borderRadius: 9,
+    background: COLORS.blueLight,
+    color: COLORS.navy,
+    fontSize: 11,
+    fontWeight: 800,
+    lineHeight: 1.4,
+    fontVariantNumeric: "tabular-nums",
+    overflowWrap: "anywhere",
+  },
+  insuranceBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    maxWidth: "100%",
+    padding: "7px 10px",
+    borderRadius: 24,
+    fontSize: 10,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+  sessionsCell: {
+    display: "grid",
+    gap: 8,
+    minWidth: 0,
+  },
+  sessionsTop: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 5,
+    flexWrap: "wrap",
+  },
+  sessionCount: {
+    color: COLORS.navy,
+    fontSize: 17,
+    fontWeight: 850,
+    lineHeight: 1.2,
+    fontVariantNumeric: "tabular-nums",
+  },
+  sessionUnit: {
+    color: COLORS.muted,
+    fontSize: 10,
+    fontWeight: 650,
+  },
+  cashSessionNote: {
+    color: "#9a3412",
+    fontSize: 10,
+    fontWeight: 750,
+  },
+  progressTrack: {
+    width: 90,
+    maxWidth: "100%",
+    height: 6,
+    overflow: "hidden",
+    borderRadius: 24,
+    background: "#e9eef5",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 24,
+    transition: "width 0.2s ease",
+  },
+  statusBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 7,
+    width: "fit-content",
+    maxWidth: "100%",
+    padding: "7px 9px",
+    border: "1px solid transparent",
+    borderRadius: 24,
+    fontSize: 10,
+    fontWeight: 800,
+    whiteSpace: "normal",
+    lineHeight: 1.45,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+  specialityText: {
+    display: "block",
+    maxWidth: "100%",
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: 650,
+    lineHeight: 1.6,
+    overflowWrap: "anywhere",
+  },
+  dateText: {
+    display: "inline-block",
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: 700,
+    lineHeight: 1.5,
+    whiteSpace: "nowrap",
+    fontVariantNumeric: "tabular-nums",
+  },
+  openButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 90,
+    minHeight: 38,
+    padding: "8px 12px",
+    border: `1px solid ${COLORS.navy}`,
+    borderRadius: 24,
+    background: COLORS.navy,
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: 800,
+    fontFamily: "inherit",
+    cursor: "pointer",
+    textAlign: "center",
+    boxShadow: "0 3px 8px rgba(23, 54, 93, 0.12)",
+  },
+  emptyState: {
+    display: "grid",
+    justifyItems: "center",
+    gap: 12,
+    padding: "42px 20px",
+    border: `1px dashed ${COLORS.border}`,
+    borderRadius: 15,
+    background: "#f8fbff",
+    textAlign: "center",
+  },
+  emptyIcon: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 52,
+    height: 52,
+    borderRadius: 15,
+    background: COLORS.blueLight,
+    color: COLORS.blue,
+    fontSize: 26,
+  },
+  emptyTitle: {
+    margin: 0,
+    color: COLORS.navy,
+    fontSize: 16,
+    fontWeight: 850,
+  },
+  emptyText: {
+    maxWidth: 440,
+    margin: 0,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 1.7,
+  },
+  footer: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: "14px 17px",
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 12,
+    background: "#f8fafc",
+    color: COLORS.muted,
+    fontSize: 12,
+    lineHeight: 1.75,
+  },
+  footerDot: {
+    width: 8,
+    height: 8,
+    flexShrink: 0,
+    marginTop: 6,
+    borderRadius: "50%",
+    background: COLORS.purple,
   },
 };
 
@@ -268,7 +1012,6 @@ export default function PatientTrackerTable({
   const [successMessage, setSuccessMessage] = useState("");
   const [searchName, setSearchName] = useState("");
   const [selectedSpeciality, setSelectedSpeciality] = useState("all");
-  const [selectedInsurance, setSelectedInsurance] = useState("all");
   const [importInsurance, setImportInsurance] = useState("thiqa");
   const [insuranceOverrides, setInsuranceOverrides] = useState({});
   const [importSummary, setImportSummary] = useState(null);
@@ -340,28 +1083,21 @@ export default function PatientTrackerTable({
     return result;
   }, [trackerPatients]);
 
+  // The patient list is filtered by name and speciality only.
   const filteredPatients = useMemo(() => {
     const search = searchName.trim().toLowerCase();
 
     return trackerPatients.filter((patient) => {
       const name = String(patient.name || "").toLowerCase();
       const speciality = getSpeciality(patient);
-      const insurance = getInsurance(patient);
 
       return (
         (!search || name.includes(search)) &&
         (selectedSpeciality === "all" ||
-          speciality === selectedSpeciality) &&
-        (selectedInsurance === "all" ||
-          insurance === selectedInsurance)
+          speciality === selectedSpeciality)
       );
     });
-  }, [
-    trackerPatients,
-    searchName,
-    selectedSpeciality,
-    selectedInsurance,
-  ]);
+  }, [trackerPatients, searchName, selectedSpeciality]);
 
   const clearMessages = () => {
     setErrorMessage("");
@@ -377,7 +1113,6 @@ export default function PatientTrackerTable({
   const clearFilters = () => {
     setSearchName("");
     setSelectedSpeciality("all");
-    setSelectedInsurance("all");
   };
 
   const openPatientFile = (patient) => {
@@ -508,12 +1243,11 @@ export default function PatientTrackerTable({
             ? normalizeInsurance(row[insuranceKey])
             : importInsurance;
 
-        // Use the selected import category when the spreadsheet has no
-        // recognized Thiqa, Daman, or Cash value.
-        const insurance =
-          ["thiqa", "daman", "cash"].includes(importedInsurance)
-            ? importedInsurance
-            : importInsurance;
+        const insurance = ["thiqa", "daman", "cash"].includes(
+          importedInsurance
+        )
+          ? importedInsurance
+          : importInsurance;
 
         updates[fileNumber] = insurance;
         importedNumbers.add(fileNumber);
@@ -557,18 +1291,27 @@ export default function PatientTrackerTable({
       label: "THIQA PATIENTS",
       value: summary.thiqaPatients,
       sessions: summary.thiqaSessions,
+      color: COLORS.green,
+      background: COLORS.greenLight,
+      border: "#a7f3d0",
     },
     {
       key: "daman",
       label: "DAMAN PATIENTS",
       value: summary.damanPatients,
       sessions: summary.damanSessions,
+      color: COLORS.blue,
+      background: COLORS.blueLight,
+      border: COLORS.blueBorder,
     },
     {
       key: "cash",
       label: "CASH PATIENTS",
       value: summary.cashPatients,
       sessions: summary.cashSessions,
+      color: COLORS.orange,
+      background: COLORS.orangeLight,
+      border: COLORS.orangeBorder,
     },
   ];
 
@@ -577,29 +1320,29 @@ export default function PatientTrackerTable({
       label: "Total Patients",
       value: summary.totalPatients,
       icon: "♧",
-      color: "#1d4ed8",
-      background: "#eff6ff",
+      color: COLORS.blue,
+      background: COLORS.blueLight,
     },
     {
       label: "Active Patients",
       value: summary.activePatients,
       icon: "✓",
-      color: "#047857",
-      background: "#ecfdf5",
+      color: COLORS.green,
+      background: COLORS.greenLight,
     },
     {
       label: "Utilized Sessions",
       value: summary.totalSessions,
       icon: "▤",
-      color: "#6d28d9",
-      background: "#f5f3ff",
+      color: COLORS.purple,
+      background: COLORS.purpleLight,
     },
     {
       label: "Inactive Patients",
       value: summary.inactivePatients,
       icon: "!",
-      color: "#b45309",
-      background: "#fffbeb",
+      color: COLORS.orange,
+      background: COLORS.orangeLight,
     },
   ];
 
@@ -608,7 +1351,7 @@ export default function PatientTrackerTable({
       <div style={styles.card}>
         <header style={styles.header}>
           <div style={styles.headingContent}>
-            <div style={styles.eyebrow}>PATIENT MANAGEMENT</div>
+            <span style={styles.eyebrow}>PATIENT TRACKER</span>
             <h2 style={styles.title}>{title}</h2>
             <p style={styles.subtitle}>
               Monitor patient activity, insurance coverage, utilized
@@ -650,7 +1393,7 @@ export default function PatientTrackerTable({
           </div>
         )}
 
-        <div style={styles.summaryGrid}>
+        <section aria-label="Patient summary" style={styles.summaryGrid}>
           {summaryCards.map((item) => (
             <div key={item.label} style={styles.summaryCard}>
               <div
@@ -659,9 +1402,11 @@ export default function PatientTrackerTable({
                   color: item.color,
                   background: item.background,
                 }}
+                aria-hidden="true"
               >
                 {item.icon}
               </div>
+
               <div style={styles.summaryContent}>
                 <span style={styles.summaryLabel}>{item.label}</span>
                 <strong style={styles.summaryValue}>
@@ -670,38 +1415,36 @@ export default function PatientTrackerTable({
               </div>
             </div>
           ))}
-        </div>
+        </section>
 
-        <div style={styles.insuranceSummary}>
+        <section aria-label="Insurance summary" style={styles.insuranceSummary}>
           {insuranceCards.map((item) => (
-            <button
+            <div
               key={item.key}
-              type="button"
               style={{
                 ...styles.insuranceCard,
-                ...(selectedInsurance === item.key
-                  ? styles.insuranceCardSelected
-                  : {}),
+                borderColor: item.border,
+                background: item.background,
               }}
-              onClick={() =>
-                setSelectedInsurance((current) =>
-                  current === item.key ? "all" : item.key
-                )
-              }
-              aria-pressed={selectedInsurance === item.key}
             >
               <span style={styles.insuranceCardLabel}>{item.label}</span>
-              <strong style={styles.insuranceCardValue}>{item.value}</strong>
+              <strong
+                style={{
+                  ...styles.insuranceCardValue,
+                  color: item.color,
+                }}
+              >
+                {item.value.toLocaleString()}
+              </strong>
               <span style={styles.insuranceCardHint}>
-                Utilized sessions: {item.sessions}
+                Utilized sessions: {item.sessions.toLocaleString()}
               </span>
-              <span style={styles.insuranceCardHint}>Click to filter</span>
-            </button>
+            </div>
           ))}
-        </div>
+        </section>
 
-        <div style={styles.tableHeading}>
-          <div>
+        <section style={styles.tableHeading}>
+          <div style={styles.tableHeadingIntro}>
             <h3 style={styles.tableTitle}>Patient Records</h3>
             <p style={styles.tableSubtitle}>
               Search patients and review their insurance and monthly session
@@ -716,7 +1459,7 @@ export default function PatientTrackerTable({
                 value={importInsurance}
                 onChange={(event) => setImportInsurance(event.target.value)}
                 style={styles.toolbarSelect}
-                aria-label="Insurance type for import"
+                aria-label="Default insurance type for import"
               >
                 {INSURANCE_OPTIONS.map((item) => (
                   <option key={item.value} value={item.value}>
@@ -728,7 +1471,14 @@ export default function PatientTrackerTable({
 
             <button
               type="button"
-              style={styles.importButton}
+              style={{
+                ...styles.importButton,
+                opacity: busyAction === "insurance-import" ? 0.65 : 1,
+                cursor:
+                  busyAction === "insurance-import"
+                    ? "not-allowed"
+                    : "pointer",
+              }}
               onClick={() => fileInputRef.current?.click()}
               disabled={busyAction === "insurance-import"}
             >
@@ -751,6 +1501,10 @@ export default function PatientTrackerTable({
               style={{
                 ...styles.rolloverButton,
                 opacity: busyAction === "rollover" ? 0.65 : 1,
+                cursor:
+                  busyAction === "rollover" || !selectedMonth
+                    ? "not-allowed"
+                    : "pointer",
               }}
               onClick={rolloverMonth}
               disabled={busyAction === "rollover" || !selectedMonth}
@@ -761,7 +1515,7 @@ export default function PatientTrackerTable({
                 : "Monthly Rollover"}
             </button>
           </div>
-        </div>
+        </section>
 
         {importSummary && (
           <div style={styles.importResult} role="status">
@@ -814,26 +1568,10 @@ export default function PatientTrackerTable({
             </select>
           </label>
 
-          <label style={styles.filterField}>
-            <span style={styles.fieldLabel}>FILTER BY INSURANCE</span>
-            <select
-              value={selectedInsurance}
-              onChange={(event) => setSelectedInsurance(event.target.value)}
-              style={styles.select}
-              aria-label="Filter by insurance type"
-            >
-              <option value="all">All Insurance Types</option>
-              {INSURANCE_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-              <option value="not_set">Not Set</option>
-            </select>
-          </label>
-
-          <div style={styles.filterResult}>
-            <strong>{filteredPatients.length}</strong>
+          <div style={styles.filterResult} aria-live="polite">
+            <strong style={styles.filterResultNumber}>
+              {filteredPatients.length.toLocaleString()}
+            </strong>
             <span>
               {filteredPatients.length === 1
                 ? "patient found"
@@ -841,9 +1579,7 @@ export default function PatientTrackerTable({
             </span>
           </div>
 
-          {(searchName ||
-            selectedSpeciality !== "all" ||
-            selectedInsurance !== "all") && (
+          {(searchName || selectedSpeciality !== "all") && (
             <button
               type="button"
               onClick={clearFilters}
@@ -900,9 +1636,10 @@ export default function PatientTrackerTable({
                     >
                       <td style={styles.patientTd}>
                         <div style={styles.patientCell}>
-                          <div style={styles.avatar}>
+                          <div style={styles.avatar} aria-hidden="true">
                             {getInitials(patient.name)}
                           </div>
+
                           <div style={styles.patientInfo}>
                             <strong style={styles.patientName}>
                               {patient.name || "Unnamed patient"}
@@ -914,7 +1651,9 @@ export default function PatientTrackerTable({
                                   : styles.oldBadge
                               }
                             >
-                              {isNewEvaluation ? "NEW EVALUATION" : "OLD"}
+                              {isNewEvaluation
+                                ? "NEW EVALUATION"
+                                : "OLD"}
                             </span>
                           </div>
                         </div>
@@ -957,11 +1696,11 @@ export default function PatientTrackerTable({
                                 width: `${progress}%`,
                                 background:
                                   sessions >= 6
-                                    ? "#059669"
+                                    ? COLORS.green
                                     : sessions >= 3
-                                      ? "#3b82f6"
+                                      ? COLORS.blue
                                       : sessions > 0
-                                        ? "#d97706"
+                                        ? COLORS.orange
                                         : "#cbd5e1",
                               }}
                             />
@@ -988,6 +1727,7 @@ export default function PatientTrackerTable({
                             ...styles.statusBadge,
                             background: statusStyle.background,
                             color: statusStyle.color,
+                            borderColor: statusStyle.border,
                           }}
                         >
                           <span
@@ -1015,7 +1755,11 @@ export default function PatientTrackerTable({
                       <td style={{ ...styles.td, textAlign: "center" }}>
                         <button
                           type="button"
-                          style={styles.openButton}
+                          style={{
+                            ...styles.openButton,
+                            opacity: patient.id ? 1 : 0.5,
+                            cursor: patient.id ? "pointer" : "not-allowed",
+                          }}
                           onClick={() => openPatientFile(patient)}
                           disabled={!patient.id}
                           title={
@@ -1035,21 +1779,23 @@ export default function PatientTrackerTable({
           </div>
         ) : (
           <div style={styles.emptyState}>
-            <div style={styles.emptyIcon}>♧</div>
+            <div style={styles.emptyIcon} aria-hidden="true">
+              ♧
+            </div>
+
             <h3 style={styles.emptyTitle}>
               {trackerPatients.length === 0
                 ? "No patients found"
                 : "No matching patients"}
             </h3>
+
             <p style={styles.emptyText}>
               {trackerPatients.length === 0
                 ? "There are no patient records to display for this month. Try selecting another reporting month."
-                : "No patients match your search, speciality, or insurance filters. Try changing your filters or clearing them."}
+                : "No patients match your search or speciality filter. Try changing your filters or clearing them."}
             </p>
 
-            {(searchName ||
-              selectedSpeciality !== "all" ||
-              selectedInsurance !== "all") && (
+            {(searchName || selectedSpeciality !== "all") && (
               <button
                 type="button"
                 onClick={clearFilters}
@@ -1062,7 +1808,7 @@ export default function PatientTrackerTable({
         )}
 
         <footer style={styles.footer}>
-          <span style={styles.footerDot} />
+          <span style={styles.footerDot} aria-hidden="true" />
           <span>
             Utilized Sessions includes the monthly total. Thiqa, Daman, and
             Cash session breakdowns require the corresponding category totals
@@ -1074,597 +1820,3 @@ export default function PatientTrackerTable({
     </section>
   );
 }
-
-const styles = {
-  page: {
-    width: "100%",
-    minWidth: 0,
-    fontFamily: "Inter, Arial, sans-serif",
-    color: "#10243e",
-  },
-  card: {
-    display: "grid",
-    gap: 24,
-    minWidth: 0,
-    padding: "clamp(16px, 2.5vw, 28px)",
-    background: "#fff",
-    border: "1px solid #e2eaf3",
-    borderRadius: 20,
-    boxShadow: "0 8px 28px rgba(15, 35, 65, 0.055)",
-  },
-  header: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: 20,
-    paddingBottom: 22,
-    borderBottom: "1px solid #edf2f7",
-  },
-  headingContent: { flex: "1 1 280px", minWidth: 0 },
-  eyebrow: {
-    marginBottom: 8,
-    color: "#07856f",
-    fontSize: 8,
-    fontWeight: 850,
-    letterSpacing: "1.4px",
-  },
-  title: {
-    margin: 0,
-    color: "#10243e",
-    fontSize: "clamp(20px, 2.5vw, 26px)",
-    fontWeight: 800,
-    lineHeight: 1.3,
-  },
-  subtitle: {
-    margin: "8px 0 0",
-    color: "#748398",
-    fontSize: 11,
-    lineHeight: 1.6,
-  },
-  headerRight: {
-    display: "flex",
-    alignItems: "flex-end",
-    justifyContent: "flex-end",
-    flexWrap: "wrap",
-    gap: 12,
-    minWidth: 0,
-  },
-  monthFilter: { display: "grid", gap: 7 },
-  fieldLabel: {
-    color: "#52647a",
-    fontSize: 9,
-    fontWeight: 800,
-    letterSpacing: "0.4px",
-  },
-  monthInput: {
-    minHeight: 40,
-    boxSizing: "border-box",
-    padding: "8px 10px",
-    border: "1px solid #d5e0ec",
-    borderRadius: 10,
-    background: "#fff",
-    color: "#243b53",
-    fontSize: 11,
-    fontFamily: "inherit",
-  },
-  monthBadge: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    minHeight: 22,
-    padding: "8px 10px",
-    borderRadius: 999,
-    border: "1px solid #ccefe0",
-    background: "#e9f9f1",
-    color: "#08784f",
-    fontSize: 10,
-    fontWeight: 800,
-    whiteSpace: "nowrap",
-  },
-  monthBadgeDot: {
-    width: 7,
-    height: 7,
-    borderRadius: "50%",
-    background: "#10b981",
-  },
-  errorMessage: {
-    padding: "10px 12px",
-    border: "1px solid #fecaca",
-    borderRadius: 10,
-    background: "#fef2f2",
-    color: COLORS.red,
-    fontSize: 11,
-  },
-  successMessage: {
-    padding: "10px 12px",
-    border: "1px solid #bbf7d0",
-    borderRadius: 10,
-    background: "#f0fdf4",
-    color: "#166534",
-    fontSize: 11,
-  },
-  summaryGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 185px), 1fr))",
-    gap: 14,
-    minWidth: 0,
-  },
-  summaryCard: {
-    display: "flex",
-    alignItems: "center",
-    gap: 14,
-    minWidth: 0,
-    padding: "16px 14px",
-    border: "1px solid #e8eef5",
-    borderRadius: 15,
-    background: "#fff",
-    boxShadow: "0 3px 12px rgba(15, 23, 42, 0.025)",
-  },
-  summaryIcon: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 44,
-    height: 44,
-    flexShrink: 0,
-    borderRadius: 14,
-    fontSize: 22,
-    fontWeight: 800,
-  },
-  summaryContent: { display: "grid", gap: 6, minWidth: 0 },
-  summaryLabel: {
-    color: "#718096",
-    fontSize: 9,
-    fontWeight: 700,
-    lineHeight: 1.4,
-  },
-  summaryValue: {
-    color: "#10243e",
-    fontSize: 23,
-    fontWeight: 850,
-    lineHeight: 1.1,
-    fontVariantNumeric: "tabular-nums",
-  },
-  insuranceSummary: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
-    gap: 14,
-  },
-  insuranceCard: {
-    display: "grid",
-    justifyItems: "start",
-    gap: 7,
-    padding: 17,
-    border: "1px solid #dce6f1",
-    borderRadius: 14,
-    background: "#f8fafc",
-    color: "#17365d",
-    textAlign: "left",
-    fontFamily: "inherit",
-    cursor: "pointer",
-  },
-  insuranceCardSelected: {
-    border: "2px solid #0f766e",
-    background: "#f0fdfa",
-  },
-  insuranceCardLabel: {
-    color: "#64748b",
-    fontSize: 9,
-    fontWeight: 850,
-    letterSpacing: "0.7px",
-  },
-  insuranceCardValue: {
-    fontSize: 26,
-    fontWeight: 850,
-    fontVariantNumeric: "tabular-nums",
-  },
-  insuranceCardHint: { color: "#64748b", fontSize: 10 },
-  tableHeading: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: 14,
-  },
-  tableTitle: {
-    margin: 0,
-    color: "#10243e",
-    fontSize: 17,
-    fontWeight: 800,
-  },
-  tableSubtitle: {
-    margin: "5px 0 0",
-    color: "#718096",
-    fontSize: 10,
-    lineHeight: 1.5,
-  },
-  headingActions: {
-    display: "flex",
-    alignItems: "flex-end",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  importTypeField: { display: "grid", gap: 5, minWidth: 105 },
-  toolbarSelect: {
-    minHeight: 38,
-    padding: "8px 10px",
-    border: "1px solid #cbd8e6",
-    borderRadius: 10,
-    background: "#fff",
-    color: "#16334f",
-    fontSize: 11,
-    fontFamily: "inherit",
-  },
-  importButton: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 38,
-    padding: "9px 12px",
-    border: "1px solid #a7f3d0",
-    borderRadius: 10,
-    background: "#ecfdf5",
-    color: "#065f46",
-    fontSize: 10,
-    fontWeight: 800,
-    fontFamily: "inherit",
-    cursor: "pointer",
-  },
-  rolloverButton: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    minHeight: 38,
-    padding: "9px 12px",
-    border: "1px solid #c7d2fe",
-    borderRadius: 10,
-    background: "#eef2ff",
-    color: "#3730a3",
-    fontSize: 10,
-    fontWeight: 800,
-    fontFamily: "inherit",
-    cursor: "pointer",
-  },
-  importResult: {
-    display: "grid",
-    gap: 7,
-    padding: 14,
-    border: "1px solid #bbf7d0",
-    borderRadius: 12,
-    background: "#f0fdf4",
-    color: "#166534",
-    fontSize: 11,
-    lineHeight: 1.6,
-  },
-  importWarning: { color: "#92400e", fontWeight: 700 },
-  filterPanel: {
-    display: "flex",
-    alignItems: "flex-end",
-    flexWrap: "wrap",
-    gap: 14,
-    padding: 16,
-    border: "1px solid #dfe7f1",
-    borderRadius: 14,
-    background: "#f8fafc",
-  },
-  filterField: {
-    display: "grid",
-    gap: 7,
-    flex: "1 1 200px",
-    minWidth: 180,
-  },
-  input: {
-    width: "100%",
-    minHeight: 44,
-    boxSizing: "border-box",
-    padding: "10px 12px",
-    border: "1px solid #cbd8e6",
-    borderRadius: 10,
-    background: "#fff",
-    color: "#16334f",
-    fontSize: 13,
-    fontFamily: "inherit",
-  },
-  select: {
-    width: "100%",
-    minHeight: 44,
-    boxSizing: "border-box",
-    padding: "9px 12px",
-    border: "1px solid #cbd8e6",
-    borderRadius: 10,
-    background: "#fff",
-    color: "#16334f",
-    fontSize: 13,
-    fontFamily: "inherit",
-    cursor: "pointer",
-  },
-  filterResult: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    minHeight: 44,
-    color: "#64748b",
-    fontSize: 11,
-    whiteSpace: "nowrap",
-  },
-  clearFiltersButton: {
-    minHeight: 38,
-    padding: "8px 12px",
-    border: "1px solid #cbd8e6",
-    borderRadius: 9,
-    background: "#fff",
-    color: "#334e68",
-    fontSize: 11,
-    fontWeight: 750,
-    fontFamily: "inherit",
-    cursor: "pointer",
-  },
-  tableWrap: {
-    width: "100%",
-    minWidth: 0,
-    overflowX: "auto",
-    border: "1px solid #dfe7f1",
-    borderRadius: 15,
-    background: "#fff",
-  },
-  table: {
-    width: "100%",
-    minWidth: 1240,
-    tableLayout: "fixed",
-    borderCollapse: "separate",
-    borderSpacing: 0,
-    background: "#fff",
-  },
-  th: {
-    position: "sticky",
-    top: 0,
-    padding: "13px 12px",
-    textAlign: "left",
-    background: "#f3f7fc",
-    color: "#61738a",
-    fontSize: 9,
-    fontWeight: 850,
-    letterSpacing: "0.4px",
-    whiteSpace: "nowrap",
-    borderBottom: "1px solid #dfe7f1",
-  },
-  tr: { background: "#fff" },
-  td: {
-    padding: "15px 12px",
-    color: "#465970",
-    fontSize: 11,
-    verticalAlign: "middle",
-    borderBottom: "1px solid #edf1f6",
-    overflowWrap: "anywhere",
-  },
-  patientTd: {
-    padding: "16px 14px",
-    color: "#465970",
-    fontSize: 11,
-    verticalAlign: "middle",
-    borderBottom: "1px solid #edf1f6",
-  },
-  patientCell: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    width: "100%",
-    minWidth: 0,
-  },
-  avatar: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 42,
-    height: 42,
-    flexShrink: 0,
-    borderRadius: 12,
-    background: "linear-gradient(135deg, #e0f2fe, #dbeafe)",
-    color: "#075985",
-    fontSize: 11,
-    fontWeight: 850,
-    border: "1px solid #cce7f7",
-  },
-  patientInfo: {
-    display: "grid",
-    justifyItems: "start",
-    gap: 6,
-    minWidth: 0,
-    flex: 1,
-  },
-  patientName: {
-    display: "block",
-    width: "100%",
-    color: "#16334f",
-    fontSize: 12,
-    fontWeight: 800,
-    lineHeight: 1.6,
-    overflowWrap: "anywhere",
-    whiteSpace: "normal",
-  },
-  newBadge: {
-    width: "fit-content",
-    padding: "3px 6px",
-    borderRadius: 6,
-    background: "#fff7ed",
-    color: "#c2410c",
-    border: "1px solid #fed7aa",
-    fontSize: 7,
-    fontWeight: 850,
-    letterSpacing: "0.25px",
-  },
-  oldBadge: {
-    width: "fit-content",
-    padding: "3px 6px",
-    borderRadius: 6,
-    background: "#f1f5f9",
-    color: "#64748b",
-    border: "1px solid #e2e8f0",
-    fontSize: 7,
-    fontWeight: 850,
-    letterSpacing: "0.25px",
-  },
-  fileNumber: {
-    display: "inline-flex",
-    alignItems: "center",
-    maxWidth: "100%",
-    padding: "8px 9px",
-    border: "1px solid #cfe2f7",
-    borderRadius: 9,
-    background: "#f0f7ff",
-    color: "#174a7e",
-    fontSize: 10,
-    fontWeight: 800,
-    lineHeight: 1.4,
-    fontVariantNumeric: "tabular-nums",
-    overflowWrap: "anywhere",
-  },
-  insuranceBadge: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    maxWidth: "100%",
-    padding: "7px 9px",
-    borderRadius: 999,
-    fontSize: 9,
-    fontWeight: 800,
-    whiteSpace: "nowrap",
-  },
-  sessionsCell: { display: "grid", gap: 8, minWidth: 0 },
-  sessionsTop: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: 5,
-    flexWrap: "wrap",
-  },
-  sessionCount: {
-    color: "#16334f",
-    fontSize: 16,
-    fontWeight: 850,
-    lineHeight: 1.2,
-    fontVariantNumeric: "tabular-nums",
-  },
-  sessionUnit: { color: "#94a3b8", fontSize: 9, fontWeight: 650 },
-  cashSessionNote: { color: "#9a3412", fontSize: 9, fontWeight: 800 },
-  progressTrack: {
-    width: 90,
-    maxWidth: "100%",
-    height: 5,
-    overflow: "hidden",
-    borderRadius: 999,
-    background: "#e9eef5",
-  },
-  progressFill: {
-    height: "100%",
-    borderRadius: 999,
-    transition: "width 0.2s ease",
-  },
-  statusBadge: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    width: "fit-content",
-    maxWidth: "100%",
-    padding: "7px 8px",
-    borderRadius: 999,
-    fontSize: 9,
-    fontWeight: 800,
-    whiteSpace: "normal",
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    flexShrink: 0,
-  },
-  specialityText: {
-    display: "block",
-    maxWidth: "100%",
-    color: "#334e68",
-    fontSize: 12,
-    fontWeight: 650,
-    lineHeight: 1.6,
-    overflowWrap: "anywhere",
-  },
-  dateText: {
-    display: "inline-block",
-    color: "#334e68",
-    fontSize: 11,
-    fontWeight: 700,
-    lineHeight: 1.5,
-    whiteSpace: "nowrap",
-    fontVariantNumeric: "tabular-nums",
-  },
-  openButton: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 90,
-    minHeight: 38,
-    padding: "7px 10px",
-    border: "1px solid #1e3a5f",
-    borderRadius: 9,
-    background: COLORS.navy,
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: 800,
-    fontFamily: "inherit",
-    cursor: "pointer",
-    textAlign: "center",
-    boxShadow: "0 3px 8px rgba(23, 54, 93, 0.16)",
-  },
-  emptyState: {
-    display: "grid",
-    justifyItems: "center",
-    gap: 10,
-    padding: "38px 18px",
-    border: "1px dashed #cbd8e6",
-    borderRadius: 15,
-    background: "#f8fafc",
-    textAlign: "center",
-  },
-  emptyIcon: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 50,
-    height: 50,
-    borderRadius: 16,
-    background: "#e7f2fc",
-    color: "#176b9b",
-    fontSize: 26,
-  },
-  emptyTitle: {
-    margin: 0,
-    color: "#16334f",
-    fontSize: 14,
-    fontWeight: 800,
-  },
-  emptyText: {
-    maxWidth: 380,
-    margin: 0,
-    color: "#718096",
-    fontSize: 11,
-    lineHeight: 1.7,
-  },
-  footer: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: 9,
-    paddingTop: 14,
-    borderTop: "1px solid #edf2f7",
-    color: "#718096",
-    fontSize: 10,
-    lineHeight: 1.7,
-  },
-  footerDot: {
-    width: 7,
-    height: 7,
-    flexShrink: 0,
-    marginTop: 5,
-    borderRadius: "50%",
-    background: "#0d9488",
-  },
-};

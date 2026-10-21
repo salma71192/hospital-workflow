@@ -5,52 +5,6 @@ import InsuranceUtilizationPage from "./approvals/InsuranceUtilizationPage";
 import api from "../api/api";
 import "./DashboardLayout.css";
 
-const INSURANCE_ITEM = {
-  key: "insurance-utilization",
-  label: "Insurance & Session Utilization",
-};
-
-function addInsuranceItemToSidebar(sidebarItems) {
-  const items = Array.isArray(sidebarItems)
-    ? sidebarItems.map((item) => ({ ...item }))
-    : [];
-
-  const approvalsIndex = items.findIndex(
-    (item) =>
-      String(item?.key ?? "").trim().toLowerCase() === "approvals" ||
-      String(item?.label ?? "").trim().toLowerCase() === "approvals"
-  );
-
-  if (approvalsIndex >= 0) {
-    const approvals = items[approvalsIndex];
-    const children = Array.isArray(approvals.children)
-      ? [...approvals.children]
-      : [];
-
-    if (
-      !children.some(
-        (child) => child?.key === INSURANCE_ITEM.key
-      )
-    ) {
-      children.push(INSURANCE_ITEM);
-    }
-
-    items[approvalsIndex] = {
-      ...approvals,
-      children,
-    };
-
-    return items;
-  }
-
-  // No Approvals group exists, so show the page as a top-level item.
-  if (!items.some((item) => item?.key === INSURANCE_ITEM.key)) {
-    items.push(INSURANCE_ITEM);
-  }
-
-  return items;
-}
-
 export default function DashboardLayout({
   title,
   subtitle,
@@ -75,8 +29,8 @@ export default function DashboardLayout({
   const [passwordMessage, setPasswordMessage] = useState("");
   const [passwordError, setPasswordError] = useState("");
 
-  const effectiveSidebarItems =
-    addInsuranceItemToSidebar(sidebarItems);
+  // Use only the sidebar items supplied by the parent.
+  // Insurance & Session Utilization is no longer added automatically.
 
   const toggleSidebar = () => {
     setSidebarOpen((previous) => !previous);
@@ -353,14 +307,14 @@ export default function DashboardLayout({
               (useAdminSidebar ? (
                 <AdminSidebar
                   sidebarTitle={sidebarTitle}
-                  sidebarItems={effectiveSidebarItems}
+                  sidebarItems={sidebarItems}
                   activeSection={activeSection}
                   onSelect={handleSectionSelect}
                 />
               ) : (
                 <div className="dashboard-layout__standard-sidebar">
                   <nav aria-label="Dashboard navigation">
-                    {effectiveSidebarItems.map(renderStandardItem)}
+                    {sidebarItems.map(renderStandardItem)}
                   </nav>
                 </div>
               ))}
@@ -527,7 +481,6 @@ function StandardSidebarItem({
     : [];
 
   const hasChildren = children.length > 0;
-
   const hasActiveChild = hasNestedActiveChild(
     children,
     activeSection

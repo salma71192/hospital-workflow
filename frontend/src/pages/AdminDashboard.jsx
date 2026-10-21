@@ -1,8 +1,12 @@
-
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
-
 import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 import AdminCreateSection from "../components/admin/AdminCreateSection";
@@ -13,7 +17,6 @@ import EvaluationTrackerSection from "../components/assignments/EvaluationTracke
 import PatientAssignmentForm from "../components/patients/PatientAssignmentForm";
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
 import OpenNewFile from "../components/patients/OpenNewFile";
-
 const emptyAssignmentForm = {
   patient_id: "",
   therapist_id: "",
@@ -26,13 +29,10 @@ const emptyAssignmentForm = {
   with_another_therapist: false,
   additional_therapist_ids: [],
 };
-
 function getApiError(err, fallback) {
   const data = err?.response?.data;
-
   if (typeof data?.error === "string") return data.error;
   if (typeof data?.detail === "string") return data.detail;
-
   if (data && typeof data === "object") {
     const details = Object.entries(data)
       .map(([field, value]) => {
@@ -41,17 +41,13 @@ function getApiError(err, fallback) {
           : typeof value === "string"
           ? value
           : JSON.stringify(value);
-
         return `${field}: ${text}`;
       })
       .join(" | ");
-
     if (details) return details;
   }
-
   return err?.message ? `${fallback}: ${err.message}` : fallback;
 }
-
 function hasAdminPermissions(user) {
   return Boolean(
     user &&
@@ -59,20 +55,16 @@ function hasAdminPermissions(user) {
         String(user.role || "").trim().toLowerCase() === "admin")
   );
 }
-
 export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
-
   const isAdmin = hasAdminPermissions(user);
-
   const [formData, setFormData] = useState({
     username: "",
     password: "",
     role: "admin",
     is_superuser: false,
   });
-
   const [users, setUsers] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -87,7 +79,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const [newlyCreatedPatient, setNewlyCreatedPatient] = useState(null);
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [savingAssignment, setSavingAssignment] = useState(false);
-
   const [activeCategory, setActiveCategory] = useState(() => {
     try {
       return localStorage.getItem("activeCategory") || "admin";
@@ -95,11 +86,12 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       return "admin";
     }
   });
-
+  // Static role options. Rehab Manager is included as a physiotherapy role.
   const roles = [
     "admin",
     "approvals",
     "physio",
+    "rehab_manager",
     "reception",
     "reception_supervisor",
     "visitor",
@@ -109,11 +101,11 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     "callcenter",
     "callcenter_supervisor",
   ];
-
   const roleLabels = {
     admin: "Admin",
     approvals: "Approvals",
     physio: "Physio",
+    rehab_manager: "Rehab Manager",
     reception: "Reception",
     reception_supervisor: "Reception Supervisor",
     visitor: "Visitors",
@@ -124,11 +116,12 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     callcenter_supervisor: "Call Center Supervisor",
     no_role: "No Role",
   };
-
+  // Rehab Manager currently shares the physiotherapy dashboard route.
   const roleRoutes = {
     admin: "/admin",
     approvals: "/approvals",
     physio: "/physio",
+    rehab_manager: "/physio",
     reception: "/reception",
     reception_supervisor: "/reception-supervisor",
     visitor: "/visitors",
@@ -138,7 +131,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     callcenter: "/callcenter",
     callcenter_supervisor: "/callcenter-supervisor",
   };
-
   const sidebarItems = [
     { key: "create", label: "Create New User" },
     { key: "manage", label: "Manage Users" },
@@ -157,7 +149,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     },
     { key: "evaluations", label: "Evaluations" },
   ];
-
   const fetchUsers = useCallback(async () => {
     try {
       const res = await api.get("users/list-users/");
@@ -168,7 +159,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setError(getApiError(err, "Failed to load users."));
     }
   }, []);
-
   const loadTherapists = useCallback(async () => {
     try {
       const res = await api.get("reception/therapists/");
@@ -181,17 +171,14 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setError(getApiError(err, "Failed to load physiotherapists."));
     }
   }, []);
-
   useEffect(() => {
     if (isAdmin) fetchUsers();
   }, [isAdmin, fetchUsers]);
-
   useEffect(() => {
     if (activeSection === "register_patient" || activeSection === "open_file") {
       loadTherapists();
     }
   }, [activeSection, loadTherapists]);
-
   const groupedUsers = useMemo(() => {
     const groups = {
       admin: [],
@@ -199,6 +186,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       reception: [],
       reception_supervisor: [],
       physio: [],
+      rehab_manager: [],
       doctor: [],
       rcm: [],
       callcenter: [],
@@ -207,21 +195,23 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       visitor_ceo: [],
       no_role: [],
     };
-
     users.forEach((item) => {
-      if (groups[item.role]) groups[item.role].push(item);
-      else groups.no_role.push(item);
+      const role = String(item?.role || "").trim().toLowerCase();
+      if (groups[role]) {
+        groups[role].push(item);
+      } else {
+        groups.no_role.push(item);
+      }
     });
-
     return groups;
   }, [users]);
-
   const categoryOrder = [
     "admin",
     "approvals",
     "reception",
     "reception_supervisor",
     "physio",
+    "rehab_manager",
     "doctor",
     "rcm",
     "callcenter",
@@ -230,44 +220,36 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     "visitor_ceo",
     "no_role",
   ];
-
   const handleCategoryChange = (category) => {
     setActiveCategory(category);
-
     try {
       localStorage.setItem("activeCategory", category);
     } catch (storageError) {
       console.warn("Could not save active category:", storageError);
     }
   };
-
   const resetAssignmentEditor = () => {
     setEditingAssignmentId(null);
     setSelectedPatient(null);
     setAssignmentForm({ ...emptyAssignmentForm });
   };
-
   const handleSectionChange = (section) => {
     if (editingAssignmentId && section !== "register_patient") {
       const confirmed = window.confirm(
         "Leave the assignment edit without saving your changes?"
       );
-
       if (!confirmed) return;
       resetAssignmentEditor();
     }
-
     setActiveSection(section);
     setMessage("");
     setError("");
-
     if (section === "open_file") {
       setNewlyCreatedPatient(null);
       setSelectedPatient(null);
       setEditingAssignmentId(null);
       setAssignmentForm({ ...emptyAssignmentForm });
     }
-
     if (section === "register_patient" && !editingAssignmentId) {
       setSelectedPatient(newlyCreatedPatient || null);
       setAssignmentForm({
@@ -276,26 +258,20 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       });
     }
   };
-
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
-
     try {
       const res = await api.post("users/create-user/", formData);
-
       setMessage(res.data?.message || "User created successfully.");
-
       const createdRole = formData.role;
-
       setFormData({
         username: "",
         password: "",
         role: "admin",
         is_superuser: false,
       });
-
       await fetchUsers();
       setActiveSection("manage");
       handleCategoryChange(createdRole);
@@ -304,34 +280,27 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setMessage("");
     }
   };
-
   const handleActAsUser = (selectedUser) => {
     if (!isAdmin || !onActAsUser) return;
-
     onActAsUser(selectedUser);
-
     navigate(
       selectedUser.is_superuser
         ? "/admin"
         : roleRoutes[selectedUser.role] || "/admin"
     );
   };
-
   const handleRoleUpdate = async (userId, newRole, newIsSuperuser) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return false;
     }
-
     setMessage("");
     setError("");
-
     try {
       const res = await api.put(`users/update-user/${userId}/`, {
         role: newRole,
         is_superuser: newIsSuperuser,
       });
-
       setMessage(res.data?.message || "User updated successfully.");
       await fetchUsers();
       return true;
@@ -341,24 +310,19 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       return false;
     }
   };
-
   const handleEditUser = async (userId, updates) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return false;
     }
-
     if (!userId || !updates || typeof updates !== "object") {
       setError("A valid user and update data are required.");
       return false;
     }
-
     setMessage("");
     setError("");
-
     try {
       const res = await api.put(`users/update-user/${userId}/`, updates);
-
       setMessage(res.data?.message || "User details saved successfully.");
       await fetchUsers();
       return true;
@@ -369,28 +333,23 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       return false;
     }
   };
-
   const handleSetUserActive = async (userId, isActive) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return false;
     }
-
     setMessage("");
     setError("");
-
     try {
       const res = await api.put(`users/update-user/${userId}/`, {
         is_active: Boolean(isActive),
       });
-
       setMessage(
         res.data?.message ||
           (isActive
             ? "User activated successfully."
             : "User deactivated successfully.")
       );
-
       await fetchUsers();
       return true;
     } catch (err) {
@@ -400,26 +359,21 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       return false;
     }
   };
-
   const handleChangeUserPassword = async (userId, newPassword) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return false;
     }
-
     if (!userId || !String(newPassword || "").trim()) {
       setError("Select a user and enter a new password.");
       return false;
     }
-
     setMessage("");
     setError("");
-
     try {
       const res = await api.post(`users/change-password/${userId}/`, {
         new_password: newPassword,
       });
-
       setMessage(
         res.data?.message || "User password updated successfully."
       );
@@ -431,25 +385,19 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       return false;
     }
   };
-
   const handleDeleteUser = async (userId, username) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return;
     }
-
     const confirmed = window.confirm(
       `Deactivate user "${username}"? Their existing records should be preserved.`
     );
-
     if (!confirmed) return;
-
     setMessage("");
     setError("");
-
     try {
       const res = await api.delete(`users/delete-user/${userId}/`);
-
       setMessage(res.data?.message || "User deactivated successfully.");
       await fetchUsers();
     } catch (err) {
@@ -458,23 +406,19 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setMessage("");
     }
   };
-
   const handleSelectPatient = (patient) => {
     if (!patient?.id) {
       setError("The selected patient has no valid record ID.");
       return;
     }
-
     setMessage("");
     setError("");
     setEditingAssignmentId(null);
     setSelectedPatient(patient);
-
     setAssignmentForm({
       ...emptyAssignmentForm,
       patient_id: patient.id,
     });
-
     window.setTimeout(() => {
       assignmentRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -482,7 +426,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       });
     }, 200);
   };
-
   const handlePatientCreated = (patient) => {
     if (!patient?.id) {
       setMessage(
@@ -491,62 +434,48 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setError("");
       return;
     }
-
     setNewlyCreatedPatient(patient);
     setSelectedPatient(patient);
     setEditingAssignmentId(null);
-
     setAssignmentForm({
       ...emptyAssignmentForm,
       patient_id: patient.id,
     });
-
     setMessage(
       `Patient file created for ${
         patient.name || "the new patient"
       }. You can now assign the patient.`
     );
-
     setError("");
     setActiveSection("register_patient");
   };
-
   const handleCreateOrUpdateAssignment = async (e) => {
     e.preventDefault();
-
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return;
     }
-
     if (savingAssignment) return;
-
     setMessage("");
     setError("");
-
     if (!assignmentForm.patient_id) {
       setError("Please select a patient first.");
       return;
     }
-
     if (!assignmentForm.therapist_id) {
       setError("Please select a physiotherapist.");
       return;
     }
-
     const additionalTherapistIds = Array.isArray(
       assignmentForm.additional_therapist_ids
     )
       ? assignmentForm.additional_therapist_ids
           .map(String)
           .filter(
-            (id) =>
-              id &&
-              id !== String(assignmentForm.therapist_id)
+            (id) => id && id !== String(assignmentForm.therapist_id)
           )
           .slice(0, 1)
       : [];
-
     const payload = {
       ...assignmentForm,
       patient_id: assignmentForm.patient_id,
@@ -562,15 +491,12 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       additional_therapist_ids: additionalTherapistIds,
       with_another_therapist: additionalTherapistIds.length > 0,
     };
-
     if (assignmentForm.assignment_date) {
       payload.assignment_date = assignmentForm.assignment_date;
     } else {
       delete payload.assignment_date;
     }
-
     setSavingAssignment(true);
-
     try {
       const res = editingAssignmentId
         ? await api.put(
@@ -578,14 +504,12 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             payload
           )
         : await api.post("reception/assignments/", payload);
-
       setMessage(
         res.data?.message ||
           (editingAssignmentId
             ? "Assignment updated successfully."
             : "Patient assigned successfully.")
       );
-
       resetAssignmentEditor();
       setNewlyCreatedPatient(null);
       setActiveSection("registration_tracker");
@@ -594,7 +518,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         "Failed to save assignment:",
         err?.response?.data || err
       );
-
       setError(
         getApiError(
           err,
@@ -608,14 +531,12 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setSavingAssignment(false);
     }
   };
-
   const handleEditRegistration = async (assignment) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       setMessage("");
       return;
     }
-
     if (!assignment?.id || !assignment.patient_id) {
       setError(
         "The registration is missing its assignment ID or patient ID."
@@ -623,24 +544,19 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setMessage("");
       return;
     }
-
     setMessage("");
     setError("");
-
     const additionalTherapistIds = Array.isArray(
       assignment.additional_therapist_ids
     )
       ? assignment.additional_therapist_ids.map(String).slice(0, 1)
       : [];
-
     setEditingAssignmentId(assignment.id);
-
     setSelectedPatient({
       id: assignment.patient_id,
       name: assignment.patient_name || "",
       patient_id: assignment.patient_file_id || "",
     });
-
     setAssignmentForm({
       ...emptyAssignmentForm,
       patient_id: String(assignment.patient_id),
@@ -654,9 +570,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       additional_therapist_ids: additionalTherapistIds,
       with_another_therapist: additionalTherapistIds.length > 0,
     });
-
     setActiveSection("register_patient");
-
     window.setTimeout(() => {
       assignmentRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -664,20 +578,17 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       });
     }, 200);
   };
-
   const handleCancelRegistration = async (assignment) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       setMessage("");
       return;
     }
-
     if (!assignment?.id) {
       setError("Could not identify the registration to delete.");
       setMessage("");
       return;
     }
-
     const confirmed = window.confirm(
       `Delete the registration for ${
         assignment.patient_name || "this patient"
@@ -687,29 +598,22 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
           : ""
       }?`
     );
-
     if (!confirmed) return;
-
     setMessage("");
     setError("");
-
     try {
       const res = await api.delete(
         `reception/assignments/${assignment.id}/`
       );
-
       setMessage(
         res.data?.message || "Registration deleted successfully."
       );
     } catch (err) {
       console.error("Failed to delete registration:", err);
-      setError(
-        getApiError(err, "Failed to delete registration.")
-      );
+      setError(getApiError(err, "Failed to delete registration."));
       setMessage("");
     }
   };
-
   const renderPlaceholder = (heading, description) => (
     <section style={styles.card}>
       <h2 style={styles.heading}>{heading}</h2>
@@ -720,7 +624,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       </p>
     </section>
   );
-
   if (!isAdmin) {
     return (
       <section style={styles.permissionPage}>
@@ -738,7 +641,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       </section>
     );
   }
-
   return (
     <DashboardLayout
       title="Admin Dashboard"
@@ -763,13 +665,11 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             {message}
           </DashboardNotice>
         )}
-
         {error && (
           <DashboardNotice type="error">
             {error}
           </DashboardNotice>
         )}
-
         {activeSection === "create" && (
           <AdminCreateSection
             formData={formData}
@@ -779,7 +679,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             onSubmit={handleCreateUser}
           />
         )}
-
         {activeSection === "manage" && (
           <AdminManageSection
             users={users}
@@ -798,11 +697,9 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             onChangeUserPassword={handleChangeUserPassword}
           />
         )}
-
         {activeSection === "statistics" && (
           <AdminStatisticsSection />
         )}
-
         {activeSection === "registration_tracker" && (
           <AdminRegistrationTrackerSection
             user={user}
@@ -817,26 +714,19 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             onDeleteAssignment={handleCancelRegistration}
           />
         )}
-
         {activeSection === "evaluation_tracker" && (
           <EvaluationTrackerSection user={user} />
         )}
-
         {activeSection === "open_file" && (
           <div style={styles.stack}>
             <section style={styles.card}>
-              <h2 style={styles.heading}>
-                Open New Patient File
-              </h2>
-
+              <h2 style={styles.heading}>Open New Patient File</h2>
               <p style={styles.description}>
                 Create a new patient record. After creation,
                 you can continue to assign the patient to a
                 physiotherapist.
               </p>
-
               <OpenNewFile onPatientCreated={handlePatientCreated} />
-
               {newlyCreatedPatient && (
                 <button
                   type="button"
@@ -851,20 +741,15 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             </section>
           </div>
         )}
-
         {activeSection === "register_patient" && (
           <div style={styles.stack}>
             {!editingAssignmentId && (
               <section style={styles.card}>
-                <h2 style={styles.heading}>
-                  Assign a Patient
-                </h2>
-
+                <h2 style={styles.heading}>Assign a Patient</h2>
                 <p style={styles.description}>
                   Search for an existing patient, select the
                   patient, and assign them to a physiotherapist.
                 </p>
-
                 <UnifiedPatientSearch
                   title="Find Existing Patient"
                   placeholder="Search patient name or ID"
@@ -879,18 +764,13 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
                 />
               </section>
             )}
-
             {selectedPatient && (
-              <section
-                ref={assignmentRef}
-                style={styles.card}
-              >
+              <section ref={assignmentRef} style={styles.card}>
                 <h2 style={styles.heading}>
                   {editingAssignmentId
                     ? "Edit Patient Assignment"
                     : "Assign Patient to Physiotherapist"}
                 </h2>
-
                 <p style={styles.description}>
                   Selected patient:{" "}
                   <strong>{selectedPatient.name}</strong>
@@ -898,7 +778,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
                     ? ` (${selectedPatient.patient_id})`
                     : ""}
                 </p>
-
                 <PatientAssignmentForm
                   selectedPatient={selectedPatient}
                   assignmentForm={assignmentForm}
@@ -917,7 +796,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             )}
           </div>
         )}
-
         {activeSection === "evaluations" &&
           renderPlaceholder(
             "Evaluations",
@@ -927,7 +805,6 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     </DashboardLayout>
   );
 }
-
 const styles = {
   page: {
     display: "block",
