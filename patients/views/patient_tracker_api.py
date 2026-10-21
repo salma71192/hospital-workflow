@@ -1,4 +1,3 @@
-
 import json
 from datetime import date, timedelta
 
@@ -17,7 +16,6 @@ from .helpers import (
 )
 
 
-# Only these registration types qualify a patient for the tracker.
 ELIGIBLE_REGISTRATION_CATEGORIES = (
     "appointment",
     "walk_in",
@@ -29,8 +27,7 @@ EVALUATION_CATEGORY = "initial_evaluation"
 def _tracker_month(value=None):
     """Return the first day of the requested month."""
     if not value:
-        today = timezone.localdate()
-        return today.replace(day=1)
+        return timezone.localdate().replace(day=1)
 
     try:
         if len(value) == 7:
@@ -39,6 +36,7 @@ def _tracker_month(value=None):
             parsed = date.fromisoformat(value)
 
         return parsed.replace(day=1)
+
     except (TypeError, ValueError):
         raise ValueError("Invalid month. Use YYYY-MM format.")
 
@@ -78,26 +76,24 @@ def _tracker_json_body(request):
     try:
         body = request.body.decode("utf-8")
         return json.loads(body) if body.strip() else {}
+
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
 
 
 def _tracker_find_patient(data):
-    """
-    Find a patient by database ID or file number.
-
-    Accepts:
-      - id
-      - patient_db_id
-      - patient_id as database ID or file number
-      - file_number
-    """
+    """Find a patient by database ID or file number."""
     database_id = data.get("patient_db_id") or data.get("id")
 
     if database_id is not None:
         try:
             return Patient.objects.get(pk=int(database_id))
-        except (Patient.DoesNotExist, TypeError, ValueError):
+
+        except (
+            Patient.DoesNotExist,
+            TypeError,
+            ValueError,
+        ):
             return None
 
     supplied_id = data.get("file_number") or data.get("patient_id")
@@ -132,15 +128,29 @@ def _tracker_find_patient(data):
     return None
 
 
-def _tracker_eligible_patient_ids(month):
+def _tracker_therapist_assignments(user):
     """
-    Return patients with an appointment or walk-in registration
-    on or before the end of the selected month.
+    Return assignments belonging to the logged-in therapist.
+
+    'therapist' is the assigned therapist.
+    'created_by' may be the receptionist who entered the record.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return PatientAssignment.objects.none()
+
+    return PatientAssignment.objects.filter(therapist_id=user.pk)
+
+
+def _tracker_eligible_patient_ids(month, user):
+    """
+    Return non-archived patients assigned to the logged-in therapist
+    through an eligible appointment or walk-in by the month end.
     """
     month_end = _tracker_month_end(month)
 
     return (
-        PatientAssignment.objects.filter(
+        _tracker_therapist_assignments(user)
+        .filter(
             category__in=ELIGIBLE_REGISTRATION_CATEGORIES,
             assignment_date__lte=month_end,
             patient__is_archived=False,
@@ -150,15 +160,16 @@ def _tracker_eligible_patient_ids(month):
     )
 
 
-def _tracker_is_new_evaluation(patient, month):
+def _tracker_is_new_evaluation(patient, month, user):
     """
-    Mark NEW in the month of the first eligible registration
-    only if an initial evaluation was registered earlier.
+    Determine whether the patient meets the existing NEW criteria
+    based on this therapist's eligible registrations.
     """
     month_end = _tracker_month_end(month)
 
     first_eligible_assignment = (
-        PatientAssignment.objects.filter(
+        _tracker_therapist_assignments(user)
+        .filter(
             patient=patient,
             category__in=ELIGIBLE_REGISTRATION_CATEGORIES,
             assignment_date__lte=month_end,
@@ -175,37 +186,36 @@ def _tracker_is_new_evaluation(patient, month):
     ) != month:
         return False
 
-    return PatientAssignment.objects.filter(
+    return _tracker_therapist_assignments(user).filter(
         patient=patient,
         category=EVALUATION_CATEGORY,
         assignment_date__lt=first_eligible_assignment.assignment_date,
     ).exists()
 
 
-def _tracker_assignment_session_count(patient, month):
-    """
-    Fallback count of appointment/walk-in assignments in the month.
-
-    This counts registrations, not necessarily completed visits.
-    Use the clinic's confirmed completed-visit or billing source
-    if utilized sessions must represent completed physiotherapy visits.
-    """
-    month_end = _tracker_month_end(month)
-
-    return PatientAssignment.objects.filter(
-        patient=patient,
-        category__in=ELIGIBLE_REGISTRATION_CATEGORIES,
-        assignment_date__gte=month,
-        assignment_date__lte=month_end,
-    ).count()
-
-
-def _tracker_last_assignment_date(patient, month):
-    """Return the latest eligible assignment date in the month."""
+def _tracker_assignment_session_count(patient, month, user):
+    """Count eligible assignments for this therapist in the month."""
     month_end = _tracker_month_end(month)
 
     return (
-        PatientAssignment.objects.filter(
+        _tracker_therapist_assignments(user)
+        .filter(
+            patient=patient,
+            category__in=ELIGIBLE_REGISTRATION_CATEGORIES,
+            assignment_date__gte=month,
+            assignment_date__lte=month_end,
+        )
+        .count()
+    )
+
+
+def _tracker_last_assignment_date(patient, month, user):
+    """Return this therapist's latest eligible assignment date."""
+    month_end = _tracker_month_end(month)
+
+    return (
+        _tracker_therapist_assignments(user)
+        .filter(
             patient=patient,
             category__in=ELIGIBLE_REGISTRATION_CATEGORIES,
             assignment_date__gte=month,
@@ -217,18 +227,13 @@ def _tracker_last_assignment_date(patient, month):
     )
 
 
-def _tracker_get_speciality(patient, month):
-    """
-    Return the most recent non-empty speciality from an eligible
-    appointment/walk-in assignment on or before the selected month end.
-
-    Uses the PatientAssignment speciality field. If your model stores
-    speciality under another field, that model field must be checked.
-    """
+def _tracker_get_speciality(patient, month, user):
+    """Return the latest non-empty specialty for this therapist's patient."""
     month_end = _tracker_month_end(month)
 
     assignment = (
-        PatientAssignment.objects.filter(
+        _tracker_therapist_assignments(user)
+        .filter(
             patient=patient,
             category__in=ELIGIBLE_REGISTRATION_CATEGORIES,
             assignment_date__lte=month_end,
@@ -247,10 +252,7 @@ def _tracker_get_speciality(patient, month):
 
 
 def _tracker_update_weekly_status(month):
-    """
-    Recalculate status after the first week of the current month.
-    Historical months can be recalculated at any time.
-    """
+    """Recalculate monthly tracker status using the existing rules."""
     today = timezone.localdate()
     current_month = today.replace(day=1)
 
@@ -276,28 +278,28 @@ def _tracker_update_weekly_status(month):
             record.save(update_fields=["status", "updated_at"])
 
 
-def _tracker_row(patient, month):
-    """Build a consistent tracker row."""
+def _tracker_row(patient, month, user):
+    """Build a tracker row using this therapist's assignment history."""
     record = PatientMonthlyTracker.objects.filter(
         patient=patient,
         month=month,
     ).first()
 
     if record:
-        # Existing monthly tracker values remain authoritative.
         sessions = int(record.utilized_sessions or 0)
         status = record.status
         last_seen = record.last_seen_date
     else:
-        # Fallback for patients without a monthly tracker record.
         sessions = _tracker_assignment_session_count(
             patient,
             month,
+            user,
         )
         status = _tracker_status(sessions)
         last_seen = _tracker_last_assignment_date(
             patient,
             month,
+            user,
         )
 
     status_labels = dict(PatientMonthlyTracker.STATUS_CHOICES)
@@ -305,11 +307,13 @@ def _tracker_row(patient, month):
     is_new_evaluation = _tracker_is_new_evaluation(
         patient,
         month,
+        user,
     )
 
     speciality = _tracker_get_speciality(
         patient,
         month,
+        user,
     )
 
     return {
@@ -341,7 +345,10 @@ def patient_tracker_api(request):
         /patients/tracker/?month=YYYY-MM&search=...
 
     POST:
-        rollover
+        {"action": "rollover", "month": "YYYY-MM"}
+
+    Patient visibility is limited to assignments whose therapist
+    matches the logged-in user.
     """
     if not _can_view_patient_tracker(request.user):
         return JsonResponse(
@@ -351,18 +358,38 @@ def patient_tracker_api(request):
 
     if request.method == "GET":
         try:
-            month = _tracker_month(request.GET.get("month"))
+            month = _tracker_month(
+                request.GET.get("month")
+            )
+
+            eligible_patient_ids = _tracker_eligible_patient_ids(
+                month,
+                request.user,
+            )
+
         except ValueError as exc:
             return JsonResponse(
                 {"error": str(exc)},
                 status=400,
             )
 
+        except Exception:
+            return JsonResponse(
+                {
+                    "error": (
+                        "Unable to load the tracker. "
+                        "Please check the therapist assignment "
+                        "and patient registration records."
+                    )
+                },
+                status=500,
+            )
+
         _tracker_update_weekly_status(month)
 
-        search = (request.GET.get("search") or "").strip()
-
-        eligible_patient_ids = _tracker_eligible_patient_ids(month)
+        search = (
+            request.GET.get("search") or ""
+        ).strip()
 
         patients_qs = Patient.objects.filter(
             is_archived=False,
@@ -377,7 +404,8 @@ def patient_tracker_api(request):
             matching_ids = []
 
             for existing in patients_qs.only(
-                "id", "patient_id"
+                "id",
+                "patient_id",
             ).iterator():
                 normalized_file_number = normalize_patient_id(
                     existing.patient_id
@@ -393,7 +421,7 @@ def patient_tracker_api(request):
             )
 
         patient_rows = [
-            _tracker_row(patient, month)
+            _tracker_row(patient, month, request.user)
             for patient in patients_qs
         ]
 
@@ -416,10 +444,13 @@ def patient_tracker_api(request):
             status=400,
         )
 
-    action = (data.get("action") or "").strip().lower()
+    action = (
+        data.get("action") or ""
+    ).strip().lower()
 
     try:
         month = _tracker_month(data.get("month"))
+
     except ValueError as exc:
         return JsonResponse(
             {"error": str(exc)},
@@ -434,7 +465,11 @@ def patient_tracker_api(request):
             PatientMonthlyTracker.STATUS_OTHER_THERAPIST,
         ]
 
-        eligible_patient_ids = _tracker_eligible_patient_ids(month)
+        eligible_patient_ids = _tracker_eligible_patient_ids(
+            month,
+            request.user,
+        )
+
         copied_count = 0
 
         with transaction.atomic():

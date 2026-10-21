@@ -10,56 +10,271 @@ function firstValue(...values) {
   );
 }
 
-function getPatientName(item) {
-  return (
-    firstValue(
-      item?.patient_name,
-      item?.patient?.name,
-      item?.patient?.full_name,
-      item?.patient_full_name,
-      item?.full_name
-    ) ?? "Patient"
-  );
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function getPatientObject(item) {
+  if (!isObject(item)) return {};
+
+  const possiblePatients = [
+    item.patient,
+    item.patient_details,
+    item.patient_detail,
+    item.patient_data,
+    item.patient_info,
+    item.patient_record,
+    item.patient_obj,
+    item.patient_profile,
+    item.patient_registration,
+    item.patient_registration_details,
+    item.patient_details_data,
+    item.registration,
+    item.patient?.patient,
+    item.data?.patient,
+    item.data?.patient_details,
+    item.assignment?.patient,
+    item.patient_assignment?.patient,
+  ];
+
+  return possiblePatients.find(isObject) || {};
 }
 
 /**
- * File number is different from the database patient ID.
- * Check the patient object and common file/MRN fields first.
+ * Collects possible patient and assignment objects from common API formats.
+ * Scalar IDs are deliberately excluded.
+ */
+function getPatientSources(item) {
+  if (!isObject(item)) return [];
+
+  const sources = [];
+  const visited = new Set();
+
+  const relatedKeys = [
+    "patient",
+    "patient_details",
+    "patient_detail",
+    "patient_data",
+    "patient_info",
+    "patient_record",
+    "patient_obj",
+    "patient_profile",
+    "patient_registration",
+    "patient_registration_details",
+    "patient_details_data",
+    "registration",
+    "patient_assignment",
+    "assignment",
+    "data",
+    "patient_details_object",
+    "patient_identification",
+    "medical_record",
+    "identification",
+  ];
+
+  function visit(source, depth = 0) {
+    if (!isObject(source) || visited.has(source) || depth > 4) return;
+
+    visited.add(source);
+    sources.push(source);
+
+    relatedKeys.forEach((key) => {
+      if (isObject(source[key])) {
+        visit(source[key], depth + 1);
+      }
+    });
+  }
+
+  visit(item);
+
+  return sources;
+}
+
+function getPatientName(item) {
+  const sources = getPatientSources(item);
+
+  for (const source of sources) {
+    const fullName = firstValue(
+      source.first_name && source.last_name
+        ? `${source.first_name} ${source.last_name}`
+        : undefined,
+      source.firstName && source.lastName
+        ? `${source.firstName} ${source.lastName}`
+        : undefined
+    );
+
+    const name = firstValue(
+      source.patient_name,
+      source.patient_full_name,
+      source.full_name,
+      source.fullName,
+      source.display_name,
+      source.displayName,
+      source.name,
+      fullName
+    );
+
+    if (name !== undefined) return String(name);
+  }
+
+  return "Patient";
+}
+
+/**
+ * Extracts the actual patient file number from the API response.
+ * Never substitutes patient.id, patient.pk, or assignment.id.
  */
 function getFileNumber(item) {
-  const patient = item?.patient;
+  const sources = getPatientSources(item);
 
-  const value = firstValue(
-    patient?.file_number,
-    patient?.file_no,
-    patient?.medical_file_number,
-    patient?.medical_record_number,
-    patient?.mrn,
-    patient?.patient_file_number,
-    patient?.patient_number,
-    patient?.fileNumber,
-    patient?.fileNo,
-    patient?.medicalRecordNumber,
-    patient?.record_number,
-    patient?.chart_number,
+  const fileNumberFields = [
+    "file_number",
+    "file_no",
+    "file_num",
+    "file_number_display",
+    "patient_file_number",
+    "patient_file_no",
+    "patient_file_num",
+    "medical_file_number",
+    "medical_file_no",
+    "medical_record_number",
+    "medical_record_no",
+    "medical_record",
+    "mrn",
+    "patient_mrn",
+    "patient_number",
+    "patient_no",
+    "patient_code",
+    "hospital_number",
+    "hospital_no",
+    "registration_number",
+    "registration_no",
+    "record_number",
+    "record_no",
+    "chart_number",
+    "chart_no",
+    "health_record_number",
+    "health_record_no",
+    "clinic_file_number",
+    "clinic_file_no",
+    "emr_number",
+    "emr_no",
+    "fileNumber",
+    "fileNo",
+    "fileNum",
+    "medicalFileNumber",
+    "medicalFileNo",
+    "medicalRecordNumber",
+    "medicalRecordNo",
+    "patientFileNumber",
+    "patientFileNo",
+    "patientNumber",
+    "patientNo",
+    "patientCode",
+    "hospitalNumber",
+    "hospitalNo",
+    "registrationNumber",
+    "registrationNo",
+    "recordNumber",
+    "recordNo",
+    "chartNumber",
+    "chartNo",
+    "healthRecordNumber",
+    "clinicFileNumber",
+    "emrNumber",
+  ];
 
-    item?.patient_file_number,
-    item?.patient_file_no,
-    item?.patient_medical_file_number,
-    item?.patient_medical_record_number,
-    item?.patient_mrn,
-    item?.file_number,
-    item?.file_no,
-    item?.medical_file_number,
-    item?.medical_record_number,
-    item?.mrn,
-    item?.patient_number,
-    item?.fileNumber,
-    item?.fileNo,
-    item?.chart_number
-  );
+  const nestedNumberFields = [
+    "file_number",
+    "file_no",
+    "patient_file_number",
+    "medical_record_number",
+    "medical_file_number",
+    "mrn",
+    "number",
+    "value",
+    "label",
+    "display",
+    "text",
+  ];
 
-  return value ?? "—";
+  function extractNumber(value, depth = 0) {
+    if (
+      value === undefined ||
+      value === null ||
+      depth > 3
+    ) {
+      return undefined;
+    }
+
+    if (typeof value === "string" || typeof value === "number") {
+      const text = String(value).trim();
+      return text ? text : undefined;
+    }
+
+    if (isObject(value)) {
+      for (const field of nestedNumberFields) {
+        if (value[field] === undefined || value[field] === null) {
+          continue;
+        }
+
+        const extracted = extractNumber(value[field], depth + 1);
+
+        if (extracted !== undefined) return extracted;
+      }
+    }
+
+    return undefined;
+  }
+
+  // First search known patient and assignment objects.
+  for (const source of sources) {
+    for (const field of fileNumberFields) {
+      if (source[field] === undefined || source[field] === null) {
+        continue;
+      }
+
+      const extracted = extractNumber(source[field]);
+
+      if (extracted !== undefined) return extracted;
+    }
+  }
+
+  // Check additional common registration and medical-record structures.
+  const patient = getPatientObject(item);
+
+  const nestedSources = [
+    patient.registration,
+    patient.patient_registration,
+    patient.patient_profile,
+    patient.medical_record,
+    patient.identification,
+    patient.patient_identification,
+    patient.file,
+    item?.registration,
+    item?.patient_registration,
+    item?.patient_profile,
+    item?.medical_record,
+    item?.identification,
+    item?.data?.patient,
+    item?.data?.patient_details,
+  ];
+
+  for (const source of nestedSources) {
+    if (!isObject(source)) continue;
+
+    for (const field of fileNumberFields) {
+      if (source[field] === undefined || source[field] === null) {
+        continue;
+      }
+
+      const extracted = extractNumber(source[field]);
+
+      if (extracted !== undefined) return extracted;
+    }
+  }
+
+  return "—";
 }
 
 function getEvaluationDate(item) {
@@ -86,32 +301,44 @@ function getVisitNumber(item) {
 }
 
 function getPhysician(item) {
-  return (
-    firstValue(
-      item?.referring_physician,
-      item?.physician_name,
-      item?.doctor_name,
-      item?.referring_doctor,
-      item?.physician?.name,
-      item?.doctor?.name
-    ) ?? "—"
-  );
+  const sources = getPatientSources(item);
+
+  for (const source of sources) {
+    const physician = firstValue(
+      source.referring_physician,
+      source.physician_name,
+      source.doctor_name,
+      source.referring_doctor,
+      source.physician?.name,
+      source.doctor?.name
+    );
+
+    if (physician !== undefined) return physician;
+  }
+
+  return "—";
 }
 
 function getSpecialty(item) {
-  return (
-    firstValue(
-      item?.specialty,
-      item?.speciality,
-      item?.physician_specialty,
-      item?.physician_speciality,
-      item?.referring_physician_specialty,
-      item?.physician?.specialty,
-      item?.physician?.speciality,
-      item?.doctor?.specialty,
-      item?.doctor?.speciality
-    ) ?? "—"
-  );
+  const sources = getPatientSources(item);
+
+  for (const source of sources) {
+    const specialty = firstValue(
+      source.specialty,
+      source.speciality,
+      source.physician_specialty,
+      source.physician_speciality,
+      source.referring_physician_specialty,
+      source.physician?.specialty,
+      source.physician?.speciality,
+      source.doctor?.specialty,
+      source.doctor?.speciality
+    );
+
+    if (specialty !== undefined) return specialty;
+  }
+
+  return "—";
 }
 
 function getStatus(item) {
@@ -166,7 +393,6 @@ function getStatusType(status) {
   if (normalized === "started") return "started";
   if (normalized.includes("transfer")) return "transferred";
 
-  // Not Started and all other unrecognized statuses are grouped as Pending.
   return "pending";
 }
 
@@ -253,7 +479,7 @@ function SummaryCard({ label, value, percentage, type }) {
     },
   };
 
-  const config = cardStyles[type];
+  const config = cardStyles[type] || cardStyles.total;
   const safePercentage = Math.min(
     Math.max(Number(percentage) || 0, 0),
     100
@@ -383,10 +609,17 @@ export default function EvaluationTrackerSection({
       "eval",
     ];
 
-    return assignments
+    const safeAssignments = Array.isArray(assignments)
+      ? assignments
+      : [];
+
+    return safeAssignments
       .filter((item) => {
         const category = String(
-          item?.category ?? item?.category_label ?? ""
+          item?.category ??
+            item?.category_label ??
+            item?.assignment_category ??
+            ""
         )
           .trim()
           .toLowerCase()
@@ -394,11 +627,11 @@ export default function EvaluationTrackerSection({
 
         return evaluationCategories.includes(category);
       })
-      .sort((a, b) => {
-        return String(getEvaluationDate(b) ?? "").localeCompare(
+      .sort((a, b) =>
+        String(getEvaluationDate(b) ?? "").localeCompare(
           String(getEvaluationDate(a) ?? "")
-        );
-      });
+        )
+      );
   }, [assignments]);
 
   const statistics = useMemo(() => {
@@ -426,7 +659,6 @@ export default function EvaluationTrackerSection({
 
   const getPercentage = (value) => {
     if (!statistics.total) return 0;
-
     return Math.round((value / statistics.total) * 1000) / 10;
   };
 
@@ -633,7 +865,6 @@ export default function EvaluationTrackerSection({
   function renderStatus(item) {
     const status = getStatus(item);
     const type = getStatusType(status);
-
     const symbol =
       type === "started" ? "✓" : type === "transferred" ? "⇄" : "◷";
 
@@ -656,9 +887,7 @@ export default function EvaluationTrackerSection({
       <div style={styles.header}>
         <div>
           <div style={styles.teamBadge}>Physiotherapy</div>
-
           <h2 style={styles.title}>Evaluation Tracker</h2>
-
           <p style={styles.subtitle}>
             Track initial evaluations and patient follow-up status.
           </p>
@@ -683,21 +912,18 @@ export default function EvaluationTrackerSection({
             type="total"
             percentage={100}
           />
-
           <SummaryCard
             label="Started"
             value={statistics.started}
             type="started"
             percentage={getPercentage(statistics.started)}
           />
-
           <SummaryCard
             label="Transferred"
             value={statistics.transferred}
             type="transferred"
             percentage={getPercentage(statistics.transferred)}
           />
-
           <SummaryCard
             label="Pending"
             value={statistics.pending}
@@ -713,7 +939,6 @@ export default function EvaluationTrackerSection({
         <div style={styles.recordsHeader}>
           <div>
             <h3 style={styles.recordsTitle}>Evaluation Records</h3>
-
             <p style={styles.recordsSubtitle}>
               Showing initial evaluations for {getMonthLabel(month)}.
             </p>
@@ -765,25 +990,19 @@ export default function EvaluationTrackerSection({
                     <td style={styles.td}>
                       {formatDate(getEvaluationDate(item))}
                     </td>
-
                     <td style={styles.td}>
                       <span style={styles.patientName}>
                         {getPatientName(item)}
                       </span>
                     </td>
-
                     <td style={styles.td}>
                       <span style={styles.fileNumber}>
                         {getFileNumber(item)}
                       </span>
                     </td>
-
                     <td style={styles.td}>{getVisitNumber(item)}</td>
-
                     <td style={styles.td}>{getPhysician(item)}</td>
-
                     <td style={styles.td}>{getSpecialty(item)}</td>
-
                     <td style={styles.td}>{renderStatus(item)}</td>
                   </tr>
                 ))}
@@ -797,7 +1016,6 @@ export default function EvaluationTrackerSection({
             Showing {evaluations.length}{" "}
             {evaluations.length === 1 ? "evaluation" : "evaluations"}
           </span>
-
           <span>{getMonthLabel(month)}</span>
         </div>
       </div>
