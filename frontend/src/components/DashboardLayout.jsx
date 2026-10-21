@@ -1,8 +1,55 @@
 
 import React, { useEffect, useState } from "react";
 import AdminSidebar from "./admin/AdminSidebar";
+import InsuranceUtilizationPage from "./approvals/InsuranceUtilizationPage";
 import api from "../api/api";
 import "./DashboardLayout.css";
+
+const INSURANCE_ITEM = {
+  key: "insurance-utilization",
+  label: "Insurance & Session Utilization",
+};
+
+function addInsuranceItemToSidebar(sidebarItems) {
+  const items = Array.isArray(sidebarItems)
+    ? sidebarItems.map((item) => ({ ...item }))
+    : [];
+
+  const approvalsIndex = items.findIndex(
+    (item) =>
+      String(item?.key ?? "").trim().toLowerCase() === "approvals" ||
+      String(item?.label ?? "").trim().toLowerCase() === "approvals"
+  );
+
+  if (approvalsIndex >= 0) {
+    const approvals = items[approvalsIndex];
+    const children = Array.isArray(approvals.children)
+      ? [...approvals.children]
+      : [];
+
+    if (
+      !children.some(
+        (child) => child?.key === INSURANCE_ITEM.key
+      )
+    ) {
+      children.push(INSURANCE_ITEM);
+    }
+
+    items[approvalsIndex] = {
+      ...approvals,
+      children,
+    };
+
+    return items;
+  }
+
+  // No Approvals group exists, so show the page as a top-level item.
+  if (!items.some((item) => item?.key === INSURANCE_ITEM.key)) {
+    items.push(INSURANCE_ITEM);
+  }
+
+  return items;
+}
 
 export default function DashboardLayout({
   title,
@@ -27,6 +74,9 @@ export default function DashboardLayout({
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState("");
   const [passwordError, setPasswordError] = useState("");
+
+  const effectiveSidebarItems =
+    addInsuranceItemToSidebar(sidebarItems);
 
   const toggleSidebar = () => {
     setSidebarOpen((previous) => !previous);
@@ -123,13 +173,13 @@ export default function DashboardLayout({
       } else if (data && typeof data === "object") {
         detail = Object.entries(data)
           .map(([field, value]) => {
-            const text = Array.isArray(value)
+            const message = Array.isArray(value)
               ? value.join(", ")
               : typeof value === "string"
               ? value
               : JSON.stringify(value);
 
-            return `${field}: ${text}`;
+            return `${field}: ${message}`;
           })
           .join(" | ");
       }
@@ -144,34 +194,14 @@ export default function DashboardLayout({
     }
   };
 
-  const renderStandardItem = (item) => {
-    const isActive = activeSection === item.key;
-
-    if (Array.isArray(item.children) && item.children.length > 0) {
-      return (
-        <StandardSidebarGroup
-          key={item.key}
-          item={item}
-          activeSection={activeSection}
-          onSelect={handleSectionSelect}
-        />
-      );
-    }
-
-    return (
-      <button
-        key={item.key}
-        type="button"
-        className={`dashboard-layout__sidebar-button ${
-          isActive ? "dashboard-layout__sidebar-button--active" : ""
-        }`}
-        onClick={() => handleSectionSelect(item.key)}
-        aria-current={isActive ? "page" : undefined}
-      >
-        {item.label}
-      </button>
-    );
-  };
+  const renderStandardItem = (item) => (
+    <StandardSidebarItem
+      key={item.key}
+      item={item}
+      activeSection={activeSection}
+      onSelect={handleSectionSelect}
+    />
+  );
 
   return (
     <div className="dashboard-layout">
@@ -302,7 +332,13 @@ export default function DashboardLayout({
                   strokeLinejoin="round"
                   aria-hidden="true"
                 >
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <rect
+                    x="3"
+                    y="4"
+                    width="18"
+                    height="16"
+                    rx="2"
+                  />
                   <path d="M9 4v16" />
                   {sidebarOpen ? (
                     <path d="m15 9-3 3 3 3" />
@@ -317,21 +353,25 @@ export default function DashboardLayout({
               (useAdminSidebar ? (
                 <AdminSidebar
                   sidebarTitle={sidebarTitle}
-                  sidebarItems={sidebarItems}
+                  sidebarItems={effectiveSidebarItems}
                   activeSection={activeSection}
                   onSelect={handleSectionSelect}
                 />
               ) : (
                 <div className="dashboard-layout__standard-sidebar">
                   <nav aria-label="Dashboard navigation">
-                    {sidebarItems.map(renderStandardItem)}
+                    {effectiveSidebarItems.map(renderStandardItem)}
                   </nav>
                 </div>
               ))}
           </aside>
 
           <main className="dashboard-layout__content">
-            {children}
+            {activeSection === "insurance-utilization" ? (
+              <InsuranceUtilizationPage />
+            ) : (
+              children
+            )}
           </main>
         </div>
       </div>
@@ -477,17 +517,20 @@ export default function DashboardLayout({
   );
 }
 
-function StandardSidebarGroup({
+function StandardSidebarItem({
   item,
   activeSection,
   onSelect,
 }) {
-  const hasActiveChild = item.children.some(
-    (child) =>
-      child.key === activeSection ||
-      child.children?.some(
-        (nested) => nested.key === activeSection
-      )
+  const children = Array.isArray(item.children)
+    ? item.children
+    : [];
+
+  const hasChildren = children.length > 0;
+
+  const hasActiveChild = hasNestedActiveChild(
+    children,
+    activeSection
   );
 
   const [isOpen, setIsOpen] = useState(
@@ -500,12 +543,31 @@ function StandardSidebarGroup({
     }
   }, [hasActiveChild]);
 
+  const isActive = activeSection === item.key;
+
+  if (!hasChildren) {
+    return (
+      <button
+        type="button"
+        className={`dashboard-layout__sidebar-button ${
+          isActive
+            ? "dashboard-layout__sidebar-button--active"
+            : ""
+        }`}
+        onClick={() => onSelect(item.key)}
+        aria-current={isActive ? "page" : undefined}
+      >
+        {item.label}
+      </button>
+    );
+  }
+
   return (
     <div className="dashboard-layout__sidebar-group">
       <button
         type="button"
         className={`dashboard-layout__sidebar-button ${
-          hasActiveChild
+          hasActiveChild || isActive
             ? "dashboard-layout__sidebar-button--active"
             : ""
         }`}
@@ -520,27 +582,29 @@ function StandardSidebarGroup({
 
       {isOpen && (
         <div className="dashboard-layout__sidebar-submenu">
-          {item.children.map((child) => {
-            const isActive = activeSection === child.key;
-
-            return (
-              <button
-                key={child.key}
-                type="button"
-                className={`dashboard-layout__sidebar-button ${
-                  isActive
-                    ? "dashboard-layout__sidebar-button--active"
-                    : ""
-                }`}
-                onClick={() => onSelect(child.key)}
-                aria-current={isActive ? "page" : undefined}
-              >
-                {child.label}
-              </button>
-            );
-          })}
+          {children.map((child) => (
+            <StandardSidebarItem
+              key={child.key}
+              item={child}
+              activeSection={activeSection}
+              onSelect={onSelect}
+            />
+          ))}
         </div>
       )}
     </div>
   );
+}
+
+function hasNestedActiveChild(items, activeSection) {
+  return items.some((item) => {
+    if (item.key === activeSection) {
+      return true;
+    }
+
+    return (
+      Array.isArray(item.children) &&
+      hasNestedActiveChild(item.children, activeSection)
+    );
+  });
 }

@@ -1,9 +1,78 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import api from "../../api/api";
 
-import EstimatedTargetCard from "./performance/EstimatedTargetCard";
-import PatientStatusChart from "./performance/PatientStatusChart";
-import InsuranceUtilizationChart from "./performance/InsuranceUtilizationChart";
+import React, { useCallback, useEffect, useState } from "react";
+import api from "../../../api/api";
+
+import EstimatedTargetCard from "./EstimatedTargetCard";
+import PatientStatusChart from "./PatientStatusChart";
+import InsuranceUtilizationChart from "./InsuranceUtilizationChart";
+
+const styles = {
+  page: {
+    display: "grid",
+    gap: 20,
+    minWidth: 0,
+    color: "#10243e",
+    fontFamily: "Inter, Arial, sans-serif",
+  },
+  heading: {
+    margin: 0,
+    color: "#10243e",
+    fontSize: 24,
+    fontWeight: 850,
+  },
+  subtitle: {
+    margin: "7px 0 0",
+    color: "#64748b",
+    fontSize: 14,
+    lineHeight: 1.6,
+  },
+  targetGrid: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr)",
+    gap: 18,
+    minWidth: 0,
+  },
+  chartGrid: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr)",
+    gap: 20,
+    minWidth: 0,
+    alignItems: "start",
+  },
+  panel: {
+    padding: 18,
+    background: "#ffffff",
+    border: "1px solid #e5eaf1",
+    borderRadius: 14,
+    color: "#64748b",
+    fontSize: 14,
+  },
+  error: {
+    padding: 14,
+    background: "#fff1f2",
+    border: "1px solid #fecdd3",
+    borderRadius: 12,
+    color: "#9f1239",
+    fontSize: 14,
+  },
+  button: {
+    minHeight: 40,
+    padding: "9px 15px",
+    border: "1px solid #d6deea",
+    borderRadius: 10,
+    background: "#ffffff",
+    color: "#10243e",
+    fontWeight: 750,
+    cursor: "pointer",
+  },
+  topRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+};
 
 function getLocalMonthString(date = new Date()) {
   return [
@@ -12,9 +81,9 @@ function getLocalMonthString(date = new Date()) {
   ].join("-");
 }
 
-function getPreviousMonth(month) {
+function shiftMonth(month, amount) {
   const [year, monthNumber] = month.split("-").map(Number);
-  const date = new Date(year, monthNumber - 2, 1);
+  const date = new Date(year, monthNumber - 1 + amount, 1);
 
   return getLocalMonthString(date);
 }
@@ -29,8 +98,20 @@ function getMonthDateRange(month) {
   };
 }
 
+function getMonthLabel(month) {
+  if (!month) return "";
+
+  const [year, monthNumber] = month.split("-").map(Number);
+
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(year, monthNumber - 1, 1));
+}
+
 function getArray(data, key) {
   if (Array.isArray(data)) return data;
+
   return Array.isArray(data?.[key]) ? data[key] : [];
 }
 
@@ -41,238 +122,266 @@ function getTherapistId(item) {
     item?.assigned_therapist_id ??
     item?.physio_id ??
     item?.physiotherapist_id ??
+    item?.user_id ??
+    item?.assigned_to?.id ??
     null
   );
 }
 
 function belongsToTherapist(item, therapistId) {
-  if (therapistId == null) return false;
+  if (therapistId == null) return true;
 
   const id = getTherapistId(item);
 
-  return id != null && String(id) === String(therapistId);
+  // Keep records without a therapist ID because the endpoint
+  // may already return data scoped to the selected therapist.
+  return id == null || String(id) === String(therapistId);
 }
 
 function getCategory(item) {
-  return String(item?.category ?? item?.category_label ?? "")
+  return String(
+    item?.category ??
+      item?.category_label ??
+      item?.visit_type ??
+      item?.registration_type ??
+      item?.appointment_type ??
+      ""
+  )
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
 }
 
-function isInitialEvaluation(item) {
-  return [
-    "initial_evaluation",
-    "initial_eval",
-    "evaluation",
-    "eval",
-  ].includes(getCategory(item));
+const EVALUATION_CATEGORIES = [
+  "initial_evaluation",
+  "initial_eval",
+  "evaluation",
+  "eval",
+];
+
+function isEvaluation(item) {
+  const category = getCategory(item);
+
+  if (EVALUATION_CATEGORIES.includes(category)) return true;
+
+  return (
+    item?.is_evaluation === true ||
+    item?.initial_evaluation === true ||
+    item?.is_initial_evaluation === true
+  );
 }
 
-function getMonthLabel(month) {
-  const [year, monthNumber] = month.split("-").map(Number);
+function getTrackerTherapistId(item) {
+  return (
+    item?.therapist_id ??
+    item?.therapist?.id ??
+    item?.assigned_therapist_id ??
+    item?.physio_id ??
+    item?.physiotherapist_id ??
+    item?.user_id ??
+    item?.assigned_to?.id ??
+    null
+  );
+}
 
-  return new Intl.DateTimeFormat("en", {
-    month: "long",
-    year: "numeric",
-  }).format(new Date(year, monthNumber - 1, 1));
+function filterTrackerPatients(patients, therapistId) {
+  if (therapistId == null || patients.length === 0) {
+    return patients;
+  }
+
+  const hasTherapistInformation = patients.some(
+    (patient) => getTrackerTherapistId(patient) != null
+  );
+
+  // Some tracker endpoints may not expose therapist assignment IDs.
+  if (!hasTherapistInformation) return patients;
+
+  return patients.filter((patient) => {
+    const id = getTrackerTherapistId(patient);
+
+    return id != null && String(id) === String(therapistId);
+  });
 }
 
 export default function PerformanceDashboard({ user, actingAs }) {
-  const currentMonth = useMemo(() => getLocalMonthString(), []);
-  const previousMonth = useMemo(
-    () => getPreviousMonth(currentMonth),
-    [currentMonth]
-  );
+  const currentMonth = getLocalMonthString();
+  const previousMonth = shiftMonth(currentMonth, -1);
 
   const selectedTherapistId = actingAs?.id ?? user?.id ?? null;
 
-  const [currentEvaluations, setCurrentEvaluations] = useState(0);
-  const [previousEvaluations, setPreviousEvaluations] = useState(0);
+  const [currentAssignments, setCurrentAssignments] = useState([]);
+  const [previousAssignments, setPreviousAssignments] = useState([]);
   const [patients, setPatients] = useState([]);
 
-  const [loadingEvaluations, setLoadingEvaluations] = useState(true);
-  const [loadingPatients, setLoadingPatients] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const loadPerformanceData = useCallback(async () => {
-    setLoadingEvaluations(true);
-    setLoadingPatients(true);
+    setLoading(true);
     setError("");
 
-    const currentRange = getMonthDateRange(currentMonth);
-    const previousRange = getMonthDateRange(previousMonth);
-
     try {
-      const [currentRes, previousRes] = await Promise.all([
-        api.get("reception/assignments/", {
-          params: currentRange,
-        }),
-        api.get("reception/assignments/", {
-          params: previousRange,
-        }),
-      ]);
+      const currentRange = getMonthDateRange(currentMonth);
+      const previousRange = getMonthDateRange(previousMonth);
 
-      const currentRows = getArray(currentRes.data, "assignments").filter(
-        (item) => belongsToTherapist(item, selectedTherapistId)
-      );
+      const currentParams = new URLSearchParams(currentRange);
+      const previousParams = new URLSearchParams(previousRange);
 
-      const previousRows = getArray(previousRes.data, "assignments").filter(
-        (item) => belongsToTherapist(item, selectedTherapistId)
-      );
-
-      setCurrentEvaluations(currentRows.filter(isInitialEvaluation).length);
-      setPreviousEvaluations(
-        previousRows.filter(isInitialEvaluation).length
-      );
-    } catch (err) {
-      console.error("Failed to load performance evaluations:", err);
-      setCurrentEvaluations(0);
-      setPreviousEvaluations(0);
-      setError(
-        err?.response?.data?.error ||
-          "Could not load evaluation totals. Please refresh and try again."
-      );
-    } finally {
-      setLoadingEvaluations(false);
-    }
-
-    try {
-      const res = await api.get("patients/tracker/", {
-        params: { month: currentMonth },
+      const trackerParams = new URLSearchParams({
+        month: currentMonth,
       });
 
-      const rows = getArray(res.data, "patients");
+      const [
+        currentResponse,
+        previousResponse,
+        trackerResponse,
+      ] = await Promise.all([
+        api.get(
+          `reception/assignments/?${currentParams.toString()}`
+        ),
+        api.get(
+          `reception/assignments/?${previousParams.toString()}`
+        ),
+        api.get(
+          `patients/tracker/?${trackerParams.toString()}`
+        ),
+      ]);
 
-      setPatients(
-        rows.filter((item) =>
+      const currentRows = getArray(
+        currentResponse.data,
+        "assignments"
+      );
+
+      const previousRows = getArray(
+        previousResponse.data,
+        "assignments"
+      );
+
+      // Support common response formats from the Patient Tracker.
+      const trackerPatients = getArray(
+        trackerResponse.data,
+        "patients"
+      );
+
+      const trackerRows =
+        trackerPatients.length > 0
+          ? trackerPatients
+          : getArray(trackerResponse.data, "results");
+
+      setCurrentAssignments(
+        currentRows.filter((item) =>
           belongsToTherapist(item, selectedTherapistId)
         )
       );
+
+      setPreviousAssignments(
+        previousRows.filter((item) =>
+          belongsToTherapist(item, selectedTherapistId)
+        )
+      );
+
+      setPatients(
+        filterTrackerPatients(
+          trackerRows,
+          selectedTherapistId
+        )
+      );
     } catch (err) {
-      console.error("Failed to load performance patient records:", err);
+      console.error(
+        "Failed to load performance dashboard:",
+        err
+      );
+
+      console.error(
+        "Performance dashboard API error:",
+        err?.response?.data
+      );
+
+      setCurrentAssignments([]);
+      setPreviousAssignments([]);
       setPatients([]);
-      setError((previous) =>
-        previous ||
-        err?.response?.data?.error ||
-        "Could not load patient status and insurance data."
+
+      setError(
+        "Performance data could not be loaded. Please check the API responses and try again."
       );
     } finally {
-      setLoadingPatients(false);
+      setLoading(false);
     }
-  }, [currentMonth, previousMonth, selectedTherapistId]);
+  }, [
+    currentMonth,
+    previousMonth,
+    selectedTherapistId,
+  ]);
 
   useEffect(() => {
     loadPerformanceData();
   }, [loadPerformanceData]);
 
-  const styles = {
-    page: {
-      display: "grid",
-      gap: 20,
-      width: "100%",
-      minWidth: 0,
-      fontFamily: "Inter, Arial, sans-serif",
-    },
-    header: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      flexWrap: "wrap",
-      gap: 16,
-    },
-    title: {
-      color: "#16334f",
-      fontSize: 28,
-      fontWeight: 850,
-      margin: 0,
-    },
-    subtitle: {
-      color: "#64748b",
-      fontSize: 13,
-      lineHeight: 1.6,
-      marginTop: 7,
-    },
-    button: {
-      border: "1px solid #dbe4ee",
-      borderRadius: 10,
-      padding: "10px 15px",
-      background: "#ffffff",
-      color: "#243b53",
-      fontSize: 13,
-      fontWeight: 750,
-      cursor: "pointer",
-    },
-    charts: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
-      gap: 20,
-      alignItems: "start",
-    },
-    error: {
-      border: "1px solid #fecaca",
-      background: "#fff1f2",
-      color: "#b42318",
-      borderRadius: 12,
-      padding: 14,
-      fontSize: 13,
-      lineHeight: 1.5,
-    },
-  };
+  const currentEvaluations =
+    currentAssignments.filter(isEvaluation).length;
+
+  const previousEvaluations =
+    previousAssignments.filter(isEvaluation).length;
 
   return (
     <div style={styles.page}>
-      <header style={styles.header}>
+      <div style={styles.topRow}>
         <div>
-          <h1 style={styles.title}>Performance</h1>
-          <div style={styles.subtitle}>
-            Evaluation-based target, patient status, insurance distribution,
-            and session utilization.
-          </div>
+          <h2 style={styles.heading}>
+            Performance Dashboard
+          </h2>
+
+          <p style={styles.subtitle}>
+            Evaluation-based target, utilized sessions, patient
+            status, and insurance distribution.
+          </p>
         </div>
 
         <button
           type="button"
           onClick={loadPerformanceData}
-          disabled={loadingEvaluations || loadingPatients}
+          disabled={loading}
           style={{
             ...styles.button,
-            opacity:
-              loadingEvaluations || loadingPatients ? 0.65 : 1,
+            opacity: loading ? 0.6 : 1,
+            cursor: loading ? "not-allowed" : "pointer",
           }}
         >
-          {loadingEvaluations || loadingPatients
-            ? "Refreshing..."
-            : "↻ Refresh data"}
+          {loading ? "Refreshing..." : "Refresh"}
         </button>
-      </header>
+      </div>
 
-      {error ? (
+      {error && (
         <div role="alert" style={styles.error}>
           {error}
         </div>
-      ) : null}
+      )}
 
-      {loadingEvaluations ? (
-        <div>Loading evaluation totals...</div>
-      ) : (
+      <div style={styles.targetGrid}>
         <EstimatedTargetCard
           currentMonth={getMonthLabel(currentMonth)}
           previousMonth={getMonthLabel(previousMonth)}
           currentEvaluations={currentEvaluations}
           previousEvaluations={previousEvaluations}
+          patients={patients}
         />
+      </div>
+
+      {loading && (
+        <div style={styles.panel}>
+          Loading performance information...
+        </div>
       )}
 
-      <div style={styles.charts}>
+      <div style={styles.chartGrid}>
         <PatientStatusChart
           patients={patients}
-          loading={loadingPatients}
+          loading={loading}
         />
 
         <InsuranceUtilizationChart
           patients={patients}
-          loading={loadingPatients}
+          loading={loading}
         />
       </div>
     </div>

@@ -13,7 +13,7 @@ import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 import PhysioStatisticsSection from "../components/physio/PhysioStatisticsSection";
 import EvaluationTrackerSection from "../components/physio/EvaluationTrackerSection";
 import LeaderboardSection from "../components/common/LeaderboardSection";
-import PerformanceDashboard from "../components/physio/PerformanceDashboard";
+import PerformanceDashboard from "../components/physio/performance/PerformanceDashboard";
 
 const styles = {
   stack: {
@@ -337,7 +337,6 @@ export default function PhysioFollowupWorkspace({
 
   const selectedTherapistId = actingAs?.id ?? user?.id ?? null;
 
-  // Independent monthly tracker: this endpoint does not use appointments.
   const loadPatientTracker = useCallback(async () => {
     if (!trackerMonth) return;
 
@@ -510,7 +509,6 @@ export default function PhysioFollowupWorkspace({
     navigate("/admin");
   }, [onStopImpersonation, navigate]);
 
-  // Assignments remain filtered by therapist for statistics and evaluations.
   const physioDailyAssignments = useMemo(
     () =>
       dailyAssignments.filter((item) =>
