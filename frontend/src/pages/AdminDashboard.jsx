@@ -105,7 +105,6 @@ export default function AdminDashboard({
     try {
       const savedCategory = localStorage.getItem("activeCategory");
 
-      // Prevent an obsolete role filter from remaining selected.
       if (
         savedCategory === "visitor" ||
         savedCategory === "visitor_ceo" ||
@@ -123,12 +122,14 @@ export default function AdminDashboard({
   // Roles available for creating and managing users.
   const roles = [
     "admin",
+    "administration",
     "approvals",
     "physio",
     "reception",
     "reception_supervisor",
     "ceo",
     "physician",
+    "rehab_manager",
     "rcm",
     "callcenter",
     "callcenter_supervisor",
@@ -136,12 +137,14 @@ export default function AdminDashboard({
 
   const roleLabels = {
     admin: "Admin",
+    administration: "Administration",
     approvals: "Approvals",
     physio: "Physio",
     reception: "Reception",
     reception_supervisor: "Reception Supervisor",
     ceo: "CEO",
     physician: "Physicians",
+    rehab_manager: "Rehab Manager",
     rcm: "RCM",
     callcenter: "Call Center",
     callcenter_supervisor: "Call Center Supervisor",
@@ -150,14 +153,14 @@ export default function AdminDashboard({
 
   const roleRoutes = {
     admin: "/admin",
+    administration: "/administration",
     approvals: "/approvals",
     physio: "/physio",
     reception: "/reception",
     reception_supervisor: "/reception-supervisor",
     ceo: "/ceo",
-    // Retain the existing dashboard path until the React route
-    // configuration is updated to use /physician.
     physician: "/doctor",
+    rehab_manager: "/rehab-manager",
     rcm: "/rcm",
     callcenter: "/callcenter",
     callcenter_supervisor: "/callcenter-supervisor",
@@ -207,8 +210,6 @@ export default function AdminDashboard({
         ? res.data.users
         : [];
 
-      // Normalize legacy roles in the frontend response.
-      // This does not automatically turn visitor accounts into CEOs.
       const normalizedUsers = fetchedUsers.map((item) => ({
         ...item,
         role: item.role === "doctor" ? "physician" : item.role,
@@ -255,12 +256,14 @@ export default function AdminDashboard({
   const groupedUsers = useMemo(() => {
     const groups = {
       admin: [],
+      administration: [],
       approvals: [],
       reception: [],
       reception_supervisor: [],
       physio: [],
       ceo: [],
       physician: [],
+      rehab_manager: [],
       rcm: [],
       callcenter: [],
       callcenter_supervisor: [],
@@ -283,12 +286,14 @@ export default function AdminDashboard({
 
   const categoryOrder = [
     "admin",
+    "administration",
     "approvals",
     "reception",
     "reception_supervisor",
     "physio",
     "ceo",
     "physician",
+    "rehab_manager",
     "rcm",
     "callcenter",
     "callcenter_supervisor",
@@ -296,10 +301,7 @@ export default function AdminDashboard({
   ];
 
   const handleCategoryChange = (category) => {
-    const allowedCategories = [
-      ...roles,
-      "no_role",
-    ];
+    const allowedCategories = [...roles, "no_role"];
 
     const normalizedCategory =
       category === "doctor" ? "physician" : category;

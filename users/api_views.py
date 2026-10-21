@@ -20,12 +20,14 @@ from .models import User
 # Roles available for new users and role changes.
 ALLOWED_ROLES = [
     "admin",
+    "administration",
     "approvals",
     "physio",
     "reception",
     "reception_supervisor",
     "ceo",
     "physician",
+    "rehab_manager",
     "rcm",
     "callcenter",
     "callcenter_supervisor",
@@ -56,6 +58,11 @@ def normalize_role(role):
 
 
 def is_admin_user(user):
+    """
+    Only Django superusers and users with the admin role
+    can access administrative user-management endpoints.
+    The administration role is a separate application role.
+    """
     return bool(
         user
         and user.is_authenticated
@@ -149,7 +156,7 @@ def is_last_active_superuser(user):
 def serialize_user(user):
     """
     Return the user fields needed by the frontend.
-    The doctor role is returned as physician for compatibility.
+    The old doctor role is returned as physician for compatibility.
     """
     return {
         "id": user.id,
@@ -206,7 +213,7 @@ def login_api(request):
             status=403,
         )
 
-    # Normalize the old doctor role in the database.
+    # Migrate an existing doctor role to physician on login.
     if getattr(user, "role", "") == "doctor":
         user.role = "physician"
         user.save(update_fields=["role"])
@@ -340,7 +347,7 @@ def list_users_api(request):
         return permission_error
 
     # Migrate existing doctor records to physician.
-    # Do not automatically assign visitor accounts to CEO.
+    # Visitor roles are not automatically converted to CEO.
     User.objects.filter(role="doctor").update(role="physician")
 
     users = list(
@@ -354,7 +361,6 @@ def list_users_api(request):
         ).order_by("username")
     )
 
-    # Normalize any legacy doctor values in the response as well.
     for item in users:
         item["role"] = normalize_role(item.get("role"))
 
@@ -428,7 +434,7 @@ def update_user_api(request, user_id):
     )
 
     # New assignments must use supported roles.
-    # An unchanged legacy role is allowed temporarily so
+    # An unchanged legacy role is temporarily allowed so
     # existing accounts can still have other details edited.
     if (
         new_role not in ALLOWED_ROLES

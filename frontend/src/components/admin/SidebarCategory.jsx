@@ -24,11 +24,8 @@ export default function SidebarCategory({
     (item) => item?.key === activeSection
   );
 
-  // Expand only when explicitly requested by the category config.
-  // Categories remain closed by default, even when a child is active.
-  const [isOpen, setIsOpen] = useState(
-    () => category?.defaultOpen === true
-  );
+  // All categories start closed, regardless of defaultOpen.
+  const [isOpen, setIsOpen] = useState(false);
 
   const expanded = isOpen;
   const submenuId = `sidebar-category-${categoryKey}`;
@@ -44,7 +41,7 @@ export default function SidebarCategory({
       onSelect(item.key);
     }
 
-    // Keep the submenu open after selecting one of its children.
+    // Keep the selected category open after choosing a child.
     setIsOpen(true);
   };
 
