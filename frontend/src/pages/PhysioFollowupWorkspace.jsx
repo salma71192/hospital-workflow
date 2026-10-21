@@ -13,6 +13,7 @@ import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 import PhysioStatisticsSection from "../components/physio/PhysioStatisticsSection";
 import EvaluationTrackerSection from "../components/physio/EvaluationTrackerSection";
 import LeaderboardSection from "../components/common/LeaderboardSection";
+import PerformanceDashboard from "../components/physio/PerformanceDashboard";
 
 const styles = {
   stack: {
@@ -595,6 +596,7 @@ export default function PhysioFollowupWorkspace({
         { key: "statistics", label: `Statistics (${statisticsCount})` },
         { key: "tracker", label: "Patient Tracker" },
         { key: "evaluation-tracker", label: "Evaluation Tracker" },
+        { key: "performance", label: "Performance" },
         { key: "leaderboard", label: "Leaderboard" },
       ]}
       activeSection={activeSection}
@@ -645,6 +647,13 @@ export default function PhysioFollowupWorkspace({
           onMonthChange={setTrackerMonth}
           monthLabel={getMonthLabel(trackerMonth)}
           onRefresh={loadPatientTracker}
+        />
+      )}
+
+      {activeSection === "performance" && (
+        <PerformanceDashboard
+          user={user}
+          actingAs={actingAs}
         />
       )}
 
