@@ -10,10 +10,12 @@ const styles = {
     display: "grid",
     gap: 20,
     minWidth: 0,
+    color: "#10243e",
+    fontFamily: "Inter, Arial, sans-serif",
   },
   heading: {
     margin: 0,
-    color: "#142d4e",
+    color: "#10243e",
     fontSize: 24,
     fontWeight: 850,
   },
@@ -25,14 +27,14 @@ const styles = {
   },
   targetGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gridTemplateColumns: "minmax(0, 1fr)",
     gap: 18,
     minWidth: 0,
   },
   chartGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))",
-    gap: 18,
+    gridTemplateColumns: "minmax(0, 1fr)",
+    gap: 20,
     minWidth: 0,
     alignItems: "start",
   },
@@ -41,7 +43,7 @@ const styles = {
     background: "#ffffff",
     border: "1px solid #e5eaf1",
     borderRadius: 14,
-    color: "#334155",
+    color: "#64748b",
     fontSize: 14,
   },
   error: {
@@ -58,7 +60,7 @@ const styles = {
     border: "1px solid #d6deea",
     borderRadius: 10,
     background: "#ffffff",
-    color: "#142d4e",
+    color: "#10243e",
     fontWeight: 750,
     cursor: "pointer",
   },
@@ -129,8 +131,8 @@ function belongsToTherapist(item, therapistId) {
 
   const id = getTherapistId(item);
 
-  // If the record contains no therapist field, leave it in place.
-  // The endpoint may already be scoped to the logged-in therapist.
+  // Keep records without a therapist ID because the endpoint
+  // may already return data scoped to the selected therapist.
   return id == null || String(id) === String(therapistId);
 }
 
@@ -167,7 +169,7 @@ function isEvaluation(item) {
   );
 }
 
-function getInsuranceTherapistId(item) {
+function getTrackerTherapistId(item) {
   return (
     item?.therapist_id ??
     item?.therapist?.id ??
@@ -175,6 +177,7 @@ function getInsuranceTherapistId(item) {
     item?.physio_id ??
     item?.physiotherapist_id ??
     item?.user_id ??
+    item?.assigned_to?.id ??
     null
   );
 }
@@ -185,14 +188,15 @@ function filterTrackerPatients(patients, therapistId) {
   }
 
   const hasTherapistInformation = patients.some(
-    (patient) => getInsuranceTherapistId(patient) != null
+    (patient) => getTrackerTherapistId(patient) != null
   );
 
-  // Do not discard tracker rows if the endpoint does not expose assignment IDs.
+  // Some tracker endpoints may not expose therapist assignment IDs.
   if (!hasTherapistInformation) return patients;
 
   return patients.filter((patient) => {
-    const id = getInsuranceTherapistId(patient);
+    const id = getTrackerTherapistId(patient);
+
     return id != null && String(id) === String(therapistId);
   });
 }
@@ -200,6 +204,7 @@ function filterTrackerPatients(patients, therapistId) {
 export default function PerformanceDashboard({ user, actingAs }) {
   const currentMonth = getLocalMonthString();
   const previousMonth = shiftMonth(currentMonth, -1);
+
   const selectedTherapistId = actingAs?.id ?? user?.id ?? null;
 
   const [currentAssignments, setCurrentAssignments] = useState([]);
@@ -219,35 +224,42 @@ export default function PerformanceDashboard({ user, actingAs }) {
 
       const currentParams = new URLSearchParams(currentRange);
       const previousParams = new URLSearchParams(previousRange);
+
       const trackerParams = new URLSearchParams({
         month: currentMonth,
       });
 
-      const [currentResponse, previousResponse, trackerResponse] =
-        await Promise.all([
-          api.get(
-            `reception/assignments/?${currentParams.toString()}`
-          ),
-          api.get(
-            `reception/assignments/?${previousParams.toString()}`
-          ),
-          api.get(
-            `patients/tracker/?${trackerParams.toString()}`
-          ),
-        ]);
+      const [
+        currentResponse,
+        previousResponse,
+        trackerResponse,
+      ] = await Promise.all([
+        api.get(
+          `reception/assignments/?${currentParams.toString()}`
+        ),
+        api.get(
+          `reception/assignments/?${previousParams.toString()}`
+        ),
+        api.get(
+          `patients/tracker/?${trackerParams.toString()}`
+        ),
+      ]);
 
       const currentRows = getArray(
         currentResponse.data,
         "assignments"
       );
+
       const previousRows = getArray(
         previousResponse.data,
         "assignments"
       );
-      const trackerRows = getArray(
-        trackerResponse.data,
-        "patients"
-      );
+
+      // Support common response formats from the Patient Tracker.
+      const trackerRows =
+        getArray(trackerResponse.data, "patients").length > 0
+          ? getArray(trackerResponse.data, "patients")
+          : getArray(trackerResponse.data, "results");
 
       setCurrentAssignments(
         currentRows.filter((item) =>
@@ -262,10 +274,17 @@ export default function PerformanceDashboard({ user, actingAs }) {
       );
 
       setPatients(
-        filterTrackerPatients(trackerRows, selectedTherapistId)
+        filterTrackerPatients(
+          trackerRows,
+          selectedTherapistId
+        )
       );
     } catch (err) {
-      console.error("Failed to load performance dashboard:", err);
+      console.error(
+        "Failed to load performance dashboard:",
+        err
+      );
+
       console.error(
         "Performance dashboard API error:",
         err?.response?.data
@@ -281,23 +300,33 @@ export default function PerformanceDashboard({ user, actingAs }) {
     } finally {
       setLoading(false);
     }
-  }, [currentMonth, previousMonth, selectedTherapistId]);
+  }, [
+    currentMonth,
+    previousMonth,
+    selectedTherapistId,
+  ]);
 
   useEffect(() => {
     loadPerformanceData();
   }, [loadPerformanceData]);
 
-  const currentEvaluations = currentAssignments.filter(isEvaluation).length;
-  const previousEvaluations = previousAssignments.filter(isEvaluation).length;
+  const currentEvaluations =
+    currentAssignments.filter(isEvaluation).length;
+
+  const previousEvaluations =
+    previousAssignments.filter(isEvaluation).length;
 
   return (
     <div style={styles.page}>
       <div style={styles.topRow}>
         <div>
-          <h2 style={styles.heading}>Performance Dashboard</h2>
+          <h2 style={styles.heading}>
+            Performance Dashboard
+          </h2>
+
           <p style={styles.subtitle}>
-            Evaluation-based target, patient status, insurance distribution,
-            and session utilization.
+            Evaluation-based target, utilized sessions, patient
+            status, and insurance distribution.
           </p>
         </div>
 
@@ -327,6 +356,7 @@ export default function PerformanceDashboard({ user, actingAs }) {
           previousMonth={getMonthLabel(previousMonth)}
           currentEvaluations={currentEvaluations}
           previousEvaluations={previousEvaluations}
+          patients={patients}
         />
       </div>
 
@@ -336,12 +366,14 @@ export default function PerformanceDashboard({ user, actingAs }) {
         </div>
       )}
 
+      {/* Patient Status appears first. */}
       <div style={styles.chartGrid}>
         <PatientStatusChart
           patients={patients}
           loading={loading}
         />
 
+        {/* Insurance and utilization appear below Patient Status. */}
         <InsuranceUtilizationChart
           patients={patients}
           loading={loading}
