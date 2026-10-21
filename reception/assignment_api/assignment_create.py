@@ -31,6 +31,7 @@ def create_assignment(request, role, admin, today_value):
     if validation_error:
         return validation_error
 
+    # Determine the assignment date.
     if admin:
         submitted_date = data.get("assignment_date")
 
@@ -46,6 +47,7 @@ def create_assignment(request, role, admin, today_value):
     else:
         assignment_date = today_value
 
+    # Validate the patient and therapist.
     try:
         patient = Patient.objects.get(id=patient_id)
         therapist = get_physio(therapist_id)
@@ -57,6 +59,7 @@ def create_assignment(request, role, admin, today_value):
     ):
         return error("Invalid patient or therapist")
 
+    # Create the assignment safely.
     with transaction.atomic():
         locked_patient = (
             Patient.objects

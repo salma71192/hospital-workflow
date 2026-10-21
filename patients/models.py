@@ -61,7 +61,7 @@ class Patient(models.Model):
     )
 
     # Existing overall treatment tracking.
-    # These fields are separate from monthly tracker counts.
+    # Separate from monthly tracker counts.
     sessions_taken = models.PositiveIntegerField(default=0)
     taken_with = models.CharField(
         max_length=255,
@@ -73,6 +73,7 @@ class Patient(models.Model):
         null=True,
     )
 
+    # Existing patient insurance/provider field.
     insurance_provider = models.CharField(
         max_length=50,
         blank=True,
@@ -163,7 +164,15 @@ class PatientMonthlyTracker(models.Model):
     # Always stores the first day of the relevant month.
     month = models.DateField()
 
+    # Overall utilized sessions for this patient and month.
+    # Cash visits must also be included in this total.
     utilized_sessions = models.PositiveIntegerField(default=0)
+
+    # Monthly category totals.
+    # These can be reconciled against individual session records.
+    thiqa_sessions = models.PositiveIntegerField(default=0)
+    daman_sessions = models.PositiveIntegerField(default=0)
+    cash_sessions = models.PositiveIntegerField(default=0)
 
     status = models.CharField(
         max_length=40,
@@ -177,7 +186,7 @@ class PatientMonthlyTracker(models.Model):
     )
 
     # True when this patient is identified as a new evaluation
-    # in the tracker. This is independent of patient registration.
+    # in the tracker. Independent of patient registration.
     is_new_evaluation = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -209,4 +218,136 @@ class PatientMonthlyTracker(models.Model):
             f"{self.patient.name} - "
             f"{self.month:%Y-%m} - "
             f"{self.utilized_sessions} sessions"
+        )
+
+
+class PatientMonthlySession(models.Model):
+    """
+    One record per visit/session.
+
+    Each visit is categorized as Thiqa, Daman, or Cash.
+    Cash visits are separate records but must also contribute
+    to PatientMonthlyTracker.utilized_sessions.
+
+    The API must create/update this record and update the
+    corresponding monthly tracker in one database transaction.
+    """
+
+    INSURANCE_THIQA = "thiqa"
+    INSURANCE_DAMAN = "daman"
+    INSURANCE_CASH = "cash"
+
+    INSURANCE_CHOICES = [
+        (INSURANCE_THIQA, "Thiqa"),
+        (INSURANCE_DAMAN, "Daman"),
+        (INSURANCE_CASH, "Cash"),
+    ]
+
+    tracker = models.ForeignKey(
+        PatientMonthlyTracker,
+        on_delete=models.CASCADE,
+        related_name="session_records",
+    )
+
+    # Stored directly for convenient filtering/reporting.
+    # The API must ensure this matches tracker.patient.
+    patient = models.ForeignKey(
+        Patient,
+        on_delete=models.CASCADE,
+        related_name="monthly_session_records",
+    )
+
+    # Date the visit took place.
+    session_date = models.DateField(
+        default=timezone.localdate,
+        db_index=True,
+    )
+
+    insurance_type = models.CharField(
+        max_length=10,
+        choices=INSURANCE_CHOICES,
+        default=INSURANCE_CASH,
+        db_index=True,
+    )
+
+    notes = models.TextField(
+        blank=True,
+        default="",
+    )
+
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recorded_patient_sessions",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-session_date", "-created_at"]
+        indexes = [
+            models.Index(
+                fields=["patient", "session_date"],
+                name="pms_patient_date_idx",
+            ),
+            models.Index(
+                fields=["tracker", "insurance_type"],
+                name="pms_tracker_ins_idx",
+            ),
+        ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.tracker_id and self.patient_id:
+            tracker_patient_id = (
+                PatientMonthlyTracker.objects
+                .filter(pk=self.tracker_id)
+                .values_list("patient_id", flat=True)
+                .first()
+            )
+
+            if (
+                tracker_patient_id is not None
+                and tracker_patient_id != self.patient_id
+            ):
+                raise ValidationError(
+                    "The session patient must match "
+                    "the patient on the monthly tracker."
+                )
+
+        if self.session_date and self.tracker_id:
+            tracker_month = (
+                PatientMonthlyTracker.objects
+                .filter(pk=self.tracker_id)
+                .values_list("month", flat=True)
+                .first()
+            )
+
+            if (
+                tracker_month is not None
+                and (
+                    self.session_date.year != tracker_month.year
+                    or self.session_date.month != tracker_month.month
+                )
+            ):
+                raise ValidationError(
+                    "The session date must be within "
+                    "the tracker's reporting month."
+                )
+
+    def save(self, *args, **kwargs):
+        # Normalize the session date's reporting month through
+        # the associated tracker. Validation is performed by
+        # the API/form using full_clean() before saving.
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return (
+            f"{self.patient.name} - "
+            f"{self.session_date:%Y-%m-%d} - "
+            f"{self.get_insurance_type_display()}"
         )

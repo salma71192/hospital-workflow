@@ -1,25 +1,119 @@
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import * as XLSX from "xlsx";
+
+const INSURANCE_OPTIONS = [
+  { value: "thiqa", label: "Thiqa" },
+  { value: "daman", label: "Daman" },
+  { value: "cash", label: "Cash" },
+];
 
 const STATUS_OPTIONS = [
   { value: "inactive", label: "Inactive" },
   { value: "low", label: "Low" },
   { value: "moderate", label: "Moderate" },
   { value: "high", label: "High" },
-  { value: "with_another_therapist", label: "With Another Therapist" },
+  {
+    value: "with_another_therapist",
+    label: "With Another Therapist",
+  },
 ];
+
+const COLORS = {
+  navy: "#17365d",
+  text: "#16334f",
+  muted: "#718096",
+  border: "#dfe7f1",
+  background: "#f8fafc",
+  green: "#047857",
+  red: "#b91c1c",
+};
+
+function normalizeInsurance(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+  if (normalized.includes("thiqa")) return "thiqa";
+  if (normalized.includes("daman")) return "daman";
+
+  if (
+    ["cash", "selfpay", "selfpaid", "cashpatient"].includes(normalized)
+  ) {
+    return "cash";
+  }
+
+  return "not_set";
+}
+
+function getInsurance(patient) {
+  return normalizeInsurance(
+    patient?.insurance_type ??
+      patient?.insuranceType ??
+      patient?.insurance_name ??
+      patient?.insuranceName ??
+      patient?.insurance_provider ??
+      patient?.insuranceProvider ??
+      patient?.insurance ??
+      patient?.payer ??
+      ""
+  );
+}
+
+function getInsuranceLabel(value) {
+  return (
+    INSURANCE_OPTIONS.find((item) => item.value === value)?.label ||
+    (value === "not_set" ? "Not Set" : "Not Set")
+  );
+}
+
+function getSessions(patient) {
+  const value = Number(
+    patient?.utilized_sessions ??
+      patient?.utilizedSessions ??
+      patient?.sessions_used ??
+      patient?.session_count ??
+      patient?.sessions_count ??
+      0
+  );
+
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function getCategorySessions(patient, category) {
+  const fieldNames = {
+    thiqa: ["thiqa_sessions", "thiqa_utilized_sessions", "thiqaSessions"],
+    daman: ["daman_sessions", "daman_utilized_sessions", "damanSessions"],
+    cash: ["cash_sessions", "cash_utilized_sessions", "cashSessions"],
+  };
+
+  for (const field of fieldNames[category] || []) {
+    if (patient?.[field] !== undefined && patient?.[field] !== null) {
+      const value = Number(patient[field]);
+      return Number.isFinite(value) && value >= 0 ? value : 0;
+    }
+  }
+
+  // Do not assume all sessions are cash sessions just because a patient
+  // is marked as Cash. Mixed payment types require backend category totals.
+  return 0;
+}
 
 function getStatusLabel(status) {
   const value = String(status || "inactive").toLowerCase();
-  const found = STATUS_OPTIONS.find(
-    (item) => item.value === value || item.label.toLowerCase() === value
+
+  return (
+    STATUS_OPTIONS.find(
+      (item) =>
+        item.value === value || item.label.toLowerCase() === value
+    )?.label || "Inactive"
   );
-  return found?.label || "Inactive";
 }
 
-function getStatusColors(status) {
+function getStatusStyle(status) {
   switch (getStatusLabel(status)) {
     case "High":
       return { background: "#dcfce7", color: "#166534", dot: "#16a34a" };
@@ -36,33 +130,43 @@ function getStatusColors(status) {
 
 function formatDate(value) {
   if (!value) return "-";
+
   const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
+
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
 }
 
 function normalizeMonth(value) {
-  if (!value) return "";
-  const match = String(value).match(/^(\d{4})-(\d{2})/);
+  const match = String(value || "").match(/^(\d{4})-(\d{2})/);
   return match ? `${match[1]}-${match[2]}` : "";
 }
 
 function getInitials(name) {
   const words = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+
+  return words.length
+    ? words.slice(0, 2).map((word) => word[0]).join("").toUpperCase()
+    : "?";
 }
 
-function getSessions(patient) {
-  const raw =
-    patient?.utilized_sessions ??
-    patient?.utilizedSessions ??
-    patient?.sessions_used ??
-    patient?.session_count ??
-    patient?.sessions_count ??
-    0;
+function normalizeFileNumber(value) {
+  if (value === null || value === undefined) return "";
 
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 ? value : 0;
+  return String(value)
+    .trim()
+    .replace(/\.0$/, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+function getPatientFileNumber(patient) {
+  return (
+    patient?.file_number ??
+    patient?.patient_file_number ??
+    patient?.patientFileNumber ??
+    patient?.patient_id ??
+    ""
+  );
 }
 
 function getSpeciality(patient) {
@@ -92,14 +196,22 @@ function getSpeciality(patient) {
     assignment?.department_name,
   ];
 
-  const found = values.find(
-    (value) =>
-      value !== null &&
-      value !== undefined &&
-      String(value).trim() !== ""
+  const value = values.find(
+    (item) => item !== null && item !== undefined && String(item).trim()
   );
 
-  return found ? String(found).trim() : "-";
+  return value ? String(value).trim() : "-";
+}
+
+function getHeaderKey(row, candidates) {
+  return Object.keys(row || {}).find((key) => {
+    const normalized = String(key)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+
+    return candidates.includes(normalized);
+  });
 }
 
 function getApiBaseUrl() {
@@ -108,6 +220,7 @@ function getApiBaseUrl() {
 
 async function sendTrackerAction(payload) {
   const baseUrl = getApiBaseUrl();
+
   const url = /\/api$/i.test(baseUrl)
     ? `${baseUrl}/patients/tracker/`
     : `${baseUrl}/api/patients/tracker/`;
@@ -115,6 +228,29 @@ async function sendTrackerAction(payload) {
   const response = await axios.post(url, payload);
   return response.data;
 }
+
+const INSURANCE_BADGE_STYLES = {
+  thiqa: {
+    background: "#dcfce7",
+    color: "#166534",
+    border: "1px solid #bbf7d0",
+  },
+  daman: {
+    background: "#dbeafe",
+    color: "#1d4ed8",
+    border: "1px solid #bfdbfe",
+  },
+  cash: {
+    background: "#ffedd5",
+    color: "#9a3412",
+    border: "1px solid #fed7aa",
+  },
+  not_set: {
+    background: "#f1f5f9",
+    color: "#64748b",
+    border: "1px solid #e2e8f0",
+  },
+};
 
 export default function PatientTrackerTable({
   patients = [],
@@ -125,58 +261,112 @@ export default function PatientTrackerTable({
   onRefresh,
 }) {
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
 
   const [busyAction, setBusyAction] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [searchName, setSearchName] = useState("");
   const [selectedSpeciality, setSelectedSpeciality] = useState("all");
+  const [selectedInsurance, setSelectedInsurance] = useState("all");
+  const [importInsurance, setImportInsurance] = useState("thiqa");
+  const [insuranceOverrides, setInsuranceOverrides] = useState({});
+  const [importSummary, setImportSummary] = useState(null);
 
-  // Create a speciality list from the patients currently supplied to the table.
-  const specialityOptions = useMemo(() => {
-    return [...new Set(
-      patients
-        .map((patient) => getSpeciality(patient))
-        .filter((speciality) => speciality !== "-")
-    )].sort((a, b) => a.localeCompare(b));
-  }, [patients]);
+  // Imported insurance types are temporary display overrides.
+  // They are not saved to the database by this component.
+  const trackerPatients = useMemo(
+    () =>
+      patients.map((patient) => {
+        const fileNumber = normalizeFileNumber(
+          getPatientFileNumber(patient)
+        );
+        const override = fileNumber
+          ? insuranceOverrides[fileNumber]
+          : undefined;
 
-  // Apply both filters to the table.
-  const filteredPatients = useMemo(() => {
-    const search = searchName.trim().toLowerCase();
+        return override
+          ? { ...patient, insurance_type: override }
+          : patient;
+      }),
+    [patients, insuranceOverrides]
+  );
 
-    return patients.filter((patient) => {
-      const name = String(patient.name || "").toLowerCase();
-      const speciality = getSpeciality(patient);
+  const specialityOptions = useMemo(
+    () =>
+      [
+        ...new Set(
+          trackerPatients
+            .map(getSpeciality)
+            .filter((value) => value !== "-")
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
+    [trackerPatients]
+  );
 
-      const matchesName = !search || name.includes(search);
-      const matchesSpeciality =
-        selectedSpeciality === "all" ||
-        speciality === selectedSpeciality;
-
-      return matchesName && matchesSpeciality;
-    });
-  }, [patients, searchName, selectedSpeciality]);
-
-  // Summary cards intentionally use all patients, not the filtered results.
   const summary = useMemo(() => {
     const activeStatuses = new Set(["low", "moderate", "high"]);
 
-    return {
-      totalPatients: patients.length,
-      activePatients: patients.filter((patient) =>
-        activeStatuses.has(String(patient.status || "").toLowerCase())
-      ).length,
-      inactivePatients: patients.filter(
-        (patient) =>
-          String(patient.status || "").toLowerCase() === "inactive"
-      ).length,
-      totalSessions: patients.reduce(
-        (sum, patient) => sum + getSessions(patient),
-        0
-      ),
+    const result = {
+      totalPatients: trackerPatients.length,
+      activePatients: 0,
+      inactivePatients: 0,
+      totalSessions: 0,
+      thiqaPatients: 0,
+      damanPatients: 0,
+      cashPatients: 0,
+      thiqaSessions: 0,
+      damanSessions: 0,
+      cashSessions: 0,
     };
-  }, [patients]);
+
+    trackerPatients.forEach((patient) => {
+      const status = String(patient.status || "inactive").toLowerCase();
+      const insurance = getInsurance(patient);
+
+      if (activeStatuses.has(status)) result.activePatients += 1;
+      if (status === "inactive") result.inactivePatients += 1;
+
+      result.totalSessions += getSessions(patient);
+      result.thiqaSessions += getCategorySessions(patient, "thiqa");
+      result.damanSessions += getCategorySessions(patient, "daman");
+      result.cashSessions += getCategorySessions(patient, "cash");
+
+      if (insurance === "thiqa") result.thiqaPatients += 1;
+      if (insurance === "daman") result.damanPatients += 1;
+      if (insurance === "cash") result.cashPatients += 1;
+    });
+
+    return result;
+  }, [trackerPatients]);
+
+  const filteredPatients = useMemo(() => {
+    const search = searchName.trim().toLowerCase();
+
+    return trackerPatients.filter((patient) => {
+      const name = String(patient.name || "").toLowerCase();
+      const speciality = getSpeciality(patient);
+      const insurance = getInsurance(patient);
+
+      return (
+        (!search || name.includes(search)) &&
+        (selectedSpeciality === "all" ||
+          speciality === selectedSpeciality) &&
+        (selectedInsurance === "all" ||
+          insurance === selectedInsurance)
+      );
+    });
+  }, [
+    trackerPatients,
+    searchName,
+    selectedSpeciality,
+    selectedInsurance,
+  ]);
+
+  const clearMessages = () => {
+    setErrorMessage("");
+    setSuccessMessage("");
+  };
 
   const refreshTracker = async () => {
     if (typeof onRefresh === "function") {
@@ -184,15 +374,19 @@ export default function PatientTrackerTable({
     }
   };
 
+  const clearFilters = () => {
+    setSearchName("");
+    setSelectedSpeciality("all");
+    setSelectedInsurance("all");
+  };
+
   const openPatientFile = (patient) => {
-    if (patient?.id) {
-      navigate(`/patients/${patient.id}`);
-    }
+    if (patient?.id) navigate(`/patients/${patient.id}`);
   };
 
   const rolloverMonth = async () => {
     if (!selectedMonth) {
-      setErrorMessage("Please select a month before running rollover.");
+      setErrorMessage("Please select a reporting month before rollover.");
       setSuccessMessage("");
       return;
     }
@@ -203,8 +397,7 @@ export default function PatientTrackerTable({
 
     if (!confirmed) return;
 
-    setErrorMessage("");
-    setSuccessMessage("");
+    clearMessages();
     setBusyAction("rollover");
 
     try {
@@ -224,6 +417,160 @@ export default function PatientTrackerTable({
       setBusyAction("");
     }
   };
+
+  const handleInsuranceImport = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+
+    clearMessages();
+    setImportSummary(null);
+    setBusyAction("insurance-import");
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+
+      if (!firstSheet) {
+        throw new Error("The selected file does not contain a worksheet.");
+      }
+
+      const rows = XLSX.utils.sheet_to_json(firstSheet, {
+        defval: "",
+        raw: false,
+      });
+
+      if (!rows.length) {
+        throw new Error("The selected file is empty.");
+      }
+
+      const firstRow = rows[0];
+
+      const fileNumberKey = getHeaderKey(firstRow, [
+        "filenumber",
+        "patientfilenumber",
+        "patientfile",
+        "patientid",
+        "fileid",
+        "fileno",
+        "patientnumber",
+        "patientfileno",
+        "mrn",
+        "medicalrecordnumber",
+      ]);
+
+      if (!fileNumberKey) {
+        throw new Error(
+          "Could not find a File Number column. Include File Number, Patient File Number, or Patient ID."
+        );
+      }
+
+      const insuranceKey = getHeaderKey(firstRow, [
+        "insurancetype",
+        "insurance",
+        "insurancename",
+        "insuranceprovider",
+        "payer",
+        "payername",
+      ]);
+
+      const existingFileNumbers = new Set(
+        trackerPatients
+          .map((patient) =>
+            normalizeFileNumber(getPatientFileNumber(patient))
+          )
+          .filter(Boolean)
+      );
+
+      const updates = {};
+      const importedNumbers = new Set();
+      let matchedRows = 0;
+      let unmatchedRows = 0;
+      let invalidRows = 0;
+
+      rows.forEach((row) => {
+        const fileNumber = normalizeFileNumber(row[fileNumberKey]);
+
+        if (!fileNumber) {
+          invalidRows += 1;
+          return;
+        }
+
+        if (!existingFileNumbers.has(fileNumber)) {
+          unmatchedRows += 1;
+          return;
+        }
+
+        const importedInsurance =
+          insuranceKey && String(row[insuranceKey] || "").trim()
+            ? normalizeInsurance(row[insuranceKey])
+            : importInsurance;
+
+        // Use the selected import category when the spreadsheet has no
+        // recognized Thiqa, Daman, or Cash value.
+        const insurance =
+          ["thiqa", "daman", "cash"].includes(importedInsurance)
+            ? importedInsurance
+            : importInsurance;
+
+        updates[fileNumber] = insurance;
+        importedNumbers.add(fileNumber);
+        matchedRows += 1;
+      });
+
+      if (!matchedRows) {
+        throw new Error(
+          "No imported file numbers matched patients in the current tracker. Check the file numbers and reporting month."
+        );
+      }
+
+      setInsuranceOverrides((previous) => ({
+        ...previous,
+        ...updates,
+      }));
+
+      setImportSummary({
+        fileName: file.name,
+        matchedRows,
+        uniquePatients: importedNumbers.size,
+        unmatchedRows,
+        invalidRows,
+      });
+
+      setSuccessMessage(
+        `${importedNumbers.size} patient insurance assignment(s) applied to the current display.`
+      );
+    } catch (error) {
+      setErrorMessage(
+        error?.message || "Could not import the insurance file."
+      );
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const insuranceCards = [
+    {
+      key: "thiqa",
+      label: "THIQA PATIENTS",
+      value: summary.thiqaPatients,
+      sessions: summary.thiqaSessions,
+    },
+    {
+      key: "daman",
+      label: "DAMAN PATIENTS",
+      value: summary.damanPatients,
+      sessions: summary.damanSessions,
+    },
+    {
+      key: "cash",
+      label: "CASH PATIENTS",
+      value: summary.cashPatients,
+      sessions: summary.cashSessions,
+    },
+  ];
 
   const summaryCards = [
     {
@@ -256,11 +603,6 @@ export default function PatientTrackerTable({
     },
   ];
 
-  const clearFilters = () => {
-    setSearchName("");
-    setSelectedSpeciality("all");
-  };
-
   return (
     <section style={styles.page}>
       <div style={styles.card}>
@@ -269,15 +611,15 @@ export default function PatientTrackerTable({
             <div style={styles.eyebrow}>PATIENT MANAGEMENT</div>
             <h2 style={styles.title}>{title}</h2>
             <p style={styles.subtitle}>
-              Monitor patient activity, utilized sessions, and follow-up
-              status in one place.
+              Monitor patient activity, insurance coverage, utilized
+              sessions, and follow-up status in one place.
             </p>
           </div>
 
           <div style={styles.headerRight}>
             {onMonthChange && (
               <label style={styles.monthFilter}>
-                <span style={styles.monthLabel}>REPORTING MONTH</span>
+                <span style={styles.fieldLabel}>REPORTING MONTH</span>
                 <input
                   type="month"
                   value={selectedMonth}
@@ -330,15 +672,80 @@ export default function PatientTrackerTable({
           ))}
         </div>
 
+        <div style={styles.insuranceSummary}>
+          {insuranceCards.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              style={{
+                ...styles.insuranceCard,
+                ...(selectedInsurance === item.key
+                  ? styles.insuranceCardSelected
+                  : {}),
+              }}
+              onClick={() =>
+                setSelectedInsurance((current) =>
+                  current === item.key ? "all" : item.key
+                )
+              }
+              aria-pressed={selectedInsurance === item.key}
+            >
+              <span style={styles.insuranceCardLabel}>{item.label}</span>
+              <strong style={styles.insuranceCardValue}>{item.value}</strong>
+              <span style={styles.insuranceCardHint}>
+                Utilized sessions: {item.sessions}
+              </span>
+              <span style={styles.insuranceCardHint}>Click to filter</span>
+            </button>
+          ))}
+        </div>
+
         <div style={styles.tableHeading}>
           <div>
             <h3 style={styles.tableTitle}>Patient Records</h3>
             <p style={styles.tableSubtitle}>
-              View patient details and open individual files.
+              Search patients and review their insurance and monthly session
+              totals.
             </p>
           </div>
 
           <div style={styles.headingActions}>
+            <label style={styles.importTypeField}>
+              <span style={styles.fieldLabel}>IMPORT AS</span>
+              <select
+                value={importInsurance}
+                onChange={(event) => setImportInsurance(event.target.value)}
+                style={styles.toolbarSelect}
+                aria-label="Insurance type for import"
+              >
+                {INSURANCE_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              style={styles.importButton}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busyAction === "insurance-import"}
+            >
+              {busyAction === "insurance-import"
+                ? "Importing..."
+                : "Import Excel/CSV"}
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleInsuranceImport}
+              style={{ display: "none" }}
+              aria-label="Import patient insurance list"
+            />
+
             <button
               type="button"
               style={{
@@ -348,49 +755,51 @@ export default function PatientTrackerTable({
               onClick={rolloverMonth}
               disabled={busyAction === "rollover" || !selectedMonth}
             >
-              <span aria-hidden="true">↻</span>
-              {busyAction === "rollover" ? "Processing..." : "Monthly Rollover"}
+              ↻{" "}
+              {busyAction === "rollover"
+                ? "Processing..."
+                : "Monthly Rollover"}
             </button>
           </div>
         </div>
 
-        {/* Patient name and speciality filters */}
+        {importSummary && (
+          <div style={styles.importResult} role="status">
+            <strong>Import summary: {importSummary.fileName}</strong>
+            <span>
+              Matched rows: {importSummary.matchedRows} · Unique patients:{" "}
+              {importSummary.uniquePatients} · Unmatched rows:{" "}
+              {importSummary.unmatchedRows} · Blank file numbers:{" "}
+              {importSummary.invalidRows}
+            </span>
+            <span style={styles.importWarning}>
+              These insurance assignments are temporary and have not been
+              saved to the database.
+            </span>
+          </div>
+        )}
+
         <div style={styles.filterPanel}>
           <label style={styles.filterField}>
-            <span style={styles.filterLabel}>SEARCH PATIENT NAME</span>
-            <div style={styles.searchInputWrap}>
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-                style={styles.searchIcon}
-              >
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-4-4" />
-              </svg>
-              <input
-                type="search"
-                value={searchName}
-                onChange={(event) => setSearchName(event.target.value)}
-                placeholder="Type patient name..."
-                style={styles.searchInput}
-                aria-label="Search patient name"
-              />
-            </div>
+            <span style={styles.fieldLabel}>SEARCH PATIENT NAME</span>
+            <input
+              type="search"
+              value={searchName}
+              onChange={(event) => setSearchName(event.target.value)}
+              placeholder="Type patient name..."
+              style={styles.input}
+              aria-label="Search patient name"
+            />
           </label>
 
           <label style={styles.filterField}>
-            <span style={styles.filterLabel}>FILTER BY SPECIALITY</span>
+            <span style={styles.fieldLabel}>FILTER BY SPECIALITY</span>
             <select
               value={selectedSpeciality}
-              onChange={(event) => setSelectedSpeciality(event.target.value)}
-              style={styles.specialitySelect}
+              onChange={(event) =>
+                setSelectedSpeciality(event.target.value)
+              }
+              style={styles.select}
               aria-label="Filter by speciality"
             >
               <option value="all">All Specialities</option>
@@ -399,22 +808,42 @@ export default function PatientTrackerTable({
                   {speciality}
                 </option>
               ))}
-              {patients.some((patient) => getSpeciality(patient) === "-") && (
-                <option value="-">Not Specified</option>
-              )}
+              {trackerPatients.some(
+                (patient) => getSpeciality(patient) === "-"
+              ) && <option value="-">Not Specified</option>}
+            </select>
+          </label>
+
+          <label style={styles.filterField}>
+            <span style={styles.fieldLabel}>FILTER BY INSURANCE</span>
+            <select
+              value={selectedInsurance}
+              onChange={(event) => setSelectedInsurance(event.target.value)}
+              style={styles.select}
+              aria-label="Filter by insurance type"
+            >
+              <option value="all">All Insurance Types</option>
+              {INSURANCE_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+              <option value="not_set">Not Set</option>
             </select>
           </label>
 
           <div style={styles.filterResult}>
-            <span style={styles.resultNumber}>
-              {filteredPatients.length}
-            </span>
+            <strong>{filteredPatients.length}</strong>
             <span>
-              {filteredPatients.length === 1 ? "patient found" : "patients found"}
+              {filteredPatients.length === 1
+                ? "patient found"
+                : "patients found"}
             </span>
           </div>
 
-          {(searchName || selectedSpeciality !== "all") && (
+          {(searchName ||
+            selectedSpeciality !== "all" ||
+            selectedInsurance !== "all") && (
             <button
               type="button"
               onClick={clearFilters}
@@ -428,33 +857,16 @@ export default function PatientTrackerTable({
         {filteredPatients.length > 0 ? (
           <div style={styles.tableWrap}>
             <table style={styles.table}>
-              <colgroup>
-                <col style={{ width: 390 }} />
-                <col style={{ width: 155 }} />
-                <col style={{ width: 145 }} />
-                <col style={{ width: 165 }} />
-                <col style={{ width: 170 }} />
-                <col style={{ width: 125 }} />
-                <col style={{ width: 135 }} />
-              </colgroup>
-
               <thead>
                 <tr>
-                  <th style={{ ...styles.th, minWidth: 390 }}>PATIENT</th>
-                  <th style={{ ...styles.th, minWidth: 155 }}>FILE NUMBER</th>
-                  <th style={{ ...styles.th, minWidth: 145 }}>UTILIZED SESSIONS</th>
-                  <th style={{ ...styles.th, minWidth: 165 }}>STATUS</th>
-                  <th style={{ ...styles.th, minWidth: 170 }}>SPECIALITY</th>
-                  <th style={{ ...styles.th, minWidth: 125 }}>LAST SEEN</th>
-                  <th
-                    style={{
-                      ...styles.th,
-                      minWidth: 135,
-                      textAlign: "center",
-                    }}
-                  >
-                    PATIENT FILE
-                  </th>
+                  <th style={styles.th}>PATIENT</th>
+                  <th style={styles.th}>FILE NUMBER</th>
+                  <th style={styles.th}>INSURANCE TYPE</th>
+                  <th style={styles.th}>UTILIZED SESSIONS</th>
+                  <th style={styles.th}>STATUS</th>
+                  <th style={styles.th}>SPECIALITY</th>
+                  <th style={styles.th}>LAST SEEN</th>
+                  <th style={styles.th}>PATIENT FILE</th>
                 </tr>
               </thead>
 
@@ -462,7 +874,7 @@ export default function PatientTrackerTable({
                 {filteredPatients.map((patient, index) => {
                   const sessions = getSessions(patient);
                   const statusLabel = getStatusLabel(patient.status);
-                  const statusColors = getStatusColors(patient.status);
+                  const statusStyle = getStatusStyle(patient.status);
                   const patientMonth = normalizeMonth(patient.month);
                   const displayMonth = normalizeMonth(selectedMonth);
 
@@ -471,12 +883,14 @@ export default function PatientTrackerTable({
                     Boolean(patientMonth) &&
                     (!displayMonth || patientMonth === displayMonth);
 
-                  const fileNumber =
-                    patient.file_number || patient.patient_id || "-";
-
+                  const fileNumber = getPatientFileNumber(patient) || "-";
                   const speciality = getSpeciality(patient);
+                  const insurance = getInsurance(patient);
                   const lastSeen =
-                    patient.last_seen_date || patient.latest_seen_date || null;
+                    patient.last_seen_date ||
+                    patient.latest_seen_date ||
+                    null;
+
                   const progress = Math.min((sessions / 6) * 100, 100);
 
                   return (
@@ -507,36 +921,31 @@ export default function PatientTrackerTable({
                       </td>
 
                       <td style={styles.td}>
-                        <span style={styles.fileNumber}>
-                          <svg
-                            width="15"
-                            height="15"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden="true"
-                          >
-                            <rect x="3" y="4" width="18" height="16" rx="3" />
-                            <circle cx="8" cy="10" r="2" />
-                            <path d="M5.5 16a2.5 2.5 0 0 1 5 0" />
-                            <path d="M13 9h4" />
-                            <path d="M13 13h4" />
-                          </svg>
-                          <span>{fileNumber}</span>
+                        <span style={styles.fileNumber}>{fileNumber}</span>
+                      </td>
+
+                      <td style={styles.td}>
+                        <span
+                          style={{
+                            ...styles.insuranceBadge,
+                            ...INSURANCE_BADGE_STYLES[insurance],
+                          }}
+                        >
+                          {getInsuranceLabel(insurance)}
                         </span>
                       </td>
 
                       <td style={styles.td}>
                         <div style={styles.sessionsCell}>
                           <div style={styles.sessionsTop}>
-                            <strong style={styles.sessionCount}>{sessions}</strong>
+                            <strong style={styles.sessionCount}>
+                              {sessions}
+                            </strong>
                             <span style={styles.sessionUnit}>
                               {sessions === 1 ? "session" : "sessions"}
                             </span>
                           </div>
+
                           <div
                             style={styles.progressTrack}
                             role="img"
@@ -557,6 +966,19 @@ export default function PatientTrackerTable({
                               }}
                             />
                           </div>
+
+                          {insurance === "cash" && (
+                            <span style={styles.cashSessionNote}>
+                              Cash insurance category
+                            </span>
+                          )}
+
+                          {getCategorySessions(patient, "cash") > 0 && (
+                            <span style={styles.cashSessionNote}>
+                              Cash sessions:{" "}
+                              {getCategorySessions(patient, "cash")}
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -564,14 +986,14 @@ export default function PatientTrackerTable({
                         <span
                           style={{
                             ...styles.statusBadge,
-                            background: statusColors.background,
-                            color: statusColors.color,
+                            background: statusStyle.background,
+                            color: statusStyle.color,
                           }}
                         >
                           <span
                             style={{
                               ...styles.statusDot,
-                              background: statusColors.dot,
+                              background: statusStyle.dot,
                             }}
                           />
                           {statusLabel}
@@ -579,16 +1001,15 @@ export default function PatientTrackerTable({
                       </td>
 
                       <td style={styles.td}>
-                        <span
-                          style={styles.specialityText}
-                          title={speciality !== "-" ? speciality : ""}
-                        >
+                        <span style={styles.specialityText}>
                           {speciality === "-" ? "Not Specified" : speciality}
                         </span>
                       </td>
 
                       <td style={styles.td}>
-                        <span style={styles.dateText}>{formatDate(lastSeen)}</span>
+                        <span style={styles.dateText}>
+                          {formatDate(lastSeen)}
+                        </span>
                       </td>
 
                       <td style={{ ...styles.td, textAlign: "center" }}>
@@ -603,25 +1024,7 @@ export default function PatientTrackerTable({
                               : "Patient file unavailable"
                           }
                         >
-                          <span style={styles.fileIcon} aria-hidden="true">
-                            <svg
-                              width="17"
-                              height="17"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              aria-hidden="true"
-                            >
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                              <path d="M14 2v6h6" />
-                              <path d="M8 13h8" />
-                              <path d="M8 17h5" />
-                            </svg>
-                          </span>
-                          <span style={styles.openButtonText}>Open File</span>
+                          Open File
                         </button>
                       </td>
                     </tr>
@@ -634,14 +1037,19 @@ export default function PatientTrackerTable({
           <div style={styles.emptyState}>
             <div style={styles.emptyIcon}>♧</div>
             <h3 style={styles.emptyTitle}>
-              {patients.length === 0 ? "No patients found" : "No matching patients"}
+              {trackerPatients.length === 0
+                ? "No patients found"
+                : "No matching patients"}
             </h3>
             <p style={styles.emptyText}>
-              {patients.length === 0
+              {trackerPatients.length === 0
                 ? "There are no patient records to display for this month. Try selecting another reporting month."
-                : "No patients match your search and speciality filters. Try changing your search or clearing the filters."}
+                : "No patients match your search, speciality, or insurance filters. Try changing your filters or clearing them."}
             </p>
-            {(searchName || selectedSpeciality !== "all") && (
+
+            {(searchName ||
+              selectedSpeciality !== "all" ||
+              selectedInsurance !== "all") && (
               <button
                 type="button"
                 onClick={clearFilters}
@@ -656,8 +1064,9 @@ export default function PatientTrackerTable({
         <footer style={styles.footer}>
           <span style={styles.footerDot} />
           <span>
-            Utilized sessions are monthly tracker counts, independent of
-            appointment records. Status levels: Inactive = 0, Low = 1–2,
+            Utilized Sessions includes the monthly total. Thiqa, Daman, and
+            Cash session breakdowns require the corresponding category totals
+            from the backend. Status levels: Inactive = 0, Low = 1–2,
             Moderate = 3–5, High = 6 or more sessions.
           </span>
         </footer>
@@ -678,7 +1087,7 @@ const styles = {
     gap: 24,
     minWidth: 0,
     padding: "clamp(16px, 2.5vw, 28px)",
-    background: "#ffffff",
+    background: "#fff",
     border: "1px solid #e2eaf3",
     borderRadius: 20,
     boxShadow: "0 8px 28px rgba(15, 35, 65, 0.055)",
@@ -722,11 +1131,11 @@ const styles = {
     minWidth: 0,
   },
   monthFilter: { display: "grid", gap: 7 },
-  monthLabel: {
+  fieldLabel: {
     color: "#52647a",
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 800,
-    letterSpacing: "0.5px",
+    letterSpacing: "0.4px",
   },
   monthInput: {
     minHeight: 40,
@@ -734,7 +1143,7 @@ const styles = {
     padding: "8px 10px",
     border: "1px solid #d5e0ec",
     borderRadius: 10,
-    background: "#ffffff",
+    background: "#fff",
     color: "#243b53",
     fontSize: 11,
     fontFamily: "inherit",
@@ -764,8 +1173,8 @@ const styles = {
     border: "1px solid #fecaca",
     borderRadius: 10,
     background: "#fef2f2",
-    color: "#b91c1c",
-    fontSize: 10,
+    color: COLORS.red,
+    fontSize: 11,
   },
   successMessage: {
     padding: "10px 12px",
@@ -773,7 +1182,7 @@ const styles = {
     borderRadius: 10,
     background: "#f0fdf4",
     color: "#166534",
-    fontSize: 10,
+    fontSize: 11,
   },
   summaryGrid: {
     display: "grid",
@@ -789,7 +1198,7 @@ const styles = {
     padding: "16px 14px",
     border: "1px solid #e8eef5",
     borderRadius: 15,
-    background: "#ffffff",
+    background: "#fff",
     boxShadow: "0 3px 12px rgba(15, 23, 42, 0.025)",
   },
   summaryIcon: {
@@ -817,6 +1226,40 @@ const styles = {
     lineHeight: 1.1,
     fontVariantNumeric: "tabular-nums",
   },
+  insuranceSummary: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+    gap: 14,
+  },
+  insuranceCard: {
+    display: "grid",
+    justifyItems: "start",
+    gap: 7,
+    padding: 17,
+    border: "1px solid #dce6f1",
+    borderRadius: 14,
+    background: "#f8fafc",
+    color: "#17365d",
+    textAlign: "left",
+    fontFamily: "inherit",
+    cursor: "pointer",
+  },
+  insuranceCardSelected: {
+    border: "2px solid #0f766e",
+    background: "#f0fdfa",
+  },
+  insuranceCardLabel: {
+    color: "#64748b",
+    fontSize: 9,
+    fontWeight: 850,
+    letterSpacing: "0.7px",
+  },
+  insuranceCardValue: {
+    fontSize: 26,
+    fontWeight: 850,
+    fontVariantNumeric: "tabular-nums",
+  },
+  insuranceCardHint: { color: "#64748b", fontSize: 10 },
   tableHeading: {
     display: "flex",
     alignItems: "center",
@@ -838,9 +1281,35 @@ const styles = {
   },
   headingActions: {
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-end",
     flexWrap: "wrap",
     gap: 10,
+  },
+  importTypeField: { display: "grid", gap: 5, minWidth: 105 },
+  toolbarSelect: {
+    minHeight: 38,
+    padding: "8px 10px",
+    border: "1px solid #cbd8e6",
+    borderRadius: 10,
+    background: "#fff",
+    color: "#16334f",
+    fontSize: 11,
+    fontFamily: "inherit",
+  },
+  importButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 38,
+    padding: "9px 12px",
+    border: "1px solid #a7f3d0",
+    borderRadius: 10,
+    background: "#ecfdf5",
+    color: "#065f46",
+    fontSize: 10,
+    fontWeight: 800,
+    fontFamily: "inherit",
+    cursor: "pointer",
   },
   rolloverButton: {
     display: "inline-flex",
@@ -853,13 +1322,23 @@ const styles = {
     borderRadius: 10,
     background: "#eef2ff",
     color: "#3730a3",
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: 800,
     fontFamily: "inherit",
     cursor: "pointer",
   },
-
-  // Filter controls
+  importResult: {
+    display: "grid",
+    gap: 7,
+    padding: 14,
+    border: "1px solid #bbf7d0",
+    borderRadius: 12,
+    background: "#f0fdf4",
+    color: "#166534",
+    fontSize: 11,
+    lineHeight: 1.6,
+  },
+  importWarning: { color: "#92400e", fontWeight: 700 },
   filterPanel: {
     display: "flex",
     alignItems: "flex-end",
@@ -873,50 +1352,29 @@ const styles = {
   filterField: {
     display: "grid",
     gap: 7,
-    flex: "1 1 230px",
-    minWidth: 190,
+    flex: "1 1 200px",
+    minWidth: 180,
   },
-  filterLabel: {
-    color: "#52647a",
-    fontSize: 10,
-    fontWeight: 800,
-    letterSpacing: "0.4px",
-  },
-  searchInputWrap: {
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
+  input: {
+    width: "100%",
     minHeight: 44,
     boxSizing: "border-box",
-    padding: "0 12px",
+    padding: "10px 12px",
     border: "1px solid #cbd8e6",
     borderRadius: 10,
-    background: "#ffffff",
-  },
-  searchIcon: {
-    flexShrink: 0,
-    color: "#64748b",
-  },
-  searchInput: {
-    width: "100%",
-    minWidth: 0,
-    height: 42,
-    padding: 0,
-    border: "none",
-    outline: "none",
-    background: "transparent",
+    background: "#fff",
     color: "#16334f",
     fontSize: 13,
     fontFamily: "inherit",
   },
-  specialitySelect: {
+  select: {
     width: "100%",
     minHeight: 44,
     boxSizing: "border-box",
     padding: "9px 12px",
     border: "1px solid #cbd8e6",
     borderRadius: 10,
-    background: "#ffffff",
+    background: "#fff",
     color: "#16334f",
     fontSize: 13,
     fontFamily: "inherit",
@@ -931,40 +1389,33 @@ const styles = {
     fontSize: 11,
     whiteSpace: "nowrap",
   },
-  resultNumber: {
-    color: "#17365d",
-    fontSize: 17,
-    fontWeight: 850,
-    fontVariantNumeric: "tabular-nums",
-  },
   clearFiltersButton: {
     minHeight: 38,
     padding: "8px 12px",
     border: "1px solid #cbd8e6",
     borderRadius: 9,
-    background: "#ffffff",
+    background: "#fff",
     color: "#334e68",
     fontSize: 11,
     fontWeight: 750,
     fontFamily: "inherit",
     cursor: "pointer",
   },
-
   tableWrap: {
     width: "100%",
     minWidth: 0,
     overflowX: "auto",
     border: "1px solid #dfe7f1",
     borderRadius: 15,
-    background: "#ffffff",
+    background: "#fff",
   },
   table: {
     width: "100%",
-    minWidth: 1285,
+    minWidth: 1240,
     tableLayout: "fixed",
     borderCollapse: "separate",
     borderSpacing: 0,
-    background: "#ffffff",
+    background: "#fff",
   },
   th: {
     position: "sticky",
@@ -973,17 +1424,17 @@ const styles = {
     textAlign: "left",
     background: "#f3f7fc",
     color: "#61738a",
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 850,
-    letterSpacing: "0.5px",
+    letterSpacing: "0.4px",
     whiteSpace: "nowrap",
     borderBottom: "1px solid #dfe7f1",
   },
-  tr: { background: "#ffffff" },
+  tr: { background: "#fff" },
   td: {
     padding: "15px 12px",
     color: "#465970",
-    fontSize: 10,
+    fontSize: 11,
     verticalAlign: "middle",
     borderBottom: "1px solid #edf1f6",
     overflowWrap: "anywhere",
@@ -991,7 +1442,7 @@ const styles = {
   patientTd: {
     padding: "16px 14px",
     color: "#465970",
-    fontSize: 10,
+    fontSize: 11,
     verticalAlign: "middle",
     borderBottom: "1px solid #edf1f6",
   },
@@ -1058,7 +1509,6 @@ const styles = {
   fileNumber: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 6,
     maxWidth: "100%",
     padding: "8px 9px",
     border: "1px solid #cfe2f7",
@@ -1070,6 +1520,17 @@ const styles = {
     lineHeight: 1.4,
     fontVariantNumeric: "tabular-nums",
     overflowWrap: "anywhere",
+  },
+  insuranceBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    maxWidth: "100%",
+    padding: "7px 9px",
+    borderRadius: 999,
+    fontSize: 9,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
   },
   sessionsCell: { display: "grid", gap: 8, minWidth: 0 },
   sessionsTop: {
@@ -1085,7 +1546,8 @@ const styles = {
     lineHeight: 1.2,
     fontVariantNumeric: "tabular-nums",
   },
-  sessionUnit: { color: "#94a3b8", fontSize: 8, fontWeight: 650 },
+  sessionUnit: { color: "#94a3b8", fontSize: 9, fontWeight: 650 },
+  cashSessionNote: { color: "#9a3412", fontSize: 9, fontWeight: 800 },
   progressTrack: {
     width: 90,
     maxWidth: "100%",
@@ -1107,7 +1569,7 @@ const styles = {
     maxWidth: "100%",
     padding: "7px 8px",
     borderRadius: 999,
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 800,
     whiteSpace: "normal",
   },
@@ -1117,8 +1579,6 @@ const styles = {
     borderRadius: "50%",
     flexShrink: 0,
   },
-
-  // Larger, clearer speciality text
   specialityText: {
     display: "block",
     maxWidth: "100%",
@@ -1141,37 +1601,19 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 7,
-    minWidth: 110,
-    minHeight: 40,
+    minWidth: 90,
+    minHeight: 38,
     padding: "7px 10px",
     border: "1px solid #1e3a5f",
     borderRadius: 9,
-    background: "#17365d",
-    color: "#ffffff",
+    background: COLORS.navy,
+    color: "#fff",
     fontSize: 10,
     fontWeight: 800,
     fontFamily: "inherit",
     cursor: "pointer",
     textAlign: "center",
     boxShadow: "0 3px 8px rgba(23, 54, 93, 0.16)",
-    transition: "background 0.2s ease, box-shadow 0.2s ease",
-  },
-  fileIcon: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 22,
-    height: 22,
-    flexShrink: 0,
-    color: "#ffffff",
-  },
-  openButtonText: {
-    color: "#ffffff",
-    fontSize: 10,
-    fontWeight: 800,
-    lineHeight: 1.2,
-    whiteSpace: "nowrap",
   },
   emptyState: {
     display: "grid",
@@ -1204,7 +1646,7 @@ const styles = {
     maxWidth: 380,
     margin: 0,
     color: "#718096",
-    fontSize: 10,
+    fontSize: 11,
     lineHeight: 1.7,
   },
   footer: {
@@ -1214,7 +1656,7 @@ const styles = {
     paddingTop: 14,
     borderTop: "1px solid #edf2f7",
     color: "#718096",
-    fontSize: 9,
+    fontSize: 10,
     lineHeight: 1.7,
   },
   footerDot: {
