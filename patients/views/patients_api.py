@@ -51,10 +51,13 @@ def patients_api(request):
                 )
 
             if show_archived:
-                patients_qs = patients_qs.filter(is_archived=True)
-
+                patients_qs = patients_qs.filter(
+                    is_archived=True
+                )
         else:
-            patients_qs = patients_qs.filter(is_archived=False)
+            patients_qs = patients_qs.filter(
+                is_archived=False
+            )
 
         if search:
             normalized_search = normalize_patient_id(
@@ -85,7 +88,9 @@ def patients_api(request):
             ).distinct()
         ]
 
-        return JsonResponse({"patients": patients})
+        return JsonResponse(
+            {"patients": patients}
+        )
 
     if request.method == "POST":
         if not _can_create_patient(request.user):
@@ -94,6 +99,8 @@ def patients_api(request):
                 status=403,
             )
 
+        # Patient creation is handled by create_patient().
+        # That function must validate and save insurance_provider.
         return create_patient(request)
 
     return JsonResponse(
