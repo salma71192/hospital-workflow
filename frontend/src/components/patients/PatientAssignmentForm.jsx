@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect } from "react";
 
 const DEFAULT_PHYSICIANS = [
@@ -11,6 +12,9 @@ const DEFAULT_PHYSICIANS = [
   "Yasser Salam",
 ];
 
+const EXTERNAL_REFERRAL = "External Referral";
+const EXTERNAL_REFERRAL_PREFIX = "External Referral:";
+
 const CATEGORIES = [
   { value: "appointment", label: "Appointment" },
   { value: "walk_in", label: "Walk-in" },
@@ -19,10 +23,7 @@ const CATEGORIES = [
     value: "task_without_eligibility",
     label: "Task Without Eligibility",
   },
-  {
-    value: "initial_evaluation",
-    label: "Initial Evaluation",
-  },
+  { value: "initial_evaluation", label: "Initial Evaluation" },
 ];
 
 const SPECIALITIES = [
@@ -63,6 +64,22 @@ function normalizeRole(value) {
     .replace(/[\s-]+/g, "_");
 }
 
+function getExternalPhysicianName(value) {
+  const physician = String(value || "").trim();
+
+  if (
+    physician.toLowerCase().startsWith(
+      EXTERNAL_REFERRAL_PREFIX.toLowerCase()
+    )
+  ) {
+    return physician
+      .slice(EXTERNAL_REFERRAL_PREFIX.length)
+      .trim();
+  }
+
+  return "";
+}
+
 export default function PatientAssignmentForm({
   selectedPatient,
   assignmentForm = {},
@@ -92,7 +109,22 @@ export default function PatientAssignmentForm({
 
   const isAdmin = effectiveRole === "admin";
   const isEditing = Boolean(editingAssignmentId);
-  const isEvaluation = assignmentForm.category === "initial_evaluation";
+  const isEvaluation =
+    assignmentForm.category === "initial_evaluation";
+
+  const currentPhysician = String(
+    assignmentForm.referring_physician || ""
+  ).trim();
+
+  const isExternalReferral =
+    currentPhysician === EXTERNAL_REFERRAL ||
+    currentPhysician.toLowerCase().startsWith(
+      EXTERNAL_REFERRAL_PREFIX.toLowerCase()
+    );
+
+  const externalPhysicianName =
+    String(assignmentForm.external_referring_physician || "").trim() ||
+    getExternalPhysicianName(currentPhysician);
 
   const therapistLabel = (therapist) =>
     therapist.display_name ||
@@ -104,7 +136,8 @@ export default function PatientAssignmentForm({
     () =>
       therapists.find(
         (therapist) =>
-          String(therapist.id) === String(assignmentForm.therapist_id)
+          String(therapist.id) ===
+          String(assignmentForm.therapist_id)
       ),
     [therapists, assignmentForm.therapist_id]
   );
@@ -117,7 +150,6 @@ export default function PatientAssignmentForm({
     [assignmentForm.additional_therapist_ids]
   );
 
-  // Restore the previously selected therapist for a new assignment.
   useEffect(() => {
     if (
       isEditing ||
@@ -153,7 +185,6 @@ export default function PatientAssignmentForm({
     }
   }, [selectedTherapist, therapistMenuOpen]);
 
-  // Initialize today's date for administrators.
   useEffect(() => {
     if (
       isAdmin &&
@@ -165,11 +196,7 @@ export default function PatientAssignmentForm({
         assignment_date: previous.assignment_date || getTodayDate(),
       }));
     }
-  }, [
-    isAdmin,
-    assignmentForm.assignment_date,
-    setAssignmentForm,
-  ]);
+  }, [isAdmin, assignmentForm.assignment_date, setAssignmentForm]);
 
   const filteredTherapists = useMemo(() => {
     const query = therapistSearch.trim().toLowerCase();
@@ -181,18 +208,21 @@ export default function PatientAssignmentForm({
 
   const availablePhysicians = useMemo(() => {
     const names = Array.isArray(physicians) ? physicians : [];
-    const currentPhysician = assignmentForm.referring_physician;
 
     return Array.from(
       new Set(
         [
           ...DEFAULT_PHYSICIANS,
           ...names,
-          ...(currentPhysician ? [currentPhysician] : []),
+          ...(currentPhysician &&
+          !isExternalReferral &&
+          currentPhysician !== EXTERNAL_REFERRAL
+            ? [currentPhysician]
+            : []),
         ].filter(Boolean)
       )
     );
-  }, [physicians, assignmentForm.referring_physician]);
+  }, [physicians, currentPhysician, isExternalReferral]);
 
   const availableSpecialities = useMemo(
     () =>
@@ -240,6 +270,42 @@ export default function PatientAssignmentForm({
     }));
   };
 
+  const handleCategoryChange = (event) => {
+    const category = event.target.value;
+
+    setAssignmentForm((previous) => ({
+      ...previous,
+      category,
+      referring_physician:
+        category === "initial_evaluation"
+          ? previous.referring_physician || ""
+          : "",
+      external_referring_physician:
+        category === "initial_evaluation"
+          ? previous.external_referring_physician || ""
+          : "",
+    }));
+  };
+
+  const handlePhysicianChange = (event) => {
+    const physician = event.target.value;
+
+    setAssignmentForm((previous) => ({
+      ...previous,
+      referring_physician: physician,
+      external_referring_physician:
+        physician === EXTERNAL_REFERRAL
+          ? getExternalPhysicianName(previous.referring_physician) ||
+            previous.external_referring_physician ||
+            ""
+          : "",
+    }));
+  };
+
+  const handleExternalPhysicianNameChange = (event) => {
+    updateField("external_referring_physician", event.target.value);
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
 
@@ -275,9 +341,26 @@ export default function PatientAssignmentForm({
       return;
     }
 
-    if (isEvaluation && !assignmentForm.referring_physician) {
+    if (isEvaluation && !currentPhysician) {
       alert("Please select the referring physician.");
       return;
+    }
+
+    if (isEvaluation && isExternalReferral) {
+      const externalName = externalPhysicianName;
+
+      if (!externalName) {
+        alert("Please enter the external referring physician's name.");
+        return;
+      }
+
+      // Store the combined value in the existing backend field.
+      // This matches the backend validation format.
+      setAssignmentForm((previous) => ({
+        ...previous,
+        referring_physician: `${EXTERNAL_REFERRAL_PREFIX} ${externalName}`,
+        external_referring_physician: externalName,
+      }));
     }
 
     if (typeof onSubmit === "function") {
@@ -365,16 +448,12 @@ export default function PatientAssignmentForm({
         </div>
       </div>
 
-      {/* Main physiotherapist */}
       <div style={styles.field}>
         <label style={styles.label}>
           Physiotherapist <span style={styles.required}>*</span>
         </label>
 
-        <div
-          style={styles.autocomplete}
-          data-therapist-autocomplete
-        >
+        <div style={styles.autocomplete} data-therapist-autocomplete>
           <input
             type="text"
             value={
@@ -466,12 +545,8 @@ export default function PatientAssignmentForm({
         )}
       </div>
 
-      {/* Additional physiotherapist dropdown */}
       <div style={styles.field}>
-        <label
-          style={styles.label}
-          htmlFor="additional_therapist_id"
-        >
+        <label style={styles.label} htmlFor="additional_therapist_id">
           With Another Therapist
         </label>
 
@@ -491,10 +566,7 @@ export default function PatientAssignmentForm({
                 String(assignmentForm.therapist_id)
             )
             .map((therapist) => (
-              <option
-                key={therapist.id}
-                value={String(therapist.id)}
-              >
+              <option key={therapist.id} value={String(therapist.id)}>
                 {therapistLabel(therapist)}
               </option>
             ))}
@@ -506,12 +578,10 @@ export default function PatientAssignmentForm({
         </p>
       </div>
 
-      {/* Only Admin sees the assignment date field. */}
       {isAdmin && (
         <div style={styles.field}>
           <label style={styles.label}>
-            Date of Assignment{" "}
-            <span style={styles.required}>*</span>
+            Date of Assignment <span style={styles.required}>*</span>
           </label>
 
           <input
@@ -540,18 +610,7 @@ export default function PatientAssignmentForm({
 
           <select
             value={assignmentForm.category || "appointment"}
-            onChange={(event) => {
-              const category = event.target.value;
-
-              setAssignmentForm((previous) => ({
-                ...previous,
-                category,
-                referring_physician:
-                  category === "initial_evaluation"
-                    ? previous.referring_physician || ""
-                    : "",
-              }));
-            }}
+            onChange={handleCategoryChange}
             style={styles.select}
             required
             disabled={loading}
@@ -584,7 +643,6 @@ export default function PatientAssignmentForm({
         </div>
       </div>
 
-      {/* Referring physician */}
       {isEvaluation && (
         <>
           <div style={styles.sectionHeading}>
@@ -596,39 +654,88 @@ export default function PatientAssignmentForm({
               </div>
 
               <div style={styles.sectionSubtitle}>
-                Select one referring physician.
+                Select an internal physician or record an external referral.
               </div>
             </div>
           </div>
 
-          <div style={styles.field}>
-            <label style={styles.label}>
-              Referring Physician{" "}
-              <span style={styles.required}>*</span>
-            </label>
+          {!isExternalReferral && (
+            <div style={styles.field}>
+              <label style={styles.label}>
+                Referring Physician <span style={styles.required}>*</span>
+              </label>
 
-            <select
-              value={assignmentForm.referring_physician || ""}
-              onChange={(event) =>
-                updateField("referring_physician", event.target.value)
-              }
-              style={styles.select}
-              required
-              disabled={loading}
-            >
-              <option value="">Select physician</option>
+              <select
+                value={currentPhysician}
+                onChange={handlePhysicianChange}
+                style={styles.select}
+                required
+                disabled={loading}
+              >
+                <option value="">Select physician</option>
 
-              {availablePhysicians.map((name) => (
-                <option key={name} value={name}>
-                  {name}
+                {availablePhysicians.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+
+                <option value={EXTERNAL_REFERRAL}>
+                  {EXTERNAL_REFERRAL}
                 </option>
-              ))}
-            </select>
-          </div>
+              </select>
+            </div>
+          )}
+
+          {isExternalReferral && (
+            <>
+              <div style={styles.externalBadge}>
+                <span style={styles.externalBadgeDot} />
+                External referral selected
+              </div>
+
+              <div style={styles.field}>
+                <label style={styles.label}>
+                  External Referring Physician Name{" "}
+                  <span style={styles.required}>*</span>
+                </label>
+
+                <input
+                  type="text"
+                  value={externalPhysicianName}
+                  onChange={handleExternalPhysicianNameChange}
+                  style={styles.input}
+                  placeholder="Enter the external physician's full name"
+                  required
+                  disabled={loading}
+                  maxLength={255}
+                />
+
+                <p style={styles.helperText}>
+                  Enter the full name of the physician who referred the
+                  patient from outside the hospital.
+                </p>
+
+                <button
+                  type="button"
+                  style={styles.changeReferralButton}
+                  onClick={() => {
+                    setAssignmentForm((previous) => ({
+                      ...previous,
+                      referring_physician: "",
+                      external_referring_physician: "",
+                    }));
+                  }}
+                  disabled={loading}
+                >
+                  Choose an internal physician instead
+                </button>
+              </div>
+            </>
+          )}
         </>
       )}
 
-      {/* Speciality and notes */}
       <details
         style={styles.optional}
         open={Boolean(assignmentForm.speciality || assignmentForm.notes)}
@@ -651,13 +758,13 @@ export default function PatientAssignmentForm({
               style={styles.select}
               disabled={loading}
             >
+              <option value="">None</option>
+
               {availableSpecialities.map((speciality) => (
                 <option key={speciality} value={speciality}>
                   {speciality}
                 </option>
               ))}
-
-              <option value="">None</option>
             </select>
 
             <p style={styles.helperText}>
@@ -1108,6 +1215,40 @@ const styles = {
     color: "#7C7194",
     fontSize: "12px",
     lineHeight: 1.5,
+  },
+
+  externalBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: "8px",
+    marginBottom: "14px",
+    padding: "8px 12px",
+    borderRadius: "20px",
+    background: "#F3E8FF",
+    border: "1px solid #DDD6FE",
+    color: "#6D28D9",
+    fontSize: "12px",
+    fontWeight: 800,
+  },
+
+  externalBadgeDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    background: "#8B5CF6",
+  },
+
+  changeReferralButton: {
+    alignSelf: "flex-start",
+    padding: "8px 0",
+    border: "none",
+    background: "transparent",
+    color: "#6D28D9",
+    fontSize: "12px",
+    fontWeight: 750,
+    textDecoration: "underline",
+    cursor: "pointer",
   },
 
   optional: {

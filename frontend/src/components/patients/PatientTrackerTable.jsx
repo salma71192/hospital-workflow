@@ -110,14 +110,25 @@ function getCategorySessions(patient, category) {
   return 0;
 }
 
+function normalizeStatus(value) {
+  const normalized = String(value || "inactive")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  if (normalized === "with_another_therapist") {
+    return "with_another_therapist";
+  }
+
+  return normalized;
+}
+
 function getStatusLabel(status) {
-  const value = String(status || "inactive").toLowerCase();
+  const value = normalizeStatus(status);
 
   return (
-    STATUS_OPTIONS.find(
-      (item) =>
-        item.value === value || item.label.toLowerCase() === value
-    )?.label || "Inactive"
+    STATUS_OPTIONS.find((item) => item.value === value)?.label ||
+    "Inactive"
   );
 }
 
@@ -435,12 +446,18 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: 14,
+    width: "100%",
     minWidth: 0,
     padding: "17px 15px",
     border: `1px solid ${COLORS.border}`,
     borderRadius: 15,
     background: COLORS.white,
     boxShadow: "0 3px 12px rgba(31, 55, 89, 0.025)",
+    textAlign: "left",
+    fontFamily: "inherit",
+    cursor: "pointer",
+    boxSizing: "border-box",
+    transition: "border-color 0.15s ease, box-shadow 0.15s ease",
   },
   summaryIcon: {
     display: "flex",
@@ -512,6 +529,7 @@ const styles = {
     justifyItems: "start",
     alignContent: "start",
     gap: 8,
+    width: "100%",
     minWidth: 0,
     padding: 17,
     border: `1px solid ${COLORS.border}`,
@@ -519,7 +537,10 @@ const styles = {
     background: "#f8fbff",
     color: COLORS.navy,
     textAlign: "left",
+    fontFamily: "inherit",
+    cursor: "pointer",
     boxSizing: "border-box",
+    transition: "border-color 0.15s ease, box-shadow 0.15s ease",
   },
   insuranceCardLabel: {
     color: COLORS.muted,
@@ -1012,6 +1033,7 @@ export default function PatientTrackerTable({
   const [successMessage, setSuccessMessage] = useState("");
   const [searchName, setSearchName] = useState("");
   const [selectedSpeciality, setSelectedSpeciality] = useState("all");
+  const [activeCardFilter, setActiveCardFilter] = useState("all");
   const [importInsurance, setImportInsurance] = useState("thiqa");
   const [insuranceOverrides, setInsuranceOverrides] = useState({});
   const [importSummary, setImportSummary] = useState(null);
@@ -1064,7 +1086,7 @@ export default function PatientTrackerTable({
     };
 
     trackerPatients.forEach((patient) => {
-      const status = String(patient.status || "inactive").toLowerCase();
+      const status = normalizeStatus(patient.status);
       const insurance = getInsurance(patient);
 
       if (activeStatuses.has(status)) result.activePatients += 1;
@@ -1083,21 +1105,63 @@ export default function PatientTrackerTable({
     return result;
   }, [trackerPatients]);
 
-  // The patient list is filtered by name and speciality only.
+  // Clicking the selected card again removes the card filter.
+  const handleCardFilter = (filter) => {
+    setActiveCardFilter((previous) =>
+      previous === filter ? "all" : filter
+    );
+  };
+
+  // Combine card, name, and speciality filters.
   const filteredPatients = useMemo(() => {
     const search = searchName.trim().toLowerCase();
 
     return trackerPatients.filter((patient) => {
       const name = String(patient.name || "").toLowerCase();
       const speciality = getSpeciality(patient);
+      const status = normalizeStatus(patient.status);
+      const insurance = getInsurance(patient);
+      const sessions = getSessions(patient);
 
-      return (
-        (!search || name.includes(search)) &&
-        (selectedSpeciality === "all" ||
-          speciality === selectedSpeciality)
-      );
+      const matchesSearch = !search || name.includes(search);
+
+      const matchesSpeciality =
+        selectedSpeciality === "all" ||
+        speciality === selectedSpeciality;
+
+      let matchesCard = true;
+
+      switch (activeCardFilter) {
+        case "active":
+          matchesCard = ["low", "moderate", "high"].includes(status);
+          break;
+
+        case "inactive":
+          matchesCard = status === "inactive";
+          break;
+
+        case "sessions":
+          matchesCard = sessions > 0;
+          break;
+
+        case "thiqa":
+        case "daman":
+        case "cash":
+          matchesCard = insurance === activeCardFilter;
+          break;
+
+        default:
+          matchesCard = true;
+      }
+
+      return matchesSearch && matchesSpeciality && matchesCard;
     });
-  }, [trackerPatients, searchName, selectedSpeciality]);
+  }, [
+    trackerPatients,
+    searchName,
+    selectedSpeciality,
+    activeCardFilter,
+  ]);
 
   const clearMessages = () => {
     setErrorMessage("");
@@ -1113,6 +1177,7 @@ export default function PatientTrackerTable({
   const clearFilters = () => {
     setSearchName("");
     setSelectedSpeciality("all");
+    setActiveCardFilter("all");
   };
 
   const openPatientFile = (patient) => {
@@ -1317,6 +1382,7 @@ export default function PatientTrackerTable({
 
   const summaryCards = [
     {
+      key: "all",
       label: "Total Patients",
       value: summary.totalPatients,
       icon: "♧",
@@ -1324,6 +1390,7 @@ export default function PatientTrackerTable({
       background: COLORS.blueLight,
     },
     {
+      key: "active",
       label: "Active Patients",
       value: summary.activePatients,
       icon: "✓",
@@ -1331,6 +1398,7 @@ export default function PatientTrackerTable({
       background: COLORS.greenLight,
     },
     {
+      key: "sessions",
       label: "Utilized Sessions",
       value: summary.totalSessions,
       icon: "▤",
@@ -1338,6 +1406,7 @@ export default function PatientTrackerTable({
       background: COLORS.purpleLight,
     },
     {
+      key: "inactive",
       label: "Inactive Patients",
       value: summary.inactivePatients,
       icon: "!",
@@ -1345,6 +1414,11 @@ export default function PatientTrackerTable({
       background: COLORS.orangeLight,
     },
   ];
+
+  const hasActiveFilters =
+    Boolean(searchName.trim()) ||
+    selectedSpeciality !== "all" ||
+    activeCardFilter !== "all";
 
   return (
     <section style={styles.page}>
@@ -1394,53 +1468,107 @@ export default function PatientTrackerTable({
         )}
 
         <section aria-label="Patient summary" style={styles.summaryGrid}>
-          {summaryCards.map((item) => (
-            <div key={item.label} style={styles.summaryCard}>
-              <div
-                style={{
-                  ...styles.summaryIcon,
-                  color: item.color,
-                  background: item.background,
-                }}
-                aria-hidden="true"
-              >
-                {item.icon}
-              </div>
+          {summaryCards.map((item) => {
+            const isSelected = activeCardFilter === item.key;
 
-              <div style={styles.summaryContent}>
-                <span style={styles.summaryLabel}>{item.label}</span>
-                <strong style={styles.summaryValue}>
-                  {item.value.toLocaleString()}
-                </strong>
-              </div>
-            </div>
-          ))}
+            return (
+              <button
+                key={item.key}
+                type="button"
+                style={{
+                  ...styles.summaryCard,
+                  borderColor: isSelected ? item.color : COLORS.border,
+                  boxShadow: isSelected
+                    ? `0 0 0 2px ${item.color}22, 0 5px 16px rgba(31,55,89,0.08)`
+                    : styles.summaryCard.boxShadow,
+                }}
+                onClick={() => handleCardFilter(item.key)}
+                aria-pressed={isSelected}
+                title={`Filter patient records: ${item.label}. Click again to clear.`}
+              >
+                <div
+                  style={{
+                    ...styles.summaryIcon,
+                    color: item.color,
+                    background: item.background,
+                  }}
+                  aria-hidden="true"
+                >
+                  {item.icon}
+                </div>
+
+                <div style={styles.summaryContent}>
+                  <span style={styles.summaryLabel}>{item.label}</span>
+                  <strong style={styles.summaryValue}>
+                    {item.value.toLocaleString()}
+                  </strong>
+                  <span
+                    style={{
+                      color: isSelected ? item.color : COLORS.muted,
+                      fontSize: 10,
+                      fontWeight: isSelected ? 800 : 600,
+                    }}
+                  >
+                    {isSelected ? "Filter selected" : "Click to filter"}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </section>
 
-        <section aria-label="Insurance summary" style={styles.insuranceSummary}>
-          {insuranceCards.map((item) => (
-            <div
-              key={item.key}
-              style={{
-                ...styles.insuranceCard,
-                borderColor: item.border,
-                background: item.background,
-              }}
-            >
-              <span style={styles.insuranceCardLabel}>{item.label}</span>
-              <strong
+        <section
+          aria-label="Insurance summary"
+          style={styles.insuranceSummary}
+        >
+          {insuranceCards.map((item) => {
+            const isSelected = activeCardFilter === item.key;
+
+            return (
+              <button
+                key={item.key}
+                type="button"
                 style={{
-                  ...styles.insuranceCardValue,
-                  color: item.color,
+                  ...styles.insuranceCard,
+                  borderColor: isSelected ? item.color : item.border,
+                  background: item.background,
+                  boxShadow: isSelected
+                    ? `0 0 0 2px ${item.color}22, 0 5px 16px rgba(31,55,89,0.08)`
+                    : "none",
                 }}
+                onClick={() => handleCardFilter(item.key)}
+                aria-pressed={isSelected}
+                title={`Filter patient records by ${item.label.toLowerCase()}. Click again to clear.`}
               >
-                {item.value.toLocaleString()}
-              </strong>
-              <span style={styles.insuranceCardHint}>
-                Utilized sessions: {item.sessions.toLocaleString()}
-              </span>
-            </div>
-          ))}
+                <span style={styles.insuranceCardLabel}>
+                  {item.label}
+                </span>
+
+                <strong
+                  style={{
+                    ...styles.insuranceCardValue,
+                    color: item.color,
+                  }}
+                >
+                  {item.value.toLocaleString()}
+                </strong>
+
+                <span style={styles.insuranceCardHint}>
+                  Utilized sessions: {item.sessions.toLocaleString()}
+                </span>
+
+                <span
+                  style={{
+                    color: isSelected ? item.color : COLORS.muted,
+                    fontSize: 10,
+                    fontWeight: isSelected ? 800 : 600,
+                  }}
+                >
+                  {isSelected ? "Filter selected" : "Click to view patients"}
+                </span>
+              </button>
+            );
+          })}
         </section>
 
         <section style={styles.tableHeading}>
@@ -1579,7 +1707,7 @@ export default function PatientTrackerTable({
             </span>
           </div>
 
-          {(searchName || selectedSpeciality !== "all") && (
+          {hasActiveFilters && (
             <button
               type="button"
               onClick={clearFilters}
@@ -1589,6 +1717,34 @@ export default function PatientTrackerTable({
             </button>
           )}
         </div>
+
+        {activeCardFilter !== "all" && (
+          <div
+            style={{
+              padding: "11px 14px",
+              border: `1px solid ${COLORS.blueBorder}`,
+              borderRadius: 10,
+              background: COLORS.blueLight,
+              color: COLORS.navy,
+              fontSize: 12,
+              lineHeight: 1.6,
+            }}
+            role="status"
+          >
+            Showing{" "}
+            <strong>
+              {activeCardFilter === "active"
+                ? "Active Patients"
+                : activeCardFilter === "inactive"
+                  ? "Inactive Patients"
+                  : activeCardFilter === "sessions"
+                    ? "Patients with Utilized Sessions"
+                    : `${getInsuranceLabel(activeCardFilter)} Patients`}
+            </strong>
+            . The card filter is combined with your search and speciality
+            filters.
+          </div>
+        )}
 
         {filteredPatients.length > 0 ? (
           <div style={styles.tableWrap}>
@@ -1792,10 +1948,10 @@ export default function PatientTrackerTable({
             <p style={styles.emptyText}>
               {trackerPatients.length === 0
                 ? "There are no patient records to display for this month. Try selecting another reporting month."
-                : "No patients match your search or speciality filter. Try changing your filters or clearing them."}
+                : "No patients match your selected card, search, or speciality filter. Try changing your filters or clearing them."}
             </p>
 
-            {(searchName || selectedSpeciality !== "all") && (
+            {hasActiveFilters && (
               <button
                 type="button"
                 onClick={clearFilters}

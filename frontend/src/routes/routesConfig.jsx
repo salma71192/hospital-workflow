@@ -1,3 +1,4 @@
+
 import { lazy } from "react";
 
 const AdminDashboard = lazy(() => import("../pages/AdminDashboard"));
@@ -41,10 +42,7 @@ const ApprovalsAlertsWorkspace = lazy(() =>
 const CallCenterSupervisorDashboard = lazy(() =>
   import("../pages/CallCenterSupervisorDashboard")
 );
-const VisitorsDashboard = lazy(() => import("../pages/VisitorsDashboard"));
-const VisitorCeoDashboard = lazy(() =>
-  import("../pages/VisitorCeoDashboard")
-);
+const VisitorCeoDashboard = lazy(() => import("../pages/CeoDashboard"));
 
 export const dashboardRoutes = [
   // ================= ADMIN =================
@@ -100,15 +98,14 @@ export const dashboardRoutes = [
     roles: ["callcenter"],
   },
 
-  // ================= SUPERVISOR =================
+  // ================= CALL CENTER SUPERVISOR =================
   {
     path: "/callcenter-supervisor",
     component: CallCenterSupervisorDashboard,
     roles: ["callcenter_supervisor"],
   },
 
-  // ================= VISITORS =================
-  { path: "/visitors", component: VisitorsDashboard, roles: ["visitor"] },
+  // ================= VISITOR CEO =================
   {
     path: "/visitor-ceo",
     component: VisitorCeoDashboard,

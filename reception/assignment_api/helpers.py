@@ -1,4 +1,3 @@
-
 import json
 
 from django.http import JsonResponse
@@ -7,6 +6,9 @@ from reception.models import PatientAssignment
 from reception.api_helpers import parse_date
 
 from .constants import PHYSICIAN_NAMES
+
+
+EXTERNAL_REFERRAL_PREFIX = "External Referral:"
 
 
 def error(message, status=400):
@@ -118,11 +120,32 @@ def validate_fields(data, assignment=None):
             "for Initial Evaluation"
         )
 
-    if (
-        referring_physician
-        and referring_physician not in PHYSICIAN_NAMES
-    ):
-        return None, error("Invalid referring physician")
+    if referring_physician:
+        # Accept the existing internal physician list.
+        if referring_physician not in PHYSICIAN_NAMES:
+            # Accept external referrals in the format:
+            # External Referral: Dr Ahmed
+            if referring_physician.startswith(
+                EXTERNAL_REFERRAL_PREFIX
+            ):
+                external_name = referring_physician[
+                    len(EXTERNAL_REFERRAL_PREFIX):
+                ].strip()
+
+                if not external_name:
+                    return None, error(
+                        "Please enter the external referring "
+                        "physician's name"
+                    )
+
+                referring_physician = (
+                    f"{EXTERNAL_REFERRAL_PREFIX} "
+                    f"{external_name}"
+                )
+            else:
+                return None, error(
+                    "Invalid referring physician"
+                )
 
     return {
         "category": category,
