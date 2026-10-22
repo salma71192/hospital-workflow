@@ -1,4 +1,3 @@
-
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -10,41 +9,39 @@ export default function PhysioHome({
 }) {
   const navigate = useNavigate();
 
+  const currentUser = actingAs || user;
+
   const displayName =
-    actingAs?.username || user?.username || "Physio User";
+    currentUser?.name ||
+    currentUser?.display_name ||
+    currentUser?.username ||
+    "Physio User";
 
-  const handleBackToAdmin = () => {
-    onStopImpersonation?.();
-    navigate("/admin");
-  };
-
-  // Daily physiotherapy and patient-care education.
-  // The message changes according to the day of the year.
   const dailyMessage = useMemo(() => {
     const messages = [
       {
         category: "Patient Education",
         title: "Movement Supports Recovery",
         message:
-          "Appropriate movement can help maintain joint mobility, muscle strength, and independence. Exercises should match each patient's condition and tolerance.",
+          "Appropriate movement helps maintain joint mobility, muscle strength, and independence. Individualize exercises according to each patient's condition and tolerance.",
       },
       {
         category: "Pain Management",
         title: "Understand the Patient's Pain",
         message:
-          "Pain can be influenced by movement, sleep, stress, and daily activities. Listen carefully to the patient's experience and adapt treatment accordingly.",
+          "Listen to the patient's experience and consider how movement, sleep, stress, and daily activities influence symptoms. Adapt treatment to the patient's response.",
       },
       {
         category: "Exercise Therapy",
         title: "Consistency Matters",
         message:
-          "Regularly performing prescribed exercises can support strength, flexibility, balance, and functional recovery. Start at an appropriate level and progress gradually.",
+          "Regularly performing prescribed exercises can support strength, flexibility, balance, and functional recovery. Begin at an appropriate level and progress gradually.",
       },
       {
         category: "Fall Prevention",
         title: "Make Safety a Priority",
         message:
-          "Check the patient's balance, footwear, walking aid, and surroundings before mobility activities. Provide the level of assistance needed for safe movement.",
+          "Check balance, footwear, walking aids, and the treatment environment before mobility activities. Provide suitable assistance and supervision.",
       },
       {
         category: "Patient-Centered Care",
@@ -53,206 +50,109 @@ export default function PhysioHome({
           "Rehabilitation goals should reflect what matters to the patient, such as walking independently, climbing stairs, returning to work, or managing daily activities.",
       },
       {
-        category: "Musculoskeletal Care",
-        title: "Protect Joint Mobility",
-        message:
-          "Appropriately prescribed range-of-motion exercises can help maintain mobility and support daily function. Respect surgical precautions and individual limitations.",
-      },
-      {
-        category: "Postoperative Rehabilitation",
-        title: "Follow Surgical Precautions",
-        message:
-          "After surgery, follow the surgeon's protocol and rehabilitation precautions. Progress exercises, weight-bearing, and functional activities according to the patient's recovery.",
-      },
-      {
-        category: "Neurological Rehabilitation",
-        title: "Practice Functional Movement",
-        message:
-          "Individualized practice of meaningful tasks, such as sit-to-stand transfers and walking, can help develop functional skills and support independence.",
-      },
-      {
-        category: "Low Back Care",
-        title: "Encourage Appropriate Activity",
-        message:
-          "For many types of low back pain, appropriately graded activity and exercise can support recovery. Modify activities according to symptoms and clinical findings.",
-      },
-      {
-        category: "Patient Communication",
-        title: "Listen Before You Treat",
-        message:
-          "Ask about the patient's symptoms, concerns, and functional difficulties. Clear communication helps guide assessment, treatment choices, and shared decisions.",
-      },
-      {
-        category: "Documentation",
+        category: "Clinical Documentation",
         title: "Record Meaningful Progress",
         message:
-          "Document symptoms, objective findings, interventions, patient response, and progress toward goals. Accurate records support continuity of care and clinical decisions.",
-      },
-      {
-        category: "Therapeutic Exercise",
-        title: "Progress Gradually",
-        message:
-          "Increase exercise difficulty, resistance, repetitions, or duration according to the patient's response and clinical presentation rather than using the same progression for everyone.",
-      },
-      {
-        category: "Shoulder Rehabilitation",
-        title: "Restore Function Step by Step",
-        message:
-          "Shoulder rehabilitation may include mobility, strengthening, and functional training. Select exercises according to the diagnosis, irritability, and any postoperative precautions.",
-      },
-      {
-        category: "Knee Rehabilitation",
-        title: "Build Strength for Daily Activities",
-        message:
-          "Individualized quadriceps, hip-strengthening, balance, and functional exercises may help improve knee function. Adjust the program to pain, swelling, and mobility.",
-      },
-      {
-        category: "Infection Prevention",
-        title: "Maintain Hand Hygiene",
-        message:
-          "Clean your hands at the appropriate moments before and after patient contact and follow clinic procedures for equipment cleaning and infection prevention.",
-      },
-      {
-        category: "Patient Motivation",
-        title: "Recognize Small Improvements",
-        message:
-          "Celebrate meaningful progress, such as improved walking distance, easier transfers, or better exercise tolerance. Small functional gains can support motivation.",
-      },
-      {
-        category: "Balance Training",
-        title: "Train Balance Safely",
-        message:
-          "Balance exercises should match the patient's ability and fall risk. Use suitable guarding, stable supports, and appropriate supervision during challenging activities.",
-      },
-      {
-        category: "Home Exercise",
-        title: "Make Home Programs Practical",
-        message:
-          "A home exercise program is easier to follow when instructions are clear, exercises are manageable, and the patient understands their purpose and safe technique.",
+          "Document symptoms, objective findings, interventions, patient response, and progress toward goals to support continuity of care.",
       },
       {
         category: "Clinical Assessment",
         title: "Reassess and Adapt",
         message:
-          "Review pain, range of motion, strength, function, and treatment response at appropriate intervals. Use the findings to adjust the rehabilitation plan.",
+          "Review pain, range of motion, strength, function, and treatment response at appropriate intervals. Use the findings to adapt the rehabilitation plan.",
       },
       {
-        category: "Red Flags",
-        title: "Recognize Warning Signs",
+        category: "Patient Communication",
+        title: "Listen Before You Treat",
         message:
-          "New severe symptoms, unexplained deterioration, or signs of a serious condition require appropriate clinical assessment. Escalate urgent warning signs according to clinic protocols.",
-      },
-      {
-        category: "Older Adult Care",
-        title: "Support Independence",
-        message:
-          "Individualized strength, balance, mobility, and functional training can help older adults maintain everyday abilities and participate more confidently in daily life.",
-      },
-      {
-        category: "Neck Rehabilitation",
-        title: "Combine Movement and Education",
-        message:
-          "For many cases of neck pain, tailored exercises, appropriate activity, and patient education can support function. Screen for concerning symptoms when indicated.",
-      },
-      {
-        category: "Chronic Pain",
-        title: "Take a Whole-Person Approach",
-        message:
-          "For persistent pain, consider the patient's activity, sleep, stress, goals, and functional limitations alongside physical findings when planning care.",
+          "Understand the patient's symptoms, concerns, and functional difficulties before planning treatment. Clear communication supports shared decisions.",
       },
       {
         category: "Treatment Quality",
         title: "Individualize Every Session",
         message:
-          "Treatment should be based on the patient's assessment, diagnosis, goals, response, and precautions. A consistent plan still needs to be adapted to the individual.",
-      },
-      {
-        category: "Mobility Training",
-        title: "Practice Safe Transfers",
-        message:
-          "Assess the patient's strength, balance, understanding, and assistance needs before transfers. Use appropriate techniques and equipment to protect both patient and therapist.",
+          "Base treatment on the patient's assessment, diagnosis, goals, response, and precautions. Adapt the plan to the individual.",
       },
       {
         category: "Patient Empowerment",
-        title: "Help Patients Understand Their Plan",
+        title: "Celebrate Small Improvements",
         message:
-          "Explain the purpose of each intervention in simple language and encourage patients to ask questions. Understanding the plan can support participation in rehabilitation.",
+          "Recognize progress such as easier transfers, improved walking distance, or better exercise tolerance. Meaningful gains can support motivation.",
       },
       {
-        category: "Therapist Wellbeing",
-        title: "Use Safe Body Mechanics",
+        category: "Postoperative Rehabilitation",
+        title: "Respect Surgical Precautions",
         message:
-          "Position yourself and the treatment environment carefully during manual handling. Use available transfer aids and team assistance when needed.",
-      },
-      {
-        category: "Recovery Monitoring",
-        title: "Monitor the Response to Treatment",
-        message:
-          "Observe symptoms and function during and after treatment. Unexpected worsening or adverse responses should prompt reassessment and appropriate action.",
-      },
-      {
-        category: "Patient Dignity",
-        title: "Respect Privacy and Consent",
-        message:
-          "Explain procedures, obtain appropriate consent, protect patient information, and maintain dignity throughout assessment and treatment.",
-      },
-      {
-        category: "Clinical Reasoning",
-        title: "Treat the Person, Not Just the Diagnosis",
-        message:
-          "Patients with the same diagnosis may have different needs, abilities, and goals. Use clinical reasoning to select care that fits each patient's presentation.",
+          "Follow the surgeon's protocol and progress exercises, weight-bearing, and functional activities according to the patient's recovery.",
       },
       {
         category: "Rehabilitation",
         title: "Function Is the Goal",
         message:
-          "Measure success not only by pain or range of motion, but also by meaningful improvements in walking, transfers, self-care, work, and everyday participation.",
+          "Look beyond pain scores and range of motion. Track meaningful improvements in walking, transfers, self-care, work, and everyday participation.",
       },
     ];
 
+    const now = new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 0);
     const dayOfYear = Math.floor(
-      (new Date() -
-        new Date(new Date().getFullYear(), 0, 0)) /
-        (1000 * 60 * 60 * 24)
+      (now.getTime() - startOfYear.getTime()) / 86400000
     );
 
     return messages[(dayOfYear - 1) % messages.length];
   }, []);
 
+  const handleBackToAdmin = () => {
+    onStopImpersonation?.();
+    navigate("/admin");
+  };
+
+  const handleWorkflow = () => {
+    navigate("/physio/followup");
+  };
+
   return (
     <div style={styles.page}>
-      <div style={styles.softGlowBlue} />
-      <div style={styles.softGlowGreen} />
+      <div style={styles.backgroundOrbOne} />
+      <div style={styles.backgroundOrbTwo} />
 
-      <div style={styles.container}>
+      <main style={styles.container}>
         {actingAs && (
-          <div style={styles.banner}>
-            <div style={styles.bannerText}>
-              Viewing as: <strong>{displayName}</strong>
+          <div style={styles.impersonationBanner}>
+            <div style={styles.impersonationInfo}>
+              <span style={styles.impersonationIcon}>↗</span>
+              <div>
+                <div style={styles.impersonationTitle}>
+                  Administrator view
+                </div>
+                <div style={styles.impersonationDescription}>
+                  You are viewing the workspace as {displayName}.
+                </div>
+              </div>
             </div>
 
             <button
               type="button"
-              style={styles.bannerButton}
+              style={styles.backButton}
               onClick={handleBackToAdmin}
             >
-              Back to Admin
+              Back to Admin <span>→</span>
             </button>
           </div>
         )}
 
-        <div style={styles.topBar}>
-          <div style={styles.titleBlock}>
-            <div style={styles.eyebrow}>Physiotherapy Department</div>
+        <header style={styles.header}>
+          <div style={styles.brandRow}>
+            <div style={styles.brandMark}>
+              <span style={styles.brandCross}>✚</span>
+            </div>
 
-            <h1 style={styles.title}>
-              Welcome back, {displayName}
-            </h1>
-
-            <p style={styles.subtitle}>
-              Your workspace for patient registrations, rehabilitation
-              follow-up, and quality patient care.
-            </p>
+            <div>
+              <div style={styles.brandName}>REHAB<span>CARE</span></div>
+              <div style={styles.brandSubtitle}>
+                PHYSIOTHERAPY DEPARTMENT
+              </div>
+            </div>
           </div>
 
           <button
@@ -260,124 +160,181 @@ export default function PhysioHome({
             style={styles.logoutButton}
             onClick={onLogout}
           >
+            <span style={styles.logoutIcon}>↪</span>
             Logout
           </button>
-        </div>
+        </header>
 
-        {/* DAILY PHYSIOTHERAPY EDUCATION */}
-        <section
-          style={styles.messageCard}
-          aria-label="Daily physiotherapy and patient-care tip"
-        >
-          <div style={styles.messageTopRow}>
-            <div style={styles.messageLabel}>
-              Daily Clinical Tip
+        <section style={styles.hero}>
+          <div style={styles.heroContent}>
+            <div style={styles.welcomeBadge}>
+              <span style={styles.statusDot} />
+              YOUR CLINICAL WORKSPACE
             </div>
 
-            <div style={styles.messageCategory}>
-              {dailyMessage.category}
-            </div>
-          </div>
+            <h1 style={styles.heroTitle}>
+              Welcome back,
+              <br />
+              <span>{displayName}</span>
+            </h1>
 
-          <h2 style={styles.messageTitle}>
-            {dailyMessage.title}
-          </h2>
-
-          <p style={styles.messageText}>
-            {dailyMessage.message}
-          </p>
-
-          <div style={styles.messageFooter}>
-            <span style={styles.messageIcon}>✚</span>
-            Evidence-informed care. Individualized for every patient.
-          </div>
-        </section>
-
-        {/* REGISTRATION WORKSPACE */}
-        <div style={styles.sectionHeading}>
-          <div style={styles.sectionTitle}>Your Workspace</div>
-
-          <div style={styles.sectionSubtitle}>
-            Select a workspace to continue.
-          </div>
-        </div>
-
-        <div style={styles.grid}>
-          <button
-            type="button"
-            style={styles.card}
-            onClick={() => navigate("/physio/followup")}
-          >
-            <div style={styles.cardContent}>
-              <div style={styles.cardHeader}>
-                <div>
-                  <div style={styles.cardEyebrowGreen}>
-                    Patient Workspace
-                  </div>
-
-                  <div style={styles.cardTitle}>Workflow</div>
-                </div>
-
-                <div style={styles.badgeGreen}>R</div>
-              </div>
-
-              <div style={styles.cardText}>
-                View patient registrations and treatment sessions,
-                manage follow-up information, and track patient progress.
-                Registrations should not require a linked booking.
-              </div>
-
-              <div style={styles.cardActionGreen}>
-                Open Workflow →
-              </div>
-            </div>
-          </button>
-
-          {/*
-            BOOKING WORKSPACE — DISABLED FOR NOW
-
-            Retained for possible future use.
+            <p style={styles.heroDescription}>
+              Your space for patient follow-up, rehabilitation
+              coordination, and quality clinical care.
+            </p>
 
             <button
               type="button"
-              style={styles.card}
-              onClick={() => navigate("/physio/booking")}
+              style={styles.primaryButton}
+              onClick={handleWorkflow}
             >
-              <div style={styles.cardContent}>
-                <div style={styles.cardHeader}>
-                  <div>
-                    <div style={styles.cardEyebrowBlue}>
-                      Workspace
-                    </div>
-                    <div style={styles.cardTitle}>Booking</div>
-                  </div>
+              <span>Open Workflow</span>
+              <span style={styles.buttonArrow}>→</span>
+            </button>
 
-                  <div style={styles.badgeBlue}>B</div>
-                </div>
+            <div style={styles.heroNote}>
+              <span style={styles.heroNoteIcon}>✓</span>
+              Keep patient care organized and consistent.
+            </div>
+          </div>
 
-                <div style={styles.cardText}>
-                  View bookings, appointment schedules, and daily workload.
-                </div>
+          <div style={styles.heroVisual} aria-hidden="true">
+            <div style={styles.visualGlow} />
 
-                <div style={styles.cardActionBlue}>
-                  Open Booking →
+            <div style={styles.visualCircle}>
+              <div style={styles.visualInnerCircle}>
+                <span style={styles.visualCross}>✚</span>
+              </div>
+            </div>
+
+            <div style={styles.floatingCardTop}>
+              <span style={styles.floatingIcon}>♡</span>
+              <div>
+                <div style={styles.floatingTitle}>Patient first</div>
+                <div style={styles.floatingSubtitle}>
+                  Care with purpose
                 </div>
               </div>
-            </button>
-          */}
-        </div>
+            </div>
+
+            <div style={styles.floatingCardBottom}>
+              <span style={styles.checkIcon}>✓</span>
+              <div>
+                <div style={styles.floatingTitle}>Quality care</div>
+                <div style={styles.floatingSubtitle}>
+                  Every session matters
+                </div>
+              </div>
+            </div>
+
+            <div style={styles.visualDecorOne} />
+            <div style={styles.visualDecorTwo} />
+          </div>
+        </section>
+
+        <section style={styles.workspaceSection}>
+          <div style={styles.sectionHeading}>
+            <div>
+              <div style={styles.sectionEyebrow}>GET STARTED</div>
+              <h2 style={styles.sectionTitle}>Your workspace</h2>
+              <p style={styles.sectionDescription}>
+                Everything starts with your patient workflow.
+              </p>
+            </div>
+
+            <div style={styles.workspaceCount}>
+              <span style={styles.workspaceCountNumber}>01</span>
+              <span style={styles.workspaceCountLabel}>
+                WORKSPACE
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            style={styles.workflowCard}
+            onClick={handleWorkflow}
+          >
+            <div style={styles.workflowIconBox}>
+              <svg
+                width="30"
+                height="30"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="4" y="3" width="16" height="18" rx="2" />
+                <path d="M8 8h8M8 12h8M8 16h5" />
+                <path d="m15 16 2 2 4-4" />
+              </svg>
+            </div>
+
+            <div style={styles.workflowContent}>
+              <div style={styles.workflowEyebrow}>
+                PATIENT MANAGEMENT
+              </div>
+              <h3 style={styles.workflowTitle}>Workflow</h3>
+              <p style={styles.workflowDescription}>
+                Access patient registrations, treatment sessions,
+                follow-up information, and progress tracking.
+              </p>
+              <div style={styles.workflowLink}>
+                Enter patient workflow <span>→</span>
+              </div>
+            </div>
+
+            <div style={styles.workflowArrow}>
+              <span>↗</span>
+            </div>
+          </button>
+        </section>
+
+        <section style={styles.tipSection}>
+          <div style={styles.tipHeader}>
+            <div style={styles.tipHeaderLeft}>
+              <div style={styles.tipIcon}>✦</div>
+              <div>
+                <div style={styles.tipEyebrow}>CLINICAL INSPIRATION</div>
+                <h2 style={styles.tipSectionTitle}>Today's clinical tip</h2>
+              </div>
+            </div>
+
+            <div style={styles.tipDayBadge}>DAILY INSIGHT</div>
+          </div>
+
+          <div style={styles.tipBody}>
+            <div style={styles.tipCategory}>{dailyMessage.category}</div>
+            <h3 style={styles.tipTitle}>{dailyMessage.title}</h3>
+            <p style={styles.tipMessage}>{dailyMessage.message}</p>
+          </div>
+
+          <div style={styles.tipFooter}>
+            <span style={styles.tipFooterIcon}>✚</span>
+            <span>
+              Evidence-informed care. Individualized for every patient.
+            </span>
+          </div>
+        </section>
 
         <footer style={styles.footer}>
-          <div style={styles.footerTitle}>
-            Every patient deserves individualized care.
+          <div style={styles.footerBrand}>
+            <span style={styles.footerCross}>✚</span>
+            <span>REHABCARE</span>
           </div>
 
-          <div style={styles.footerText}>
-            Follow clinical protocols, respect patient preferences,
-            and document treatment accurately.
+          <div style={styles.footerMessage}>
+            Every patient deserves thoughtful, individualized care.
+          </div>
+
+          <div style={styles.footerCopyright}>
+            PHYSIOTHERAPY WORKSPACE
           </div>
         </footer>
-      </div>
+      </main>
     </div>
   );
 }
@@ -387,343 +344,695 @@ const styles = {
     minHeight: "100vh",
     position: "relative",
     overflow: "hidden",
-    background: "#f8fafc",
-    padding: "56px 24px 72px",
+    background: "#f5f7fb",
+    padding: "30px 28px 40px",
     boxSizing: "border-box",
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    color: "#182c43",
   },
 
-  softGlowBlue: {
+  backgroundOrbOne: {
     position: "absolute",
-    top: "-140px",
-    left: "-120px",
-    width: "360px",
-    height: "360px",
-    borderRadius: "999px",
-    background: "rgba(59, 130, 246, 0.07)",
-    filter: "blur(70px)",
+    top: "-190px",
+    right: "-100px",
+    width: "470px",
+    height: "470px",
+    borderRadius: "50%",
+    background: "rgba(32, 171, 151, 0.10)",
+    filter: "blur(85px)",
     pointerEvents: "none",
   },
 
-  softGlowGreen: {
+  backgroundOrbTwo: {
     position: "absolute",
-    bottom: "-160px",
-    right: "-100px",
-    width: "360px",
-    height: "360px",
-    borderRadius: "999px",
-    background: "rgba(16, 185, 129, 0.06)",
-    filter: "blur(70px)",
+    left: "-180px",
+    bottom: "5%",
+    width: "400px",
+    height: "400px",
+    borderRadius: "50%",
+    background: "rgba(83, 119, 222, 0.08)",
+    filter: "blur(85px)",
     pointerEvents: "none",
   },
 
   container: {
     position: "relative",
     zIndex: 1,
-    maxWidth: "1080px",
+    maxWidth: "1180px",
     margin: "0 auto",
     display: "grid",
-    gap: "28px",
+    gap: "30px",
   },
 
-  banner: {
-    background: "#fff7ed",
-    border: "1px solid #fed7aa",
-    borderRadius: "16px",
-    padding: "14px 18px",
+  impersonationBanner: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "12px",
+    gap: "16px",
     flexWrap: "wrap",
+    padding: "15px 20px",
+    background: "#edf3ff",
+    border: "1px solid #d4e1ff",
+    borderRadius: "16px",
   },
 
-  bannerText: {
-    fontSize: "14px",
-    color: "#9a3412",
-    fontWeight: "700",
+  impersonationInfo: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
   },
 
-  bannerButton: {
-    background: "#9a3412",
-    color: "#fff",
-    border: "none",
+  impersonationIcon: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "38px",
+    height: "38px",
+    borderRadius: "12px",
+    background: "#dce8ff",
+    color: "#315ba8",
+    fontSize: "20px",
+    fontWeight: "800",
+  },
+
+  impersonationTitle: {
+    fontSize: "13px",
+    fontWeight: "800",
+    color: "#24477f",
+  },
+
+  impersonationDescription: {
+    fontSize: "13px",
+    color: "#597093",
+    marginTop: "3px",
+  },
+
+  backButton: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    background: "#ffffff",
+    border: "1px solid #d4e1ff",
     borderRadius: "10px",
     padding: "10px 14px",
-    fontWeight: "700",
+    color: "#24477f",
+    fontWeight: "750",
+    fontSize: "13px",
     cursor: "pointer",
   },
 
-  topBar: {
+  header: {
     display: "flex",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "20px",
+    gap: "18px",
     flexWrap: "wrap",
   },
 
-  titleBlock: {
-    display: "grid",
-    gap: "10px",
+  brandRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
   },
 
-  eyebrow: {
-    fontSize: "12px",
+  brandMark: {
+    width: "48px",
+    height: "48px",
+    borderRadius: "15px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "linear-gradient(145deg, #168f83, #27b9a2)",
+    color: "#ffffff",
+    boxShadow: "0 8px 18px rgba(22, 143, 131, 0.22)",
+  },
+
+  brandCross: {
+    fontSize: "23px",
     fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    color: "#059669",
   },
 
-  title: {
-    margin: 0,
-    fontSize: "34px",
-    lineHeight: 1.2,
-    fontWeight: "750",
-    color: "#0f172a",
+  brandName: {
+    fontSize: "20px",
+    fontWeight: "900",
+    letterSpacing: "0.045em",
+    color: "#18334a",
   },
 
-  subtitle: {
-    margin: 0,
-    fontSize: "16px",
-    color: "#64748b",
-    fontWeight: "500",
-    lineHeight: 1.7,
-    maxWidth: "650px",
+  brandSubtitle: {
+    marginTop: "4px",
+    fontSize: "10px",
+    fontWeight: "800",
+    letterSpacing: "0.13em",
+    color: "#8393a5",
   },
 
   logoutButton: {
-    background: "#ffffff",
-    color: "#dc2626",
-    border: "1px solid #fecaca",
-    borderRadius: "14px",
-    padding: "12px 16px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-
-  messageCard: {
-    background:
-      "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(240,253,250,0.96))",
-    border: "1px solid #d1fae5",
-    borderRadius: "24px",
-    padding: "28px",
-    display: "grid",
-    gap: "14px",
-    boxShadow: "0 10px 32px rgba(15, 23, 42, 0.045)",
-  },
-
-  messageTopRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "12px",
-    flexWrap: "wrap",
-  },
-
-  messageLabel: {
-    width: "fit-content",
-    fontSize: "12px",
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    color: "#047857",
-    background: "#d1fae5",
-    borderRadius: "999px",
-    padding: "7px 12px",
-  },
-
-  messageCategory: {
-    fontSize: "12px",
-    fontWeight: "700",
-    color: "#64748b",
-  },
-
-  messageTitle: {
-    margin: 0,
-    fontSize: "24px",
-    lineHeight: 1.35,
-    fontWeight: "750",
-    color: "#0f172a",
-  },
-
-  messageText: {
-    margin: 0,
-    fontSize: "16px",
-    lineHeight: 1.85,
-    color: "#475569",
-    fontWeight: "500",
-    maxWidth: "850px",
-  },
-
-  messageFooter: {
     display: "flex",
     alignItems: "center",
     gap: "9px",
-    paddingTop: "12px",
-    borderTop: "1px solid #d1fae5",
-    color: "#047857",
+    background: "#ffffff",
+    border: "1px solid #e0e6ee",
+    borderRadius: "12px",
+    padding: "11px 16px",
+    color: "#526276",
     fontSize: "13px",
-    fontWeight: "700",
+    fontWeight: "750",
+    cursor: "pointer",
+  },
+
+  logoutIcon: {
+    fontSize: "18px",
+    lineHeight: 1,
+  },
+
+  hero: {
+    position: "relative",
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1.2fr) minmax(250px, 0.8fr)",
+    alignItems: "center",
+    gap: "20px",
+    minHeight: "350px",
+    overflow: "hidden",
+    borderRadius: "30px",
+    padding: "44px 48px",
+    boxSizing: "border-box",
+    background:
+      "linear-gradient(118deg, #14384a 0%, #155e63 56%, #198e83 100%)",
+    boxShadow: "0 20px 48px rgba(24, 71, 83, 0.16)",
+  },
+
+  heroContent: {
+    position: "relative",
+    zIndex: 2,
+    display: "grid",
+    justifyItems: "start",
+    gap: "17px",
+  },
+
+  welcomeBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: "9px",
+    color: "#b9f5e8",
+    fontSize: "10px",
+    fontWeight: "850",
+    letterSpacing: "0.14em",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    border: "1px solid rgba(191, 250, 236, 0.25)",
+    background: "rgba(255,255,255,0.07)",
+  },
+
+  statusDot: {
+    width: "7px",
+    height: "7px",
+    borderRadius: "50%",
+    background: "#6ee7c5",
+    boxShadow: "0 0 0 4px rgba(110, 231, 197, 0.12)",
+  },
+
+  heroTitle: {
+    margin: 0,
+    fontSize: "clamp(32px, 4vw, 46px)",
+    lineHeight: 1.14,
+    letterSpacing: "-0.04em",
+    fontWeight: "850",
+    color: "#ffffff",
+    overflowWrap: "anywhere",
+  },
+
+  heroDescription: {
+    maxWidth: "490px",
+    margin: 0,
+    fontSize: "14px",
+    lineHeight: 1.85,
+    color: "#d0e8e8",
+  },
+
+  primaryButton: {
+    display: "flex",
+    alignItems: "center",
+    gap: "24px",
+    marginTop: "4px",
+    padding: "14px 17px 14px 21px",
+    border: "none",
+    borderRadius: "13px",
+    background: "#ffffff",
+    color: "#17675f",
+    fontSize: "14px",
+    fontWeight: "850",
+    cursor: "pointer",
+    boxShadow: "0 8px 18px rgba(4, 36, 43, 0.12)",
+  },
+
+  buttonArrow: {
+    fontSize: "20px",
+    lineHeight: 1,
+  },
+
+  heroNote: {
+    display: "flex",
+    alignItems: "center",
+    gap: "9px",
+    color: "#c1e6e4",
+    fontSize: "12px",
     lineHeight: 1.6,
   },
 
-  messageIcon: {
+  heroNoteIcon: {
     display: "inline-flex",
+    justifyContent: "center",
+    alignItems: "center",
+    width: "20px",
+    height: "20px",
+    borderRadius: "50%",
+    background: "rgba(175, 245, 222, 0.15)",
+    color: "#8bf0cf",
+    fontWeight: "900",
+    flexShrink: 0,
+  },
+
+  heroVisual: {
+    position: "relative",
+    minHeight: "250px",
+    display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: "24px",
-    height: "24px",
-    borderRadius: "8px",
-    background: "#d1fae5",
-    color: "#047857",
-    flexShrink: 0,
+  },
+
+  visualGlow: {
+    position: "absolute",
+    width: "240px",
+    height: "240px",
+    borderRadius: "50%",
+    background: "rgba(105, 231, 206, 0.14)",
+    filter: "blur(8px)",
+  },
+
+  visualCircle: {
+    position: "relative",
+    width: "210px",
+    height: "210px",
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid rgba(216, 255, 247, 0.25)",
+    background: "rgba(255,255,255,0.045)",
+    boxShadow:
+      "0 0 0 24px rgba(255,255,255,0.025), 0 0 0 48px rgba(255,255,255,0.018)",
+  },
+
+  visualInnerCircle: {
+    width: "130px",
+    height: "130px",
+    borderRadius: "38px",
+    transform: "rotate(-8deg)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.20), rgba(255,255,255,0.08))",
+    border: "1px solid rgba(255,255,255,0.27)",
+    boxShadow: "0 18px 40px rgba(0,0,0,0.10)",
+  },
+
+  visualCross: {
+    transform: "rotate(8deg)",
+    color: "#c0fff0",
+    fontSize: "65px",
+    fontWeight: "900",
+    textShadow: "0 5px 22px rgba(131, 255, 221, 0.25)",
+  },
+
+  floatingCardTop: {
+    position: "absolute",
+    top: "16px",
+    right: "0",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "12px 15px",
+    borderRadius: "14px",
+    background: "rgba(255,255,255,0.96)",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.12)",
+  },
+
+  floatingCardBottom: {
+    position: "absolute",
+    bottom: "15px",
+    left: "0",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "12px 15px",
+    borderRadius: "14px",
+    background: "rgba(255,255,255,0.96)",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.12)",
+  },
+
+  floatingIcon: {
+    width: "34px",
+    height: "34px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "11px",
+    background: "#e2f7f1",
+    color: "#148b77",
+    fontSize: "22px",
+  },
+
+  floatingTitle: {
+    fontSize: "12px",
+    fontWeight: "850",
+    color: "#23384b",
+  },
+
+  floatingSubtitle: {
+    marginTop: "4px",
+    fontSize: "10px",
+    color: "#7b8b9b",
+    whiteSpace: "nowrap",
+  },
+
+  checkIcon: {
+    width: "34px",
+    height: "34px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "11px",
+    background: "#e4f7e9",
+    color: "#18834a",
+    fontSize: "18px",
+    fontWeight: "900",
+  },
+
+  visualDecorOne: {
+    position: "absolute",
+    width: "9px",
+    height: "9px",
+    top: "35px",
+    left: "28px",
+    borderRadius: "50%",
+    background: "#a4f5e0",
+  },
+
+  visualDecorTwo: {
+    position: "absolute",
+    width: "7px",
+    height: "7px",
+    bottom: "42px",
+    right: "28px",
+    borderRadius: "50%",
+    background: "#b3d9ff",
+  },
+
+  workspaceSection: {
+    display: "grid",
+    gap: "20px",
   },
 
   sectionHeading: {
-    display: "grid",
-    gap: "6px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "18px",
+    flexWrap: "wrap",
+  },
+
+  sectionEyebrow: {
+    fontSize: "10px",
+    fontWeight: "900",
+    letterSpacing: "0.16em",
+    color: "#168b7b",
+    marginBottom: "7px",
   },
 
   sectionTitle: {
-    fontSize: "22px",
-    fontWeight: "750",
-    color: "#0f172a",
+    margin: 0,
+    fontSize: "25px",
+    lineHeight: 1.3,
+    letterSpacing: "-0.035em",
+    fontWeight: "850",
+    color: "#1d3449",
   },
 
-  sectionSubtitle: {
-    fontSize: "14px",
-    color: "#64748b",
-    lineHeight: 1.6,
+  sectionDescription: {
+    margin: "6px 0 0",
+    color: "#7a8a9b",
+    fontSize: "13px",
+    lineHeight: 1.7,
   },
 
-  grid: {
+  workspaceCount: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: "22px",
-    marginTop: "2px",
+    justifyItems: "end",
+    gap: "3px",
   },
 
-  card: {
+  workspaceCountNumber: {
+    fontSize: "27px",
+    fontWeight: "850",
+    letterSpacing: "-0.04em",
+    color: "#b7c5d0",
+  },
+
+  workspaceCountLabel: {
+    fontSize: "9px",
+    letterSpacing: "0.12em",
+    fontWeight: "850",
+    color: "#91a0af",
+  },
+
+  workflowCard: {
     width: "100%",
-    background: "rgba(255, 255, 255, 0.94)",
-    border: "1px solid #e2e8f0",
-    borderRadius: "24px",
-    textAlign: "left",
-    cursor: "pointer",
-    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
-    padding: 0,
-    color: "inherit",
-    transition: "transform 0.2s ease, box-shadow 0.2s ease",
-  },
-
-  cardContent: {
-    padding: "28px",
-    display: "grid",
+    display: "flex",
+    alignItems: "flex-start",
     gap: "22px",
-    minHeight: "220px",
+    padding: "27px",
+    border: "1px solid #e0e9ee",
+    borderRadius: "22px",
+    background: "#ffffff",
+    boxShadow: "0 8px 25px rgba(30, 65, 80, 0.045)",
+    textAlign: "left",
+    color: "inherit",
+    cursor: "pointer",
     boxSizing: "border-box",
   },
 
-  cardHeader: {
+  workflowIconBox: {
+    width: "62px",
+    height: "62px",
+    borderRadius: "18px",
     display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    background: "linear-gradient(145deg, #e1f8f1, #d3f1eb)",
+    color: "#168b7b",
+  },
+
+  workflowContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  workflowEyebrow: {
+    fontSize: "10px",
+    fontWeight: "900",
+    letterSpacing: "0.13em",
+    color: "#168b7b",
+    marginBottom: "7px",
+  },
+
+  workflowTitle: {
+    margin: 0,
+    fontSize: "21px",
+    fontWeight: "850",
+    letterSpacing: "-0.025em",
+    color: "#20394d",
+  },
+
+  workflowDescription: {
+    maxWidth: "650px",
+    margin: "9px 0 15px",
+    fontSize: "13px",
+    lineHeight: 1.85,
+    color: "#728396",
+  },
+
+  workflowLink: {
+    display: "flex",
+    alignItems: "center",
+    gap: "9px",
+    fontSize: "12px",
+    fontWeight: "850",
+    color: "#168b7b",
+  },
+
+  workflowArrow: {
+    width: "40px",
+    height: "40px",
+    borderRadius: "13px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    background: "#f0f7f6",
+    color: "#168b7b",
+    fontSize: "22px",
+  },
+
+  tipSection: {
+    overflow: "hidden",
+    border: "1px solid #e4e9f0",
+    borderRadius: "22px",
+    background: "#ffffff",
+    boxShadow: "0 8px 25px rgba(30, 65, 80, 0.035)",
+  },
+
+  tipHeader: {
+    display: "flex",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "14px",
+    gap: "15px",
+    flexWrap: "wrap",
+    padding: "22px 25px",
+    borderBottom: "1px solid #edf0f5",
   },
 
-  cardEyebrowBlue: {
-    fontSize: "12px",
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    color: "#2563eb",
-    marginBottom: "8px",
+  tipHeaderLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: "13px",
   },
 
-  cardEyebrowGreen: {
-    fontSize: "12px",
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    color: "#059669",
-    marginBottom: "8px",
-  },
-
-  cardTitle: {
-    fontSize: "26px",
-    fontWeight: "750",
-    color: "#0f172a",
-    lineHeight: 1.25,
-  },
-
-  badgeBlue: {
-    width: "44px",
-    height: "44px",
-    borderRadius: "14px",
-    background: "#eff6ff",
-    color: "#2563eb",
+  tipIcon: {
+    width: "43px",
+    height: "43px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontWeight: "800",
-    fontSize: "16px",
-    flexShrink: 0,
+    borderRadius: "14px",
+    background: "#fff3dc",
+    color: "#b97a13",
+    fontSize: "22px",
   },
 
-  badgeGreen: {
-    width: "44px",
-    height: "44px",
-    borderRadius: "14px",
-    background: "#ecfdf5",
-    color: "#059669",
+  tipEyebrow: {
+    fontSize: "9px",
+    fontWeight: "900",
+    letterSpacing: "0.13em",
+    color: "#b27b25",
+    marginBottom: "5px",
+  },
+
+  tipSectionTitle: {
+    margin: 0,
+    fontSize: "17px",
+    fontWeight: "850",
+    color: "#263d51",
+  },
+
+  tipDayBadge: {
+    padding: "7px 10px",
+    borderRadius: "999px",
+    background: "#fff7e8",
+    color: "#a97623",
+    fontSize: "9px",
+    fontWeight: "900",
+    letterSpacing: "0.09em",
+  },
+
+  tipBody: {
+    padding: "23px 25px 25px",
+  },
+
+  tipCategory: {
+    display: "inline-flex",
+    padding: "6px 10px",
+    borderRadius: "8px",
+    background: "#e9f7f3",
+    color: "#167d70",
+    fontSize: "10px",
+    fontWeight: "850",
+  },
+
+  tipTitle: {
+    margin: "14px 0 9px",
+    fontSize: "21px",
+    lineHeight: 1.4,
+    fontWeight: "850",
+    letterSpacing: "-0.025em",
+    color: "#20394d",
+  },
+
+  tipMessage: {
+    maxWidth: "900px",
+    margin: 0,
+    fontSize: "13px",
+    lineHeight: 1.95,
+    color: "#718194",
+  },
+
+  tipFooter: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
-    fontWeight: "800",
+    gap: "10px",
+    padding: "15px 25px",
+    background: "#f8fafc",
+    borderTop: "1px solid #edf0f5",
+    color: "#61788a",
+    fontSize: "11px",
+    lineHeight: 1.6,
+    fontWeight: "650",
+  },
+
+  tipFooterIcon: {
+    color: "#168b7b",
     fontSize: "16px",
-    flexShrink: 0,
-  },
-
-  cardText: {
-    fontSize: "15px",
-    lineHeight: 1.8,
-    color: "#64748b",
-    fontWeight: "500",
-    maxWidth: "440px",
-  },
-
-  cardActionBlue: {
-    fontSize: "14px",
-    fontWeight: "800",
-    color: "#2563eb",
-    marginTop: "6px",
-  },
-
-  cardActionGreen: {
-    fontSize: "14px",
-    fontWeight: "800",
-    color: "#059669",
-    marginTop: "6px",
   },
 
   footer: {
-    display: "grid",
-    gap: "7px",
-    padding: "22px 4px 0",
-    borderTop: "1px solid #e2e8f0",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "14px",
+    flexWrap: "wrap",
+    padding: "18px 0 4px",
+    borderTop: "1px solid #e2e8ef",
   },
 
-  footerTitle: {
-    fontSize: "15px",
-    fontWeight: "750",
-    color: "#334155",
+  footerBrand: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    fontSize: "11px",
+    letterSpacing: "0.07em",
+    fontWeight: "900",
+    color: "#526b7d",
   },
 
-  footerText: {
-    fontSize: "13px",
-    lineHeight: 1.7,
-    color: "#64748b",
+  footerCross: {
+    color: "#168b7b",
+    fontSize: "16px",
+  },
+
+  footerMessage: {
+    fontSize: "11px",
+    lineHeight: 1.6,
+    color: "#8291a0",
+    textAlign: "center",
+  },
+
+  footerCopyright: {
+    fontSize: "9px",
+    fontWeight: "850",
+    letterSpacing: "0.1em",
+    color: "#a0adba",
   },
 };

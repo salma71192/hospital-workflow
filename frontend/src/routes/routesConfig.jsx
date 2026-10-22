@@ -16,6 +16,11 @@ const PhysioFollowupWorkspace = lazy(() =>
   import("../pages/PhysioFollowupWorkspace")
 );
 
+// ================= REHAB MANAGER =================
+const RehabManagerDashboard = lazy(() =>
+  import("../pages/RehabManagerDashboard")
+);
+
 // ================= DOCTOR / RCM =================
 const DoctorDashboard = lazy(() => import("../pages/DoctorDashboard"));
 const RcmDashboard = lazy(() => import("../pages/RcmDashboard"));
@@ -46,10 +51,18 @@ const VisitorCeoDashboard = lazy(() => import("../pages/CeoDashboard"));
 
 export const dashboardRoutes = [
   // ================= ADMIN =================
-  { path: "/admin", component: AdminDashboard, adminOnly: true },
+  {
+    path: "/admin",
+    component: AdminDashboard,
+    adminOnly: true,
+  },
 
   // ================= APPROVALS =================
-  { path: "/approvals", component: ApprovalsHome, roles: ["approvals"] },
+  {
+    path: "/approvals",
+    component: ApprovalsHome,
+    roles: ["approvals"],
+  },
   {
     path: "/approvals/workspace",
     component: ApprovalsWorkspace,
@@ -69,7 +82,11 @@ export const dashboardRoutes = [
   },
 
   // ================= PHYSIO =================
-  { path: "/physio", component: PhysioHome, roles: ["physio"] },
+  {
+    path: "/physio",
+    component: PhysioHome,
+    roles: ["physio"],
+  },
   {
     path: "/physio/booking",
     component: PhysioBookingWorkspace,
@@ -81,12 +98,31 @@ export const dashboardRoutes = [
     roles: ["physio"],
   },
 
+  // ================= REHAB MANAGER =================
+  {
+    path: "/rehab-manager",
+    component: RehabManagerDashboard,
+    roles: ["rehab_manager"],
+  },
+
   // ================= DOCTOR / RCM =================
-  { path: "/doctor", component: DoctorDashboard, roles: ["doctor"] },
-  { path: "/rcm", component: RcmDashboard, roles: ["rcm"] },
+  {
+    path: "/doctor",
+    component: DoctorDashboard,
+    roles: ["doctor"],
+  },
+  {
+    path: "/rcm",
+    component: RcmDashboard,
+    roles: ["rcm"],
+  },
 
   // ================= CALL CENTER =================
-  { path: "/callcenter", component: CallCenterHome, roles: ["callcenter"] },
+  {
+    path: "/callcenter",
+    component: CallCenterHome,
+    roles: ["callcenter"],
+  },
   {
     path: "/callcenter/booking",
     component: CallCenterBookingWorkspace,
