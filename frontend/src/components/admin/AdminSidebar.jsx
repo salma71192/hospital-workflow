@@ -1,7 +1,9 @@
+
 import React, { useMemo } from "react";
 import SidebarCategory from "./SidebarCategory";
 import adminMenuConfig from "./adminMenuConfig";
 import "./AdminSidebar.css";
+
 export default function AdminSidebar({
   activeSection,
   onSelect,
@@ -13,30 +15,36 @@ export default function AdminSidebar({
     const originalMenu = Array.isArray(adminMenuConfig)
       ? adminMenuConfig
       : [];
+
     const config = originalMenu.map((category) => ({
       ...category,
       children: Array.isArray(category.children)
         ? category.children.map((item) => ({ ...item }))
         : [],
     }));
-    // Merge additional dashboard items into their existing categories.
+
+    // Merge additional dashboard items into existing categories.
     const additionalItems = Array.isArray(sidebarItems)
       ? sidebarItems
       : [];
+
     additionalItems.forEach((category) => {
       const existingCategory = config.find(
         (item) => item.key === category.key
       );
+
       const children = Array.isArray(category.children)
         ? category.children
         : Array.isArray(category.items)
           ? category.items
           : [];
+
       if (existingCategory) {
         children.forEach((child) => {
           const alreadyExists = existingCategory.children.some(
             (item) => item.key === child.key
           );
+
           if (!alreadyExists) {
             existingCategory.children.push({ ...child });
           }
@@ -48,14 +56,44 @@ export default function AdminSidebar({
         });
       }
     });
+
+    // Add Patient Management if it does not already exist.
+    let patientCategory = config.find(
+      (category) => category.key === "patient_management"
+    );
+
+    if (!patientCategory) {
+      patientCategory = {
+        key: "patient_management",
+        label: "Patient Management",
+        children: [],
+      };
+
+      config.push(patientCategory);
+    }
+
+    // Add Patients File without duplicating an existing item.
+    const patientFileExists = patientCategory.children.some(
+      (item) => item.key === "patients_file"
+    );
+
+    if (!patientFileExists) {
+      patientCategory.children.push({
+        key: "patients_file",
+        label: "Patients File",
+      });
+    }
+
     // Ensure the Evaluation Tracker remains in Rehab Management.
     const rehabCategory = config.find(
       (category) => category.key === "rehab_management"
     );
+
     if (rehabCategory) {
       const trackerExists = rehabCategory.children.some(
         (item) => item.key === "evaluation_tracker"
       );
+
       if (!trackerExists) {
         rehabCategory.children.push({
           key: "evaluation_tracker",
@@ -63,8 +101,10 @@ export default function AdminSidebar({
         });
       }
     }
+
     return config;
   }, [sidebarItems]);
+
   return (
     <aside className="admin-sidebar">
       <div className="admin-sidebar__header">
@@ -72,16 +112,20 @@ export default function AdminSidebar({
           <div className="admin-sidebar__logo">
             <span aria-hidden="true">✚</span>
           </div>
+
           <div className="admin-sidebar__brand-text">
             <h2>{sidebarTitle}</h2>
             <p>ADMINISTRATION</p>
           </div>
         </div>
+
         <div className="admin-sidebar__header-divider" />
+
         <div className="admin-sidebar__section-label">
           MANAGEMENT MENU
         </div>
       </div>
+
       <nav
         className="admin-sidebar__navigation"
         aria-label="Admin navigation"
@@ -95,6 +139,7 @@ export default function AdminSidebar({
           />
         ))}
       </nav>
+
       <div className="admin-sidebar__footer">
         <span className="admin-sidebar__footer-indicator" />
         <span>Hospital Management System</span>

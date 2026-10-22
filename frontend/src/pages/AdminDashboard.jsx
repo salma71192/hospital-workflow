@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/admin-patient-managment
 import React, {
   useCallback,
   useEffect,
@@ -13,6 +17,7 @@ import AdminCreateSection from "../components/admin/AdminCreateSection";
 import AdminManageSection from "../components/admin/AdminManageSection";
 import AdminStatisticsSection from "../components/admin/AdminStatisticsSection";
 import AdminRegistrationTrackerSection from "../components/admin/AdminRegistrationTrackerSection";
+import AdminPatientFilesSection from "../components/admin/AdminPatientFilesSection";
 import EvaluationTrackerSection from "../components/assignments/EvaluationTrackerSection";
 import PatientAssignmentForm from "../components/patients/PatientAssignmentForm";
 import UnifiedPatientSearch from "../components/patients/UnifiedPatientSearch";
@@ -39,14 +44,27 @@ function getApiError(err, fallback) {
         const text = Array.isArray(value)
           ? value.join(", ")
           : typeof value === "string"
+<<<<<<< HEAD
           ? value
           : JSON.stringify(value);
+=======
+            ? value
+            : JSON.stringify(value);
+
+>>>>>>> origin/admin-patient-managment
         return `${field}: ${text}`;
       })
       .join(" | ");
     if (details) return details;
   }
+<<<<<<< HEAD
   return err?.message ? `${fallback}: ${err.message}` : fallback;
+=======
+
+  return err?.message
+    ? `${fallback}: ${err.message}`
+    : fallback;
+>>>>>>> origin/admin-patient-managment
 }
 function hasAdminPermissions(user) {
   return Boolean(
@@ -55,7 +73,16 @@ function hasAdminPermissions(user) {
         String(user.role || "").trim().toLowerCase() === "admin")
   );
 }
+<<<<<<< HEAD
 export default function AdminDashboard({ user, onLogout, onActAsUser }) {
+=======
+
+export default function AdminDashboard({
+  user,
+  onLogout,
+  onActAsUser,
+}) {
+>>>>>>> origin/admin-patient-managment
   const navigate = useNavigate();
   const assignmentRef = useRef(null);
   const isAdmin = hasAdminPermissions(user);
@@ -81,36 +108,53 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [activeCategory, setActiveCategory] = useState(() => {
     try {
-      return localStorage.getItem("activeCategory") || "admin";
+      const savedCategory = localStorage.getItem("activeCategory");
+
+      if (
+        savedCategory === "visitor" ||
+        savedCategory === "visitor_ceo" ||
+        savedCategory === "doctor"
+      ) {
+        return savedCategory === "doctor" ? "physician" : "admin";
+      }
+
+      return savedCategory || "admin";
     } catch {
       return "admin";
     }
   });
+<<<<<<< HEAD
   // Static role options. Rehab Manager is included as a physiotherapy role.
+=======
+
+  // Roles available for creating and managing users.
+>>>>>>> origin/admin-patient-managment
   const roles = [
     "admin",
+    "administration",
     "approvals",
     "physio",
     "rehab_manager",
     "reception",
     "reception_supervisor",
-    "visitor",
-    "visitor_ceo",
-    "doctor",
+    "ceo",
+    "physician",
+    "rehab_manager",
     "rcm",
     "callcenter",
     "callcenter_supervisor",
   ];
   const roleLabels = {
     admin: "Admin",
+    administration: "Administration",
     approvals: "Approvals",
     physio: "Physio",
     rehab_manager: "Rehab Manager",
     reception: "Reception",
     reception_supervisor: "Reception Supervisor",
-    visitor: "Visitors",
-    visitor_ceo: "Visitor CEO",
-    doctor: "Doctor",
+    ceo: "CEO",
+    physician: "Physicians",
+    rehab_manager: "Rehab Manager",
     rcm: "RCM",
     callcenter: "Call Center",
     callcenter_supervisor: "Call Center Supervisor",
@@ -119,14 +163,15 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   // Rehab Manager currently shares the physiotherapy dashboard route.
   const roleRoutes = {
     admin: "/admin",
+    administration: "/administration",
     approvals: "/approvals",
     physio: "/physio",
     rehab_manager: "/physio",
     reception: "/reception",
     reception_supervisor: "/reception-supervisor",
-    visitor: "/visitors",
-    visitor_ceo: "/visitor-ceo",
-    doctor: "/doctor",
+    ceo: "/ceo",
+    physician: "/doctor",
+    rehab_manager: "/rehab-manager",
     rcm: "/rcm",
     callcenter: "/callcenter",
     callcenter_supervisor: "/callcenter-supervisor",
@@ -135,16 +180,34 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     { key: "create", label: "Create New User" },
     { key: "manage", label: "Manage Users" },
     { key: "statistics", label: "Rehab Statistics" },
-    { key: "registration_tracker", label: "Registration History" },
-    { key: "evaluation_tracker", label: "Evaluation Tracker" },
+    {
+      key: "registration_tracker",
+      label: "Registration History",
+    },
+    {
+      key: "evaluation_tracker",
+      label: "Evaluation Tracker",
+    },
     {
       key: "reception_management",
       label: "Reception Management",
       icon: "clipboard-list",
-      defaultOpen: true,
+      defaultOpen: false,
       children: [
         { key: "open_file", label: "Open New File" },
         { key: "register_patient", label: "Assign a Patient" },
+      ],
+    },
+    {
+      key: "patient_management",
+      label: "Patient Management",
+      icon: "users",
+      defaultOpen: false,
+      children: [
+        {
+          key: "patients_file",
+          label: "Patients File",
+        },
       ],
     },
     { key: "evaluations", label: "Evaluations" },
@@ -152,7 +215,16 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const fetchUsers = useCallback(async () => {
     try {
       const res = await api.get("users/list-users/");
-      setUsers(res.data?.users || []);
+      const fetchedUsers = Array.isArray(res.data?.users)
+        ? res.data.users
+        : [];
+
+      const normalizedUsers = fetchedUsers.map((item) => ({
+        ...item,
+        role: item.role === "doctor" ? "physician" : item.role,
+      }));
+
+      setUsers(normalizedUsers);
       setError("");
     } catch (err) {
       console.error("Failed to load users:", err);
@@ -163,42 +235,62 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     try {
       const res = await api.get("reception/therapists/");
       setTherapists(
-        Array.isArray(res.data?.therapists) ? res.data.therapists : []
+        Array.isArray(res.data?.therapists)
+          ? res.data.therapists
+          : []
       );
     } catch (err) {
       console.error("Failed to load therapists:", err);
       setTherapists([]);
-      setError(getApiError(err, "Failed to load physiotherapists."));
+      setError(
+        getApiError(err, "Failed to load physiotherapists.")
+      );
     }
   }, []);
   useEffect(() => {
     if (isAdmin) fetchUsers();
   }, [isAdmin, fetchUsers]);
   useEffect(() => {
-    if (activeSection === "register_patient" || activeSection === "open_file") {
+    if (
+      activeSection === "register_patient" ||
+      activeSection === "open_file"
+    ) {
       loadTherapists();
     }
   }, [activeSection, loadTherapists]);
   const groupedUsers = useMemo(() => {
     const groups = {
       admin: [],
+      administration: [],
       approvals: [],
       reception: [],
       reception_supervisor: [],
       physio: [],
+<<<<<<< HEAD
       rehab_manager: [],
       doctor: [],
+=======
+      ceo: [],
+      physician: [],
+      rehab_manager: [],
+>>>>>>> origin/admin-patient-managment
       rcm: [],
       callcenter: [],
       callcenter_supervisor: [],
-      visitor: [],
-      visitor_ceo: [],
       no_role: [],
     };
     users.forEach((item) => {
+<<<<<<< HEAD
       const role = String(item?.role || "").trim().toLowerCase();
       if (groups[role]) {
         groups[role].push(item);
+=======
+      const normalizedRole =
+        item.role === "doctor" ? "physician" : item.role;
+
+      if (groups[normalizedRole]) {
+        groups[normalizedRole].push(item);
+>>>>>>> origin/admin-patient-managment
       } else {
         groups.no_role.push(item);
       }
@@ -207,25 +299,61 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   }, [users]);
   const categoryOrder = [
     "admin",
+    "administration",
     "approvals",
     "reception",
     "reception_supervisor",
     "physio",
+<<<<<<< HEAD
     "rehab_manager",
     "doctor",
+=======
+    "ceo",
+    "physician",
+    "rehab_manager",
+>>>>>>> origin/admin-patient-managment
     "rcm",
     "callcenter",
     "callcenter_supervisor",
-    "visitor",
-    "visitor_ceo",
     "no_role",
   ];
   const handleCategoryChange = (category) => {
+<<<<<<< HEAD
     setActiveCategory(category);
+=======
+    const allowedCategories = [...roles, "no_role"];
+
+    const normalizedCategory =
+      category === "doctor" ? "physician" : category;
+
+    if (!allowedCategories.includes(normalizedCategory)) {
+      setActiveCategory("admin");
+
+      try {
+        localStorage.setItem("activeCategory", "admin");
+      } catch (storageError) {
+        console.warn(
+          "Could not save active category:",
+          storageError
+        );
+      }
+
+      return;
+    }
+
+    setActiveCategory(normalizedCategory);
+
+>>>>>>> origin/admin-patient-managment
     try {
-      localStorage.setItem("activeCategory", category);
+      localStorage.setItem(
+        "activeCategory",
+        normalizedCategory
+      );
     } catch (storageError) {
-      console.warn("Could not save active category:", storageError);
+      console.warn(
+        "Could not save active category:",
+        storageError
+      );
     }
   };
   const resetAssignmentEditor = () => {
@@ -234,7 +362,10 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     setAssignmentForm({ ...emptyAssignmentForm });
   };
   const handleSectionChange = (section) => {
-    if (editingAssignmentId && section !== "register_patient") {
+    if (
+      editingAssignmentId &&
+      section !== "register_patient"
+    ) {
       const confirmed = window.confirm(
         "Leave the assignment edit without saving your changes?"
       );
@@ -250,7 +381,15 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       setEditingAssignmentId(null);
       setAssignmentForm({ ...emptyAssignmentForm });
     }
+<<<<<<< HEAD
     if (section === "register_patient" && !editingAssignmentId) {
+=======
+
+    if (
+      section === "register_patient" &&
+      !editingAssignmentId
+    ) {
+>>>>>>> origin/admin-patient-managment
       setSelectedPatient(newlyCreatedPatient || null);
       setAssignmentForm({
         ...emptyAssignmentForm,
@@ -263,8 +402,20 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     setMessage("");
     setError("");
     try {
+<<<<<<< HEAD
       const res = await api.post("users/create-user/", formData);
       setMessage(res.data?.message || "User created successfully.");
+=======
+      const res = await api.post(
+        "users/create-user/",
+        formData
+      );
+
+      setMessage(
+        res.data?.message || "User created successfully."
+      );
+
+>>>>>>> origin/admin-patient-managment
       const createdRole = formData.role;
       setFormData({
         username: "",
@@ -283,25 +434,63 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
   const handleActAsUser = (selectedUser) => {
     if (!isAdmin || !onActAsUser) return;
     onActAsUser(selectedUser);
+<<<<<<< HEAD
+=======
+
+    const normalizedRole =
+      selectedUser.role === "doctor"
+        ? "physician"
+        : selectedUser.role;
+
+>>>>>>> origin/admin-patient-managment
     navigate(
       selectedUser.is_superuser
         ? "/admin"
-        : roleRoutes[selectedUser.role] || "/admin"
+        : roleRoutes[normalizedRole] || "/admin"
     );
   };
+<<<<<<< HEAD
   const handleRoleUpdate = async (userId, newRole, newIsSuperuser) => {
+=======
+
+  const handleRoleUpdate = async (
+    userId,
+    newRole,
+    newIsSuperuser
+  ) => {
+>>>>>>> origin/admin-patient-managment
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return false;
     }
     setMessage("");
     setError("");
+<<<<<<< HEAD
     try {
       const res = await api.put(`users/update-user/${userId}/`, {
         role: newRole,
         is_superuser: newIsSuperuser,
       });
       setMessage(res.data?.message || "User updated successfully.");
+=======
+
+    const normalizedRole =
+      newRole === "doctor" ? "physician" : newRole;
+
+    try {
+      const res = await api.put(
+        `users/update-user/${userId}/`,
+        {
+          role: normalizedRole,
+          is_superuser: newIsSuperuser,
+        }
+      );
+
+      setMessage(
+        res.data?.message || "User updated successfully."
+      );
+
+>>>>>>> origin/admin-patient-managment
       await fetchUsers();
       return true;
     } catch (err) {
@@ -321,14 +510,37 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     }
     setMessage("");
     setError("");
+<<<<<<< HEAD
     try {
       const res = await api.put(`users/update-user/${userId}/`, updates);
       setMessage(res.data?.message || "User details saved successfully.");
+=======
+
+    const normalizedUpdates = { ...updates };
+
+    if (normalizedUpdates.role === "doctor") {
+      normalizedUpdates.role = "physician";
+    }
+
+    try {
+      const res = await api.put(
+        `users/update-user/${userId}/`,
+        normalizedUpdates
+      );
+
+      setMessage(
+        res.data?.message ||
+          "User details saved successfully."
+      );
+
+>>>>>>> origin/admin-patient-managment
       await fetchUsers();
       return true;
     } catch (err) {
       console.error("Failed to save user details:", err);
-      setError(getApiError(err, "Failed to save user details."));
+      setError(
+        getApiError(err, "Failed to save user details.")
+      );
       setMessage("");
       return false;
     }
@@ -341,9 +553,17 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     setMessage("");
     setError("");
     try {
+<<<<<<< HEAD
       const res = await api.put(`users/update-user/${userId}/`, {
         is_active: Boolean(isActive),
       });
+=======
+      const res = await api.put(
+        `users/update-user/${userId}/`,
+        { is_active: Boolean(isActive) }
+      );
+
+>>>>>>> origin/admin-patient-managment
       setMessage(
         res.data?.message ||
           (isActive
@@ -354,12 +574,22 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       return true;
     } catch (err) {
       console.error("Failed to update user status:", err);
-      setError(getApiError(err, "Failed to update user status."));
+      setError(
+        getApiError(err, "Failed to update user status.")
+      );
       setMessage("");
       return false;
     }
   };
+<<<<<<< HEAD
   const handleChangeUserPassword = async (userId, newPassword) => {
+=======
+
+  const handleChangeUserPassword = async (
+    userId,
+    newPassword
+  ) => {
+>>>>>>> origin/admin-patient-managment
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return false;
@@ -371,16 +601,28 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     setMessage("");
     setError("");
     try {
+<<<<<<< HEAD
       const res = await api.post(`users/change-password/${userId}/`, {
         new_password: newPassword,
       });
-      setMessage(
-        res.data?.message || "User password updated successfully."
+=======
+      const res = await api.post(
+        `users/change-password/${userId}/`,
+        { new_password: newPassword }
       );
+
+>>>>>>> origin/admin-patient-managment
+      setMessage(
+        res.data?.message ||
+          "User password updated successfully."
+      );
+
       return true;
     } catch (err) {
       console.error("Failed to change user password:", err);
-      setError(getApiError(err, "Failed to change user password."));
+      setError(
+        getApiError(err, "Failed to change user password.")
+      );
       setMessage("");
       return false;
     }
@@ -397,12 +639,25 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
     setMessage("");
     setError("");
     try {
+<<<<<<< HEAD
       const res = await api.delete(`users/delete-user/${userId}/`);
       setMessage(res.data?.message || "User deactivated successfully.");
+=======
+      const res = await api.delete(
+        `users/delete-user/${userId}/`
+      );
+
+      setMessage(
+        res.data?.message || "User deactivated successfully."
+      );
+
+>>>>>>> origin/admin-patient-managment
       await fetchUsers();
     } catch (err) {
       console.error("Failed to deactivate user:", err);
-      setError(getApiError(err, "Failed to deactivate user."));
+      setError(
+        getApiError(err, "Failed to deactivate user.")
+      );
       setMessage("");
     }
   };
@@ -489,10 +744,12 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       speciality: assignmentForm.speciality || "",
       notes: assignmentForm.notes || "",
       additional_therapist_ids: additionalTherapistIds,
-      with_another_therapist: additionalTherapistIds.length > 0,
+      with_another_therapist:
+        additionalTherapistIds.length > 0,
     };
     if (assignmentForm.assignment_date) {
-      payload.assignment_date = assignmentForm.assignment_date;
+      payload.assignment_date =
+        assignmentForm.assignment_date;
     } else {
       delete payload.assignment_date;
     }
@@ -503,7 +760,15 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             `reception/assignments/${editingAssignmentId}/`,
             payload
           )
+<<<<<<< HEAD
         : await api.post("reception/assignments/", payload);
+=======
+        : await api.post(
+            "reception/assignments/",
+            payload
+          );
+
+>>>>>>> origin/admin-patient-managment
       setMessage(
         res.data?.message ||
           (editingAssignmentId
@@ -526,6 +791,7 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
             : "Failed to assign patient."
         )
       );
+
       setMessage("");
     } finally {
       setSavingAssignment(false);
@@ -563,12 +829,15 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
       therapist_id: String(assignment.therapist_id || ""),
       category: assignment.category || "appointment",
       visit_number: assignment.visit_number ?? "",
-      referring_physician: assignment.referring_physician || "",
-      speciality: assignment.speciality || assignment.specialty || "",
+      referring_physician:
+        assignment.referring_physician || "",
+      speciality:
+        assignment.speciality || assignment.specialty || "",
       notes: assignment.notes || "",
       assignment_date: assignment.assignment_date || "",
       additional_therapist_ids: additionalTherapistIds,
-      with_another_therapist: additionalTherapistIds.length > 0,
+      with_another_therapist:
+        additionalTherapistIds.length > 0,
     });
     setActiveSection("register_patient");
     window.setTimeout(() => {
@@ -606,11 +875,20 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         `reception/assignments/${assignment.id}/`
       );
       setMessage(
-        res.data?.message || "Registration deleted successfully."
+        res.data?.message ||
+          "Registration deleted successfully."
       );
     } catch (err) {
       console.error("Failed to delete registration:", err);
+<<<<<<< HEAD
       setError(getApiError(err, "Failed to delete registration."));
+=======
+
+      setError(
+        getApiError(err, "Failed to delete registration.")
+      );
+
+>>>>>>> origin/admin-patient-managment
       setMessage("");
     }
   };
@@ -634,7 +912,9 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         <button
           type="button"
           style={styles.primaryButton}
-          onClick={() => navigate("/login", { replace: true })}
+          onClick={() =>
+            navigate("/login", { replace: true })
+          }
         >
           Return to Login
         </button>
@@ -717,6 +997,14 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
         {activeSection === "evaluation_tracker" && (
           <EvaluationTrackerSection user={user} />
         )}
+<<<<<<< HEAD
+=======
+
+        {activeSection === "patients_file" && (
+          <AdminPatientFilesSection />
+        )}
+
+>>>>>>> origin/admin-patient-managment
         {activeSection === "open_file" && (
           <div style={styles.stack}>
             <section style={styles.card}>
@@ -726,7 +1014,15 @@ export default function AdminDashboard({ user, onLogout, onActAsUser }) {
                 you can continue to assign the patient to a
                 physiotherapist.
               </p>
+<<<<<<< HEAD
               <OpenNewFile onPatientCreated={handlePatientCreated} />
+=======
+
+              <OpenNewFile
+                onPatientCreated={handlePatientCreated}
+              />
+
+>>>>>>> origin/admin-patient-managment
               {newlyCreatedPatient && (
                 <button
                   type="button"

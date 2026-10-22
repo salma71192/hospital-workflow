@@ -1,5 +1,8 @@
+
+
 import React, { useCallback, useEffect, useState } from "react";
 import api from "../../api/api";
+
 const emptyForm = {
   name: "",
   patient_id: "",
@@ -13,6 +16,7 @@ const emptyForm = {
   insurance_provider: "",
   approved_cpt_codes: [],
 };
+
 const styles = {
   page: { width: "100%", color: "#1f2937" },
   toolbar: {
@@ -32,9 +36,12 @@ const styles = {
     color: "#111827",
   },
   select: {
+    width: "100%",
+    boxSizing: "border-box",
     padding: "10px 12px",
     border: "1px solid #cbd5e1",
     borderRadius: 8,
+    fontSize: 14,
     background: "#fff",
     color: "#111827",
   },
@@ -90,22 +97,32 @@ const styles = {
     fontSize: 14,
   },
 };
+
 function getErrorMessage(error, fallback) {
   const data = error?.response?.data;
+
   if (typeof data?.error === "string") return data.error;
   if (typeof data?.detail === "string") return data.detail;
   if (typeof data?.message === "string") return data.message;
+
   if (error?.response?.status) {
     return `${fallback} (HTTP ${error.response.status})`;
   }
+
   return fallback;
 }
+
 function getPatientFromResponse(data) {
   return data?.patient || data;
 }
+
 function normalizePatientId(value) {
-  return String(value ?? "").trim().replace(/\s+/g, "").toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toLowerCase();
 }
+
 function toFormData(patient = {}) {
   return {
     name: patient.name || "",
@@ -124,6 +141,7 @@ function toFormData(patient = {}) {
       : [],
   };
 }
+
 function Field({ label, children }) {
   return (
     <div>
@@ -132,6 +150,7 @@ function Field({ label, children }) {
     </div>
   );
 }
+
 export default function AdminPatientFilesSection() {
   const [patients, setPatients] = useState([]);
   const [search, setSearch] = useState("");
@@ -143,24 +162,30 @@ export default function AdminPatientFilesSection() {
   const [mode, setMode] = useState("list");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
   const fetchPatients = useCallback(async () => {
     setLoading(true);
     setError("");
+
     try {
       let url = "patients/";
+
       if (view === "archived") {
         url += "?archived=true";
       } else if (view === "all") {
         url += "?include_archived=true";
       }
+
       const response = await api.get(url);
       const rows = response.data?.patients || [];
       const normalizedSearch = search.trim().toLowerCase();
+
       const filteredRows = normalizedSearch
         ? rows.filter((patient) => {
             const name = String(patient.name || "").toLowerCase();
             const patientId = normalizePatientId(patient.patient_id);
             const entered = normalizePatientId(normalizedSearch);
+
             return (
               name.includes(normalizedSearch) ||
               patientId.includes(entered) ||
@@ -168,6 +193,7 @@ export default function AdminPatientFilesSection() {
             );
           })
         : rows;
+
       setPatients(filteredRows);
     } catch (err) {
       setError(getErrorMessage(err, "Unable to load patient files."));
@@ -176,62 +202,90 @@ export default function AdminPatientFilesSection() {
       setLoading(false);
     }
   }, [search, view]);
+
   useEffect(() => {
     fetchPatients();
   }, [fetchPatients]);
+
   const clearNotices = () => {
     setMessage("");
     setError("");
   };
+
   const handleOpen = async (patient) => {
     clearNotices();
     setLoading(true);
+
     try {
       const response = await api.get(`patients/${patient.id}/`);
       const fullPatient = getPatientFromResponse(response.data);
+
       setSelectedPatient(fullPatient);
       setFormData(toFormData(fullPatient));
       setMode("details");
     } catch (err) {
-      setError(getErrorMessage(err, "Unable to open this patient file."));
-    } finally {
-      setLoading(false);
-    }
-  };
-  const handleEdit = async (patient) => {
-    clearNotices();
-    setLoading(true);
-    try {
-      const response = await api.get(`patients/${patient.id}/`);
-      const fullPatient = getPatientFromResponse(response.data);
-      setSelectedPatient(fullPatient);
-      setFormData(toFormData(fullPatient));
-      setMode("edit");
-    } catch (err) {
       setError(
-        getErrorMessage(err, "Unable to load patient details for editing.")
+        getErrorMessage(err, "Unable to open this patient file.")
       );
     } finally {
       setLoading(false);
     }
   };
+
+  const handleEdit = async (patient) => {
+    clearNotices();
+    setLoading(true);
+
+    try {
+      const response = await api.get(`patients/${patient.id}/`);
+      const fullPatient = getPatientFromResponse(response.data);
+
+      setSelectedPatient(fullPatient);
+      setFormData(toFormData(fullPatient));
+      setMode("edit");
+    } catch (err) {
+      setError(
+        getErrorMessage(
+          err,
+          "Unable to load patient details for editing."
+        )
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleFieldChange = (event) => {
     const { name, value } = event.target;
+
     setFormData((previous) => ({
       ...previous,
       [name]: value,
     }));
   };
+
   const handleSave = async (event) => {
     event.preventDefault();
+
     if (!selectedPatient) return;
+
     clearNotices();
+
     if (!formData.name.trim() || !formData.patient_id.trim()) {
       setError("Patient name and patient ID are required.");
       return;
     }
+
+    if (
+      !["", "Thiqa", "Daman"].includes(formData.insurance_provider)
+    ) {
+      setError("Please select a valid insurance provider.");
+      return;
+    }
+
     const approvedSessions = Number(formData.approved_sessions);
     const sessionsTaken = Number(formData.sessions_taken);
+
     if (
       !Number.isInteger(approvedSessions) ||
       !Number.isInteger(sessionsTaken) ||
@@ -243,6 +297,7 @@ export default function AdminPatientFilesSection() {
       );
       return;
     }
+
     const payload = {
       ...formData,
       name: formData.name.trim(),
@@ -251,91 +306,122 @@ export default function AdminPatientFilesSection() {
       sessions_taken: sessionsTaken,
       approved_cpt_codes: formData.approved_cpt_codes,
     };
+
     setSaving(true);
+
     try {
       const response = await api.put(
         `patients/${selectedPatient.id}/`,
         payload
       );
+
       const updatedPatient = getPatientFromResponse(response.data);
+
       setSelectedPatient(updatedPatient);
       setFormData(toFormData(updatedPatient));
+
       setMessage(
-        response.data?.message || "Patient file updated successfully."
+        response.data?.message ||
+          "Patient file updated successfully."
       );
+
       setMode("details");
       await fetchPatients();
     } catch (err) {
-      setError(getErrorMessage(err, "Unable to save patient changes."));
+      setError(
+        getErrorMessage(err, "Unable to save patient changes.")
+      );
     } finally {
       setSaving(false);
     }
   };
+
   const handleArchiveRestore = async (patient) => {
     clearNotices();
+
     const archived = Boolean(patient.is_archived);
     const action = archived ? "restore" : "archive";
-    const actionLabel = archived ? "restore" : "archive";
+    const actionLabel = action;
+
     const confirmed = window.confirm(
       `Are you sure you want to ${actionLabel} the patient file for "${patient.name}" (${patient.patient_id})?`
     );
+
     if (!confirmed) return;
+
     setLoading(true);
+
     try {
       const response = await api.post(`patients/${patient.id}/`, {
         action,
       });
+
       setMessage(
         response.data?.message ||
           `Patient file ${actionLabel}d successfully.`
       );
+
       if (selectedPatient?.id === patient.id) {
         setSelectedPatient(getPatientFromResponse(response.data));
         setMode("details");
       }
+
       await fetchPatients();
     } catch (err) {
       setError(
-        getErrorMessage(err, `Unable to ${actionLabel} patient file.`)
+        getErrorMessage(
+          err,
+          `Unable to ${actionLabel} patient file.`
+        )
       );
     } finally {
       setLoading(false);
     }
   };
+
   const handlePermanentDelete = async (patient) => {
     clearNotices();
+
     const patientFileNumber = String(patient.patient_id ?? "").trim();
+
     if (!patientFileNumber) {
       setError(
         "Cannot delete this file because its patient file number is missing. Refresh the list and try again."
       );
       return;
     }
+
     const enteredId = window.prompt(
       `Permanent deletion cannot be undone.\n\nPatient: ${patient.name}\nFile number: ${patientFileNumber}\n\nEnter the patient file number to continue:`
     );
+
     if (enteredId === null) return;
-    // The backend validates the confirmation against its stored record.
-    // Do not reject the user's entry using a separate frontend comparison.
+
     const finalConfirm = window.confirm(
       `Are you sure you want to permanently delete "${patient.name}" (${patientFileNumber})?\n\nThis action cannot be undone.`
     );
+
     if (!finalConfirm) return;
+
     setLoading(true);
+
     try {
       const response = await api.delete(`patients/${patient.id}/`, {
         data: {
           confirm: enteredId.trim(),
         },
       });
+
       setMessage(
         response.data?.message || "Patient file permanently deleted."
       );
+
       if (selectedPatient?.id === patient.id) {
         setSelectedPatient(null);
         setFormData(emptyForm);
         setMode("list");
       }
+
       await fetchPatients();
     } catch (err) {
       setError(
@@ -348,12 +434,14 @@ export default function AdminPatientFilesSection() {
       setLoading(false);
     }
   };
+
   const backToList = () => {
     setSelectedPatient(null);
     setFormData(emptyForm);
     setMode("list");
     clearNotices();
   };
+
   const renderPatientActions = (patient) => (
     <div
       style={{
@@ -371,6 +459,7 @@ export default function AdminPatientFilesSection() {
       >
         Open
       </button>
+
       <button
         type="button"
         style={{ ...styles.button, ...styles.secondary }}
@@ -379,6 +468,7 @@ export default function AdminPatientFilesSection() {
       >
         Edit
       </button>
+
       <button
         type="button"
         style={{ ...styles.button, ...styles.warning }}
@@ -387,6 +477,7 @@ export default function AdminPatientFilesSection() {
       >
         {patient.is_archived ? "Restore" : "Archive"}
       </button>
+
       <button
         type="button"
         style={{ ...styles.button, ...styles.danger }}
@@ -398,6 +489,7 @@ export default function AdminPatientFilesSection() {
       </button>
     </div>
   );
+
   const renderNotices = () => (
     <>
       {message && (
@@ -412,6 +504,7 @@ export default function AdminPatientFilesSection() {
           {message}
         </div>
       )}
+
       {error && (
         <div
           role="alert"
@@ -426,12 +519,17 @@ export default function AdminPatientFilesSection() {
       )}
     </>
   );
+
   const renderPatientDetails = () => {
     if (!selectedPatient) return null;
+
     const detailRows = [
       ["Patient name", selectedPatient.name],
       ["Patient file number", selectedPatient.patient_id],
-      ["Current approval number", selectedPatient.current_approval_number],
+      [
+        "Current approval number",
+        selectedPatient.current_approval_number,
+      ],
       ["Approval start date", selectedPatient.approval_start_date],
       ["Approval expiry date", selectedPatient.approval_expiry_date],
       ["Approved sessions", selectedPatient.approved_sessions],
@@ -458,9 +556,11 @@ export default function AdminPatientFilesSection() {
       ],
       ["Archived at", selectedPatient.archived_at],
     ];
+
     return (
       <div style={styles.card}>
         <h3 style={{ marginTop: 0 }}>Patient File Details</h3>
+
         <div style={styles.grid}>
           {detailRows.map(([label, value]) => (
             <div key={label}>
@@ -473,6 +573,7 @@ export default function AdminPatientFilesSection() {
             </div>
           ))}
         </div>
+
         <div
           style={{
             display: "flex",
@@ -488,6 +589,7 @@ export default function AdminPatientFilesSection() {
           >
             Back to Patient Files
           </button>
+
           <button
             type="button"
             style={{ ...styles.button, ...styles.primary }}
@@ -499,6 +601,7 @@ export default function AdminPatientFilesSection() {
           >
             Edit Patient
           </button>
+
           <button
             type="button"
             style={{ ...styles.button, ...styles.warning }}
@@ -509,6 +612,7 @@ export default function AdminPatientFilesSection() {
               ? "Restore Patient"
               : "Archive Patient"}
           </button>
+
           <button
             type="button"
             style={{ ...styles.button, ...styles.danger }}
@@ -521,9 +625,11 @@ export default function AdminPatientFilesSection() {
       </div>
     );
   };
+
   const renderEditForm = () => (
     <div style={styles.card}>
       <h3 style={{ marginTop: 0 }}>Edit Patient File</h3>
+
       <form onSubmit={handleSave}>
         <div style={styles.grid}>
           <Field label="Patient Name *">
@@ -535,6 +641,7 @@ export default function AdminPatientFilesSection() {
               required
             />
           </Field>
+
           <Field label="Patient File Number *">
             <input
               style={styles.input}
@@ -544,6 +651,7 @@ export default function AdminPatientFilesSection() {
               required
             />
           </Field>
+
           <Field label="Current Approval Number">
             <input
               style={styles.input}
@@ -552,6 +660,7 @@ export default function AdminPatientFilesSection() {
               onChange={handleFieldChange}
             />
           </Field>
+
           <Field label="Approval Start Date">
             <input
               style={styles.input}
@@ -561,6 +670,7 @@ export default function AdminPatientFilesSection() {
               onChange={handleFieldChange}
             />
           </Field>
+
           <Field label="Approval Expiry Date">
             <input
               style={styles.input}
@@ -570,6 +680,7 @@ export default function AdminPatientFilesSection() {
               onChange={handleFieldChange}
             />
           </Field>
+
           <Field label="Approved Sessions">
             <input
               style={styles.input}
@@ -581,6 +692,7 @@ export default function AdminPatientFilesSection() {
               onChange={handleFieldChange}
             />
           </Field>
+
           <Field label="Sessions Taken">
             <input
               style={styles.input}
@@ -592,6 +704,7 @@ export default function AdminPatientFilesSection() {
               onChange={handleFieldChange}
             />
           </Field>
+
           <Field label="Taken With">
             <input
               style={styles.input}
@@ -600,6 +713,7 @@ export default function AdminPatientFilesSection() {
               onChange={handleFieldChange}
             />
           </Field>
+
           <Field label="Current/Future Appointments">
             <input
               style={styles.input}
@@ -611,14 +725,21 @@ export default function AdminPatientFilesSection() {
               onChange={handleFieldChange}
             />
           </Field>
+
+          {/* Editable Insurance Provider Dropdown */}
           <Field label="Insurance Provider">
-            <input
-              style={styles.input}
+            <select
+              style={styles.select}
               name="insurance_provider"
               value={formData.insurance_provider}
               onChange={handleFieldChange}
-            />
+            >
+              <option value="">Select insurance provider</option>
+              <option value="Thiqa">Thiqa</option>
+              <option value="Daman">Daman</option>
+            </select>
           </Field>
+
           <Field label="Approved CPT Codes">
             <input
               style={styles.input}
@@ -628,6 +749,7 @@ export default function AdminPatientFilesSection() {
                   .split(",")
                   .map((code) => code.trim())
                   .filter(Boolean);
+
                 setFormData((previous) => ({
                   ...previous,
                   approved_cpt_codes: codes,
@@ -637,6 +759,7 @@ export default function AdminPatientFilesSection() {
             />
           </Field>
         </div>
+
         <div
           style={{
             display: "flex",
@@ -652,6 +775,7 @@ export default function AdminPatientFilesSection() {
           >
             {saving ? "Saving..." : "Save Changes"}
           </button>
+
           <button
             type="button"
             style={{ ...styles.button, ...styles.secondary }}
@@ -668,6 +792,7 @@ export default function AdminPatientFilesSection() {
       </form>
     </div>
   );
+
   return (
     <div style={styles.page}>
       <div style={{ marginBottom: 18 }}>
@@ -676,7 +801,9 @@ export default function AdminPatientFilesSection() {
           Search, open, edit, archive, restore, or manage patient files.
         </p>
       </div>
+
       {renderNotices()}
+
       {mode !== "list" && (
         <div style={{ marginBottom: 14 }}>
           <button
@@ -688,8 +815,10 @@ export default function AdminPatientFilesSection() {
           </button>
         </div>
       )}
+
       {mode === "details" && renderPatientDetails()}
       {mode === "edit" && renderEditForm()}
+
       {mode === "list" && (
         <>
           <div style={styles.toolbar}>
@@ -704,6 +833,7 @@ export default function AdminPatientFilesSection() {
               placeholder="Search patient name, file number, or record ID..."
               aria-label="Search patient files"
             />
+
             <select
               style={styles.select}
               value={view}
@@ -714,6 +844,7 @@ export default function AdminPatientFilesSection() {
               <option value="archived">Archived Files</option>
               <option value="all">All Files</option>
             </select>
+
             <button
               type="button"
               style={{ ...styles.button, ...styles.primary }}
@@ -723,6 +854,7 @@ export default function AdminPatientFilesSection() {
               {loading ? "Loading..." : "Refresh"}
             </button>
           </div>
+
           <div style={styles.card}>
             <div
               style={{
@@ -737,13 +869,16 @@ export default function AdminPatientFilesSection() {
                 {view === "active"
                   ? "Active Patient Files"
                   : view === "archived"
-                  ? "Archived Patient Files"
-                  : "All Patient Files"}
+                    ? "Archived Patient Files"
+                    : "All Patient Files"}
               </h3>
+
               <span style={{ color: "#64748b", fontSize: 13 }}>
-                {patients.length} record{patients.length === 1 ? "" : "s"}
+                {patients.length} record
+                {patients.length === 1 ? "" : "s"}
               </span>
             </div>
+
             {loading && patients.length === 0 ? (
               <p>Loading patient files...</p>
             ) : patients.length === 0 ? (
@@ -764,22 +899,30 @@ export default function AdminPatientFilesSection() {
                       <th style={styles.th}>Actions</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {patients.map((patient) => (
                       <tr key={patient.id}>
                         <td style={styles.td}>
                           <strong>{patient.name}</strong>
                         </td>
-                        <td style={styles.td}>{patient.patient_id}</td>
+
+                        <td style={styles.td}>
+                          {patient.patient_id}
+                        </td>
+
                         <td style={styles.td}>
                           {patient.insurance_provider || "—"}
                         </td>
+
                         <td style={styles.td}>
                           {patient.approved_sessions ?? 0}
                         </td>
+
                         <td style={styles.td}>
                           {patient.sessions_taken ?? 0}
                         </td>
+
                         <td style={styles.td}>
                           <span
                             style={{
@@ -799,6 +942,7 @@ export default function AdminPatientFilesSection() {
                             {patient.is_archived ? "Archived" : "Active"}
                           </span>
                         </td>
+
                         <td style={styles.td}>
                           {renderPatientActions(patient)}
                         </td>

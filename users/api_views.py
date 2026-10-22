@@ -11,37 +11,82 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.authtoken.models import Token
 from .models import User
+<<<<<<< HEAD
+=======
+
+
+# Roles available for new users and role changes.
+>>>>>>> origin/admin-patient-managment
 ALLOWED_ROLES = [
     "admin",
+    "administration",
     "approvals",
     "physio",
     "reception",
     "reception_supervisor",
-    "visitor",
-    "visitor_ceo",
-    "doctor",
+    "ceo",
+    "physician",
+    "rehab_manager",
     "rcm",
     "callcenter",
     "callcenter_supervisor",
 ]
+<<<<<<< HEAD
 def is_admin_user(user):
+=======
+
+# Roles that may still exist on older user records.
+# These are retained only for backward compatibility when
+# the existing role is not being changed.
+LEGACY_ROLES = {
+    "doctor",
+    "visitor",
+    "visitor_ceo",
+}
+
+
+def normalize_role(role):
+    """
+    Convert the old doctor role to physician.
+    Visitor roles are not automatically converted to CEO,
+    because they may represent different permissions.
+    """
+    role = str(role or "").strip().lower()
+
+    if role == "doctor":
+        return "physician"
+
+    return role
+
+
+def is_admin_user(user):
+    """
+    Only Django superusers and users with the admin role
+    can access administrative user-management endpoints.
+    The administration role is a separate application role.
+    """
+>>>>>>> origin/admin-patient-managment
     return bool(
         user
         and user.is_authenticated
         and (
             user.is_superuser
-            or getattr(user, "role", "") == "admin"
+            or str(getattr(user, "role", "")).strip().lower()
+            == "admin"
         )
     )
 def parse_json_body(request):
     try:
         data = json.loads(request.body or b"{}")
+
         if not isinstance(data, dict):
             return None, JsonResponse(
                 {"error": "JSON body must be an object"},
                 status=400,
             )
+
         return data, None
+
     except (json.JSONDecodeError, UnicodeDecodeError):
         return None, JsonResponse(
             {"error": "Invalid JSON"},
@@ -49,12 +94,27 @@ def parse_json_body(request):
         )
 def get_authenticated_user(request):
     """
+<<<<<<< HEAD
     Return the user authenticated by the existing Django session
     or by a valid DRF Token in the Authorization header.
     """
     request_user = getattr(request, "user", None)
     if request_user and request_user.is_authenticated:
         return request_user
+=======
+    Return the user authenticated by Django middleware
+    or by a valid DRF Token in the Authorization header.
+    """
+    request_user = getattr(request, "user", None)
+
+    if (
+        request_user is not None
+        and request_user.is_authenticated
+        and request_user.is_active
+    ):
+        return request_user
+
+>>>>>>> origin/admin-patient-managment
     authorization = request.headers.get("Authorization", "")
     parts = authorization.split()
     if len(parts) == 2 and parts[0].lower() == "token":
@@ -93,6 +153,7 @@ def is_last_active_superuser(user):
         is_superuser=True,
         is_active=True,
     ).exclude(id=user.id).exists()
+<<<<<<< HEAD
 def get_user_data(user):
     """
     Return a consistent user representation for the frontend.
@@ -108,10 +169,28 @@ def get_user_data(user):
         "username": user.username,
         "display_name": display_name,
         "role": getattr(user, "role", ""),
+=======
+
+
+def serialize_user(user):
+    """
+    Return the user fields needed by the frontend.
+    The old doctor role is returned as physician for compatibility.
+    """
+    return {
+        "id": user.id,
+        "username": user.username,
+        "role": normalize_role(getattr(user, "role", "")),
+>>>>>>> origin/admin-patient-managment
         "is_superuser": user.is_superuser,
         "is_staff": user.is_staff,
         "is_active": user.is_active,
     }
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> origin/admin-patient-managment
 @csrf_exempt
 def login_api(request):
     if request.method != "POST":
@@ -120,6 +199,7 @@ def login_api(request):
             status=405,
         )
     data, error = parse_json_body(request)
+
     if error:
         return error
     username = data.get("username")
@@ -149,9 +229,22 @@ def login_api(request):
             {"error": "This account is inactive"},
             status=403,
         )
+<<<<<<< HEAD
     login(request, user)
     token, _ = Token.objects.get_or_create(user=user)
     user_data = get_user_data(user)
+=======
+
+    # Migrate an existing doctor role to physician on login.
+    if getattr(user, "role", "") == "doctor":
+        user.role = "physician"
+        user.save(update_fields=["role"])
+
+    login(request, user)
+    token, _ = Token.objects.get_or_create(user=user)
+    user_data = serialize_user(user)
+
+>>>>>>> origin/admin-patient-managment
     return JsonResponse({
         "success": True,
         "token": token.key,
@@ -166,6 +259,7 @@ def logout_api(request):
             status=405,
         )
     logout(request)
+
     return JsonResponse({"success": True})
 def current_user_api(request):
     user = get_authenticated_user(request)
@@ -174,12 +268,25 @@ def current_user_api(request):
             {"error": "Not authenticated"},
             status=401,
         )
+<<<<<<< HEAD
     if not user.is_active:
         return JsonResponse(
             {"error": "This account is inactive"},
             status=403,
         )
     return JsonResponse(get_user_data(user))
+=======
+
+    if getattr(user, "role", "") == "doctor":
+        user.role = "physician"
+        user.save(update_fields=["role"])
+
+    user_data = serialize_user(user)
+
+    return JsonResponse(user_data)
+
+
+>>>>>>> origin/admin-patient-managment
 @csrf_exempt
 def create_user_api(request):
     if request.method != "POST":
@@ -187,13 +294,22 @@ def create_user_api(request):
             {"error": "Method not allowed"},
             status=405,
         )
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/admin-patient-managment
     permission_error = admin_error_response(
         request,
         "create users",
     )
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/admin-patient-managment
     if permission_error:
         return permission_error
     data, error = parse_json_body(request)
+
     if error:
         return error
     username = data.get("username")
@@ -212,6 +328,11 @@ def create_user_api(request):
             status=400,
         )
     username = username.strip()
+<<<<<<< HEAD
+=======
+    role = normalize_role(role)
+
+>>>>>>> origin/admin-patient-managment
     if role not in ALLOWED_ROLES:
         return JsonResponse(
             {"error": "Invalid role"},
@@ -236,6 +357,7 @@ def create_user_api(request):
         username=username,
         password=password,
     )
+
     user.role = role
     user.is_superuser = is_superuser
     user.is_staff = is_superuser or role == "admin"
@@ -256,6 +378,7 @@ def list_users_api(request):
         request,
         "view users",
     )
+<<<<<<< HEAD
     if permission_error:
         return permission_error
     users = User.objects.all().order_by("username")
@@ -265,6 +388,33 @@ def list_users_api(request):
             for user in users
         ]
     })
+=======
+
+    if permission_error:
+        return permission_error
+
+    # Migrate existing doctor records to physician.
+    # Visitor roles are not automatically converted to CEO.
+    User.objects.filter(role="doctor").update(role="physician")
+
+    users = list(
+        User.objects.values(
+            "id",
+            "username",
+            "role",
+            "is_superuser",
+            "is_staff",
+            "is_active",
+        ).order_by("username")
+    )
+
+    for item in users:
+        item["role"] = normalize_role(item.get("role"))
+
+    return JsonResponse({"users": users})
+
+
+>>>>>>> origin/admin-patient-managment
 @csrf_exempt
 def update_user_api(request, user_id):
     if request.method != "PUT":
@@ -272,10 +422,18 @@ def update_user_api(request, user_id):
             {"error": "Method not allowed"},
             status=405,
         )
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/admin-patient-managment
     permission_error = admin_error_response(
         request,
         "update users",
     )
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/admin-patient-managment
     if permission_error:
         return permission_error
     try:
@@ -286,13 +444,22 @@ def update_user_api(request, user_id):
             status=404,
         )
     data, error = parse_json_body(request)
+
     if error:
         return error
+<<<<<<< HEAD
     # Username is optional in partial updates.
+=======
+
+>>>>>>> origin/admin-patient-managment
     new_username = data.get(
         "username",
         target_user.username,
     )
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/admin-patient-managment
     if (
         not isinstance(new_username, str)
         or not new_username.strip()
@@ -311,18 +478,47 @@ def update_user_api(request, user_id):
             {"error": "Username already exists"},
             status=400,
         )
+<<<<<<< HEAD
     new_role = data.get("role", target_user.role)
+=======
+
+    role_was_supplied = "role" in data
+
+    new_role = normalize_role(
+        data.get("role", target_user.role)
+    )
+
+>>>>>>> origin/admin-patient-managment
     new_is_superuser = data.get(
         "is_superuser",
         target_user.is_superuser,
     )
+<<<<<<< HEAD
     new_is_active = data.get(
         "is_active",
         target_user.is_active,
     )
     if new_role not in ALLOWED_ROLES:
+=======
+
+    # New assignments must use supported roles.
+    # An unchanged legacy role is temporarily allowed so
+    # existing accounts can still have other details edited.
+    if (
+        new_role not in ALLOWED_ROLES
+        and (
+            role_was_supplied
+            or new_role not in LEGACY_ROLES
+        )
+    ):
+>>>>>>> origin/admin-patient-managment
         return JsonResponse(
-            {"error": "Invalid role"},
+            {
+                "error": (
+                    "Invalid role. Choose one of the "
+                    "currently supported roles."
+                )
+            },
             status=400,
         )
     if not isinstance(new_is_superuser, bool):
@@ -377,6 +573,7 @@ def update_user_api(request, user_id):
     target_user.is_staff = (
         new_is_superuser or new_role == "admin"
     )
+<<<<<<< HEAD
     target_user.is_active = new_is_active
     if display_name is not None:
         cleaned_name = display_name.strip() or new_username
@@ -384,6 +581,9 @@ def update_user_api(request, user_id):
             target_user.display_name = cleaned_name
         elif hasattr(target_user, "name"):
             target_user.name = cleaned_name
+=======
+
+>>>>>>> origin/admin-patient-managment
     target_user.save()
     # Invalidate API tokens when an account is deactivated.
     if not target_user.is_active:
@@ -393,8 +593,13 @@ def update_user_api(request, user_id):
         "message": (
             f"User '{target_user.username}' updated successfully"
         ),
+<<<<<<< HEAD
         "user": get_user_data(target_user),
         **get_user_data(target_user),
+=======
+        "username": target_user.username,
+        "role": normalize_role(target_user.role),
+>>>>>>> origin/admin-patient-managment
     })
 @csrf_exempt
 def delete_user_api(request, user_id):
@@ -411,6 +616,7 @@ def delete_user_api(request, user_id):
         request,
         "deactivate users",
     )
+
     if permission_error:
         return permission_error
     try:
@@ -443,9 +649,15 @@ def delete_user_api(request, user_id):
             status=400,
         )
     username = target_user.username
+
     target_user.is_active = False
     target_user.save(update_fields=["is_active"])
+<<<<<<< HEAD
     # Revoke API access without deleting the user's records.
+=======
+
+    # Revoke API access without deleting the user or their records.
+>>>>>>> origin/admin-patient-managment
     Token.objects.filter(user=target_user).delete()
     return JsonResponse({
         "success": True,
@@ -466,6 +678,7 @@ def set_user_active_api(request, user_id):
         request,
         "change account status",
     )
+
     if permission_error:
         return permission_error
     try:
@@ -476,6 +689,7 @@ def set_user_active_api(request, user_id):
             status=404,
         )
     data, error = parse_json_body(request)
+
     if error:
         return error
     is_active = data.get("is_active")
@@ -525,6 +739,7 @@ def change_user_password_api(request, user_id):
         request,
         "change user passwords",
     )
+
     if permission_error:
         return permission_error
     try:
@@ -535,9 +750,14 @@ def change_user_password_api(request, user_id):
             status=404,
         )
     data, error = parse_json_body(request)
+
     if error:
         return error
     new_password = data.get("new_password")
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/admin-patient-managment
     if (
         not isinstance(new_password, str)
         or not new_password.strip()
@@ -555,6 +775,7 @@ def change_user_password_api(request, user_id):
         )
     target_user.set_password(new_password)
     target_user.save(update_fields=["password"])
+
     Token.objects.filter(user=target_user).delete()
     return JsonResponse({
         "success": True,
@@ -585,6 +806,7 @@ def change_my_password_api(request):
             status=403,
         )
     data, error = parse_json_body(request)
+
     if error:
         return error
     current_password = data.get("current_password")

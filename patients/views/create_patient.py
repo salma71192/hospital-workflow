@@ -24,9 +24,30 @@ def create_patient(request):
         data.get("patient_id")
     )
 
+    insurance_provider = (
+        data.get("insurance_provider") or ""
+    ).strip()
+
     if not name or not patient_id:
         return JsonResponse(
             {"error": "Name and patient ID are required"},
+            status=400,
+        )
+
+    # Validate the insurance provider.
+    allowed_insurance_providers = {
+        "Thiqa",
+        "Daman",
+    }
+
+    if insurance_provider not in allowed_insurance_providers:
+        return JsonResponse(
+            {
+                "error": (
+                    "Please select a valid insurance provider: "
+                    "Thiqa or Daman"
+                )
+            },
             status=400,
         )
 
@@ -38,6 +59,7 @@ def create_patient(request):
             patient = Patient.objects.create(
                 name=name,
                 patient_id=patient_id,
+                insurance_provider=insurance_provider,
                 registered_by=request.user,
                 registered_by_role=(
                     getattr(request.user, "role", "")
