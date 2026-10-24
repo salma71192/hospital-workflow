@@ -2,6 +2,7 @@
 import React, { useMemo, useState, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminStatisticsSection from "../components/admin/AdminStatisticsSection";
+import EvaluationTrackerSection from "../components/assignments/EvaluationTrackerSection";
 
 export default function RehabManagerDashboard({
   user,
@@ -13,6 +14,7 @@ export default function RehabManagerDashboard({
   const [view, setView] = useState("home");
 
   const currentUser = actingAs || user;
+
   const displayName =
     currentUser?.name ||
     currentUser?.display_name ||
@@ -32,29 +34,29 @@ export default function RehabManagerDashboard({
       label: "Evaluation Tracker",
       description: "Monitor evaluations and patient allocation.",
       icon: "☷",
-      path: "/admin/evaluation-tracker",
       color: "purple",
+      action: "evaluation-tracker",
     },
     {
       label: "Physiotherapist Performance",
       description: "Review therapist activity and performance.",
       icon: "↗",
-      path: "/admin/performance",
       color: "green",
+      path: "/admin/performance",
     },
     {
       label: "Leave Management",
       description: "Review staff leave and coverage.",
       icon: "▣",
-      path: "/admin/leaves",
       color: "orange",
+      path: "/admin/leaves",
     },
     {
       label: "User Administration",
       description: "Manage application users and access.",
       icon: "♙",
-      path: "/admin",
       color: "red",
+      path: "/admin",
     },
   ];
 
@@ -218,25 +220,38 @@ export default function RehabManagerDashboard({
     ];
   }, []);
 
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const openAdministration = () => {
     setView("administration");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
 
   const goHome = () => {
     setView("home");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
 
-  // Open the real statistics component within this dashboard.
   const openStatistics = () => {
     setView("statistics");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
+  };
+
+  const openEvaluationTracker = () => {
+    setView("evaluation-tracker");
+    scrollToTop();
   };
 
   const handleMenuItem = (item) => {
     if (item.action === "statistics") {
       openStatistics();
+      return;
+    }
+
+    if (item.action === "evaluation-tracker") {
+      openEvaluationTracker();
       return;
     }
 
@@ -361,11 +376,11 @@ export default function RehabManagerDashboard({
         .hw-statistics-body > * { max-width: 100%; }
         .hw-back-link { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 10px 13px; border: 1px solid #dce5f0; border-radius: 10px; background: #fff; color: #3c5877; font-size: 12px; font-weight: 800; cursor: pointer; }
         .hw-back-link:hover { border-color: #bcd0f0; background: #f8fbff; }
+        .hw-dashboard button:focus-visible { outline: 3px solid rgba(52,120,246,.3); outline-offset: 3px; }
         .hw-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e1e8f1; }
         .hw-footer-brand { color: #526b86; font-size: 11px; font-weight: 900; letter-spacing: .9px; }
         .hw-footer-brand span { margin-right: 7px; color: #3478f6; font-size: 16px; }
         .hw-footer-note { color: #8a99ab; font-size: 10px; line-height: 1.7; }
-        .hw-dashboard button:focus-visible { outline: 3px solid rgba(52,120,246,.3); outline-offset: 3px; }
         @media (max-width: 760px) {
           .hw-shell { padding: 20px 15px; }
           .hw-hero { grid-template-columns: minmax(0, 1fr); padding: 30px 25px; }
@@ -417,7 +432,9 @@ export default function RehabManagerDashboard({
 
         <header className="hw-header">
           <div className="hw-brand">
-            <div className="hw-brand-logo" aria-hidden="true">✚</div>
+            <div className="hw-brand-logo" aria-hidden="true">
+              ✚
+            </div>
             <div>
               <div className="hw-brand-title">
                 HOSPITAL <span>WORKFLOW</span>
@@ -430,7 +447,9 @@ export default function RehabManagerDashboard({
 
           <div className="hw-header-actions">
             <div className="hw-user-pill">
-              <span className="hw-avatar" aria-hidden="true">♙</span>
+              <span className="hw-avatar" aria-hidden="true">
+                ♙
+              </span>
               <span>{displayName}</span>
             </div>
             <button
@@ -493,9 +512,13 @@ export default function RehabManagerDashboard({
                 onClick={openAdministration}
                 aria-label="Open Administration Dashboard"
               >
-                <div className="hw-admin-icon" aria-hidden="true">▦</div>
+                <div className="hw-admin-icon" aria-hidden="true">
+                  ▦
+                </div>
                 <div className="hw-admin-content">
-                  <div className="hw-admin-kicker">MANAGEMENT CENTER</div>
+                  <div className="hw-admin-kicker">
+                    MANAGEMENT CENTER
+                  </div>
                   <h3 className="hw-admin-title">
                     Administration Dashboard
                   </h3>
@@ -539,7 +562,9 @@ export default function RehabManagerDashboard({
                   {dailyMessage.category}
                 </div>
                 <h3 className="hw-tip-title">{dailyMessage.title}</h3>
-                <p className="hw-tip-message">{dailyMessage.message}</p>
+                <p className="hw-tip-message">
+                  {dailyMessage.message}
+                </p>
               </div>
 
               <div className="hw-tip-footer">
@@ -562,7 +587,11 @@ export default function RehabManagerDashboard({
                   Welcome, {displayName}. Choose a management module below.
                 </p>
               </div>
-              <button type="button" className="hw-btn" onClick={goHome}>
+              <button
+                type="button"
+                className="hw-btn"
+                onClick={goHome}
+              >
                 ← Back to Home
               </button>
             </section>
@@ -570,7 +599,9 @@ export default function RehabManagerDashboard({
             <section className="hw-section">
               <div className="hw-section-header">
                 <div>
-                  <div className="hw-section-label">MANAGEMENT MODULES</div>
+                  <div className="hw-section-label">
+                    MANAGEMENT MODULES
+                  </div>
                   <h2 className="hw-section-title">
                     Select a department tool
                   </h2>
@@ -613,9 +644,9 @@ export default function RehabManagerDashboard({
                 <div>
                   <strong>Navigation note</strong>
                   <br />
-                  Rehabilitation Statistics opens the statistics component
-                  inside this Administration section. The other cards
-                  continue to use their configured routes.
+                  Rehabilitation Statistics and Evaluation Tracker open
+                  inside this dashboard. The other cards continue to use
+                  their configured routes.
                 </div>
               </div>
             </section>
@@ -643,7 +674,11 @@ export default function RehabManagerDashboard({
                   and department totals.
                 </p>
               </div>
-              <button type="button" className="hw-btn" onClick={goHome}>
+              <button
+                type="button"
+                className="hw-btn"
+                onClick={goHome}
+              >
                 ← Back to Home
               </button>
             </section>
@@ -663,6 +698,57 @@ export default function RehabManagerDashboard({
                   }
                 >
                   <AdminStatisticsSection />
+                </Suspense>
+              </div>
+            </div>
+          </main>
+        )}
+
+        {view === "evaluation-tracker" && (
+          <main className="hw-admin-page">
+            <button
+              type="button"
+              className="hw-back-link"
+              onClick={() => setView("administration")}
+            >
+              ← Back to Administration
+            </button>
+
+            <section className="hw-page-banner">
+              <div className="hw-page-banner-content">
+                <div className="hw-page-banner-kicker">
+                  REHABILITATION / EVALUATION MONITORING
+                </div>
+                <h1>Evaluation Tracker</h1>
+                <p>
+                  Monitor physiotherapy evaluations, therapist activity,
+                  and patient allocation.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="hw-btn"
+                onClick={goHome}
+              >
+                ← Back to Home
+              </button>
+            </section>
+
+            <div className="hw-statistics-wrapper">
+              <div className="hw-statistics-topbar">
+                <strong>Physiotherapy Evaluation Tracker</strong>
+                <span>Evaluation monitoring and allocation</span>
+              </div>
+
+              <div className="hw-statistics-body">
+                <Suspense
+                  fallback={
+                    <div style={{ padding: 30, textAlign: "center" }}>
+                      Loading Evaluation Tracker…
+                    </div>
+                  }
+                >
+                  <EvaluationTrackerSection />
                 </Suspense>
               </div>
             </div>
