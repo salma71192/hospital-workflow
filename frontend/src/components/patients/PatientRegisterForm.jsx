@@ -1,6 +1,4 @@
-
 import React from "react";
-
 export default function PatientRegisterForm({
   patientForm,
   setPatientForm,
@@ -12,7 +10,6 @@ export default function PatientRegisterForm({
       [field]: value,
     }));
   };
-
   return (
     <div style={styles.card}>
       <div style={styles.header}>
@@ -21,17 +18,15 @@ export default function PatientRegisterForm({
           <h2 style={styles.cardTitle}>Register New Patient</h2>
           <p style={styles.helperText}>
             Create a new patient file by entering the patient's
-            name, file number, and insurance provider.
+            name, gender, file number, and insurance provider.
             Registration user and role are recorded automatically.
           </p>
         </div>
-
         <div style={styles.headerBadge}>
           <span style={styles.headerIcon}>+</span>
           <span>New Registration</span>
         </div>
       </div>
-
       <div style={styles.infoBanner}>
         <span style={styles.infoIcon}>i</span>
         <div>
@@ -39,12 +34,11 @@ export default function PatientRegisterForm({
             Patient File Creation
           </strong>
           <p style={styles.infoText}>
-            Please verify the patient name, file number, and
-            insurance provider before submitting.
+            Please verify the patient name, gender, file number,
+            and insurance provider before submitting.
           </p>
         </div>
       </div>
-
       <form onSubmit={onSubmit} style={styles.form}>
         <div style={styles.sectionHeader}>
           <span style={styles.sectionIcon}>01</span>
@@ -57,14 +51,12 @@ export default function PatientRegisterForm({
             </p>
           </div>
         </div>
-
         <div style={styles.fieldsGrid}>
           {/* Patient Name */}
           <div style={styles.fieldGroup}>
             <label htmlFor="patient-name" style={styles.label}>
               Patient Name <span style={styles.required}>*</span>
             </label>
-
             <input
               id="patient-name"
               type="text"
@@ -78,12 +70,35 @@ export default function PatientRegisterForm({
               autoComplete="off"
               required
             />
-
             <span style={styles.fieldHint}>
               Enter the patient's full name.
             </span>
           </div>
-
+          {/* Gender */}
+          <div style={styles.fieldGroup}>
+            <label htmlFor="patient-gender" style={styles.label}>
+              Gender <span style={styles.required}>*</span>
+            </label>
+            <select
+              id="patient-gender"
+              name="gender"
+              value={patientForm.gender || ""}
+              onChange={(e) =>
+                handleChange("gender", e.target.value)
+              }
+              style={styles.select}
+              required
+            >
+              <option value="" disabled>
+                Select gender
+              </option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+            <span style={styles.fieldHint}>
+              Select the patient's gender.
+            </span>
+          </div>
           {/* File Number */}
           <div style={styles.fieldGroup}>
             <label
@@ -92,7 +107,6 @@ export default function PatientRegisterForm({
             >
               File Number <span style={styles.required}>*</span>
             </label>
-
             <input
               id="patient-file-number"
               type="text"
@@ -106,12 +120,10 @@ export default function PatientRegisterForm({
               autoComplete="off"
               required
             />
-
             <span style={styles.fieldHint}>
               Use the patient's existing hospital file number.
             </span>
           </div>
-
           {/* Insurance Provider */}
           <div style={styles.fieldGroup}>
             <label
@@ -121,7 +133,6 @@ export default function PatientRegisterForm({
               Insurance Provider{" "}
               <span style={styles.required}>*</span>
             </label>
-
             <select
               id="insurance-provider"
               name="insurance_provider"
@@ -141,18 +152,15 @@ export default function PatientRegisterForm({
               <option value="Thiqa">Thiqa</option>
               <option value="Daman">Daman</option>
             </select>
-
             <span style={styles.fieldHint}>
               Select the patient's insurance provider.
             </span>
           </div>
         </div>
-
         <div style={styles.footer}>
           <div style={styles.requiredNote}>
             <span style={styles.required}>*</span> Required fields
           </div>
-
           <button type="submit" style={styles.primaryButton}>
             <span style={styles.buttonIcon}>+</span>
             Register Patient
@@ -160,7 +168,6 @@ export default function PatientRegisterForm({
           </button>
         </div>
       </form>
-
       <div style={styles.bottomBadge}>
         <span style={styles.secureIcon}>✓</span>
         <span>Reception Registration</span>
@@ -170,7 +177,6 @@ export default function PatientRegisterForm({
     </div>
   );
 }
-
 const styles = {
   card: {
     background: "#ffffff",
@@ -184,7 +190,6 @@ const styles = {
     boxSizing: "border-box",
     color: "#0f172a",
   },
-
   header: {
     display: "flex",
     justifyContent: "space-between",
@@ -192,7 +197,6 @@ const styles = {
     gap: "16px",
     flexWrap: "wrap",
   },
-
   eyebrow: {
     display: "inline-block",
     fontSize: "11px",
@@ -205,7 +209,6 @@ const styles = {
     padding: "6px 10px",
     marginBottom: "12px",
   },
-
   cardTitle: {
     margin: "0 0 8px",
     fontSize: "clamp(22px, 3vw, 28px)",
@@ -213,7 +216,6 @@ const styles = {
     lineHeight: 1.25,
     color: "#0f172a",
   },
-
   helperText: {
     margin: 0,
     fontSize: "14px",
@@ -221,7 +223,6 @@ const styles = {
     color: "#64748b",
     maxWidth: "650px",
   },
-
   headerBadge: {
     display: "inline-flex",
     alignItems: "center",
@@ -235,7 +236,6 @@ const styles = {
     fontWeight: "800",
     whiteSpace: "nowrap",
   },
-
   headerIcon: {
     display: "inline-flex",
     alignItems: "center",
@@ -248,7 +248,6 @@ const styles = {
     fontSize: "19px",
     lineHeight: 1,
   },
-
   infoBanner: {
     display: "flex",
     alignItems: "flex-start",
@@ -259,7 +258,6 @@ const styles = {
       "linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%)",
     border: "1px solid #dbeafe",
   },
-
   infoIcon: {
     display: "flex",
     alignItems: "center",
@@ -274,7 +272,6 @@ const styles = {
     fontWeight: "800",
     fontStyle: "italic",
   },
-
   infoTitle: {
     display: "block",
     color: "#1e40af",
@@ -282,25 +279,21 @@ const styles = {
     fontWeight: "800",
     marginBottom: "4px",
   },
-
   infoText: {
     margin: 0,
     color: "#475569",
     fontSize: "13px",
     lineHeight: 1.6,
   },
-
   form: {
     display: "grid",
     gap: "20px",
   },
-
   sectionHeader: {
     display: "flex",
     alignItems: "center",
     gap: "12px",
   },
-
   sectionIcon: {
     display: "flex",
     alignItems: "center",
@@ -314,45 +307,38 @@ const styles = {
     fontSize: "13px",
     fontWeight: "900",
   },
-
   sectionTitle: {
     margin: 0,
     color: "#0f172a",
     fontSize: "16px",
     fontWeight: "800",
   },
-
   sectionSubtitle: {
     margin: "4px 0 0",
     color: "#64748b",
     fontSize: "12px",
   },
-
   fieldsGrid: {
     display: "grid",
     gridTemplateColumns:
       "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
     gap: "18px",
   },
-
   fieldGroup: {
     display: "grid",
     alignContent: "start",
     gap: "8px",
     minWidth: 0,
   },
-
   label: {
     fontSize: "13px",
     fontWeight: "800",
     color: "#334155",
   },
-
   required: {
     color: "#dc2626",
     fontWeight: "900",
   },
-
   input: {
     display: "block",
     padding: "13px 14px",
@@ -367,7 +353,6 @@ const styles = {
     boxSizing: "border-box",
     outline: "none",
   },
-
   select: {
     display: "block",
     padding: "13px 14px",
@@ -383,13 +368,11 @@ const styles = {
     outline: "none",
     cursor: "pointer",
   },
-
   fieldHint: {
     color: "#94a3b8",
     fontSize: "11px",
     lineHeight: 1.5,
   },
-
   footer: {
     display: "flex",
     alignItems: "center",
@@ -399,13 +382,11 @@ const styles = {
     paddingTop: "18px",
     borderTop: "1px solid #e2e8f0",
   },
-
   requiredNote: {
     color: "#64748b",
     fontSize: "12px",
     fontWeight: "600",
   },
-
   primaryButton: {
     display: "inline-flex",
     alignItems: "center",
@@ -423,18 +404,15 @@ const styles = {
     boxShadow: "0 5px 12px rgba(37, 99, 235, 0.20)",
     maxWidth: "100%",
   },
-
   buttonIcon: {
     fontSize: "19px",
     lineHeight: 1,
   },
-
   buttonArrow: {
     fontSize: "18px",
     lineHeight: 1,
     marginLeft: "3px",
   },
-
   bottomBadge: {
     display: "flex",
     alignItems: "center",
@@ -446,7 +424,6 @@ const styles = {
     fontSize: "11px",
     fontWeight: "700",
   },
-
   secureIcon: {
     display: "inline-flex",
     alignItems: "center",
@@ -459,7 +436,6 @@ const styles = {
     fontSize: "12px",
     fontWeight: "900",
   },
-
   dot: {
     color: "#cbd5e1",
   },
