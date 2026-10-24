@@ -1,328 +1,551 @@
 
 import React, { useMemo, useState } from "react";
 
+/* =========================================================
+   PREMIUM NAVY + TEAL THEME
+========================================================= */
+
 const COLORS = {
-  navy: "#234268",
-  text: "#294563",
-  muted: "#718096",
-  subtle: "#9aa9ba",
-  border: "#e7ecf3",
-  borderStrong: "#d8e1ed",
-  surface: "#ffffff",
-  surfaceSoft: "#fbfcfe",
-  header: "#f4f7fb",
-  blue: "#3975d7",
-  blueBg: "#f0f5ff",
-  sky: "#2382b4",
-  skyBg: "#eff9ff",
-  orange: "#c96b35",
-  orangeBg: "#fff7f0",
-  purple: "#8b6bd6",
-  purpleBg: "#f7f4ff",
-  green: "#218b70",
-  greenBg: "#effaf5",
-  red: "#c65e68",
-  redBg: "#fff3f4",
-  slate: "#65758b",
-  slateBg: "#f3f6fa",
+  navy: "#142B4A",
+  navyLight: "#203E63",
+  text: "#344A63",
+  muted: "#71839A",
+  subtle: "#9AA9BA",
+  border: "#E2EAF2",
+  borderStrong: "#CCD9E8",
+  surface: "#FFFFFF",
+  surfaceSoft: "#F6F9FD",
+  background: "#F3F7FC",
+
+  blue: "#3977D5",
+  blueBg: "#EDF4FF",
+  sky: "#1686B5",
+  skyBg: "#EAF8FE",
+  teal: "#138A83",
+  tealBg: "#E7F8F5",
+  orange: "#C87532",
+  orangeBg: "#FFF4E8",
+  purple: "#8065C9",
+  purpleBg: "#F2EDFF",
+  green: "#218564",
+  greenBg: "#E8F7EF",
+  red: "#C65363",
+  redBg: "#FFF0F2",
+  slate: "#62758D",
+  slateBg: "#EEF2F7",
 };
 
 const styles = {
   stack: {
     display: "grid",
-    gap: 20,
+    gap: 22,
+    minWidth: 0,
+    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Arial, sans-serif",
+    color: COLORS.text,
+  },
+
+  /* FILTER PANEL */
+  filter: {
+    position: "relative",
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(260px, 100%), 1fr))",
+    gap: 18,
+    padding: 24,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 20,
+    background: "linear-gradient(135deg, #FFFFFF 0%, #F5F9FF 100%)",
+    boxShadow: "0 8px 28px rgba(20,43,74,0.055)",
+    overflow: "hidden",
     minWidth: 0,
   },
-  filter: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-    alignItems: "end",
-    gap: 16,
-    padding: 22,
-    background: COLORS.surface,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: 18,
-    boxShadow: "0 5px 20px rgba(35, 66, 104, 0.035)",
+
+  filterAccent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    background: "linear-gradient(90deg, #142B4A, #168A83, #67B9B1)",
   },
-  filterHeading: {
+
+  filterTop: {
     gridColumn: "1 / -1",
     display: "flex",
     alignItems: "center",
-    gap: 10,
+    gap: 15,
+    paddingBottom: 19,
+    borderBottom: `1px solid ${COLORS.border}`,
+  },
+
+  filterIcon: {
+    display: "grid",
+    placeItems: "center",
+    width: 50,
+    height: 50,
+    flexShrink: 0,
+    borderRadius: 15,
+    background: "linear-gradient(145deg, #173756, #245777)",
+    color: "#FFFFFF",
+    fontSize: 22,
+    boxShadow: "0 5px 13px rgba(20,43,74,.17)",
+  },
+
+  filterHeading: {
     margin: 0,
     color: COLORS.navy,
-    fontSize: 18,
-    fontWeight: 800,
+    fontSize: 20,
+    fontWeight: 850,
+    letterSpacing: "-0.45px",
   },
+
+  filterDescription: {
+    marginTop: 5,
+    color: COLORS.muted,
+    fontSize: 12,
+    lineHeight: 1.7,
+  },
+
   filterLabel: {
     display: "grid",
-    gap: 8,
+    alignContent: "start",
+    gap: 12,
     minWidth: 0,
+    padding: 18,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 16,
+    background: "#FFFFFF",
+    boxShadow: "0 3px 12px rgba(20,43,74,.025)",
   },
+
   filterCaption: {
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    color: COLORS.navy,
     fontSize: 12,
-    fontWeight: 750,
-    color: "#687b91",
+    fontWeight: 800,
   },
+
+  filterCaptionIcon: {
+    display: "grid",
+    placeItems: "center",
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    background: COLORS.tealBg,
+    color: COLORS.teal,
+    fontSize: 15,
+  },
+
   filterInput: {
     boxSizing: "border-box",
+    display: "block",
     width: "100%",
-    minHeight: 43,
-    padding: "10px 12px",
+    minHeight: 48,
+    padding: "11px 13px",
     border: `1px solid ${COLORS.borderStrong}`,
-    borderRadius: 10,
+    borderRadius: 11,
+    background: "#F8FAFD",
+    color: COLORS.navy,
+    fontFamily: "inherit",
     fontSize: 14,
-    fontWeight: 600,
-    color: COLORS.text,
-    background: COLORS.surface,
+    fontWeight: 750,
+    outlineColor: COLORS.teal,
+    cursor: "pointer",
+    colorScheme: "light",
   },
+
+  filterHint: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 7,
+    color: COLORS.muted,
+    fontSize: 11,
+    lineHeight: 1.6,
+  },
+
+  filterHintDot: {
+    color: COLORS.teal,
+    fontWeight: 900,
+  },
+
+  /* REPORT PANEL */
   report: {
     display: "grid",
-    gap: 18,
+    gap: 20,
     minWidth: 0,
     padding: 22,
     background: COLORS.surface,
     border: `1px solid ${COLORS.border}`,
-    borderRadius: 18,
-    boxShadow: "0 7px 24px rgba(35, 66, 104, 0.04)",
-    fontFamily: "Inter, Arial, sans-serif",
+    borderRadius: 20,
+    boxShadow: "0 7px 25px rgba(20,43,74,.045)",
   },
+
+  reportToggle: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+    width: "100%",
+    padding: 0,
+    border: 0,
+    background: "transparent",
+    cursor: "pointer",
+    textAlign: "left",
+    font: "inherit",
+  },
+
   reportTitle: {
     margin: 0,
     color: COLORS.navy,
     fontSize: 21,
     fontWeight: 850,
-    lineHeight: 1.35,
+    lineHeight: 1.4,
+    letterSpacing: "-0.45px",
   },
+
   subtitle: {
-    marginTop: 6,
+    marginTop: 5,
     color: COLORS.muted,
-    fontSize: 13,
-    lineHeight: 1.6,
+    fontSize: 12,
+    lineHeight: 1.7,
   },
+
+  collapseIcon: {
+    display: "grid",
+    placeItems: "center",
+    flexShrink: 0,
+    width: 44,
+    height: 44,
+    border: "1px solid #D8E6F3",
+    borderRadius: 14,
+    background: "linear-gradient(145deg, #EEF5FF, #E8F7F6)",
+    color: COLORS.teal,
+    fontSize: 25,
+    fontWeight: 800,
+  },
+
+  summaryMeta: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+
+  metaBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 7,
+    padding: "7px 11px",
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 9,
+    background: "#F7F9FC",
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: 750,
+  },
+
+  statusBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 10px",
+    borderRadius: 20,
+    background: COLORS.tealBg,
+    color: COLORS.teal,
+    fontSize: 10,
+    fontWeight: 850,
+  },
+
   metricsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(155px, 100%), 1fr))",
-    gap: 12,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(185px, 100%), 1fr))",
+    gap: 13,
   },
+
   metric: {
     display: "flex",
     alignItems: "center",
     gap: 12,
     minWidth: 0,
-    padding: 16,
-    borderRadius: 14,
+    padding: 15,
+    borderRadius: 15,
     border: "1px solid",
     cursor: "pointer",
     textAlign: "left",
     font: "inherit",
     transition:
-      "background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease",
+      "transform .18s ease, box-shadow .18s ease, border-color .18s ease",
   },
+
   metricIcon: {
     display: "grid",
     placeItems: "center",
     flexShrink: 0,
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    background: "#ffffff",
+    width: 43,
+    height: 43,
+    borderRadius: 13,
+    background: "#FFFFFF",
     fontSize: 19,
     fontWeight: 850,
+    boxShadow: "0 2px 7px rgba(20,43,74,.05)",
   },
+
   metricLabel: {
-    color: COLORS.muted,
+    color: COLORS.text,
     fontSize: 11,
-    fontWeight: 750,
+    fontWeight: 800,
     lineHeight: 1.5,
+    overflowWrap: "anywhere",
   },
+
   metricValue: {
-    marginTop: 4,
+    marginTop: 5,
     color: COLORS.navy,
-    fontSize: 26,
+    fontSize: 27,
     fontWeight: 850,
-    lineHeight: 1.2,
+    lineHeight: 1.15,
     fontVariantNumeric: "tabular-nums",
   },
+
   metricDescription: {
-    marginTop: 4,
+    marginTop: 5,
     color: COLORS.muted,
     fontSize: 10,
     lineHeight: 1.5,
   },
-  dropdownPanel: {
+
+  /* REGISTRATION PANEL */
+  panel: {
     overflow: "hidden",
     border: `1px solid ${COLORS.border}`,
-    borderRadius: 15,
+    borderRadius: 17,
     background: COLORS.surface,
     minWidth: 0,
   },
-  dropdown: {
+
+  panelHeader: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     flexWrap: "wrap",
     gap: 12,
-    width: "100%",
-    padding: "16px 18px",
-    border: "none",
-    background: COLORS.surfaceSoft,
+    padding: "17px 19px",
+    background: "linear-gradient(120deg, #F2F7FD 0%, #F4FBFA 100%)",
+    borderBottom: `1px solid ${COLORS.border}`,
     color: COLORS.text,
     fontSize: 14,
     fontWeight: 800,
-    textAlign: "left",
-    boxSizing: "border-box",
   },
-  dropdownLeft: {
+
+  panelTitle: {
     display: "flex",
     alignItems: "center",
     gap: 12,
     minWidth: 0,
   },
-  dropdownIcon: {
+
+  panelIcon: {
     display: "grid",
     placeItems: "center",
-    width: 38,
-    height: 38,
+    width: 42,
+    height: 42,
     flexShrink: 0,
-    borderRadius: 11,
-    background: COLORS.skyBg,
-    color: COLORS.sky,
-    fontSize: 18,
+    borderRadius: 13,
+    background: "#FFFFFF",
+    border: `1px solid ${COLORS.border}`,
+    color: COLORS.teal,
+    fontSize: 19,
   },
+
   countBadge: {
-    padding: "6px 10px",
+    padding: "8px 12px",
+    border: "1px solid #CBEDE6",
     borderRadius: 20,
-    background: COLORS.skyBg,
-    color: "#276b92",
+    background: COLORS.tealBg,
+    color: "#11776F",
     fontSize: 11,
-    fontWeight: 800,
+    fontWeight: 850,
     whiteSpace: "nowrap",
   },
+
   registrationList: {
     display: "grid",
-    gap: 14,
-    padding: 14,
-    borderTop: `1px solid ${COLORS.border}`,
+    gap: 13,
+    padding: 17,
     minWidth: 0,
   },
+
   categorySection: {
     display: "grid",
     gap: 8,
     minWidth: 0,
   },
-  categoryHeading: {
+
+  categoryToggle: {
     display: "flex",
-    justifyContent: "space-between",
     alignItems: "center",
-    gap: 10,
-    margin: 0,
-    padding: "10px 12px",
-    borderRadius: 9,
-    fontSize: 12,
-    fontWeight: 800,
+    justifyContent: "space-between",
+    gap: 12,
+    width: "100%",
+    padding: "13px 15px",
+    border: "1px solid",
+    borderRadius: 13,
+    cursor: "pointer",
+    textAlign: "left",
+    font: "inherit",
   },
+
+  categoryToggleLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: 11,
+    minWidth: 0,
+  },
+
+  categoryIcon: {
+    display: "grid",
+    placeItems: "center",
+    width: 36,
+    height: 36,
+    flexShrink: 0,
+    borderRadius: 11,
+    background: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: 850,
+  },
+
+  categoryTitle: {
+    fontSize: 12,
+    fontWeight: 850,
+    lineHeight: 1.5,
+    overflowWrap: "anywhere",
+  },
+
+  categoryCount: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 32,
+    height: 29,
+    padding: "0 9px",
+    borderRadius: 20,
+    background: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: 850,
+  },
+
   tableScroll: {
     width: "100%",
     overflowX: "auto",
     minWidth: 0,
     WebkitOverflowScrolling: "touch",
   },
+
   tableInner: {
-    minWidth: 720,
+    minWidth: 1080,
     display: "grid",
-    gap: 8,
+    gap: 9,
+    paddingBottom: 3,
   },
-  tableHeader: {
-    display: "grid",
-    gridTemplateColumns:
-      "minmax(150px, 1.5fr) repeat(4, minmax(100px, 1fr)) 28px",
-    alignItems: "center",
-    gap: 10,
-    padding: "10px 12px",
-    borderRadius: 9,
-    background: COLORS.header,
-    color: COLORS.muted,
-    fontSize: 10,
-    fontWeight: 800,
-    textTransform: "uppercase",
-    letterSpacing: "0.35px",
-    minWidth: 0,
-  },
+
   patientRow: {
     display: "grid",
     gridTemplateColumns:
-      "minmax(150px, 1.5fr) repeat(4, minmax(100px, 1fr)) 28px",
+      "minmax(190px, 1.6fr) repeat(4, minmax(145px, 1fr)) minmax(120px, .8fr)",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
     width: "100%",
-    padding: "13px 12px",
+    minHeight: 70,
+    padding: "14px 16px",
     border: `1px solid ${COLORS.border}`,
-    borderRadius: 10,
-    background: COLORS.surface,
+    borderRadius: 12,
+    background: "#FFFFFF",
     color: COLORS.text,
-    cursor: "pointer",
-    textAlign: "left",
     boxSizing: "border-box",
   },
+
   patientName: {
+    color: COLORS.navy,
+    fontSize: 13,
+    fontWeight: 800,
+    overflowWrap: "anywhere",
+  },
+
+  patientValue: {
     color: COLORS.text,
     fontSize: 12,
-    fontWeight: 800,
-    overflowWrap: "anywhere",
-  },
-  patientValue: {
-    color: COLORS.muted,
-    fontSize: 11,
-    lineHeight: 1.5,
-    overflowWrap: "anywhere",
-  },
-  fieldCaption: {
-    display: "block",
-    marginBottom: 4,
-    color: COLORS.subtle,
-    fontSize: 9,
-    fontWeight: 800,
-    textTransform: "uppercase",
-    letterSpacing: "0.4px",
-  },
-  expandedDetails: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
-    gap: "8px 16px",
-    padding: 14,
-    marginTop: 6,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: 10,
-    background: COLORS.surfaceSoft,
-  },
-  detail: {
-    minWidth: 0,
-    color: "#53657b",
-    fontSize: 12,
+    fontWeight: 650,
     lineHeight: 1.6,
     overflowWrap: "anywhere",
-    whiteSpace: "pre-wrap",
   },
+
+  fieldCaption: {
+    display: "block",
+    marginBottom: 5,
+    color: COLORS.subtle,
+    fontSize: 9,
+    fontWeight: 850,
+    textTransform: "uppercase",
+    letterSpacing: ".6px",
+  },
+
+  openFileButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    width: "100%",
+    minHeight: 38,
+    padding: "8px 10px",
+    border: "1px solid #C9DDF8",
+    borderRadius: 10,
+    background: "linear-gradient(135deg, #EFF5FF, #EAF8F7)",
+    color: COLORS.blue,
+    fontSize: 11,
+    fontWeight: 850,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
   notice: {
-    padding: "13px 15px",
-    borderRadius: 11,
-    background: COLORS.surfaceSoft,
+    padding: "14px 16px",
+    borderRadius: 12,
+    background: "#F6F9FD",
     border: `1px solid ${COLORS.border}`,
     color: COLORS.muted,
     fontSize: 12,
-    lineHeight: 1.7,
+    lineHeight: 1.8,
   },
+
   loading: {
-    padding: 22,
-    borderRadius: 10,
-    background: COLORS.surfaceSoft,
-    border: "1px dashed #d3dce8",
+    padding: 24,
+    borderRadius: 12,
+    background: "#F7F9FC",
+    border: `1px dashed ${COLORS.borderStrong}`,
     color: COLORS.muted,
     textAlign: "center",
     fontSize: 13,
+    lineHeight: 1.8,
+  },
+
+  expandAllButton: {
+    border: `1px solid ${COLORS.borderStrong}`,
+    borderRadius: 10,
+    background: "#FFFFFF",
+    color: COLORS.navy,
+    padding: "9px 12px",
+    fontSize: 11,
+    fontWeight: 850,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
 };
+
+/* =========================================================
+   REGISTRATION CATEGORIES
+========================================================= */
 
 const CATEGORY_GROUPS = [
   {
@@ -418,97 +641,71 @@ const OTHER_GROUP = {
   background: COLORS.slateBg,
 };
 
-const FIELD_LABELS = {
-  id: "Registration ID",
-  assignment_id: "Assignment ID",
-  registration_id: "Registration ID",
-  patient_id: "Patient ID",
-  patient_name: "Patient name",
-  patient_full_name: "Patient name",
-  full_name: "Full name",
-  display_name: "Display name",
-  file_number: "File number",
-  file_no: "File number",
-  file_num: "File number",
-  file_number_id: "File number",
-  patient_file_number: "File number",
-  patient_file_no: "File number",
-  medical_file_number: "File number",
-  medical_record_number: "File number",
-  mrn: "File number",
-  visit_number: "Visit number",
-  visit_no: "Visit number",
-  visit_count: "Visit number",
-  session_number: "Visit number",
-  speciality: "Speciality",
-  specialty: "Speciality",
-  speciality_name: "Speciality",
-  specialty_name: "Speciality",
-  department: "Department",
-  category: "Category",
-  category_label: "Category",
-  category_display: "Category",
-  registration_type: "Registration type",
-  status: "Status",
-  appointment_status: "Appointment status",
-  visit_status: "Visit status",
-  registration_status: "Registration status",
-  date: "Date",
-  appointment_date: "Appointment date",
-  registration_date: "Registration date",
-  scheduled_date: "Scheduled date",
-  appointment_datetime: "Appointment date and time",
-  scheduled_at: "Scheduled at",
-  registration_datetime: "Registration date and time",
-  time: "Time",
-  appointment_time: "Appointment time",
-  scheduled_time: "Scheduled time",
-  start_time: "Start time",
-  end_time: "End time",
-  therapist_id: "Therapist ID",
-  therapist_name: "Therapist",
-  physio_name: "Physiotherapist",
-  physiotherapist_name: "Physiotherapist",
-  therapist_username: "Therapist username",
-  notes: "Notes",
-  remarks: "Remarks",
-  reason: "Reason",
-  diagnosis: "Diagnosis",
-  service: "Service",
-  visit_type: "Visit type",
-  payment_type: "Payment type",
-  amount: "Amount",
-  created_at: "Created at",
-  updated_at: "Updated at",
-};
-
-const HIDDEN_FIELDS = new Set([
-  "patient",
-  "therapist",
-  "user",
-  "created_by",
-  "updated_by",
-]);
-
 const FILE_NUMBER_KEYS = [
   "file_number",
   "file_no",
   "file_num",
-  "patient_file_number",
-  "patient_file_no",
-  "medical_file_number",
-  "medical_record_number",
-  "mrn",
-  "file_number_id",
   "fileNumber",
   "fileNo",
+  "patient_file_number",
+  "patient_file_no",
+  "patient_file_num",
+  "medical_file_number",
+  "medical_file_no",
+  "medical_record_number",
+  "medical_record_no",
+  "medicalRecordNumber",
+  "mrn",
   "mrn_number",
+  "patient_mrn",
+  "chart_number",
+  "chart_no",
+  "record_number",
+  "record_no",
+  "patient_number",
+  "file_number_id",
+  "file_id",
+  "medical_record",
+  "patient_file",
+  "folder_number",
+  "folder_no",
+];
+
+const VISIT_NUMBER_KEYS = [
+  "visit_number",
+  "visit_no",
+  "visit_count",
+  "session_number",
+  "visitNumber",
+  "visitNo",
+  "number_of_visits",
+  "visit_sequence",
+  "visit_index",
+  "session_no",
+  "appointment_number",
+];
+
+const SPECIALITY_KEYS = [
+  "speciality",
+  "specialty",
+  "speciality_name",
+  "specialty_name",
+  "speciality_display",
+  "specialty_display",
+  "department_name",
+  "service_name",
+  "service",
+  "department",
+  "clinic_specialty",
+  "clinical_speciality",
+  "service_type",
 ];
 
 const DATE_KEYS = [
   "appointment_date",
   "scheduled_date",
   "registration_date",
+  "created_date",
   "date",
   "appointment_datetime",
   "scheduled_at",
@@ -516,7 +713,20 @@ const DATE_KEYS = [
   "appointment_at",
   "visit_date",
   "service_date",
+  "session_date",
   "created_at",
+  "date_created",
+  "start_date",
+  "start_datetime",
+  "booking_date",
+  "assigned_date",
+  "registered_at",
+  "assignment_date",
+  "assigned_at",
+  "created",
+  "datetime",
+  "timestamp",
+  "visit_datetime",
 ];
 
 const CATEGORY_KEYS = [
@@ -529,6 +739,10 @@ const CATEGORY_KEYS = [
   "task_type",
 ];
 
+/* =========================================================
+   DATA HELPERS
+========================================================= */
+
 function normalizeCategory(value) {
   return String(value ?? "")
     .trim()
@@ -538,19 +752,188 @@ function normalizeCategory(value) {
     .replace(/[^\w]/g, "");
 }
 
-function getCategoryValues(item) {
-  return CATEGORY_KEYS.map((key) => normalizeCategory(item?.[key])).filter(
-    Boolean
-  );
+function normalizeKey(key) {
+  return String(key).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function getCategory(item) {
-  return getCategoryValues(item)[0] ?? "";
+function scalarValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value !== "object") return value;
+
+  for (const key of [
+    "value",
+    "number",
+    "file_number",
+    "file_no",
+    "fileNumber",
+    "label",
+    "display",
+    "display_name",
+    "name",
+    "title",
+    "date",
+  ]) {
+    if (
+      value[key] !== null &&
+      value[key] !== undefined &&
+      value[key] !== ""
+    ) {
+      return typeof value[key] === "object"
+        ? scalarValue(value[key])
+        : value[key];
+    }
+  }
+
+  return "";
+}
+
+function getNestedSources(item) {
+  if (!item || typeof item !== "object") return [];
+
+  const sources = [];
+  const queue = [{ value: item, depth: 0 }];
+  const visited = new Set();
+
+  while (queue.length) {
+    const { value, depth } = queue.shift();
+
+    if (!value || typeof value !== "object" || visited.has(value)) continue;
+    visited.add(value);
+
+    if (Array.isArray(value)) {
+      if (depth < 5) {
+        value.forEach((entry) => {
+          if (entry && typeof entry === "object") {
+            queue.push({ value: entry, depth: depth + 1 });
+          }
+        });
+      }
+      continue;
+    }
+
+    sources.push(value);
+
+    if (depth >= 5) continue;
+
+    Object.values(value).forEach((nested) => {
+      if (nested && typeof nested === "object") {
+        queue.push({ value: nested, depth: depth + 1 });
+      }
+    });
+  }
+
+  return sources;
+}
+
+function getFieldFromSource(source, keys) {
+  if (!source || typeof source !== "object") return "";
+
+  const wanted = new Set(keys.map(normalizeKey));
+
+  for (const [key, value] of Object.entries(source)) {
+    if (!wanted.has(normalizeKey(key))) continue;
+
+    const result = scalarValue(value);
+    if (result !== "") return result;
+  }
+
+  for (const [key, value] of Object.entries(source)) {
+    const normalized = normalizeKey(key);
+
+    const matches = [...wanted].some(
+      (candidate) =>
+        candidate.length >= 5 &&
+        (normalized.endsWith(candidate) || normalized.startsWith(candidate))
+    );
+
+    if (!matches) continue;
+
+    const result = scalarValue(value);
+    if (result !== "") return result;
+  }
+
+  return "";
+}
+
+function getValueFromSources(item, keys) {
+  for (const source of getNestedSources(item)) {
+    const value = getFieldFromSource(source, keys);
+    if (value !== "") return value;
+  }
+
+  return "";
+}
+
+function getRegistrationName(item) {
+  const name = getValueFromSources(item, [
+    "patient_name",
+    "patient_full_name",
+    "full_name",
+    "display_name",
+    "patient_display_name",
+    "name",
+  ]);
+
+  return name !== "" ? String(name) : "Unnamed patient";
+}
+
+function getPatientFileNumber(item) {
+  return getValueFromSources(item, FILE_NUMBER_KEYS);
+}
+
+function getVisitNumber(item) {
+  return getValueFromSources(item, VISIT_NUMBER_KEYS);
+}
+
+function getSpeciality(item) {
+  return getValueFromSources(item, SPECIALITY_KEYS);
+}
+
+function formatDateValue(value) {
+  const extracted = scalarValue(value);
+  if (extracted === "") return "";
+
+  const raw = String(extracted).trim();
+  const isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/);
+
+  if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+
+  const date = new Date(raw);
+
+  if (Number.isNaN(date.getTime())) {
+    return raw.replace("T", " ").slice(0, 16);
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "Asia/Dubai",
+  }).format(date);
+}
+
+function getRegistrationDate(item) {
+  return formatDateValue(getValueFromSources(item, DATE_KEYS));
+}
+
+function getRegistrationStatus(item) {
+  return getValueFromSources(item, [
+    "status",
+    "appointment_status",
+    "visit_status",
+    "registration_status",
+  ]);
+}
+
+function getCategoryValues(item) {
+  return CATEGORY_KEYS.map((key) =>
+    normalizeCategory(getFieldFromSource(item, [key]))
+  ).filter(Boolean);
 }
 
 function categoryMatchesGroup(category, group) {
   if (!category) return false;
-
   if (group.matches.includes(category)) return true;
 
   const readable = category.replace(/_/g, " ");
@@ -596,222 +979,23 @@ function categoryMatchesGroup(category, group) {
   }
 }
 
-function getRegistrationName(item) {
-  return (
-    item?.patient_name ??
-    item?.patient_full_name ??
-    item?.patient?.patient_name ??
-    item?.patient?.full_name ??
-    item?.patient?.name ??
-    item?.patient?.display_name ??
-    item?.full_name ??
-    item?.name ??
-    item?.display_name ??
-    "Unnamed patient"
-  );
-}
-
-function getRegistrationCategory(item) {
-  return (
-    item?.category_label ??
-    item?.category_display ??
-    item?.category ??
-    item?.registration_type ??
-    item?.visit_type ??
-    item?.task_type ??
-    item?.type ??
-    "Other registration"
-  );
-}
-
-function firstNonEmpty(source, keys) {
-  if (!source || typeof source !== "object") return "";
-
-  for (const key of keys) {
-    const value = source[key];
-
-    if (value === null || value === undefined || value === "") continue;
-
-    if (typeof value === "object") {
-      const nestedValue =
-        value.value ??
-        value.number ??
-        value.file_number ??
-        value.file_no ??
-        value.label ??
-        value.name;
-
-      if (
-        nestedValue !== null &&
-        nestedValue !== undefined &&
-        nestedValue !== ""
-      ) {
-        return nestedValue;
-      }
-
-      continue;
-    }
-
-    return value;
-  }
-
-  return "";
-}
-
-function getPatientFileNumber(item) {
-  const sources = [
-    item,
-    item?.patient,
-    item?.patient_details,
-    item?.patient_record,
-    item?.registration,
-    item?.appointment,
-  ];
-
-  for (const source of sources) {
-    const value = firstNonEmpty(source, FILE_NUMBER_KEYS);
-    if (value !== "") return value;
-  }
-
-  return "";
-}
-
-function getVisitNumber(item) {
-  return (
-    firstNonEmpty(item, [
-      "visit_number",
-      "visit_no",
-      "visit_count",
-      "session_number",
-      "visitNumber",
-    ]) ||
-    firstNonEmpty(item?.patient, [
-      "visit_number",
-      "visit_no",
-      "visit_count",
-      "session_number",
-    ]) ||
-    ""
-  );
-}
-
-function getSpeciality(item) {
-  return (
-    item?.speciality ??
-    item?.specialty ??
-    item?.speciality_name ??
-    item?.specialty_name ??
-    item?.service_name ??
-    item?.service ??
-    item?.department_name ??
-    item?.department ??
-    item?.patient?.speciality ??
-    item?.patient?.specialty ??
-    item?.patient?.speciality_name ??
-    item?.patient?.specialty_name ??
-    ""
-  );
-}
-
-function getPatientId(item) {
-  return (
-    item?.patient_id ??
-    item?.patient?.id ??
-    item?.patient?.patient_id ??
-    item?.patient_details?.id ??
-    ""
-  );
-}
-
-function formatDateValue(value) {
-  if (value === null || value === undefined || value === "") return "";
-
-  if (typeof value === "string") {
-    const dateOnlyMatch = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-
-    if (dateOnlyMatch) {
-      return `${dateOnlyMatch[3]}/${dateOnlyMatch[2]}/${dateOnlyMatch[1]}`;
-    }
-  }
-
-  const date = value instanceof Date ? value : new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return String(value).replace("T", " ").slice(0, 16);
-  }
-
-  return [
-    String(date.getDate()).padStart(2, "0"),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    date.getFullYear(),
-  ].join("/");
-}
-
-function getRegistrationDate(item) {
-  const sources = [item, item?.appointment, item?.registration, item?.visit];
-
-  for (const source of sources) {
-    const value = firstNonEmpty(source, DATE_KEYS);
-    if (value !== "") return formatDateValue(value);
-  }
-
-  return "";
-}
-
-function getRegistrationTime(item) {
-  return (
-    item?.appointment_time ??
-    item?.scheduled_time ??
-    item?.start_time ??
-    item?.time ??
-    item?.appointment?.appointment_time ??
-    item?.appointment?.scheduled_time ??
-    ""
-  );
-}
-
-function getRegistrationTherapist(item) {
-  return (
-    item?.therapist_name ??
-    item?.physio_name ??
-    item?.physiotherapist_name ??
-    item?.therapist?.name ??
-    item?.therapist?.full_name ??
-    item?.therapist?.username ??
-    item?.therapist_username ??
-    ""
-  );
-}
-
-function getRegistrationStatus(item) {
-  return (
-    item?.status ??
-    item?.appointment_status ??
-    item?.visit_status ??
-    item?.registration_status ??
-    ""
-  );
-}
-
 function isNoShow(item) {
   const status = normalizeCategory(getRegistrationStatus(item));
-  const noShowGroup = CATEGORY_GROUPS.find(
-    (group) => group.key === "no_show"
-  );
+  const group = CATEGORY_GROUPS.find((entry) => entry.key === "no_show");
 
   return (
     item?.no_show === true ||
     item?.is_no_show === true ||
     ["no_show", "noshow", "did_not_attend"].includes(status) ||
     getCategoryValues(item).some((category) =>
-      categoryMatchesGroup(category, noShowGroup)
+      categoryMatchesGroup(category, group)
     )
   );
 }
 
 function isWithoutEligibility(item) {
-  const eligibilityGroup = CATEGORY_GROUPS.find(
-    (group) => group.key === "without_eligibility"
+  const group = CATEGORY_GROUPS.find(
+    (entry) => entry.key === "without_eligibility"
   );
 
   return (
@@ -821,14 +1005,13 @@ function isWithoutEligibility(item) {
     item?.eligibility === false ||
     item?.is_eligible === false ||
     getCategoryValues(item).some((category) =>
-      categoryMatchesGroup(category, eligibilityGroup)
+      categoryMatchesGroup(category, group)
     )
   );
 }
 
 function matchesCategory(item, key) {
   if (key === "all") return true;
-
   if (key === "no_show") return isNoShow(item);
   if (key === "without_eligibility") return isWithoutEligibility(item);
 
@@ -839,95 +1022,33 @@ function matchesCategory(item, key) {
   }
 
   const group = CATEGORY_GROUPS.find((entry) => entry.key === key);
-  if (!group) return false;
 
-  return getCategoryValues(item).some((category) =>
-    categoryMatchesGroup(category, group)
+  return Boolean(
+    group &&
+      getCategoryValues(item).some((category) =>
+        categoryMatchesGroup(category, group)
+      )
   );
-}
-
-function getStatisticsTotals(rows = []) {
-  return rows.reduce(
-    (totals, row) => ({
-      walk_in: totals.walk_in + Number(row.walk_in || 0),
-      initial_eval: totals.initial_eval + Number(row.initial_eval || 0),
-      cash: totals.cash + Number(row.cash || 0),
-      no_show: totals.no_show + Number(row.no_show || 0),
-      seen: totals.seen + Number(row.seen || 0),
-    }),
-    {
-      walk_in: 0,
-      initial_eval: 0,
-      cash: 0,
-      no_show: 0,
-      seen: 0,
-    }
-  );
-}
-
-function getFieldLabel(key) {
-  if (FIELD_LABELS[key]) return FIELD_LABELS[key];
-
-  return key
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function formatFieldValue(value) {
-  if (value == null || value === "") return "";
-
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => {
-        if (entry == null) return "";
-
-        if (typeof entry === "object") {
-          return (
-            entry.name ??
-            entry.full_name ??
-            entry.display_name ??
-            entry.label ??
-            entry.username ??
-            JSON.stringify(entry)
-          );
-        }
-
-        return String(entry);
-      })
-      .filter(Boolean)
-      .join(", ");
-  }
-
-  if (typeof value === "object") {
-    return (
-      value.name ??
-      value.full_name ??
-      value.display_name ??
-      value.username ??
-      value.patient_name ??
-      value.label ??
-      value.title ??
-      ""
-    );
-  }
-
-  return String(value);
 }
 
 function getRegistrationGroups(assignments = []) {
   const remaining = [...assignments];
   const groups = [];
 
-  // Show tasks without eligibility and no-shows first.
-  const priorityGroups = ["without_eligibility", "no_show"];
+  const priority = [
+    "without_eligibility",
+    "no_show",
+    ...CATEGORY_GROUPS
+      .filter(
+        (group) =>
+          !["without_eligibility", "no_show"].includes(group.key)
+      )
+      .map((group) => group.key),
+  ];
 
-  priorityGroups.forEach((key) => {
+  priority.forEach((key) => {
     const group = CATEGORY_GROUPS.find((entry) => entry.key === key);
+    if (!group) return;
 
     const matching = remaining.filter((item) =>
       matchesCategory(item, key)
@@ -943,32 +1064,102 @@ function getRegistrationGroups(assignments = []) {
     }
   });
 
-  CATEGORY_GROUPS.filter(
-    (group) => !priorityGroups.includes(group.key)
-  ).forEach((group) => {
-    const matching = remaining.filter((item) =>
-      matchesCategory(item, group.key)
-    );
-
-    matching.forEach((item) => {
-      const index = remaining.indexOf(item);
-      if (index !== -1) remaining.splice(index, 1);
-    });
-
-    if (matching.length) {
-      groups.push({ ...group, items: matching });
-    }
-  });
-
   if (remaining.length) {
-    groups.push({
-      ...OTHER_GROUP,
-      items: remaining,
-    });
+    groups.push({ ...OTHER_GROUP, items: remaining });
   }
 
   return groups;
 }
+
+/* =========================================================
+   OPEN PATIENT FILE
+   Default route: /patients/:id
+========================================================= */
+
+const PATIENT_DETAILS_ROUTE = (patientId) =>
+  `/patients/${encodeURIComponent(String(patientId))}`;
+
+function getPatientId(item) {
+  const explicitId = getValueFromSources(item, [
+    "patient_id",
+    "patientId",
+    "patient_pk",
+    "patient_uuid",
+    "patient_record_id",
+  ]);
+
+  if (explicitId !== "") return explicitId;
+
+  for (const source of getNestedSources(item)) {
+    if (
+      source.patient &&
+      typeof source.patient === "object" &&
+      source.patient.id !== undefined &&
+      source.patient.id !== null
+    ) {
+      return source.patient.id;
+    }
+
+    if (
+      source.patient_details &&
+      typeof source.patient_details === "object" &&
+      source.patient_details.id !== undefined &&
+      source.patient_details.id !== null
+    ) {
+      return source.patient_details.id;
+    }
+  }
+
+  return "";
+}
+
+function getPatientFileUrl(item) {
+  return getValueFromSources(item, [
+    "patient_file_url",
+    "patient_details_url",
+    "patient_detail_url",
+    "patient_url",
+    "file_url",
+    "record_url",
+    "details_url",
+    "patient_file_path",
+    "patient_detail_path",
+  ]);
+}
+
+function handleOpenPatientFile(item) {
+  const existingUrl = getPatientFileUrl(item);
+  const patientId = getPatientId(item);
+
+  if (existingUrl) {
+    const url = String(existingUrl).trim();
+
+    if (/^https?:\/\//i.test(url)) {
+      window.location.assign(url);
+      return;
+    }
+
+    if (url.startsWith("/") && !url.startsWith("//")) {
+      window.location.assign(url);
+      return;
+    }
+  }
+
+  if (patientId !== "") {
+    window.location.assign(PATIENT_DETAILS_ROUTE(patientId));
+    return;
+  }
+
+  window.alert(
+    "Unable to open the patient file because this registration does not contain a patient ID or patient-details URL."
+  );
+}
+
+/* =========================================================
+   SUMMARY CARDS
+   Original category colors preserved.
+   All registrations has no extra selected border.
+========================================================= */
 
 function StatisticsMetricCard({
   label,
@@ -980,17 +1171,24 @@ function StatisticsMetricCard({
   selected,
   onClick,
 }) {
+  const isAllRegistrations = label === "All registrations";
+
   return (
     <button
       type="button"
       aria-pressed={selected}
       onClick={onClick}
-      title={`Show ${label.toLowerCase()} registrations below`}
+      title={`Show ${label.toLowerCase()} registrations`}
       style={{
         ...styles.metric,
-        background: selected ? background : `${background}B3`,
-        borderColor: selected ? color : `${color}55`,
-        boxShadow: selected ? `0 0 0 2px ${color}20` : "none",
+        background,
+        borderColor:
+          selected && !isAllRegistrations ? color : `${color}70`,
+        borderWidth: selected && !isAllRegistrations ? 2 : 1,
+        boxShadow: selected
+          ? `0 6px 19px ${color}30`
+          : `0 2px 8px ${color}12`,
+        transform: selected ? "translateY(-2px)" : "none",
       }}
     >
       <span
@@ -998,6 +1196,8 @@ function StatisticsMetricCard({
         style={{
           ...styles.metricIcon,
           color,
+          background: "#FFFFFF",
+          border: `1px solid ${color}25`,
         }}
       >
         {icon}
@@ -1006,11 +1206,22 @@ function StatisticsMetricCard({
       <span style={{ minWidth: 0 }}>
         <span style={styles.metricLabel}>{label}</span>
 
-        <span style={{ ...styles.metricValue, display: "block" }}>
+        <span
+          style={{
+            ...styles.metricValue,
+            display: "block",
+            color,
+          }}
+        >
           {value}
         </span>
 
-        <span style={{ ...styles.metricDescription, display: "block" }}>
+        <span
+          style={{
+            ...styles.metricDescription,
+            display: "block",
+          }}
+        >
           {description}
         </span>
       </span>
@@ -1018,191 +1229,160 @@ function StatisticsMetricCard({
   );
 }
 
-function PatientRegistrationRow({ item }) {
-  const [expanded, setExpanded] = useState(false);
+/* =========================================================
+   PATIENT ROW
+========================================================= */
 
+function PatientRegistrationRow({ item }) {
   const name = getRegistrationName(item);
   const fileNumber = getPatientFileNumber(item);
   const date = getRegistrationDate(item);
   const visitNumber = getVisitNumber(item);
   const speciality = getSpeciality(item);
-  const patientId = getPatientId(item);
-  const time = getRegistrationTime(item);
-  const therapist = getRegistrationTherapist(item);
-  const status = getRegistrationStatus(item);
-
-  const patientFields =
-    item?.patient && typeof item.patient === "object"
-      ? Object.entries(item.patient).filter(
-          ([key, value]) =>
-            value !== null &&
-            value !== undefined &&
-            value !== "" &&
-            typeof value !== "object" &&
-            !key.startsWith("_")
-        )
-      : [];
-
-  const excludedExtraFields = new Set([
-    "patient",
-    "patient_details",
-    "patient_record",
-    "registration",
-    "appointment",
-    "visit",
-    "patient_name",
-    "patient_full_name",
-    "full_name",
-    "name",
-    "display_name",
-    "category",
-    "category_label",
-    "category_display",
-    "registration_type",
-    "task_type",
-    "type",
-    "visit_type",
-    "appointment_date",
-    "scheduled_date",
-    "registration_date",
-    "date",
-    "appointment_datetime",
-    "scheduled_at",
-    "registration_datetime",
-    "appointment_at",
-    "visit_date",
-    "service_date",
-    "created_at",
-    "appointment_time",
-    "scheduled_time",
-    "start_time",
-    "time",
-    "therapist_name",
-    "physio_name",
-    "physiotherapist_name",
-    "therapist_username",
-    "therapist_id",
-    "patient_id",
-    ...FILE_NUMBER_KEYS,
-    "visit_number",
-    "visit_no",
-    "visit_count",
-    "session_number",
-    "speciality",
-    "specialty",
-    "speciality_name",
-    "specialty_name",
-    "service",
-    "service_name",
-    "department",
-    "department_name",
-  ]);
-
-  const extraFields = Object.entries(item ?? {}).filter(
-    ([key, value]) =>
-      !HIDDEN_FIELDS.has(key) &&
-      !excludedExtraFields.has(key) &&
-      !key.startsWith("_") &&
-      value !== null &&
-      value !== undefined &&
-      value !== ""
-  );
 
   return (
-    <div style={{ minWidth: 0 }}>
+    <div style={styles.patientRow}>
+      <span style={styles.patientName}>
+        <span style={styles.fieldCaption}>Patient name</span>
+        {name}
+      </span>
+
+      <span style={styles.patientValue}>
+        <span style={styles.fieldCaption}>File number</span>
+        {fileNumber !== "" ? String(fileNumber) : "—"}
+      </span>
+
+      <span style={styles.patientValue}>
+        <span style={styles.fieldCaption}>Date</span>
+        {date || "—"}
+      </span>
+
+      <span style={styles.patientValue}>
+        <span style={styles.fieldCaption}>Visit number</span>
+        {visitNumber !== "" ? String(visitNumber) : "—"}
+      </span>
+
+      <span style={styles.patientValue}>
+        <span style={styles.fieldCaption}>Speciality</span>
+        {speciality !== "" ? String(speciality) : "—"}
+      </span>
+
+      <span>
+        <span style={styles.fieldCaption}>Patient file</span>
+
+        <button
+          type="button"
+          style={styles.openFileButton}
+          onClick={() => handleOpenPatientFile(item)}
+          title={`Open file for ${name}`}
+        >
+          ↗ Open File
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/* =========================================================
+   COLLAPSIBLE REGISTRATION CATEGORY
+========================================================= */
+
+function RegistrationCategory({ group, initiallyExpanded = false }) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+
+  return (
+    <section style={styles.categorySection}>
       <button
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
         style={{
-          ...styles.patientRow,
-          borderColor: expanded ? "#a8c5ef" : COLORS.border,
-          background: expanded ? "#f7faff" : COLORS.surface,
+          ...styles.categoryToggle,
+          color: group.color,
+          background: group.background,
+          borderColor: `${group.color}40`,
+          boxShadow: expanded
+            ? `0 3px 12px ${group.color}12`
+            : "none",
         }}
       >
-        <span style={styles.patientName}>
-          <span style={styles.fieldCaption}>Patient name</span>
-          {name}
+        <span style={styles.categoryToggleLeft}>
+          <span
+            aria-hidden="true"
+            style={{ ...styles.categoryIcon, color: group.color }}
+          >
+            {group.icon}
+          </span>
+
+          <span style={{ minWidth: 0 }}>
+            <span style={{ ...styles.categoryTitle, display: "block" }}>
+              {group.label}
+            </span>
+
+            <span
+              style={{
+                display: "block",
+                marginTop: 4,
+                color: COLORS.muted,
+                fontSize: 10,
+                fontWeight: 600,
+              }}
+            >
+              {expanded
+                ? "Click to hide registrations"
+                : "Click to view registrations"}
+            </span>
+          </span>
         </span>
 
-        <span style={styles.patientValue}>
-          <span style={styles.fieldCaption}>File number</span>
-          {fileNumber !== "" ? String(fileNumber) : "—"}
-        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <span style={{ ...styles.categoryCount, color: group.color }}>
+            {group.items.length}
+          </span>
 
-        <span style={styles.patientValue}>
-          <span style={styles.fieldCaption}>Date</span>
-          {date || "—"}
-        </span>
-
-        <span style={styles.patientValue}>
-          <span style={styles.fieldCaption}>Visit number</span>
-          {visitNumber !== "" ? String(visitNumber) : "—"}
-        </span>
-
-        <span style={styles.patientValue}>
-          <span style={styles.fieldCaption}>Speciality</span>
-          {speciality ? String(speciality) : "—"}
-        </span>
-
-        <span aria-hidden="true" style={{ color: COLORS.muted }}>
-          {expanded ? "▲" : "▼"}
+          <span
+            aria-hidden="true"
+            style={{
+              display: "grid",
+              placeItems: "center",
+              width: 29,
+              height: 29,
+              borderRadius: 9,
+              background: "#FFFFFF",
+              color: group.color,
+              fontSize: 19,
+              fontWeight: 800,
+            }}
+          >
+            {expanded ? "−" : "+"}
+          </span>
         </span>
       </button>
 
       {expanded && (
-        <div style={styles.expandedDetails}>
-          {patientId !== "" && (
-            <div style={styles.detail}>
-              <strong>Patient ID:</strong> {String(patientId)}
-            </div>
-          )}
-
-          <div style={styles.detail}>
-            <strong>Registration type:</strong>{" "}
-            {String(getRegistrationCategory(item))}
+        <div style={styles.tableScroll}>
+          <div style={styles.tableInner}>
+            {group.items.map((item, index) => (
+              <PatientRegistrationRow
+                key={
+                  item?.id ??
+                  item?.assignment_id ??
+                  item?.registration_id ??
+                  `${group.key}-${index}`
+                }
+                item={item}
+              />
+            ))}
           </div>
-
-          {time && (
-            <div style={styles.detail}>
-              <strong>Time:</strong> {String(time)}
-            </div>
-          )}
-
-          {status && (
-            <div style={styles.detail}>
-              <strong>Status:</strong> {String(status)}
-            </div>
-          )}
-
-          {therapist && (
-            <div style={styles.detail}>
-              <strong>Therapist:</strong> {String(therapist)}
-            </div>
-          )}
-
-          {patientFields.map(([key, value]) => (
-            <div key={`patient-${key}`} style={styles.detail}>
-              <strong>{getFieldLabel(key)}:</strong>{" "}
-              {formatFieldValue(value)}
-            </div>
-          ))}
-
-          {extraFields.map(([key, value]) => {
-            const formatted = formatFieldValue(value);
-            if (!formatted) return null;
-
-            return (
-              <div key={key} style={styles.detail}>
-                <strong>{getFieldLabel(key)}:</strong> {formatted}
-              </div>
-            );
-          })}
         </div>
       )}
-    </div>
+    </section>
   );
 }
+
+/* =========================================================
+   REGISTRATION TABLE
+========================================================= */
 
 function RegistrationTable({
   assignments = [],
@@ -1214,21 +1394,70 @@ function RegistrationTable({
     [assignments]
   );
 
+  const [allExpanded, setAllExpanded] = useState(false);
+  const [categoryResetKey, setCategoryResetKey] = useState(0);
+
+  function toggleAllCategories() {
+    setAllExpanded((current) => !current);
+    setCategoryResetKey((current) => current + 1);
+  }
+
   return (
-    <section style={styles.dropdownPanel}>
-      <div style={{ ...styles.dropdown, cursor: "default" }}>
-        <span style={styles.dropdownLeft}>
-          <span aria-hidden="true" style={styles.dropdownIcon}>
+    <section style={styles.panel}>
+      <div style={styles.panelHeader}>
+        <span style={styles.panelTitle}>
+          <span aria-hidden="true" style={styles.panelIcon}>
             ▤
           </span>
 
           <span>
-            Registrations — {selectedLabel || "Selected period"}
+            <span
+              style={{
+                display: "block",
+                color: COLORS.navy,
+                fontSize: 14,
+                fontWeight: 850,
+              }}
+            >
+              Patient Registrations
+            </span>
+
+            <span
+              style={{
+                display: "block",
+                marginTop: 4,
+                fontSize: 11,
+                fontWeight: 550,
+                color: COLORS.muted,
+              }}
+            >
+              {selectedLabel || "Selected period"}
+            </span>
           </span>
         </span>
 
-        <span style={styles.countBadge}>
-          {assignments.length} registrations
+        <span
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={styles.countBadge}>
+            {assignments.length} registrations
+          </span>
+
+          {!loading && groups.length > 0 && (
+            <button
+              type="button"
+              style={styles.expandAllButton}
+              onClick={toggleAllCategories}
+              title="Expand or collapse all registration categories"
+            >
+              {allExpanded ? "− Collapse all" : "+ Expand all"}
+            </button>
+          )}
         </span>
       </div>
 
@@ -1242,56 +1471,22 @@ function RegistrationTable({
         ) : (
           <>
             <div style={styles.notice}>
-              Click a patient row to expand its details. Each registration is
-              displayed separately, including repeat registrations for the
-              same patient.
+              <strong style={{ color: COLORS.navy }}>
+                {groups.length} registration categories
+              </strong>
+              <span>
+                {" "}
+                — Select a category below to view its patient records.
+              </span>
             </div>
 
-            <div style={styles.tableScroll}>
-              <div style={styles.tableInner}>
-                <div style={styles.tableHeader}>
-                  <span>Patient name</span>
-                  <span>File number</span>
-                  <span>Date</span>
-                  <span>Visit number</span>
-                  <span>Speciality</span>
-                  <span />
-                </div>
-
-                {groups.map((group) => (
-                  <section
-                    key={group.key}
-                    style={styles.categorySection}
-                  >
-                    <h4
-                      style={{
-                        ...styles.categoryHeading,
-                        color: group.color,
-                        background: group.background,
-                      }}
-                    >
-                      <span>
-                        {group.icon} &nbsp; {group.label}
-                      </span>
-
-                      <span>{group.items.length}</span>
-                    </h4>
-
-                    {group.items.map((item, index) => (
-                      <PatientRegistrationRow
-                        key={
-                          item?.id ??
-                          item?.assignment_id ??
-                          item?.registration_id ??
-                          `${group.key}-${index}`
-                        }
-                        item={item}
-                      />
-                    ))}
-                  </section>
-                ))}
-              </div>
-            </div>
+            {groups.map((group) => (
+              <RegistrationCategory
+                key={`${group.key}-${categoryResetKey}`}
+                group={group}
+                initiallyExpanded={allExpanded}
+              />
+            ))}
           </>
         )}
       </div>
@@ -1299,19 +1494,19 @@ function RegistrationTable({
   );
 }
 
+/* =========================================================
+   DAILY / MONTHLY STATISTICS PANEL
+========================================================= */
+
 function StatisticsSummary({
   title,
   selectedLabel,
-  stats,
   loading,
   assignments = [],
   registrationLoading,
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("all");
-
-  const rows = stats?.rows ?? [];
-
-  const totals = useMemo(() => getStatisticsTotals(rows), [rows]);
 
   const categoryCounts = useMemo(() => {
     const counts = {};
@@ -1321,10 +1516,6 @@ function StatisticsSummary({
         matchesCategory(item, group.key)
       ).length;
     });
-
-    counts.other = assignments.filter((item) =>
-      matchesCategory(item, "other")
-    ).length;
 
     return counts;
   }, [assignments]);
@@ -1344,7 +1535,7 @@ function StatisticsSummary({
       value: categoryCounts.appointments,
       description: "Appointments and follow-ups",
       color: COLORS.blue,
-      background: "#eaf1ff",
+      background: COLORS.blueBg,
       icon: "◷",
     },
     {
@@ -1353,7 +1544,7 @@ function StatisticsSummary({
       value: categoryCounts.walk_in,
       description: "Walk-in registrations",
       color: COLORS.sky,
-      background: "#e8f6fd",
+      background: COLORS.skyBg,
       icon: "↗",
     },
     {
@@ -1362,7 +1553,7 @@ function StatisticsSummary({
       value: categoryCounts.without_eligibility,
       description: "Eligibility needs review",
       color: COLORS.orange,
-      background: "#fff1e5",
+      background: COLORS.orangeBg,
       icon: "⚠",
     },
     {
@@ -1371,7 +1562,7 @@ function StatisticsSummary({
       value: categoryCounts.evaluations,
       description: "Initial assessments",
       color: COLORS.purple,
-      background: "#f0eaff",
+      background: COLORS.purpleBg,
       icon: "＋",
     },
     {
@@ -1380,7 +1571,7 @@ function StatisticsSummary({
       value: categoryCounts.cash,
       description: "Cash registrations",
       color: COLORS.green,
-      background: "#e4f7ed",
+      background: COLORS.greenBg,
       icon: "¤",
     },
     {
@@ -1389,7 +1580,7 @@ function StatisticsSummary({
       value: categoryCounts.no_show,
       description: "Recorded missed visits",
       color: COLORS.red,
-      background: "#ffebed",
+      background: COLORS.redBg,
       icon: "!",
     },
     {
@@ -1397,8 +1588,8 @@ function StatisticsSummary({
       label: "All registrations",
       value: assignments.length,
       description: "Show the complete list",
-      color: COLORS.slate,
-      background: "#edf1f6",
+      color: COLORS.navy,
+      background: "#EAF0F7",
       icon: "▤",
     },
   ];
@@ -1407,103 +1598,148 @@ function StatisticsSummary({
     (metric) => metric.key === selectedCategory
   );
 
+  const isDaily = title.toLowerCase().includes("daily");
+  const accentColor = isDaily ? COLORS.blue : COLORS.teal;
+  const accentBackground = isDaily ? COLORS.blueBg : COLORS.tealBg;
+
   return (
-    <section style={styles.report}>
-      <div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 9,
-            marginBottom: 8,
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              display: "grid",
-              placeItems: "center",
-              width: 34,
-              height: 34,
-              borderRadius: 10,
-              background: COLORS.greenBg,
-              color: COLORS.green,
-              fontSize: 18,
-              fontWeight: 850,
-            }}
-          >
-            ▦
-          </span>
-
+    <section
+      style={{
+        ...styles.report,
+        gap: expanded ? 20 : 0,
+        borderTop: `3px solid ${accentColor}`,
+      }}
+    >
+      <button
+        type="button"
+        style={styles.reportToggle}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span style={{ minWidth: 0 }}>
           <span
             style={{
-              color: COLORS.green,
-              fontSize: 10,
-              fontWeight: 850,
-              letterSpacing: "0.9px",
-              textTransform: "uppercase",
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 10,
+              marginBottom: 11,
             }}
           >
-            Physiotherapy statistics
+            <span
+              style={{
+                display: "grid",
+                placeItems: "center",
+                width: 37,
+                height: 37,
+                borderRadius: 11,
+                background: accentBackground,
+                color: accentColor,
+                fontSize: 19,
+                fontWeight: 850,
+              }}
+            >
+              {isDaily ? "◷" : "▦"}
+            </span>
+
+            <span
+              style={{
+                color: accentColor,
+                fontSize: 10,
+                fontWeight: 850,
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+              }}
+            >
+              Physiotherapy report
+            </span>
+
+            <span style={styles.statusBadge}>
+              {expanded ? "OPEN" : "COLLAPSED"}
+            </span>
           </span>
-        </div>
 
-        <h2 style={styles.reportTitle}>{title}</h2>
+          <span style={{ ...styles.reportTitle, display: "block" }}>
+            {title}
+          </span>
 
-        <div style={styles.subtitle}>
-          Summary for{" "}
-          <strong style={{ color: COLORS.text }}>
-            {selectedLabel || "the selected period"}
-          </strong>
-        </div>
-      </div>
+          <span style={{ ...styles.subtitle, display: "block" }}>
+            Summary for{" "}
+            <strong style={{ color: COLORS.text }}>
+              {selectedLabel || "the selected period"}
+            </strong>
+          </span>
 
-      {loading ? (
-        <div style={styles.loading}>
-          Loading statistics for {selectedLabel}…
-        </div>
-      ) : (
-        <>
-          <div style={styles.metricsGrid}>
-            {metrics.map((metric) => (
-              <StatisticsMetricCard
-                key={metric.key}
-                {...metric}
-                selected={selectedCategory === metric.key}
-                onClick={() =>
-                  setSelectedCategory((current) =>
-                    current === metric.key && metric.key !== "all"
-                      ? "all"
-                      : metric.key
-                  )
-                }
-              />
-            ))}
+          <span style={styles.summaryMeta}>
+            <span style={styles.metaBadge}>
+              <span aria-hidden="true">▤</span>
+              {assignments.length} registrations
+            </span>
+
+            <span style={styles.metaBadge}>
+              {expanded
+                ? "Click to collapse details"
+                : "Click to view details"}
+            </span>
+          </span>
+        </span>
+
+        <span style={styles.collapseIcon} aria-hidden="true">
+          {expanded ? "−" : "+"}
+        </span>
+      </button>
+
+      {expanded &&
+        (loading ? (
+          <div style={styles.loading}>
+            Loading statistics for {selectedLabel || "the selected period"}…
           </div>
+        ) : (
+          <>
+            <div style={styles.metricsGrid}>
+              {metrics.map((metric) => (
+                <StatisticsMetricCard
+                  key={metric.key}
+                  {...metric}
+                  selected={selectedCategory === metric.key}
+                  onClick={() =>
+                    setSelectedCategory((current) =>
+                      current === metric.key && metric.key !== "all"
+                        ? "all"
+                        : metric.key
+                    )
+                  }
+                />
+              ))}
+            </div>
 
-          <RegistrationTable
-            assignments={selectedAssignments}
-            loading={registrationLoading}
-            selectedLabel={
-              selectedCategory === "all"
-                ? selectedLabel
-                : selectedMetric?.label
-            }
-          />
+            <RegistrationTable
+              assignments={selectedAssignments}
+              loading={registrationLoading}
+              selectedLabel={
+                selectedCategory === "all"
+                  ? selectedLabel
+                  : selectedMetric?.label
+              }
+            />
 
-          <div style={styles.notice}>
-            <strong>Selected view:</strong>{" "}
-            {selectedMetric?.label || "All registrations"}. Click a statistics
-            block to filter the registration table. Click the selected block
-            again to return to all registrations.
-          </div>
-        </>
-      )}
+            <div style={styles.notice}>
+              <strong style={{ color: COLORS.navy }}>Selected view:</strong>{" "}
+              {selectedMetric?.label || "All registrations"}. Select a
+              statistics card to filter the table. Registration categories
+              start collapsed.
+            </div>
+          </>
+        ))}
     </section>
   );
 }
 
-export default function PhysioStatisticsSection({
+/* =========================================================
+   MAIN COMPONENT
+========================================================= */
+
+function PhysioStatisticsSection({
   statisticsDate,
   setStatisticsDate,
   statisticsMonth,
@@ -1519,51 +1755,67 @@ export default function PhysioStatisticsSection({
   return (
     <div style={styles.stack}>
       <section style={styles.filter}>
-        <h3 style={styles.filterHeading}>
-          <span
-            aria-hidden="true"
-            style={{
-              display: "grid",
-              placeItems: "center",
-              width: 35,
-              height: 35,
-              borderRadius: 10,
-              background: COLORS.greenBg,
-              color: COLORS.green,
-              fontSize: 18,
-            }}
-          >
+        <div style={styles.filterAccent} />
+
+        <div style={styles.filterTop}>
+          <span aria-hidden="true" style={styles.filterIcon}>
             ⚙
           </span>
 
-          Statistics Filters
-        </h3>
+          <div>
+            <h3 style={styles.filterHeading}>Statistics Filters</h3>
+
+            <div style={styles.filterDescription}>
+              Select a date or month to review physiotherapy activity and
+              patient registrations.
+            </div>
+          </div>
+        </div>
 
         <label style={styles.filterLabel}>
-          <span style={styles.filterCaption}>Daily statistics date</span>
+          <span style={styles.filterCaption}>
+            <span style={styles.filterCaptionIcon} aria-hidden="true">
+              ◷
+            </span>
+            Daily statistics date
+          </span>
 
           <input
             type="date"
-            value={statisticsDate}
+            value={statisticsDate || ""}
             onChange={(event) => setStatisticsDate(event.target.value)}
             style={styles.filterInput}
           />
+
+          <span style={styles.filterHint}>
+            <span style={styles.filterHintDot}>●</span>
+            Select a specific day to review daily activity.
+          </span>
         </label>
 
         <label style={styles.filterLabel}>
-          <span style={styles.filterCaption}>Monthly statistics month</span>
+          <span style={styles.filterCaption}>
+            <span style={styles.filterCaptionIcon} aria-hidden="true">
+              ▦
+            </span>
+            Monthly statistics month
+          </span>
 
           <input
             type="month"
-            value={statisticsMonth}
+            value={statisticsMonth || ""}
             onChange={(event) => setStatisticsMonth(event.target.value)}
             style={styles.filterInput}
           />
+
+          <span style={styles.filterHint}>
+            <span style={styles.filterHintDot}>●</span>
+            Select a month to review monthly activity.
+          </span>
         </label>
       </section>
 
       <StatisticsSummary
-        stats={dailyStatistics}
         title="Daily Physio Statistics"
         selectedLabel={statisticsDate}
         loading={dailyStatisticsLoading}
@@ -1572,7 +1824,6 @@ export default function PhysioStatisticsSection({
       />
 
       <StatisticsSummary
-        stats={monthlyStatistics}
         title="Monthly Physio Statistics"
         selectedLabel={monthlyLabel || statisticsMonth}
         loading={monthlyStatisticsLoading}
@@ -1582,3 +1833,6 @@ export default function PhysioStatisticsSection({
     </div>
   );
 }
+
+export { PhysioStatisticsSection };
+export default PhysioStatisticsSection;
