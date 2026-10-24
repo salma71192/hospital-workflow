@@ -4,6 +4,30 @@ from patients.models import Patient
 from users.models import User
 
 
+class Physician(models.Model):
+    name = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Physician"
+        verbose_name_plural = "Physicians"
+
+    def save(self, *args, **kwargs):
+        self.name = self.name.strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+
 class PatientAssignment(models.Model):
     CATEGORY_CHOICES = [
         ("appointment", "Has Appointment"),
@@ -42,7 +66,6 @@ class PatientAssignment(models.Model):
         default="appointment",
     )
 
-    # Required visit number for the assignment
     visit_number = models.PositiveIntegerField(
         default=1,
     )

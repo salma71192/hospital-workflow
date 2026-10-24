@@ -1,4 +1,6 @@
+
 import React, { useMemo } from "react";
+
 function firstValue(...values) {
   return values.find(
     (value) =>
@@ -7,40 +9,24 @@ function firstValue(...values) {
       String(value).trim() !== ""
   );
 }
+
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function getPatientObject(item) {
-  if (!isObject(item)) return {};
-  const possiblePatients = [
-    item.patient,
-    item.patient_details,
-    item.patient_detail,
-    item.patient_data,
-    item.patient_info,
-    item.patient_record,
-    item.patient_obj,
-    item.patient_profile,
-    item.patient_registration,
-    item.patient_registration_details,
-    item.patient_details_data,
-    item.registration,
-    item.patient?.patient,
-    item.data?.patient,
-    item.data?.patient_details,
-    item.assignment?.patient,
-    item.patient_assignment?.patient,
-  ];
-  return possiblePatients.find(isObject) || {};
+
+function normalize(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
 }
-/**
- * Collects possible patient and assignment objects from common API formats.
- * Scalar IDs are deliberately excluded.
- */
+
 function getPatientSources(item) {
   if (!isObject(item)) return [];
+
   const sources = [];
   const visited = new Set();
+
   const relatedKeys = [
     "patient",
     "patient_details",
@@ -51,316 +37,318 @@ function getPatientSources(item) {
     "patient_obj",
     "patient_profile",
     "patient_registration",
-    "patient_registration_details",
-    "patient_details_data",
     "registration",
-    "patient_assignment",
     "assignment",
     "data",
-    "patient_details_object",
-    "patient_identification",
     "medical_record",
     "identification",
+    "patient_file",
   ];
+
   function visit(source, depth = 0) {
     if (!isObject(source) || visited.has(source) || depth > 4) return;
+
     visited.add(source);
     sources.push(source);
+
     relatedKeys.forEach((key) => {
-      if (isObject(source[key])) {
-        visit(source[key], depth + 1);
-      }
+      if (isObject(source[key])) visit(source[key], depth + 1);
     });
   }
+
   visit(item);
   return sources;
 }
+
 function getPatientName(item) {
-  const sources = getPatientSources(item);
-  for (const source of sources) {
-    const fullName = firstValue(
-      source.first_name && source.last_name
-        ? `${source.first_name} ${source.last_name}`
-        : undefined,
-      source.firstName && source.lastName
-        ? `${source.firstName} ${source.lastName}`
-        : undefined
-    );
+  for (const source of getPatientSources(item)) {
     const name = firstValue(
       source.patient_name,
       source.patient_full_name,
       source.full_name,
-      source.fullName,
       source.display_name,
-      source.displayName,
       source.name,
-      fullName
+      source.patient?.name,
+      source.first_name && source.last_name
+        ? `${source.first_name} ${source.last_name}`
+        : undefined
     );
+
     if (name !== undefined) return String(name);
   }
+
   return "Patient";
 }
-/**
- * Extracts the actual patient file number from the API response.
- * Never substitutes patient.id, patient.pk, or assignment.id.
- */
+
 function getFileNumber(item) {
-  const sources = getPatientSources(item);
-  const fileNumberFields = [
+  const fields = [
+    "patient_file_id",
     "file_number",
     "file_no",
     "file_num",
-    "file_number_display",
     "patient_file_number",
-    "patient_file_no",
-    "patient_file_num",
-    "medical_file_number",
-    "medical_file_no",
     "medical_record_number",
-    "medical_record_no",
-    "medical_record",
     "mrn",
-    "patient_mrn",
     "patient_number",
-    "patient_no",
-    "patient_code",
     "hospital_number",
-    "hospital_no",
     "registration_number",
-    "registration_no",
-    "record_number",
-    "record_no",
-    "chart_number",
-    "chart_no",
-    "health_record_number",
-    "health_record_no",
-    "clinic_file_number",
-    "clinic_file_no",
-    "emr_number",
-    "emr_no",
     "fileNumber",
-    "fileNo",
-    "fileNum",
-    "medicalFileNumber",
-    "medicalFileNo",
-    "medicalRecordNumber",
-    "medicalRecordNo",
     "patientFileNumber",
-    "patientFileNo",
-    "patientNumber",
-    "patientNo",
-    "patientCode",
-    "hospitalNumber",
-    "hospitalNo",
-    "registrationNumber",
-    "registrationNo",
-    "recordNumber",
-    "recordNo",
-    "chartNumber",
-    "chartNo",
-    "healthRecordNumber",
-    "clinicFileNumber",
-    "emrNumber",
   ];
-  const nestedNumberFields = [
-    "file_number",
-    "file_no",
-    "patient_file_number",
-    "medical_record_number",
-    "medical_file_number",
-    "mrn",
-    "number",
-    "value",
-    "label",
-    "display",
-    "text",
-  ];
-  function extractNumber(value, depth = 0) {
-    if (value === undefined || value === null || depth > 3) {
-      return undefined;
-    }
-    if (typeof value === "string" || typeof value === "number") {
-      const text = String(value).trim();
-      return text ? text : undefined;
-    }
-    if (isObject(value)) {
-      for (const field of nestedNumberFields) {
-        if (value[field] === undefined || value[field] === null) {
-          continue;
+
+  for (const source of getPatientSources(item)) {
+    for (const field of fields) {
+      const value = source[field];
+
+      if (value !== undefined && value !== null && String(value).trim()) {
+        if (isObject(value)) {
+          const nested = firstValue(
+            value.file_number,
+            value.file_no,
+            value.number,
+            value.value,
+            value.label
+          );
+          if (nested !== undefined) return String(nested);
+        } else {
+          return String(value);
         }
-        const extracted = extractNumber(value[field], depth + 1);
-        if (extracted !== undefined) return extracted;
       }
     }
-    return undefined;
   }
-  for (const source of sources) {
-    for (const field of fileNumberFields) {
-      if (source[field] === undefined || source[field] === null) {
-        continue;
-      }
-      const extracted = extractNumber(source[field]);
-      if (extracted !== undefined) return extracted;
-    }
-  }
-  const patient = getPatientObject(item);
-  const nestedSources = [
-    patient.registration,
-    patient.patient_registration,
-    patient.patient_profile,
-    patient.medical_record,
-    patient.identification,
-    patient.patient_identification,
-    patient.file,
-    item?.registration,
-    item?.patient_registration,
-    item?.patient_profile,
-    item?.medical_record,
-    item?.identification,
-    item?.data?.patient,
-    item?.data?.patient_details,
-  ];
-  for (const source of nestedSources) {
-    if (!isObject(source)) continue;
-    for (const field of fileNumberFields) {
-      if (source[field] === undefined || source[field] === null) {
-        continue;
-      }
-      const extracted = extractNumber(source[field]);
-      if (extracted !== undefined) return extracted;
-    }
-  }
+
   return "—";
 }
+
+function getPatientIdentity(item) {
+  const patientId = firstValue(
+    item?.patient_id,
+    item?.patient?.id,
+    item?.patient?.pk,
+    item?.patient?.patient_id
+  );
+
+  if (patientId !== undefined) return `id:${String(patientId).trim()}`;
+
+  const fileNumber = getFileNumber(item);
+  if (fileNumber !== "—") return `file:${normalize(fileNumber)}`;
+
+  const name = getPatientName(item);
+  if (name !== "Patient") return `name:${normalize(name)}`;
+
+  return null;
+}
+
 function getEvaluationDate(item) {
-  return (
+  return firstValue(
+    item?.evaluation_date,
+    item?.assignment_date,
+    item?.date_of_evaluation,
+    item?.date_of_eval,
+    item?.date,
+    item?.created_at
+  ) || null;
+}
+
+function getVisitNumber(item) {
+  return firstValue(
+    item?.visit_number,
+    item?.first_visit_number,
+    item?.visit_no,
+    item?.session_number
+  ) ?? "—";
+}
+
+function getPhysician(item) {
+  const value = firstValue(
+    item?.referring_physician_name,
+    item?.referring_physician,
+    item?.referring_doctor_name,
+    item?.referring_doctor,
+    item?.physician_name,
+    item?.doctor_name
+  );
+
+  if (isObject(value)) {
+    return value.name || value.label || "—";
+  }
+
+  return value || "—";
+}
+
+function getSpecialty(item) {
+  return firstValue(
+    item?.physician_specialty,
+    item?.physician_speciality,
+    item?.specialty,
+    item?.speciality,
+    item?.department
+  ) || "—";
+}
+
+function getCategory(item) {
+  return normalize(
     firstValue(
-      item?.evaluation_date,
-      item?.assignment_date,
-      item?.date,
-      item?.registration_date,
-      item?.created_at
-    ) ?? null
+      item?.category,
+      item?.category_label,
+      item?.assignment_category,
+      item?.assignment_type,
+      item?.type
+    )
   );
 }
-/**
- * Supports several common API field names for visit number.
- */
-function getVisitNumber(item) {
-  const sources = getPatientSources(item);
-  for (const source of sources) {
-    const visitNumber = firstValue(
-      source.visit_number,
-      source.first_visit_number,
-      source.visit_no,
-      source.session_number,
-      source.visitNumber,
-      source.firstVisitNumber,
-      source.visitNo,
-      source.sessionNumber
-    );
-    if (visitNumber !== undefined) return visitNumber;
-  }
-  return "—";
+
+function getRecordTimestamp(item) {
+  const value = firstValue(
+    item?.assignment_date,
+    item?.registration_date,
+    item?.created_at,
+    item?.evaluation_date,
+    item?.date
+  );
+
+  if (!value) return 0;
+
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
-function getPhysician(item) {
-  const sources = getPatientSources(item);
-  for (const source of sources) {
-    const physician = firstValue(
-      source.referring_physician,
-      source.physician_name,
-      source.doctor_name,
-      source.referring_doctor,
-      source.physician?.name,
-      source.doctor?.name
-    );
-    if (physician !== undefined) return physician;
-  }
-  return "—";
+
+function getTherapistId(item) {
+  const value = firstValue(
+    item?.therapist_id,
+    item?.assigned_therapist_id,
+    item?.physio_id,
+    item?.physiotherapist_id,
+    item?.therapist?.id
+  );
+
+  return value === undefined ? "" : String(value);
 }
-function getSpecialty(item) {
-  const sources = getPatientSources(item);
-  for (const source of sources) {
-    const specialty = firstValue(
-      source.specialty,
-      source.speciality,
-      source.physician_specialty,
-      source.physician_speciality,
-      source.referring_physician_specialty,
-      source.physician?.specialty,
-      source.physician?.speciality,
-      source.doctor?.specialty,
-      source.doctor?.speciality
-    );
-    if (specialty !== undefined) return specialty;
-  }
-  return "—";
+
+function getTherapistName(item) {
+  const value = firstValue(
+    item?.therapist_name,
+    item?.assigned_therapist_name,
+    item?.physiotherapist_name,
+    item?.therapist?.username,
+    item?.therapist?.name
+  );
+
+  return value === undefined ? "" : String(value);
 }
-function getStatus(item) {
-  const rawStatus = String(
-    firstValue(
-      item?.follow_up_status,
-      item?.status,
-      item?.appointment_status,
-      item?.registration_status
-    ) ?? ""
-  ).trim();
-  if (!rawStatus) return "Pending";
-  const normalized = rawStatus.toLowerCase();
+
+function isInitialEvaluation(item) {
+  return new Set([
+    "initial_evaluation",
+    "initial_eval",
+    "initial_evaluation_visit",
+    "initial_assessment",
+    "evaluation",
+    "eval",
+  ]).has(getCategory(item));
+}
+
+function isStartedRegistration(item) {
+  const category = getCategory(item);
+
+  // These are the actual assignment category values in the backend.
+  return category === "appointment" || category === "walk_in";
+}
+
+function calculatePatientStatus(evaluation, history) {
+  const evaluationDate = getRecordTimestamp(evaluation);
+  const evaluationTherapistId = getTherapistId(evaluation);
+
+  const laterRecords = history
+    .filter((record) => {
+      if (getPatientIdentity(record) !== getPatientIdentity(evaluation)) {
+        return false;
+      }
+
+      // Only consider records on or after the evaluation date.
+      return getRecordTimestamp(record) >= evaluationDate;
+    })
+    .sort((a, b) => getRecordTimestamp(a) - getRecordTimestamp(b));
+
+  if (laterRecords.length === 0) {
+    return { label: "Pending", type: "pending" };
+  }
+
+  // A later appointment or walk-in registration means treatment has started.
+  const startedRecord = laterRecords
+    .filter(isStartedRegistration)
+    .sort((a, b) => getRecordTimestamp(b) - getRecordTimestamp(a))[0];
+
+  if (!startedRecord) {
+    return { label: "Pending", type: "pending" };
+  }
+
+  // A different therapist on a later qualifying registration indicates transfer.
+  const startedTherapistId = getTherapistId(startedRecord);
+
+  const differentTherapistRecord = laterRecords
+    .filter((record) => {
+      if (!isStartedRegistration(record)) return false;
+
+      const therapistId = getTherapistId(record);
+
+      return (
+        therapistId &&
+        evaluationTherapistId &&
+        therapistId !== evaluationTherapistId
+      );
+    })
+    .sort((a, b) => getRecordTimestamp(b) - getRecordTimestamp(a))[0];
+
+  if (differentTherapistRecord) {
+    const therapistName = getTherapistName(differentTherapistRecord);
+
+    return {
+      label: therapistName
+        ? `Transferred – ${therapistName}`
+        : "Transferred",
+      type: "transferred",
+    };
+  }
+
+  // If the patient started with the evaluating therapist, show Started.
   if (
-    normalized.includes("not started") ||
-    normalized.includes("did not start") ||
-    normalized.includes("pending")
+    !evaluationTherapistId ||
+    !startedTherapistId ||
+    startedTherapistId === evaluationTherapistId
   ) {
-    return "Pending";
+    return { label: "Started", type: "started" };
   }
-  if (
-    normalized.includes("transfer") ||
-    normalized.includes("another therapist")
-  ) {
-    const therapist =
-      firstValue(
-        item?.follow_up_therapist_name,
-        item?.other_therapist_name,
-        item?.treatment_therapist_name
-      ) ?? "";
-    return therapist ? `Transferred – ${therapist}` : "Transferred";
-  }
-  if (
-    normalized === "started" ||
-    normalized.includes("started with evaluating therapist")
-  ) {
-    return "Started";
-  }
-  return rawStatus;
+
+  return { label: "Pending", type: "pending" };
 }
-function getStatusType(status) {
-  const normalized = String(status).toLowerCase();
-  if (normalized === "started") return "started";
-  if (normalized.includes("transfer")) return "transferred";
-  return "pending";
-}
+
 function formatDate(value) {
   if (!value) return "—";
+
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
+  if (Number.isNaN(date.getTime())) return String(value);
+
   return date.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
 }
+
 function getMonthLabel(month) {
   if (!month) return "Selected month";
+
   const [year, monthNumber] = month.split("-").map(Number);
+
   if (!year || !monthNumber) return month;
+
   return new Intl.DateTimeFormat("en", {
     month: "long",
     year: "numeric",
   }).format(new Date(year, monthNumber - 1, 1));
 }
+
 function getStatusColors(type) {
   const colors = {
     started: {
@@ -378,9 +366,16 @@ function getStatusColors(type) {
       color: "#7928ca",
       border: "1px solid #e6d2ff",
     },
+    rejected: {
+      background: "#ffe4e6",
+      color: "#be123c",
+      border: "1px solid #fecdd3",
+    },
   };
+
   return colors[type] || colors.pending;
 }
+
 function SummaryCard({ label, value, percentage, type }) {
   const cardStyles = {
     total: {
@@ -411,12 +406,21 @@ function SummaryCard({ label, value, percentage, type }) {
       iconColor: "#7c3aed",
       symbol: "◷",
     },
+    rejected: {
+      background: "linear-gradient(135deg, #fff1f2, #ffffff)",
+      border: "#fecdd3",
+      iconBackground: "#ffe4e6",
+      iconColor: "#be123c",
+      symbol: "✕",
+    },
   };
+
   const config = cardStyles[type] || cardStyles.total;
   const safePercentage = Math.min(
     Math.max(Number(percentage) || 0, 0),
     100
   );
+
   return (
     <div
       style={{
@@ -439,14 +443,7 @@ function SummaryCard({ label, value, percentage, type }) {
           gap: 10,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            minWidth: 0,
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div
             style={{
               width: 46,
@@ -463,6 +460,7 @@ function SummaryCard({ label, value, percentage, type }) {
           >
             {config.symbol}
           </div>
+
           <div
             style={{
               color: "#526985",
@@ -474,6 +472,7 @@ function SummaryCard({ label, value, percentage, type }) {
             {label}
           </div>
         </div>
+
         <span
           style={{
             background: config.iconBackground,
@@ -488,6 +487,7 @@ function SummaryCard({ label, value, percentage, type }) {
           {safePercentage}%
         </span>
       </div>
+
       <div
         style={{
           fontSize: 32,
@@ -499,6 +499,7 @@ function SummaryCard({ label, value, percentage, type }) {
       >
         {value}
       </div>
+
       <div
         style={{
           height: 5,
@@ -520,13 +521,7 @@ function SummaryCard({ label, value, percentage, type }) {
     </div>
   );
 }
-/**
- * Static role options.
- * Include "Rehab Manager" as a physiotherapy role.
- *
- * If your app uses a separate role dropdown or backend role list,
- * add "rehab_manager" to that source as well.
- */
+
 export const STATIC_ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
   { value: "physio", label: "Physiotherapist" },
@@ -541,6 +536,7 @@ export const STATIC_ROLE_OPTIONS = [
   { value: "callcenter", label: "Call Center" },
   { value: "callcenter_supervisor", label: "Call Center Supervisor" },
 ];
+
 export default function EvaluationTrackerSection({
   assignments = [],
   month = "",
@@ -549,58 +545,60 @@ export default function EvaluationTrackerSection({
   error = "",
   onReload,
 }) {
+  const safeAssignments = Array.isArray(assignments) ? assignments : [];
+
   const evaluations = useMemo(() => {
-    const evaluationCategories = [
-      "initial_evaluation",
-      "initial_eval",
-      "evaluation",
-      "eval",
-    ];
-    const safeAssignments = Array.isArray(assignments)
-      ? assignments
-      : [];
     return safeAssignments
       .filter((item) => {
-        const category = String(
-          item?.category ??
-            item?.category_label ??
-            item?.assignment_category ??
-            ""
-        )
-          .trim()
-          .toLowerCase()
-          .replace(/[\s-]+/g, "_");
-        return evaluationCategories.includes(category);
+        if (!isInitialEvaluation(item)) return false;
+
+        if (month) {
+          const dateValue = getEvaluationDate(item);
+          if (!dateValue) return false;
+
+          const date = new Date(dateValue);
+          if (Number.isNaN(date.getTime())) return false;
+
+          const rowMonth = `${date.getFullYear()}-${String(
+            date.getMonth() + 1
+          ).padStart(2, "0")}`;
+
+          if (rowMonth !== month) return false;
+        }
+
+        return true;
       })
-      .sort((a, b) =>
-        String(getEvaluationDate(b) ?? "").localeCompare(
-          String(getEvaluationDate(a) ?? "")
-        )
+      .sort(
+        (a, b) => getRecordTimestamp(b) - getRecordTimestamp(a)
       );
-  }, [assignments]);
+  }, [safeAssignments, month]);
+
   const statistics = useMemo(() => {
     const counts = {
       total: evaluations.length,
       started: 0,
       transferred: 0,
       pending: 0,
+      rejected: 0,
     };
-    evaluations.forEach((item) => {
-      const type = getStatusType(getStatus(item));
-      if (type === "started") {
-        counts.started += 1;
-      } else if (type === "transferred") {
-        counts.transferred += 1;
-      } else {
-        counts.pending += 1;
-      }
+
+    evaluations.forEach((evaluation) => {
+      const status = calculatePatientStatus(evaluation, safeAssignments);
+
+      if (status.type === "started") counts.started += 1;
+      else if (status.type === "transferred") counts.transferred += 1;
+      else if (status.type === "rejected") counts.rejected += 1;
+      else counts.pending += 1;
     });
+
     return counts;
-  }, [evaluations]);
-  const getPercentage = (value) => {
-    if (!statistics.total) return 0;
-    return Math.round((value / statistics.total) * 1000) / 10;
-  };
+  }, [evaluations, safeAssignments]);
+
+  const getPercentage = (value) =>
+    statistics.total
+      ? Math.round((value / statistics.total) * 1000) / 10
+      : 0;
+
   const styles = {
     page: {
       background: "linear-gradient(135deg, #f0f5fc 0%, #f8faff 100%)",
@@ -662,7 +660,6 @@ export default function EvaluationTrackerSection({
       fontSize: 13,
       outline: "none",
       minWidth: 170,
-      boxShadow: "0 2px 6px rgba(41, 65, 130, 0.03)",
     },
     statsPanel: {
       padding: 12,
@@ -718,7 +715,6 @@ export default function EvaluationTrackerSection({
       fontWeight: 800,
       cursor: loading ? "wait" : "pointer",
       opacity: loading ? 0.65 : 1,
-      boxShadow: "0 5px 12px rgba(5, 150, 105, 0.15)",
     },
     tableWrap: {
       width: "100%",
@@ -755,6 +751,7 @@ export default function EvaluationTrackerSection({
     patientName: {
       color: "#203c65",
       fontWeight: 750,
+      whiteSpace: "nowrap",
     },
     fileNumber: {
       color: "#456184",
@@ -800,24 +797,32 @@ export default function EvaluationTrackerSection({
       fontSize: 12,
     },
   };
+
   function renderStatus(item) {
-    const status = getStatus(item);
-    const type = getStatusType(status);
+    const status = calculatePatientStatus(item, safeAssignments);
     const symbol =
-      type === "started" ? "✓" : type === "transferred" ? "⇄" : "◷";
+      status.type === "started"
+        ? "✓"
+        : status.type === "transferred"
+        ? "⇄"
+        : status.type === "rejected"
+        ? "✕"
+        : "◷";
+
     return (
       <span
         style={{
           ...styles.statusBadge,
-          ...getStatusColors(type),
+          ...getStatusColors(status.type),
         }}
-        title={status}
+        title={`Registration status: ${status.label}`}
       >
         <span aria-hidden="true">{symbol}</span>
-        <span>{status}</span>
+        <span>{status.label}</span>
       </span>
     );
   }
+
   return (
     <section style={styles.page}>
       <div style={styles.header}>
@@ -825,9 +830,10 @@ export default function EvaluationTrackerSection({
           <div style={styles.teamBadge}>Physiotherapy</div>
           <h2 style={styles.title}>Evaluation Tracker</h2>
           <p style={styles.subtitle}>
-            Track initial evaluations and patient follow-up status.
+            Track initial evaluations and subsequent patient registrations.
           </p>
         </div>
+
         <label style={styles.monthLabel}>
           Evaluation Month
           <input
@@ -838,6 +844,7 @@ export default function EvaluationTrackerSection({
           />
         </label>
       </div>
+
       <div style={styles.statsPanel}>
         <div style={styles.statsGrid}>
           <SummaryCard
@@ -847,7 +854,7 @@ export default function EvaluationTrackerSection({
             percentage={100}
           />
           <SummaryCard
-            label="Started"
+            label="Started / Registered"
             value={statistics.started}
             type="started"
             percentage={getPercentage(statistics.started)}
@@ -864,9 +871,17 @@ export default function EvaluationTrackerSection({
             type="pending"
             percentage={getPercentage(statistics.pending)}
           />
+          <SummaryCard
+            label="Rejected"
+            value={statistics.rejected}
+            type="rejected"
+            percentage={getPercentage(statistics.rejected)}
+          />
         </div>
       </div>
+
       {error ? <div style={styles.error}>{error}</div> : null}
+
       <div style={styles.recordsPanel}>
         <div style={styles.recordsHeader}>
           <div>
@@ -875,6 +890,7 @@ export default function EvaluationTrackerSection({
               Showing initial evaluations for {getMonthLabel(month)}.
             </p>
           </div>
+
           {onReload && (
             <button
               type="button"
@@ -887,6 +903,7 @@ export default function EvaluationTrackerSection({
             </button>
           )}
         </div>
+
         {loading ? (
           <div style={styles.emptyState}>Loading evaluations...</div>
         ) : evaluations.length === 0 ? (
@@ -898,27 +915,19 @@ export default function EvaluationTrackerSection({
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Date of Eval</th>
-                  <th style={styles.th}>Patient Name</th>
+                  <th style={styles.th}>Name</th>
                   <th style={styles.th}>File Number</th>
                   <th style={styles.th}>Visit Number</th>
+                  <th style={styles.th}>Date</th>
                   <th style={styles.th}>Referring Physician</th>
                   <th style={styles.th}>Specialty</th>
                   <th style={styles.th}>Status</th>
                 </tr>
               </thead>
+
               <tbody>
                 {evaluations.map((item, index) => (
-                  <tr
-                    key={
-                      item?.id ??
-                      item?.assignment_id ??
-                      `${getFileNumber(item)}-${index}`
-                    }
-                  >
-                    <td style={styles.td}>
-                      {formatDate(getEvaluationDate(item))}
-                    </td>
+                  <tr key={item?.id ?? item?.assignment_id ?? `${getPatientIdentity(item) || "patient"}-${index}`}>
                     <td style={styles.td}>
                       <span style={styles.patientName}>
                         {getPatientName(item)}
@@ -929,8 +938,9 @@ export default function EvaluationTrackerSection({
                         {getFileNumber(item)}
                       </span>
                     </td>
+                    <td style={styles.td}>{getVisitNumber(item)}</td>
                     <td style={styles.td}>
-                      {getVisitNumber(item)}
+                      {formatDate(getEvaluationDate(item))}
                     </td>
                     <td style={styles.td}>{getPhysician(item)}</td>
                     <td style={styles.td}>{getSpecialty(item)}</td>
@@ -941,6 +951,7 @@ export default function EvaluationTrackerSection({
             </table>
           </div>
         )}
+
         <div style={styles.footer}>
           <span>
             Showing {evaluations.length}{" "}

@@ -1,4 +1,3 @@
-
 import json
 
 from django.contrib.auth import (
@@ -51,10 +50,7 @@ def normalize_role(role):
 
 
 def is_admin_user(user):
-    """
-    Only Django superusers and users with the admin role
-    can access administrative user-management endpoints.
-    """
+    """Check whether a user has administrative permissions."""
     return bool(
         user
         and user.is_authenticated
@@ -87,8 +83,15 @@ def parse_json_body(request):
 
 def get_authenticated_user(request):
     """
-    Return the user authenticated by Django session middleware
-    or by a valid DRF Token in the Authorization header.
+    Authenticate using either:
+    1. An authenticated Django session.
+    2. A DRF token sent in the Authorization header.
+
+    Accepts both:
+        Authorization: Token <token>
+        Authorization: Bearer <token>
+
+    Both header formats are validated against the DRF Token table.
     """
     request_user = getattr(request, "user", None)
 
@@ -99,13 +102,21 @@ def get_authenticated_user(request):
     ):
         return request_user
 
-    authorization = request.headers.get("Authorization", "")
+    authorization = request.headers.get("Authorization", "").strip()
     parts = authorization.split()
 
-    if len(parts) == 2 and parts[0].lower() == "token":
+    if len(parts) == 2 and parts[0].lower() in {
+        "token",
+        "bearer",
+    }:
+        token_key = parts[1].strip()
+
+        if not token_key:
+            return None
+
         try:
             token = Token.objects.select_related("user").get(
-                key=parts[1]
+                key=token_key
             )
         except Token.DoesNotExist:
             return None
@@ -117,19 +128,13 @@ def get_authenticated_user(request):
 
 
 def admin_error_response(request, action):
-    """Return a permission error when the requester is not an admin."""
+    """Return a permission error if the requester is not an admin."""
     user = get_authenticated_user(request)
 
     if user is None:
         return JsonResponse(
             {"error": "Not authenticated"},
             status=401,
-        )
-
-    if not user.is_active:
-        return JsonResponse(
-            {"error": "This account is inactive"},
-            status=403,
         )
 
     if not is_admin_user(user):
@@ -154,10 +159,7 @@ def is_last_active_superuser(user):
 
 
 def get_user_data(user):
-    """
-    Return a consistent user representation for the frontend.
-    Supports separate display names when the model has such a field.
-    """
+    """Return a consistent representation of a user."""
     display_name = (
         getattr(user, "display_name", "")
         or getattr(user, "name", "")
@@ -165,13 +167,11 @@ def get_user_data(user):
         or user.username
     )
 
-    role = normalize_role(getattr(user, "role", ""))
-
     return {
         "id": user.id,
         "username": user.username,
         "display_name": display_name,
-        "role": role,
+        "role": normalize_role(getattr(user, "role", "")),
         "is_superuser": user.is_superuser,
         "is_staff": user.is_staff,
         "is_active": user.is_active,
@@ -179,7 +179,7 @@ def get_user_data(user):
 
 
 def serialize_user(user):
-    """Compatibility alias for older code using serialize_user."""
+    """Compatibility alias for older code."""
     return get_user_data(user)
 
 
@@ -228,12 +228,12 @@ def login_api(request):
             status=403,
         )
 
-    # Migrate the legacy doctor role to physician on login.
     if getattr(user, "role", "") == "doctor":
         user.role = "physician"
         user.save(update_fields=["role"])
 
     login(request, user)
+
     token, _ = Token.objects.get_or_create(user=user)
     user_data = get_user_data(user)
 
@@ -267,13 +267,6 @@ def current_user_api(request):
             status=401,
         )
 
-    if not user.is_active:
-        return JsonResponse(
-            {"error": "This account is inactive"},
-            status=403,
-        )
-
-    # Migrate the legacy doctor role when the user is retrieved.
     if getattr(user, "role", "") == "doctor":
         user.role = "physician"
         user.save(update_fields=["role"])
@@ -381,13 +374,59 @@ def list_users_api(request):
     if permission_error:
         return permission_error
 
-    # Migrate existing doctor records to physician.
     User.objects.filter(role="doctor").update(role="physician")
 
     users = User.objects.all().order_by("username")
 
     return JsonResponse({
         "users": [get_user_data(user) for user in users]
+    })
+
+
+def physician_users_api(request):
+    """
+    Return active physician-role users for physician dropdowns.
+
+    Uses the existing User table. No separate Physician records
+    are required in the reception app.
+
+    Access requires an authenticated, active account.
+    """
+    if request.method != "GET":
+        return JsonResponse(
+            {"error": "Method not allowed"},
+            status=405,
+        )
+
+    current_user = get_authenticated_user(request)
+
+    if current_user is None:
+        return JsonResponse(
+            {"error": "Not authenticated"},
+            status=401,
+        )
+
+    physicians = User.objects.filter(
+        role__in=["physician", "doctor"],
+        is_active=True,
+    ).order_by("username")
+
+    physician_data = []
+
+    for physician in physicians:
+        data = get_user_data(physician)
+
+        physician_data.append({
+            "id": data["id"],
+            "username": data["username"],
+            "display_name": data["display_name"],
+            "name": data["display_name"],
+            "role": data["role"],
+        })
+
+    return JsonResponse({
+        "physicians": physician_data,
+        "count": len(physician_data),
     })
 
 
@@ -420,7 +459,6 @@ def update_user_api(request, user_id):
     if error:
         return error
 
-    # Allow partial updates.
     new_username = data.get("username", target_user.username)
 
     if (
@@ -445,8 +483,9 @@ def update_user_api(request, user_id):
         )
 
     role_was_supplied = "role" in data
-    raw_role = data.get("role", target_user.role)
-    new_role = normalize_role(raw_role)
+    new_role = normalize_role(
+        data.get("role", target_user.role)
+    )
 
     new_is_superuser = data.get(
         "is_superuser",
@@ -458,8 +497,6 @@ def update_user_api(request, user_id):
         target_user.is_active,
     )
 
-    # Permit an unchanged legacy role during unrelated edits,
-    # but require supported roles for new role assignments.
     if (
         new_role not in ALLOWED_ROLES
         and (
@@ -547,7 +584,6 @@ def update_user_api(request, user_id):
 
     target_user.save()
 
-    # Revoke API tokens when an account is deactivated.
     if not target_user.is_active:
         Token.objects.filter(user=target_user).delete()
 
@@ -566,8 +602,8 @@ def update_user_api(request, user_id):
 @csrf_exempt
 def delete_user_api(request, user_id):
     """
-    Deactivate the account rather than deleting its database record.
-    Historical records linked to the user are preserved.
+    Deactivate the account instead of deleting its database record.
+    Existing records linked to the user are preserved.
     """
     if request.method != "DELETE":
         return JsonResponse(
@@ -617,11 +653,9 @@ def delete_user_api(request, user_id):
         )
 
     username = target_user.username
-
     target_user.is_active = False
     target_user.save(update_fields=["is_active"])
 
-    # Revoke API access without deleting the user or their records.
     Token.objects.filter(user=target_user).delete()
 
     return JsonResponse({
@@ -771,10 +805,7 @@ def change_user_password_api(request, user_id):
 
 @csrf_exempt
 def change_my_password_api(request):
-    """
-    Allow a signed-in user to change their own password.
-    Authentication accepts the existing middleware or a DRF Token.
-    """
+    """Allow a signed-in user to change their own password."""
     if request.method != "POST":
         return JsonResponse(
             {"error": "Method not allowed"},
@@ -787,12 +818,6 @@ def change_my_password_api(request):
         return JsonResponse(
             {"error": "Not authenticated"},
             status=401,
-        )
-
-    if not user.is_active:
-        return JsonResponse(
-            {"error": "This account is inactive"},
-            status=403,
         )
 
     data, error = parse_json_body(request)
@@ -860,10 +885,9 @@ def change_my_password_api(request):
     user.set_password(new_password)
     user.save(update_fields=["password"])
 
-    # Keep the Django session authenticated.
     update_session_auth_hash(request, user)
 
-    # Replace the API token. The frontend must save this new token.
+    # Replace the old token with a new one after password change.
     Token.objects.filter(user=user).delete()
     token = Token.objects.create(user=user)
 

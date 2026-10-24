@@ -7,6 +7,7 @@ from .api_views import (
     current_user_api,
     create_user_api,
     list_users_api,
+    physician_users_api,
     update_user_api,
     delete_user_api,
     set_user_active_api,
@@ -23,6 +24,7 @@ urlpatterns = [
     # User management
     path("create-user/", create_user_api, name="create_user_api"),
     path("list-users/", list_users_api, name="list_users_api"),
+
     path(
         "update-user/<int:user_id>/",
         update_user_api,
@@ -39,6 +41,13 @@ urlpatterns = [
         "set-active/<int:user_id>/",
         set_user_active_api,
         name="set_user_active_api",
+    ),
+
+    # Active physicians for referring-physician dropdowns
+    path(
+        "physicians/",
+        physician_users_api,
+        name="physician_users_api",
     ),
 
     # Admin resets another user's password

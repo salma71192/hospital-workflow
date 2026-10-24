@@ -1,19 +1,14 @@
 
-import React, { useMemo, useState, useEffect } from "react";
-
-const DEFAULT_PHYSICIANS = [
-  "Suad Trebinjac",
-  "Philippe Noel Neyret",
-  "Mahmoud Ramadan Adly Aly",
-  "Modar Adel Alhasan",
-  "Hamid Reza Ansari",
-  "Yoosuf Shan",
-  "Ammar Yasser Omran",
-  "Yasser Salam",
-];
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
+import api from "../../api/api";
 
 const EXTERNAL_REFERRAL = "External Referral";
-const EXTERNAL_REFERRAL_PREFIX = "External Referral:";
+const LAST_THERAPIST_KEY = "hospital_workflow_last_therapist_id";
 
 const CATEGORIES = [
   { value: "appointment", label: "Appointment" },
@@ -23,7 +18,10 @@ const CATEGORIES = [
     value: "task_without_eligibility",
     label: "Task Without Eligibility",
   },
-  { value: "initial_evaluation", label: "Initial Evaluation" },
+  {
+    value: "initial_evaluation",
+    label: "Initial Evaluation",
+  },
 ];
 
 const SPECIALITIES = [
@@ -37,8 +35,6 @@ const SPECIALITIES = [
   "Lipodema",
   "Sports",
 ];
-
-const LAST_THERAPIST_KEY = "hospital_workflow_last_therapist_id";
 
 function getTodayDate() {
   const today = new Date();
@@ -64,20 +60,86 @@ function normalizeRole(value) {
     .replace(/[\s-]+/g, "_");
 }
 
-function getExternalPhysicianName(value) {
-  const physician = String(value || "").trim();
-
-  if (
-    physician.toLowerCase().startsWith(
-      EXTERNAL_REFERRAL_PREFIX.toLowerCase()
-    )
-  ) {
-    return physician
-      .slice(EXTERNAL_REFERRAL_PREFIX.length)
-      .trim();
+function getPhysicianName(physician) {
+  if (typeof physician === "string") {
+    return physician.trim();
   }
 
-  return "";
+  return String(
+    physician?.display_name ||
+      physician?.name ||
+      physician?.full_name ||
+      physician?.username ||
+      ""
+  ).trim();
+}
+
+function isExternalPhysician(value) {
+  const physician = String(value || "").trim().toLowerCase();
+
+  return (
+    physician === EXTERNAL_REFERRAL.toLowerCase() ||
+    physician.startsWith(`${EXTERNAL_REFERRAL.toLowerCase()}:`)
+  );
+}
+
+function getErrorMessage(error) {
+  const status = error?.response?.status;
+  const data = error?.response?.data;
+
+  if (status === 401) {
+    return "The physician request was unauthorized. Please sign in again and retry.";
+  }
+
+  if (status === 403) {
+    return "Your account does not have permission to access the physician list.";
+  }
+
+  if (status === 404) {
+    return "The physician endpoint was not found. Check the Django URL configuration and API base URL.";
+  }
+
+  if (data && typeof data === "object") {
+    return (
+      data.detail ||
+      data.error ||
+      data.message ||
+      error?.message ||
+      "Could not load physicians."
+    );
+  }
+
+  return error?.message || "Could not load physicians.";
+}
+
+function extractPhysicianList(data) {
+  if (Array.isArray(data)) return data;
+
+  const possibleKeys = [
+    "physicians",
+    "doctors",
+    "users",
+    "results",
+    "data",
+  ];
+
+  for (const key of possibleKeys) {
+    if (Array.isArray(data?.[key])) {
+      return data[key];
+    }
+  }
+
+  return [];
+}
+
+function normalizePhysicianList(list) {
+  const names = (Array.isArray(list) ? list : [])
+    .map(getPhysicianName)
+    .filter(Boolean);
+
+  return Array.from(
+    new Map(names.map((name) => [name.toLowerCase(), name])).values()
+  ).sort((a, b) => a.localeCompare(b));
 }
 
 export default function PatientAssignmentForm({
@@ -85,11 +147,12 @@ export default function PatientAssignmentForm({
   assignmentForm = {},
   setAssignmentForm,
   therapists = [],
-  physicians = DEFAULT_PHYSICIANS,
+  physicians = [],
   specialities = [],
   onSubmit,
   onCancelEdit,
   editingAssignmentId = null,
+  savingAssignment = false,
   loading = false,
   userRole = "",
   role = "",
@@ -97,6 +160,14 @@ export default function PatientAssignmentForm({
 }) {
   const [therapistSearch, setTherapistSearch] = useState("");
   const [therapistMenuOpen, setTherapistMenuOpen] = useState(false);
+
+  const [fetchedPhysicians, setFetchedPhysicians] = useState([]);
+  const [physiciansLoading, setPhysiciansLoading] = useState(false);
+  const [physiciansError, setPhysiciansError] = useState("");
+  const [physicianRetry, setPhysicianRetry] = useState(0);
+  const [physiciansLoaded, setPhysiciansLoaded] = useState(false);
+
+  const isBusy = Boolean(loading || savingAssignment);
 
   const effectiveRole = normalizeRole(
     userRole ||
@@ -109,28 +180,29 @@ export default function PatientAssignmentForm({
 
   const isAdmin = effectiveRole === "admin";
   const isEditing = Boolean(editingAssignmentId);
+
   const isEvaluation =
     assignmentForm.category === "initial_evaluation";
 
-  const currentPhysician = String(
+  const storedPhysician = String(
     assignmentForm.referring_physician || ""
   ).trim();
 
-  const isExternalReferral =
-    currentPhysician === EXTERNAL_REFERRAL ||
-    currentPhysician.toLowerCase().startsWith(
-      EXTERNAL_REFERRAL_PREFIX.toLowerCase()
-    );
+  const isExternalReferral = isExternalPhysician(storedPhysician);
 
-  const externalPhysicianName =
-    String(assignmentForm.external_referring_physician || "").trim() ||
-    getExternalPhysicianName(currentPhysician);
+  const currentPhysician = isExternalReferral
+    ? EXTERNAL_REFERRAL
+    : storedPhysician;
 
-  const therapistLabel = (therapist) =>
-    therapist.display_name ||
-    therapist.full_name ||
-    therapist.username ||
-    `Therapist ${therapist.id}`;
+  const therapistLabel = useCallback(
+    (therapist) =>
+      therapist?.display_name ||
+      therapist?.full_name ||
+      therapist?.name ||
+      therapist?.username ||
+      `Therapist ${therapist?.id ?? ""}`,
+    []
+  );
 
   const selectedTherapist = useMemo(
     () =>
@@ -150,6 +222,101 @@ export default function PatientAssignmentForm({
     [assignmentForm.additional_therapist_ids]
   );
 
+  /*
+   * Use the application's shared Axios instance for authentication
+   * and the configured API base URL.
+   */
+  useEffect(() => {
+    if (!isEvaluation) {
+      setPhysiciansLoading(false);
+      setPhysiciansError("");
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadPhysicians() {
+      setPhysiciansLoading(true);
+      setPhysiciansError("");
+      setPhysiciansLoaded(false);
+
+      try {
+        const response = await api.get("users/physicians/");
+
+        if (cancelled) return;
+
+        const list = normalizePhysicianList(
+          extractPhysicianList(response.data)
+        );
+
+        setFetchedPhysicians(list);
+        setPhysiciansLoaded(true);
+
+        if (list.length === 0) {
+          setPhysiciansError(
+            "The server returned no physicians. You can still use the supplied physician list if available. Otherwise, verify that physician accounts exist and the endpoint returns the expected data."
+          );
+        }
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error(
+          "Failed to fetch physicians:",
+          error?.response?.status,
+          error?.response?.data || error
+        );
+
+        setPhysiciansError(getErrorMessage(error));
+      } finally {
+        if (!cancelled) {
+          setPhysiciansLoading(false);
+        }
+      }
+    }
+
+    loadPhysicians();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isEvaluation, physicianRetry]);
+
+  /*
+   * Always include the parent's physician list as a fallback.
+   * A failed request should not hide options already supplied by
+   * AdminDashboard.
+   */
+  const availablePhysicians = useMemo(() => {
+    const parentList = normalizePhysicianList(physicians);
+    const fetchedList = normalizePhysicianList(fetchedPhysicians);
+
+    const savedPhysician =
+      currentPhysician && !isExternalReferral
+        ? [currentPhysician]
+        : [];
+
+    return normalizePhysicianList([
+      ...parentList,
+      ...fetchedList,
+      ...savedPhysician,
+    ]);
+  }, [
+    physicians,
+    fetchedPhysicians,
+    currentPhysician,
+    isExternalReferral,
+  ]);
+
+  const availableSpecialities = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...SPECIALITIES, ...specialities].filter(Boolean)
+        )
+      ),
+    [specialities]
+  );
+
   useEffect(() => {
     if (
       isEditing ||
@@ -163,7 +330,8 @@ export default function PatientAssignmentForm({
     const rememberedId = getRememberedTherapistId();
 
     const rememberedTherapist = therapists.find(
-      (therapist) => String(therapist.id) === String(rememberedId)
+      (therapist) =>
+        String(therapist.id) === String(rememberedId)
     );
 
     if (rememberedTherapist) {
@@ -183,7 +351,7 @@ export default function PatientAssignmentForm({
     if (selectedTherapist && !therapistMenuOpen) {
       setTherapistSearch(therapistLabel(selectedTherapist));
     }
-  }, [selectedTherapist, therapistMenuOpen]);
+  }, [selectedTherapist, therapistMenuOpen, therapistLabel]);
 
   useEffect(() => {
     if (
@@ -193,10 +361,15 @@ export default function PatientAssignmentForm({
     ) {
       setAssignmentForm((previous) => ({
         ...previous,
-        assignment_date: previous.assignment_date || getTodayDate(),
+        assignment_date:
+          previous.assignment_date || getTodayDate(),
       }));
     }
-  }, [isAdmin, assignmentForm.assignment_date, setAssignmentForm]);
+  }, [
+    isAdmin,
+    assignmentForm.assignment_date,
+    setAssignmentForm,
+  ]);
 
   const filteredTherapists = useMemo(() => {
     const query = therapistSearch.trim().toLowerCase();
@@ -204,35 +377,11 @@ export default function PatientAssignmentForm({
     return therapists.filter((therapist) =>
       therapistLabel(therapist).toLowerCase().includes(query)
     );
-  }, [therapists, therapistSearch]);
-
-  const availablePhysicians = useMemo(() => {
-    const names = Array.isArray(physicians) ? physicians : [];
-
-    return Array.from(
-      new Set(
-        [
-          ...DEFAULT_PHYSICIANS,
-          ...names,
-          ...(currentPhysician &&
-          !isExternalReferral &&
-          currentPhysician !== EXTERNAL_REFERRAL
-            ? [currentPhysician]
-            : []),
-        ].filter(Boolean)
-      )
-    );
-  }, [physicians, currentPhysician, isExternalReferral]);
-
-  const availableSpecialities = useMemo(
-    () =>
-      Array.from(
-        new Set([...SPECIALITIES, ...specialities].filter(Boolean))
-      ),
-    [specialities]
-  );
+  }, [therapists, therapistSearch, therapistLabel]);
 
   const updateField = (field, value) => {
+    if (typeof setAssignmentForm !== "function") return;
+
     setAssignmentForm((previous) => ({
       ...previous,
       [field]: value,
@@ -256,7 +405,7 @@ export default function PatientAssignmentForm({
     try {
       localStorage.setItem(LAST_THERAPIST_KEY, therapistId);
     } catch {
-      // Assignment can continue if browser storage is unavailable.
+      // Browser storage is optional.
     }
   };
 
@@ -266,7 +415,9 @@ export default function PatientAssignmentForm({
     setAssignmentForm((previous) => ({
       ...previous,
       with_another_therapist: Boolean(therapistId),
-      additional_therapist_ids: therapistId ? [therapistId] : [],
+      additional_therapist_ids: therapistId
+        ? [therapistId]
+        : [],
     }));
   };
 
@@ -280,11 +431,12 @@ export default function PatientAssignmentForm({
         category === "initial_evaluation"
           ? previous.referring_physician || ""
           : "",
-      external_referring_physician:
-        category === "initial_evaluation"
-          ? previous.external_referring_physician || ""
-          : "",
+      external_referring_physician: "",
     }));
+
+    if (category === "initial_evaluation") {
+      setPhysiciansError("");
+    }
   };
 
   const handlePhysicianChange = (event) => {
@@ -293,25 +445,16 @@ export default function PatientAssignmentForm({
     setAssignmentForm((previous) => ({
       ...previous,
       referring_physician: physician,
-      external_referring_physician:
-        physician === EXTERNAL_REFERRAL
-          ? getExternalPhysicianName(previous.referring_physician) ||
-            previous.external_referring_physician ||
-            ""
-          : "",
+      external_referring_physician: "",
     }));
-  };
-
-  const handleExternalPhysicianNameChange = (event) => {
-    updateField("external_referring_physician", event.target.value);
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
 
-    if (loading) return;
+    if (isBusy) return;
 
-    if (!selectedPatient) {
+    if (!selectedPatient?.id) {
       alert("Please select a patient first.");
       return;
     }
@@ -346,34 +489,53 @@ export default function PatientAssignmentForm({
       return;
     }
 
-    if (isEvaluation && isExternalReferral) {
-      const externalName = externalPhysicianName;
+    /*
+     * Create a submission snapshot and pass it directly to the parent.
+     * The parent should use this payload rather than reading potentially
+     * stale React state immediately after a state update.
+     */
+    const submissionForm = {
+      ...assignmentForm,
+      patient_id: selectedPatient.id,
+      therapist_id: assignmentForm.therapist_id,
+      category: assignmentForm.category || "appointment",
+      visit_number: visitNumber,
+      referring_physician: isEvaluation
+        ? currentPhysician
+        : "",
+      external_referring_physician: "",
+      additional_therapist_ids: additionalTherapistIds.filter(
+        (id) => id !== String(assignmentForm.therapist_id)
+      ),
+      with_another_therapist: additionalTherapistIds.some(
+        (id) => id !== String(assignmentForm.therapist_id)
+      ),
+    };
 
-      if (!externalName) {
-        alert("Please enter the external referring physician's name.");
-        return;
-      }
-
-      // Store the combined value in the existing backend field.
-      // This matches the backend validation format.
-      setAssignmentForm((previous) => ({
-        ...previous,
-        referring_physician: `${EXTERNAL_REFERRAL_PREFIX} ${externalName}`,
-        external_referring_physician: externalName,
-      }));
+    if (typeof onSubmit !== "function") {
+      console.error(
+        "PatientAssignmentForm: onSubmit callback is missing."
+      );
+      alert("Unable to save because the assignment submit handler is not configured.");
+      return;
     }
 
-    if (typeof onSubmit === "function") {
-      onSubmit(event);
-    }
+    onSubmit(event, submissionForm);
   };
+
+  const retryPhysicianFetch = useCallback(() => {
+    setPhysiciansError("");
+    setPhysicianRetry((previous) => previous + 1);
+  }, []);
 
   return (
     <form
       onSubmit={handleSubmit}
       style={styles.card}
       onClick={(event) => {
-        if (!event.target.closest("[data-therapist-autocomplete]")) {
+        if (
+          !event.target.closest("[data-therapist-autocomplete]")
+        ) {
           setTherapistMenuOpen(false);
         }
       }}
@@ -383,11 +545,9 @@ export default function PatientAssignmentForm({
       <div style={styles.header}>
         <div style={styles.headerText}>
           <div style={styles.eyebrow}>PATIENT MANAGEMENT</div>
-
           <h3 style={styles.title}>
             {isEditing ? "Edit Assignment" : "Assign Patient"}
           </h3>
-
           <p style={styles.subtitle}>
             {isEditing
               ? "Review and update the existing patient assignment."
@@ -437,13 +597,13 @@ export default function PatientAssignmentForm({
 
       <div style={styles.sectionHeading}>
         <span style={styles.sectionNumber}>01</span>
-
         <div>
           <div style={styles.sectionTitle}>Assignment details</div>
-
           <div style={styles.sectionSubtitle}>
             Select the therapist and visit information.
-            {isAdmin ? " Admin can also set the assignment date." : ""}
+            {isAdmin
+              ? " Admin can also set the assignment date."
+              : ""}
           </div>
         </div>
       </div>
@@ -453,7 +613,10 @@ export default function PatientAssignmentForm({
           Physiotherapist <span style={styles.required}>*</span>
         </label>
 
-        <div style={styles.autocomplete} data-therapist-autocomplete>
+        <div
+          style={styles.autocomplete}
+          data-therapist-autocomplete
+        >
           <input
             type="text"
             value={
@@ -477,15 +640,14 @@ export default function PatientAssignmentForm({
             autoComplete="off"
             aria-label="Search physiotherapist"
             aria-expanded={therapistMenuOpen}
-            disabled={loading}
-            required={!assignmentForm.therapist_id}
+            disabled={isBusy}
           />
 
           <span style={styles.searchIcon} aria-hidden="true">
             ⌕
           </span>
 
-          {therapistMenuOpen && !loading && (
+          {therapistMenuOpen && !isBusy && (
             <div
               style={styles.dropdown}
               role="listbox"
@@ -507,7 +669,9 @@ export default function PatientAssignmentForm({
                           ? styles.dropdownItemSelected
                           : {}),
                       }}
-                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseDown={(event) =>
+                        event.preventDefault()
+                      }
                       onClick={() => chooseTherapist(therapist)}
                       role="option"
                       aria-selected={selected}
@@ -555,7 +719,7 @@ export default function PatientAssignmentForm({
           value={additionalTherapistIds[0] || ""}
           onChange={handleAdditionalTherapistChange}
           style={styles.select}
-          disabled={loading}
+          disabled={isBusy}
         >
           <option value="">None</option>
 
@@ -566,7 +730,10 @@ export default function PatientAssignmentForm({
                 String(assignmentForm.therapist_id)
             )
             .map((therapist) => (
-              <option key={therapist.id} value={String(therapist.id)}>
+              <option
+                key={therapist.id}
+                value={String(therapist.id)}
+              >
                 {therapistLabel(therapist)}
               </option>
             ))}
@@ -592,7 +759,7 @@ export default function PatientAssignmentForm({
             }
             style={styles.input}
             required
-            disabled={loading}
+            disabled={isBusy}
             max={getTodayDate()}
           />
 
@@ -613,7 +780,7 @@ export default function PatientAssignmentForm({
             onChange={handleCategoryChange}
             style={styles.select}
             required
-            disabled={loading}
+            disabled={isBusy}
           >
             {CATEGORIES.map((category) => (
               <option key={category.value} value={category.value}>
@@ -638,7 +805,7 @@ export default function PatientAssignmentForm({
             }
             style={styles.input}
             required
-            disabled={loading}
+            disabled={isBusy}
           />
         </div>
       </div>
@@ -647,92 +814,67 @@ export default function PatientAssignmentForm({
         <>
           <div style={styles.sectionHeading}>
             <span style={styles.sectionNumber}>02</span>
-
             <div>
-              <div style={styles.sectionTitle}>
-                Referral information
-              </div>
-
+              <div style={styles.sectionTitle}>Referral information</div>
               <div style={styles.sectionSubtitle}>
                 Select an internal physician or record an external referral.
               </div>
             </div>
           </div>
 
-          {!isExternalReferral && (
-            <div style={styles.field}>
-              <label style={styles.label}>
-                Referring Physician <span style={styles.required}>*</span>
-              </label>
+          <div style={styles.field}>
+            <label style={styles.label}>
+              Referring Physician <span style={styles.required}>*</span>
+            </label>
 
-              <select
-                value={currentPhysician}
-                onChange={handlePhysicianChange}
-                style={styles.select}
-                required
-                disabled={loading}
-              >
-                <option value="">Select physician</option>
+            <select
+              value={currentPhysician}
+              onChange={handlePhysicianChange}
+              style={styles.select}
+              required
+              disabled={isBusy}
+            >
+              <option value="">Select physician</option>
 
-                {availablePhysicians.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-
-                <option value={EXTERNAL_REFERRAL}>
-                  {EXTERNAL_REFERRAL}
+              {availablePhysicians.map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
-              </select>
-            </div>
-          )}
+              ))}
 
-          {isExternalReferral && (
-            <>
-              <div style={styles.externalBadge}>
-                <span style={styles.externalBadgeDot} />
-                External referral selected
-              </div>
+              <option value={EXTERNAL_REFERRAL}>
+                {EXTERNAL_REFERRAL}
+              </option>
+            </select>
 
-              <div style={styles.field}>
-                <label style={styles.label}>
-                  External Referring Physician Name{" "}
-                  <span style={styles.required}>*</span>
-                </label>
+            {physiciansLoading && (
+              <p style={styles.helperText} role="status">
+                Fetching physicians from the server...
+              </p>
+            )}
 
-                <input
-                  type="text"
-                  value={externalPhysicianName}
-                  onChange={handleExternalPhysicianNameChange}
-                  style={styles.input}
-                  placeholder="Enter the external physician's full name"
-                  required
-                  disabled={loading}
-                  maxLength={255}
-                />
-
-                <p style={styles.helperText}>
-                  Enter the full name of the physician who referred the
-                  patient from outside the hospital.
-                </p>
-
+            {!physiciansLoading && physiciansError && (
+              <div style={styles.errorPanel} role="alert">
+                <p style={styles.errorText}>{physiciansError}</p>
                 <button
                   type="button"
-                  style={styles.changeReferralButton}
-                  onClick={() => {
-                    setAssignmentForm((previous) => ({
-                      ...previous,
-                      referring_physician: "",
-                      external_referring_physician: "",
-                    }));
-                  }}
-                  disabled={loading}
+                  style={styles.retryButton}
+                  onClick={retryPhysicianFetch}
                 >
-                  Choose an internal physician instead
+                  Retry loading physicians
                 </button>
               </div>
-            </>
-          )}
+            )}
+
+            {!physiciansLoading &&
+              !physiciansError &&
+              physiciansLoaded &&
+              availablePhysicians.length > 0 && (
+                <p style={styles.successHint}>
+                  {availablePhysicians.length} physician option(s) available.
+                </p>
+              )}
+          </div>
         </>
       )}
 
@@ -756,7 +898,7 @@ export default function PatientAssignmentForm({
                 updateField("speciality", event.target.value)
               }
               style={styles.select}
-              disabled={loading}
+              disabled={isBusy}
             >
               <option value="">None</option>
 
@@ -784,7 +926,7 @@ export default function PatientAssignmentForm({
               style={styles.textarea}
               placeholder="Add any additional assignment notes..."
               rows={3}
-              disabled={loading}
+              disabled={isBusy}
             />
           </div>
         </div>
@@ -795,11 +937,11 @@ export default function PatientAssignmentForm({
           type="submit"
           style={{
             ...styles.button,
-            ...(loading ? styles.buttonDisabled : {}),
+            ...(isBusy ? styles.buttonDisabled : {}),
           }}
-          disabled={loading || !selectedPatient}
+          disabled={isBusy || !selectedPatient?.id}
         >
-          {loading ? (
+          {isBusy ? (
             <span style={styles.buttonContent}>
               <span style={styles.spinner} />
               {isEditing
@@ -811,7 +953,6 @@ export default function PatientAssignmentForm({
               <span>
                 {isEditing ? "Update Assignment" : "Save Assignment"}
               </span>
-
               <span style={styles.buttonArrow} aria-hidden="true">
                 →
               </span>
@@ -824,7 +965,7 @@ export default function PatientAssignmentForm({
             type="button"
             style={styles.cancelButton}
             onClick={onCancelEdit}
-            disabled={loading}
+            disabled={isBusy}
           >
             Cancel Edit
           </button>
@@ -840,7 +981,6 @@ export default function PatientAssignmentForm({
         @keyframes patientAssignmentSpin {
           to { transform: rotate(360deg); }
         }
-
         details > summary::-webkit-details-marker {
           display: none;
         }
@@ -865,7 +1005,6 @@ const styles = {
     boxSizing: "border-box",
     minWidth: 0,
   },
-
   topAccent: {
     position: "absolute",
     top: 0,
@@ -876,7 +1015,6 @@ const styles = {
     background:
       "linear-gradient(90deg, #6D28D9 0%, #A855F7 50%, #EC4899 100%)",
   },
-
   header: {
     display: "flex",
     justifyContent: "space-between",
@@ -885,9 +1023,7 @@ const styles = {
     marginBottom: "24px",
     paddingTop: "5px",
   },
-
   headerText: { minWidth: 0 },
-
   eyebrow: {
     display: "inline-block",
     color: "#6D28D9",
@@ -900,7 +1036,6 @@ const styles = {
     letterSpacing: "1.1px",
     marginBottom: "9px",
   },
-
   title: {
     margin: 0,
     color: "#2E1065",
@@ -908,14 +1043,12 @@ const styles = {
     fontWeight: 800,
     letterSpacing: "-0.5px",
   },
-
   subtitle: {
     margin: "7px 0 0",
     color: "#7C7194",
     fontSize: "13px",
     lineHeight: 1.6,
   },
-
   headerIcon: {
     display: "flex",
     alignItems: "center",
@@ -930,7 +1063,6 @@ const styles = {
     fontSize: "28px",
     boxShadow: "0 7px 16px rgba(109, 40, 217, 0.2)",
   },
-
   patient: {
     display: "flex",
     alignItems: "center",
@@ -943,7 +1075,6 @@ const styles = {
     marginBottom: "25px",
     minWidth: 0,
   },
-
   patientIcon: {
     display: "flex",
     alignItems: "center",
@@ -956,7 +1087,6 @@ const styles = {
     borderRadius: "12px",
     fontSize: "24px",
   },
-
   patientInfo: {
     display: "flex",
     flexDirection: "column",
@@ -964,22 +1094,18 @@ const styles = {
     flex: 1,
     minWidth: 0,
   },
-
   patientLabel: {
     color: "#8B5CF6",
     fontSize: "10px",
     fontWeight: 800,
     letterSpacing: "0.8px",
   },
-
   patientName: {
     color: "#3B0764",
     fontSize: "14px",
     overflowWrap: "anywhere",
   },
-
   patientMeta: { color: "#7C3AED", fontSize: "11px" },
-
   patientStatus: {
     display: "inline-flex",
     alignItems: "center",
@@ -993,14 +1119,12 @@ const styles = {
     fontWeight: 800,
     flexShrink: 0,
   },
-
   statusDot: {
     width: "7px",
     height: "7px",
     borderRadius: "50%",
     background: "#22C55E",
   },
-
   notice: {
     display: "flex",
     alignItems: "center",
@@ -1013,14 +1137,12 @@ const styles = {
     color: "#92400E",
     fontSize: "13px",
   },
-
   sectionHeading: {
     display: "flex",
     alignItems: "center",
     gap: "12px",
     marginBottom: "18px",
   },
-
   sectionNumber: {
     display: "flex",
     alignItems: "center",
@@ -1035,26 +1157,23 @@ const styles = {
     fontWeight: 800,
     boxShadow: "0 4px 10px rgba(109, 40, 217, 0.18)",
   },
-
   sectionTitle: {
     color: "#3B0764",
     fontSize: "14px",
     fontWeight: 800,
   },
-
   sectionSubtitle: {
     color: "#9588A9",
     fontSize: "12px",
     marginTop: "4px",
     lineHeight: 1.4,
   },
-
   row: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
     gap: "14px",
   },
-
   field: {
     display: "flex",
     flexDirection: "column",
@@ -1062,15 +1181,12 @@ const styles = {
     marginBottom: "17px",
     minWidth: 0,
   },
-
   label: {
     color: "#4C3A65",
     fontSize: "12px",
     fontWeight: 750,
   },
-
   required: { color: "#E11D48" },
-
   input: {
     display: "block",
     width: "100%",
@@ -1084,7 +1200,6 @@ const styles = {
     fontSize: "14px",
     outlineColor: "#8B5CF6",
   },
-
   inputWithIcon: {
     display: "block",
     width: "100%",
@@ -1098,7 +1213,6 @@ const styles = {
     fontSize: "14px",
     outlineColor: "#8B5CF6",
   },
-
   select: {
     display: "block",
     width: "100%",
@@ -1113,13 +1227,11 @@ const styles = {
     outlineColor: "#8B5CF6",
     cursor: "pointer",
   },
-
   autocomplete: {
     position: "relative",
     width: "100%",
     minWidth: 0,
   },
-
   searchIcon: {
     position: "absolute",
     right: "13px",
@@ -1128,7 +1240,6 @@ const styles = {
     color: "#8B5CF6",
     pointerEvents: "none",
   },
-
   dropdown: {
     position: "absolute",
     top: "calc(100% + 6px)",
@@ -1142,7 +1253,6 @@ const styles = {
     maxHeight: "240px",
     overflowY: "auto",
   },
-
   dropdownItem: {
     display: "flex",
     alignItems: "center",
@@ -1158,19 +1268,16 @@ const styles = {
     fontSize: "13px",
     cursor: "pointer",
   },
-
   dropdownItemSelected: {
     background: "#F3E8FF",
     color: "#6D28D9",
     fontWeight: 700,
   },
-
   therapistName: {
     flex: 1,
     minWidth: 0,
     overflowWrap: "anywhere",
   },
-
   avatar: {
     display: "inline-flex",
     alignItems: "center",
@@ -1183,74 +1290,65 @@ const styles = {
     color: "#6D28D9",
     fontWeight: 800,
   },
-
   check: {
     marginLeft: "auto",
     color: "#7C3AED",
     fontWeight: 800,
   },
-
   noResults: {
     padding: "16px",
     color: "#9588A9",
     textAlign: "center",
     fontSize: "13px",
   },
-
   rememberedHint: {
     margin: "7px 0 0",
     color: "#7C3AED",
     fontSize: "11px",
     lineHeight: 1.5,
   },
-
   dateHint: {
     margin: "-2px 0 0",
     color: "#9588A9",
     fontSize: "11px",
   },
-
   helperText: {
     margin: 0,
     color: "#7C7194",
     fontSize: "12px",
     lineHeight: 1.5,
   },
-
-  externalBadge: {
-    display: "inline-flex",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: "8px",
-    marginBottom: "14px",
-    padding: "8px 12px",
-    borderRadius: "20px",
-    background: "#F3E8FF",
-    border: "1px solid #DDD6FE",
-    color: "#6D28D9",
-    fontSize: "12px",
-    fontWeight: 800,
+  errorPanel: {
+    display: "grid",
+    gap: "10px",
+    padding: "12px",
+    border: "1px solid #FECACA",
+    borderRadius: "9px",
+    background: "#FEF2F2",
   },
-
-  externalBadgeDot: {
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%",
-    background: "#8B5CF6",
-  },
-
-  changeReferralButton: {
-    alignSelf: "flex-start",
-    padding: "8px 0",
-    border: "none",
-    background: "transparent",
-    color: "#6D28D9",
+  errorText: {
+    margin: 0,
+    color: "#B91C1C",
     fontSize: "12px",
-    fontWeight: 750,
-    textDecoration: "underline",
+    lineHeight: 1.5,
+    overflowWrap: "anywhere",
+  },
+  retryButton: {
+    justifySelf: "start",
+    padding: "8px 11px",
+    border: "1px solid #FCA5A5",
+    borderRadius: "8px",
+    background: "#FFFFFF",
+    color: "#B91C1C",
+    fontSize: "12px",
+    fontWeight: 700,
     cursor: "pointer",
   },
-
+  successHint: {
+    margin: 0,
+    color: "#15803D",
+    fontSize: "11px",
+  },
   optional: {
     border: "1px solid #E9DDFB",
     borderRadius: "13px",
@@ -1258,7 +1356,6 @@ const styles = {
     marginTop: "5px",
     background: "#FCFAFF",
   },
-
   optionalTitle: {
     display: "flex",
     alignItems: "center",
@@ -1270,7 +1367,6 @@ const styles = {
     padding: "14px 0",
     listStyle: "none",
   },
-
   optionalPlus: {
     display: "inline-flex",
     alignItems: "center",
@@ -1282,7 +1378,6 @@ const styles = {
     color: "#7C3AED",
     fontSize: "19px",
   },
-
   optionalHint: {
     marginLeft: "auto",
     color: "#A78BFA",
@@ -1290,12 +1385,10 @@ const styles = {
     fontWeight: 800,
     letterSpacing: "0.5px",
   },
-
   optionalContent: {
     borderTop: "1px solid #EDE5FA",
     paddingTop: "16px",
   },
-
   textarea: {
     display: "block",
     width: "100%",
@@ -1312,13 +1405,11 @@ const styles = {
     fontFamily: "inherit",
     lineHeight: 1.6,
   },
-
   actions: {
     display: "grid",
     gap: "10px",
     marginTop: "22px",
   },
-
   button: {
     display: "flex",
     alignItems: "center",
@@ -1337,13 +1428,11 @@ const styles = {
     cursor: "pointer",
     boxShadow: "0 7px 17px rgba(109, 40, 217, 0.22)",
   },
-
   buttonDisabled: {
     opacity: 0.65,
     cursor: "not-allowed",
     boxShadow: "none",
   },
-
   cancelButton: {
     width: "100%",
     padding: "12px 16px",
@@ -1355,19 +1444,16 @@ const styles = {
     fontWeight: 700,
     cursor: "pointer",
   },
-
   buttonContent: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     gap: "10px",
   },
-
   buttonArrow: {
     fontSize: "20px",
     lineHeight: 1,
   },
-
   spinner: {
     width: "15px",
     height: "15px",
@@ -1377,7 +1463,6 @@ const styles = {
     display: "inline-block",
     animation: "patientAssignmentSpin 0.8s linear infinite",
   },
-
   footer: {
     margin: "13px 0 0",
     textAlign: "center",
