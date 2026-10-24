@@ -1,456 +1,409 @@
 
 import json
-from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
-from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from patients.models import Patient
+from users.models import User
 from .models import PhysioReferral, Physician
 
 
-User = get_user_model()
+UserModel = get_user_model()
 
-
-# ---------------------------------------------------------
-# Common helpers
-# ---------------------------------------------------------
 
 def _json_body(request):
-    """Read JSON request data, or ordinary form data."""
-    if request.content_type and "application/json" in request.content_type:
-        try:
-            data = json.loads(request.body or b"{}")
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            raise ValueError("Invalid JSON request body.")
-
-        if not isinstance(data, dict):
-            raise ValueError("The request body must be a JSON object.")
-
-        return data
-
-    return request.POST.dict()
-
-
-def _has_field(model, field_name):
     try:
-        model._meta.get_field(field_name)
-        return True
-    except FieldDoesNotExist:
-        return False
+        return json.loads(request.body or b"{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise ValueError("Invalid JSON request body.")
 
 
-def _display_name(user):
-    if not user:
-        return ""
-
-    # Use a custom display name if the User model has one.
-    for field_name in ("display_name", "full_name", "name"):
-        value = getattr(user, field_name, None)
-        if value:
-            return str(value)
-
-    get_full_name = getattr(user, "get_full_name", None)
-    if callable(get_full_name):
-        value = get_full_name()
-        if value:
-            return value
-
-    return (
-        getattr(user, "username", None)
-        or getattr(user, "email", None)
-        or str(user.pk)
+def _model_has_field(model, field_name):
+    return any(
+        field.name == field_name
+        for field in model._meta.get_fields()
     )
 
 
-def _related_object_name(obj):
-    if not obj:
-        return ""
+def _user_display_name(user):
+    return (
+        getattr(user, "display_name", None)
+        or getattr(user, "name", None)
+        or user.get_full_name()
+        or getattr(user, "username", "")
+        or getattr(user, "email", "")
+        or str(user.pk)
+    ).strip()
 
-    for field_name in (
-        "display_name",
-        "full_name",
+
+def _patient_name(patient):
+    for field in (
         "name",
+        "full_name",
         "patient_name",
-        "file_number",
-        "patient_file_id",
-        "username",
+        "display_name",
     ):
-        value = getattr(obj, field_name, None)
+        value = getattr(patient, field, None)
         if value:
             return str(value)
 
-    get_full_name = getattr(obj, "get_full_name", None)
-    if callable(get_full_name):
-        value = get_full_name()
-        if value:
-            return value
+    first_name = getattr(patient, "first_name", "")
+    last_name = getattr(patient, "last_name", "")
+    full_name = f"{first_name} {last_name}".strip()
 
-    return str(obj)
-
-
-def _serialize_referral(referral):
-    patient = getattr(referral, "patient", None)
-    physician = getattr(referral, "physician", None)
-    referring_user = getattr(referral, "referred_by", None)
-
-    patient_file_id = ""
-    if patient:
-        for field_name in (
-            "patient_file_id",
-            "file_id",
-            "file_number",
-            "mrn",
-        ):
-            value = getattr(patient, field_name, None)
-            if value not in (None, ""):
-                patient_file_id = value
-                break
-
-    status = getattr(referral, "status", "") or ""
-    status_label = status
-
-    try:
-        status_label = referral.get_status_display()
-    except (AttributeError, TypeError):
-        pass
-
-    created_at = getattr(referral, "created_at", None)
-    updated_at = getattr(referral, "updated_at", None)
-
-    return {
-        "id": referral.pk,
-        "patient": getattr(referral, "patient_id", None),
-        "patient_id": getattr(referral, "patient_id", None),
-        "patient_name": _related_object_name(patient),
-        "patient_file_id": patient_file_id,
-        "physician": getattr(referral, "physician_id", None),
-        "physician_id": getattr(referral, "physician_id", None),
-        "physician_name": _display_name(physician),
-        "referred_by": getattr(referral, "referred_by_id", None),
-        "referred_by_id": getattr(referral, "referred_by_id", None),
-        "referred_by_name": _display_name(referring_user),
-        "reason": getattr(referral, "reason", "") or "",
-        "status": status,
-        "status_label": status_label,
-        "created_at": created_at.isoformat() if created_at else None,
-        "updated_at": updated_at.isoformat() if updated_at else None,
-    }
-
-
-def _error(message, status=400, **extra):
-    response = {"success": False, "error": message, "message": message}
-    response.update(extra)
-    return JsonResponse(response, status=status)
-
-
-def _get_related_id(data, *keys):
-    """Return the first non-empty ID supplied under the given keys."""
-    for key in keys:
-        if key in data and data[key] not in (None, ""):
-            return data[key]
-    return None
+    return full_name or str(patient.pk)
 
 
 def _resolve_patient(patient_id):
     if patient_id in (None, ""):
-        raise ValueError("A patient ID is required.")
+        raise ValueError("Please select a patient.")
 
     try:
         return Patient.objects.get(pk=patient_id)
     except (Patient.DoesNotExist, ValueError, TypeError):
-        raise ValueError("The selected patient was not found.")
+        raise ValueError(
+            "The selected patient was not found. "
+            "Refresh the patient list and select a patient again."
+        )
 
 
-def _resolve_physician(physician_id):
-    """Resolve the physician using the Physician model's primary key."""
-    if physician_id in (None, ""):
-        raise ValueError("A physician ID is required.")
+def _resolve_physician_user(user_id):
+    if user_id in (None, ""):
+        raise ValueError("Please select a physician.")
 
     try:
-        return Physician.objects.get(pk=physician_id)
-    except (Physician.DoesNotExist, ValueError, TypeError):
+        user = UserModel.objects.get(pk=user_id)
+    except (UserModel.DoesNotExist, ValueError, TypeError):
         raise ValueError(
             "The selected physician was not found. "
-            "Please refresh the physician list and select a valid physician."
+            "Refresh the physician list and select a physician again."
         )
 
+    if _model_has_field(UserModel, "is_active") and not user.is_active:
+        raise ValueError("The selected physician account is inactive.")
 
-def _resolve_referring_user(user_id):
-    if user_id in (None, ""):
-        return None
+    return user
+
+
+def _resolve_physician(user_id):
+    """
+    The frontend sends the ID from users/physicians/.
+
+    PhysioReferral.physician is a ForeignKey to reception.Physician,
+    so resolve the selected User to the corresponding Physician row.
+    """
+    user = _resolve_physician_user(user_id)
+    name = _user_display_name(user)
+
+    if not name:
+        raise ValueError(
+            "The selected physician account does not have a display name."
+        )
+
+    physician = Physician.objects.filter(name__iexact=name).first()
+
+    if physician:
+        return physician
 
     try:
-        return User.objects.get(pk=user_id)
-    except (User.DoesNotExist, ValueError, TypeError):
-        raise ValueError("The referring user was not found.")
+        with transaction.atomic():
+            physician = Physician.objects.create(name=name)
+    except IntegrityError:
+        # Another request may have created the same physician concurrently.
+        physician = Physician.objects.filter(name__iexact=name).first()
 
-
-def _apply_referral_data(referral, data, creating=False):
-    """
-    Apply supported fields to a referral.
-
-    The physician relation is resolved against the Physician model.
-    The referring user, if supplied, is resolved against the User model.
-    """
-    patient_id = _get_related_id(data, "patient_id", "patient")
-    physician_id = _get_related_id(data, "physician_id", "physician")
-
-    if creating or patient_id is not None:
-        referral.patient = _resolve_patient(patient_id)
-
-    if creating or physician_id is not None:
-        referral.physician = _resolve_physician(physician_id)
-
-    if "reason" in data:
-        referral.reason = str(data.get("reason") or "").strip()
-
-    if "status" in data:
-        status = str(data.get("status") or "").strip()
-
-        # Validate against the model's defined choices, if present.
-        try:
-            status_field = PhysioReferral._meta.get_field("status")
-            choices = {
-                str(value)
-                for value, _label in status_field.flatchoices
-            }
-            if choices and status not in choices:
-                raise ValueError(
-                    "Invalid referral status. Choose one of: "
-                    + ", ".join(sorted(choices))
-                )
-        except FieldDoesNotExist:
-            pass
-
-        referral.status = status
-
-    if creating and _has_field(PhysioReferral, "referred_by"):
-        referring_user_id = _get_related_id(
-            data, "referred_by_id", "referred_by"
-        )
-        if referring_user_id is not None:
-            referral.referred_by = _resolve_referring_user(
-                referring_user_id
+        if physician is None:
+            raise ValueError(
+                "Could not match the selected user to a physician record."
             )
 
-    return referral
+    return physician
 
 
-# ---------------------------------------------------------
-# Physician users endpoint
-# URL example: /api/users/physicians/
-# ---------------------------------------------------------
+def _referral_to_dict(referral):
+    patient = referral.patient
+    physician = referral.physician
+    referring_user = referral.referred_by
+
+    return {
+        "id": referral.pk,
+        "patient": patient.pk,
+        "patient_id": patient.pk,
+        "patient_name": _patient_name(patient),
+        "physician": physician.pk,
+        "physician_id": physician.pk,
+        "physician_name": physician.name,
+        "reason": referral.reason,
+        "status": referral.status,
+        "created_at": (
+            referral.created_at.isoformat()
+            if referral.created_at
+            else None
+        ),
+        "updated_at": (
+            referral.updated_at.isoformat()
+            if referral.updated_at
+            else None
+        ),
+        "referred_by": (
+            referring_user.pk if referring_user else None
+        ),
+        "referred_by_name": (
+            _user_display_name(referring_user)
+            if referring_user
+            else None
+        ),
+    }
+
+
+def _error(message, status=400, details=None):
+    response = {"error": message, "detail": message}
+
+    if details is not None:
+        response["details"] = details
+
+    return JsonResponse(response, status=status)
+
 
 @csrf_exempt
 @require_http_methods(["GET"])
 def physicians_api(request):
     """
-    Return physician/doctor accounts using their actual User primary keys.
+    GET /api/users/physicians/
 
-    This endpoint is compatible with the referral model's physician FK
-    when that FK points to users.User.
+    Returns physician choices from the User model.
+    The IDs returned here are User IDs, not Physician table IDs.
     """
-    try:
-        users = User.objects.all()
+    users = UserModel.objects.all()
 
-        if _has_field(User, "is_active"):
-            users = users.filter(is_active=True)
+    if _model_has_field(UserModel, "is_active"):
+        users = users.filter(is_active=True)
 
-        if _has_field(User, "role"):
-            from django.db.models import Q
-
-            physician_roles = [
-                "doctor",
-                "physician",
-            ]
-
-            role_filter = Q()
-            for role in physician_roles:
-                role_filter |= Q(role__iexact=role)
-
-            physician_users = list(users.filter(role_filter).order_by("pk"))
-
-            # Some existing installations use different role labels.
-            # If no matching users exist, return an empty list rather than
-            # exposing every account as a physician.
-            users = physician_users
-        else:
-            users = list(users.order_by("pk"))
-
-        results = []
-        for user in users:
-            results.append({
-                "id": user.pk,
-                "user_id": user.pk,
-                "physician_id": user.pk,
-                "name": _display_name(user),
-                "display_name": _display_name(user),
-                "username": getattr(user, "username", ""),
-                "email": getattr(user, "email", ""),
-                "role": str(getattr(user, "role", "") or ""),
-            })
-
-        return JsonResponse({
-            "success": True,
-            "physicians": results,
-            "results": results,
-        })
-
-    except Exception:
-        return _error(
-            "Unable to load physician users. Check the User model and role field.",
-            status=500,
+    if _model_has_field(UserModel, "role"):
+        users = users.filter(
+            role__in=["doctor", "physician"]
         )
 
+    users = users.order_by("username")
 
-# ---------------------------------------------------------
-# Referral collection endpoint
-# GET  /api/reception/physio-referrals/
-# POST /api/reception/physio-referrals/
-# ---------------------------------------------------------
+    results = []
+
+    for user in users:
+        display_name = _user_display_name(user)
+
+        results.append({
+            "id": user.pk,
+            "user_id": user.pk,
+            "name": display_name,
+            "display_name": display_name,
+            "username": getattr(user, "username", ""),
+            "email": getattr(user, "email", ""),
+            "role": getattr(user, "role", ""),
+        })
+
+    return JsonResponse({
+        "physicians": results,
+        "doctors": results,
+        "users": results,
+    })
+
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def physio_referrals_api(request):
+    """
+    GET  /api/reception/physio-referrals/
+    POST /api/reception/physio-referrals/
+    """
     if request.method == "GET":
-        try:
-            referrals = PhysioReferral.objects.all().order_by("-pk")
+        referrals = (
+            PhysioReferral.objects
+            .select_related("patient", "physician", "referred_by")
+            .order_by("-created_at")
+        )
 
-            # Use select_related only for relations that exist.
-            related_fields = [
-                field_name
-                for field_name in ("patient", "physician", "referred_by")
-                if _has_field(PhysioReferral, field_name)
-            ]
-            if related_fields:
-                referrals = referrals.select_related(*related_fields)
+        status_filter = request.GET.get("status")
 
-            results = [_serialize_referral(item) for item in referrals]
+        if status_filter in ("awaiting", "completed"):
+            referrals = referrals.filter(status=status_filter)
 
-            return JsonResponse({
-                "success": True,
-                "referrals": results,
-                "results": results,
-                "count": len(results),
-            })
-
-        except Exception as exc:
-            return _error(
-                "Unable to load physiotherapy referrals.",
-                status=500,
-                details=str(exc),
-            )
+        return JsonResponse({
+            "referrals": [
+                _referral_to_dict(referral)
+                for referral in referrals
+            ],
+            "results": [
+                _referral_to_dict(referral)
+                for referral in referrals
+            ],
+        })
 
     try:
         data = _json_body(request)
-        referral = PhysioReferral()
 
-        _apply_referral_data(referral, data, creating=True)
+        patient_id = (
+            data.get("patient")
+            or data.get("patient_id")
+        )
+        physician_user_id = (
+            data.get("physician_user_id")
+            or data.get("user_id")
+            or data.get("physician")
+            or data.get("physician_id")
+        )
+        reason = str(data.get("reason") or "").strip()
 
-        with transaction.atomic():
-            referral.save()
+        if not reason:
+            return _error("Please enter a referral reason.")
+
+        patient = _resolve_patient(patient_id)
+        physician = _resolve_physician(physician_user_id)
+
+        referring_user = (
+            request.user
+            if getattr(request, "user", None)
+            and request.user.is_authenticated
+            else None
+        )
+
+        referral = PhysioReferral.objects.create(
+            patient=patient,
+            physician=physician,
+            reason=reason,
+            referred_by=referring_user,
+            status="awaiting",
+        )
+
+        referral = (
+            PhysioReferral.objects
+            .select_related("patient", "physician", "referred_by")
+            .get(pk=referral.pk)
+        )
 
         return JsonResponse({
-            "success": True,
-            "message": "Physiotherapy referral created successfully.",
-            "referral": _serialize_referral(referral),
+            "message": "Referral created successfully.",
+            "referral": _referral_to_dict(referral),
         }, status=201)
 
     except ValueError as exc:
-        return _error(str(exc), status=400)
+        return _error(str(exc))
 
-    except (ValidationError, IntegrityError) as exc:
+    except IntegrityError:
         return _error(
-            "The referral could not be saved. Verify the patient and physician IDs.",
+            "The referral could not be saved because of a database "
+            "constraint. Check the physician and patient relationships.",
             status=400,
-            details=str(exc),
         )
 
     except Exception as exc:
         return _error(
-            "An unexpected error occurred while creating the referral.",
-            status=500,
+            "Could not create the referral.",
+            status=400,
             details=str(exc),
         )
 
-
-# ---------------------------------------------------------
-# Single referral endpoint
-# GET    /api/reception/physio-referrals/<id>/
-# PATCH  /api/reception/physio-referrals/<id>/
-# PUT    /api/reception/physio-referrals/<id>/
-# DELETE /api/reception/physio-referrals/<id>/
-# ---------------------------------------------------------
 
 @csrf_exempt
 @require_http_methods(["GET", "PATCH", "PUT", "DELETE"])
 def physio_referral_detail_api(request, referral_id):
+    """
+    GET    /api/reception/physio-referrals/<id>/
+    PATCH  /api/reception/physio-referrals/<id>/
+    PUT    /api/reception/physio-referrals/<id>/
+    DELETE /api/reception/physio-referrals/<id>/
+    """
     try:
-        referral = PhysioReferral.objects.get(pk=referral_id)
+        referral = (
+            PhysioReferral.objects
+            .select_related("patient", "physician", "referred_by")
+            .get(pk=referral_id)
+        )
     except (PhysioReferral.DoesNotExist, ValueError, TypeError):
-        return _error("Physiotherapy referral not found.", status=404)
+        return _error("Referral not found.", status=404)
 
     if request.method == "GET":
         return JsonResponse({
-            "success": True,
-            "referral": _serialize_referral(referral),
+            "referral": _referral_to_dict(referral),
         })
 
     if request.method == "DELETE":
-        try:
-            referral.delete()
-            return JsonResponse({
-                "success": True,
-                "message": "Physiotherapy referral deleted successfully.",
-                "id": referral_id,
-            })
-        except Exception as exc:
-            return _error(
-                "Unable to delete the physiotherapy referral.",
-                status=400,
-                details=str(exc),
-            )
+        referral.delete()
+
+        return JsonResponse({
+            "message": "Referral deleted successfully.",
+            "id": referral_id,
+        })
 
     try:
         data = _json_body(request)
 
-        # PUT requires the core fields; PATCH updates only supplied fields.
-        if request.method == "PUT":
-            if _get_related_id(data, "patient_id", "patient") is None:
-                return _error("A patient ID is required for PUT.")
-            if _get_related_id(data, "physician_id", "physician") is None:
-                return _error("A physician ID is required for PUT.")
+        if "patient" in data or "patient_id" in data:
+            patient_id = data.get("patient", data.get("patient_id"))
+            referral.patient = _resolve_patient(patient_id)
 
-        _apply_referral_data(referral, data, creating=False)
+        physician_keys = (
+            "physician_user_id",
+            "user_id",
+            "physician",
+            "physician_id",
+        )
 
-        with transaction.atomic():
-            referral.full_clean()
-            referral.save()
+        selected_key = next(
+            (key for key in physician_keys if key in data),
+            None,
+        )
+
+        if selected_key is not None:
+            referral.physician = _resolve_physician(data[selected_key])
+
+        if "reason" in data:
+            reason = str(data.get("reason") or "").strip()
+
+            if not reason:
+                return _error("Please enter a referral reason.")
+
+            referral.reason = reason
+
+        if "status" in data:
+            status = str(data.get("status") or "").strip().lower()
+
+            if status not in ("awaiting", "completed"):
+                return _error(
+                    "Invalid referral status. Use 'awaiting' or 'completed'."
+                )
+
+            referral.status = status
+
+        referral.save()
+
+        referral = (
+            PhysioReferral.objects
+            .select_related("patient", "physician", "referred_by")
+            .get(pk=referral.pk)
+        )
 
         return JsonResponse({
-            "success": True,
-            "message": "Physiotherapy referral updated successfully.",
-            "referral": _serialize_referral(referral),
+            "message": "Referral updated successfully.",
+            "referral": _referral_to_dict(referral),
         })
 
     except ValueError as exc:
-        return _error(str(exc), status=400)
+        return _error(str(exc))
 
-    except (ValidationError, IntegrityError) as exc:
+    except IntegrityError:
         return _error(
-            "The referral could not be updated. Verify the supplied fields and IDs.",
+            "The referral could not be updated because of a database "
+            "constraint. Check the physician and patient relationships.",
             status=400,
-            details=str(exc),
         )
 
     except Exception as exc:
         return _error(
-            "An unexpected error occurred while updating the referral.",
-            status=500,
+            "Could not update the referral.",
+            status=400,
             details=str(exc),
         )

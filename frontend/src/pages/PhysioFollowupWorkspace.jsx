@@ -1,3 +1,4 @@
+
 import React, {
   useCallback,
   useEffect,
@@ -285,21 +286,43 @@ function getLeaderboardId(item) {
   );
 }
 
+/*
+ * Extract useful backend validation messages, including Django REST
+ * Framework responses that use "detail", field errors, or "details".
+ */
 function getApiError(err, fallback) {
   const data = err?.response?.data;
 
   if (typeof data?.error === "string") return data.error;
   if (typeof data?.detail === "string") return data.detail;
   if (typeof data?.message === "string") return data.message;
+  if (typeof data?.details === "string") return data.details;
 
   if (data && typeof data === "object") {
-    const firstValue = Object.values(data)[0];
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value === "string") {
+        return `${key}: ${value}`;
+      }
 
-    if (Array.isArray(firstValue) && firstValue.length) {
-      return String(firstValue[0]);
+      if (Array.isArray(value) && value.length) {
+        const first = value[0];
+
+        return `${key}: ${
+          typeof first === "string"
+            ? first
+            : JSON.stringify(first)
+        }`;
+      }
+
+      if (value && typeof value === "object") {
+        const nestedMessage =
+          value.detail ?? value.message ?? value.error;
+
+        if (typeof nestedMessage === "string") {
+          return nestedMessage;
+        }
+      }
     }
-
-    if (typeof firstValue === "string") return firstValue;
   }
 
   if (err?.response?.status === 401) {
@@ -310,8 +333,15 @@ function getApiError(err, fallback) {
     return "Your account does not have permission to perform this action.";
   }
 
-  if (!err?.response) {
-    return "Cannot connect to the server. Please check your connection.";
+  if (
+    err?.message &&
+    err.message !== "Request failed with status code 400"
+  ) {
+    if (!err.response) {
+      return "Cannot connect to the server. Please check your connection.";
+    }
+
+    return err.message;
   }
 
   return fallback;
@@ -355,8 +385,9 @@ function extractList(data, keys = []) {
 }
 
 /*
- * Preserve the ID returned by the physician source API.
- * Do not substitute a different Physician model ID in React.
+ * Keep the ID supplied by users/physicians/.
+ * The backend should translate this user ID into the corresponding
+ * reception.Physician record before saving a referral.
  */
 function normalizePhysicians(data) {
   const rows = extractList(data, [
@@ -380,12 +411,12 @@ function normalizePhysicians(data) {
 
     if (id == null || String(id).trim() === "") return;
 
-    const name =
-      getPersonName(person) || `Physician ${id}`;
+    const name = getPersonName(person) || `Physician ${id}`;
 
     unique.set(String(id), {
       ...person,
       id,
+      user_id: person.user_id ?? id,
       name,
       display_name: person.display_name ?? name,
       full_name: person.full_name ?? name,
@@ -442,6 +473,7 @@ function getReferralPatientId(formData) {
 
 function getReferralPhysicianId(formData) {
   const physician =
+    formData?.physician_user_id ??
     formData?.physician ??
     formData?.physician_id ??
     formData?.selectedPhysician;
@@ -685,10 +717,7 @@ export default function PhysioFollowupWorkspace({
     }
   }, [leaderboardMonth]);
 
-  // -------------------------------------------------------
-  // Load referral patients, physician accounts, and history.
-  // -------------------------------------------------------
-
+  // Load referral patients, physician accounts, and referral history.
   const loadReferralData = useCallback(async () => {
     setReferralsLoading(true);
     setReferralError("");
@@ -728,29 +757,19 @@ export default function PhysioFollowupWorkspace({
 
       let physicianData = null;
       let physicianError = null;
-      let physicianEndpoint = "";
 
-      const physicianEndpoints = [
-        "users/physicians/",
-      ];
+      // Use the physician USER endpoint because the form selects user IDs.
+      try {
+        const response = await api.get("users/physicians/");
+        physicianData = response.data;
+      } catch (err) {
+        physicianError = err;
 
-      for (const endpoint of physicianEndpoints) {
-        try {
-          const response = await api.get(endpoint);
-
-          physicianData = response.data;
-          physicianEndpoint = endpoint;
-          physicianError = null;
-          break;
-        } catch (err) {
-          physicianError = err;
-
-          console.warn(
-            `Physician endpoint failed: ${endpoint}`,
-            err?.response?.status,
-            err?.response?.data || err?.message
-          );
-        }
+        console.error(
+          "Physician endpoint failed:",
+          err?.response?.status,
+          err?.response?.data || err?.message
+        );
       }
 
       if (physicianData !== null) {
@@ -760,7 +779,7 @@ export default function PhysioFollowupWorkspace({
 
         if (!physicians.length) {
           problems.push(
-            `The endpoint ${physicianEndpoint} responded, but its response contained no usable physician IDs and names.`
+            "The users/physicians/ endpoint responded, but its response contained no usable physician IDs and names."
           );
 
           console.error(
@@ -777,20 +796,12 @@ export default function PhysioFollowupWorkspace({
             "Could not load physician accounts."
           )}`
         );
-
-        console.error(
-          "All physician endpoints failed.",
-          physicianError?.response?.data ||
-            physicianError?.message
-        );
       }
 
       if (referralsResult.status === "fulfilled") {
-        const rows = normalizeReferralRows(
-          referralsResult.value.data
+        setReferrals(
+          normalizeReferralRows(referralsResult.value.data)
         );
-
-        setReferrals(rows);
       } else {
         setReferrals([]);
 
@@ -820,10 +831,7 @@ export default function PhysioFollowupWorkspace({
     }
   }, []);
 
-  // -------------------------------------------------------
   // Create referral.
-  // -------------------------------------------------------
-
   const handleCreateReferral = useCallback(
     async (formData) => {
       if (referralSaving) return;
@@ -877,9 +885,10 @@ export default function PhysioFollowupWorkspace({
           );
         }
 
+        // Send the USER ID; the Django backend resolves the Physician model.
         const payload = {
           patient: patientId,
-          physician: physicianId,
+          physician_user_id: physicianId,
           reason,
         };
 
@@ -895,6 +904,7 @@ export default function PhysioFollowupWorkspace({
         ) {
           throw new Error(
             response.data?.error ||
+              response.data?.detail ||
               response.data?.message ||
               "The server did not confirm that the referral was created."
           );
@@ -932,8 +942,7 @@ export default function PhysioFollowupWorkspace({
 
           setReferrals((current) => {
             const exists = current.some(
-              (item) =>
-                String(item?.id) === String(savedReferral.id)
+              (item) => String(item?.id) === String(savedReferral.id)
             );
 
             return exists
@@ -949,6 +958,7 @@ export default function PhysioFollowupWorkspace({
         setReferralSuccess("Referral created successfully.");
 
         await loadReferralData();
+
         setReferralSuccess("Referral created successfully.");
       } catch (err) {
         console.error("Failed to create referral:", err);
@@ -969,11 +979,7 @@ export default function PhysioFollowupWorkspace({
     ]
   );
 
-  // -------------------------------------------------------
   // Edit referral.
-  // Called by the referral history component.
-  // -------------------------------------------------------
-
   const handleEditReferral = useCallback(
     async (referralId, formData) => {
       setReferralError("");
@@ -1035,9 +1041,10 @@ export default function PhysioFollowupWorkspace({
         return;
       }
 
+      // Use the physician USER ID consistently for edits as well.
       const payload = {
         patient: patientId,
-        physician: physicianId,
+        physician_user_id: physicianId,
         reason,
       };
 
@@ -1050,6 +1057,7 @@ export default function PhysioFollowupWorkspace({
         if (response.data?.success === false) {
           throw new Error(
             response.data?.error ||
+              response.data?.detail ||
               response.data?.message ||
               "The server did not confirm that the referral was updated."
           );
@@ -1097,10 +1105,7 @@ export default function PhysioFollowupWorkspace({
     ]
   );
 
-  // -------------------------------------------------------
   // Delete referral.
-  // -------------------------------------------------------
-
   const handleDeleteReferral = useCallback(
     async (referralId) => {
       setReferralError("");
@@ -1114,8 +1119,7 @@ export default function PhysioFollowupWorkspace({
       }
 
       const referralExists = referrals.some(
-        (referral) =>
-          String(referral?.id) === String(referralId)
+        (referral) => String(referral?.id) === String(referralId)
       );
 
       if (!referralExists) {
@@ -1133,6 +1137,7 @@ export default function PhysioFollowupWorkspace({
         if (response.data?.success === false) {
           throw new Error(
             response.data?.error ||
+              response.data?.detail ||
               response.data?.message ||
               "The server did not confirm that the referral was deleted."
           );
@@ -1140,8 +1145,7 @@ export default function PhysioFollowupWorkspace({
 
         setReferrals((current) =>
           current.filter(
-            (referral) =>
-              String(referral?.id) !== String(referralId)
+            (referral) => String(referral?.id) !== String(referralId)
           )
         );
 
@@ -1161,10 +1165,7 @@ export default function PhysioFollowupWorkspace({
     [referrals, loadReferralData]
   );
 
-  // -------------------------------------------------------
   // Update referral status.
-  // -------------------------------------------------------
-
   const handleUpdateReferralStatus = useCallback(
     async (referralId, status) => {
       setReferralError("");
@@ -1201,6 +1202,7 @@ export default function PhysioFollowupWorkspace({
         if (response.data?.success === false) {
           throw new Error(
             response.data?.error ||
+              response.data?.detail ||
               response.data?.message ||
               "The server did not confirm that the status was updated."
           );

@@ -1,15 +1,12 @@
-
 import React, {
   useMemo,
   useState,
   useEffect,
   useCallback,
 } from "react";
-
 import api from "../../api/api";
 import PhysioCreateReferral from "./PhysioCreateReferral";
 import PhysioReferralHistory from "./PhysioReferralHistory";
-
 const styles = {
   container: {
     display: "grid",
@@ -112,16 +109,13 @@ const styles = {
     cursor: "pointer",
   },
 };
-
 function extractPhysicianList(data) {
   if (Array.isArray(data)) {
     return data;
   }
-
   if (!data || typeof data !== "object") {
     return [];
   }
-
   const possibleKeys = [
     "physicians",
     "doctors",
@@ -129,142 +123,126 @@ function extractPhysicianList(data) {
     "results",
     "data",
   ];
-
   for (const key of possibleKeys) {
     if (Array.isArray(data[key])) {
       return data[key];
     }
   }
-
   return [];
 }
-
 function getPhysicianName(physician) {
   if (typeof physician === "string") {
     return physician.trim();
   }
-
   if (!physician || typeof physician !== "object") {
     return "";
   }
-
-  const fullName =
+  const combinedName = [
+    physician.first_name,
+    physician.last_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return String(
     physician.display_name ||
-    physician.full_name ||
-    physician.name ||
-    [
-      physician.first_name,
-      physician.last_name,
-    ]
-      .filter(Boolean)
-      .join(" ") ||
-    physician.username;
-
-  return String(fullName || "").trim();
+      physician.full_name ||
+      physician.name ||
+      combinedName ||
+      physician.username ||
+      ""
+  ).trim();
 }
-
-function getPhysicianKey(physician) {
-  if (
-    physician &&
-    typeof physician === "object"
-  ) {
-    const id =
-      physician.user_id ??
-      physician.id ??
-      physician.pk;
-
-    if (id !== undefined && id !== null) {
-      return `id:${id}`;
-    }
+function getPhysicianId(physician) {
+  if (!physician || typeof physician !== "object") {
+    return null;
   }
-
-  return `name:${getPhysicianName(
-    physician
-  ).toLocaleLowerCase()}`;
+  // Prefer an explicitly supplied user ID because the
+  // physician list comes from users/physicians/.
+  const value =
+    physician.user_id ??
+    physician.id ??
+    physician.pk;
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  return value;
 }
-
+function getPhysicianKey(physician) {
+  const id = getPhysicianId(physician);
+  if (id !== null) {
+    return `id:${String(id)}`;
+  }
+  return `name:${getPhysicianName(physician).toLocaleLowerCase()}`;
+}
 function normalizePhysicians(list) {
   const unique = new Map();
-
   for (const physician of Array.isArray(list) ? list : []) {
     const name = getPhysicianName(physician);
-
     if (!name) {
       continue;
     }
-
+    const id = getPhysicianId(physician);
     const key = getPhysicianKey(physician);
-
     if (!unique.has(key)) {
       unique.set(key, {
-        ...(
-          typeof physician === "object" && physician !== null
-            ? physician
-            : {}
-        ),
-        id:
-          typeof physician === "object" && physician !== null
-            ? physician.id ?? physician.pk ?? physician.user_id
-            : undefined,
-        user_id:
-          typeof physician === "object" && physician !== null
-            ? physician.user_id ?? physician.id ?? physician.pk
-            : undefined,
+        ...(typeof physician === "object" && physician !== null
+          ? physician
+          : {}),
+        id,
+        user_id: id,
         display_name: name,
         name,
       });
     }
   }
-
   return Array.from(unique.values()).sort((a, b) =>
     getPhysicianName(a).localeCompare(getPhysicianName(b))
   );
 }
-
 function getPhysicianErrorMessage(error) {
   const status = error?.response?.status;
   const data = error?.response?.data;
-
   if (status === 401) {
     return "Your session may have expired. Please sign in again and retry loading physicians.";
   }
-
   if (status === 403) {
     return "Your account does not have permission to load the physician list.";
   }
-
   if (status === 404) {
     return 'The physician endpoint "users/physicians/" was not found. Check your Django URL configuration and API base URL.';
   }
-
   if (!error?.response) {
     return "Unable to connect to the server. Check your connection and try again.";
   }
-
   if (typeof data === "string" && data.trim()) {
     return data;
   }
-
   if (data && typeof data === "object") {
-    const message =
-      data.detail ||
-      data.error ||
-      data.message;
-
-    if (typeof message === "string") {
-      return message;
+    for (const key of ["detail", "error", "message", "details"]) {
+      const value = data[key];
+      if (typeof value === "string" && value.trim()) {
+        return value;
+      }
+      if (Array.isArray(value) && value.length > 0) {
+        return value.map(String).join(", ");
+      }
     }
-
-    if (message) {
-      return JSON.stringify(message);
+    const firstError = Object.values(data).find(
+      (value) =>
+        typeof value === "string" ||
+        (Array.isArray(value) && value.length > 0)
+    );
+    if (typeof firstError === "string") {
+      return firstError;
     }
-
-    return "The server rejected the physician request. Check the response details.";
+    if (Array.isArray(firstError)) {
+      return firstError.map(String).join(", ");
+    }
+    return "The server rejected the physician request. Check the server response.";
   }
-
   return "Unable to load physicians from the server.";
 }
-
 export default function PhysioReferrals({
   patients = [],
   physicians = [],
@@ -284,42 +262,33 @@ export default function PhysioReferrals({
   const [physiciansError, setPhysiciansError] = useState("");
   const [physiciansLoaded, setPhysiciansLoaded] = useState(false);
   const [physicianRetry, setPhysicianRetry] = useState(0);
-
   const loadPhysicians = useCallback(async (cancelledRef) => {
     setPhysiciansLoading(true);
     setPhysiciansError("");
-
     try {
-      // Use the same endpoint as Patient Assignment.
       const response = await api.get("users/physicians/");
-
       if (cancelledRef.cancelled) {
         return;
       }
-
       const list = normalizePhysicians(
         extractPhysicianList(response.data)
       );
-
       setFetchedPhysicians(list);
       setPhysiciansLoaded(true);
-
       if (list.length === 0) {
         setPhysiciansError(
-          "The physician endpoint returned no physician names. Check its response and user-role filtering."
+          "The physician endpoint returned no usable physician records. Check the endpoint response and physician role filtering."
         );
       }
     } catch (requestError) {
       if (cancelledRef.cancelled) {
         return;
       }
-
       console.error(
         "Failed to load physicians for physiotherapy referrals:",
         requestError?.response?.status,
         requestError?.response?.data || requestError
       );
-
       setPhysiciansError(
         getPhysicianErrorMessage(requestError)
       );
@@ -330,24 +299,19 @@ export default function PhysioReferrals({
       }
     }
   }, []);
-
   useEffect(() => {
     const cancelledRef = { cancelled: false };
-
     loadPhysicians(cancelledRef);
-
     return () => {
       cancelledRef.cancelled = true;
     };
   }, [loadPhysicians, physicianRetry]);
-
   const availablePhysicians = useMemo(() => {
     return normalizePhysicians([
       ...physicians,
       ...fetchedPhysicians,
     ]);
   }, [physicians, fetchedPhysicians]);
-
   const awaitingCount = useMemo(() => {
     return referrals.filter((referral) => {
       return (
@@ -356,7 +320,6 @@ export default function PhysioReferrals({
       );
     }).length;
   }, [referrals]);
-
   const completedCount = useMemo(() => {
     return referrals.filter((referral) => {
       return (
@@ -365,7 +328,6 @@ export default function PhysioReferrals({
       );
     }).length;
   }, [referrals]);
-
   const stats = [
     {
       label: "Total referrals",
@@ -383,25 +345,21 @@ export default function PhysioReferrals({
       color: "#07866f",
     },
   ];
-
   const retryPhysicianFetch = () => {
     setPhysiciansError("");
     setPhysicianRetry((previous) => previous + 1);
   };
-
   return (
     <div style={styles.container}>
       <header style={styles.hero}>
         <div style={styles.heroTop}>
           <div>
             <h1 style={styles.title}>Physio Referrals</h1>
-
             <p style={styles.subtitle}>
               Create physician referrals and manage referral history
               and follow-up status.
             </p>
           </div>
-
           <button
             type="button"
             onClick={() => onRefresh?.()}
@@ -409,9 +367,7 @@ export default function PhysioReferrals({
             style={{
               ...styles.refreshButton,
               opacity:
-                loading || typeof onRefresh !== "function"
-                  ? 0.6
-                  : 1,
+                loading || typeof onRefresh !== "function" ? 0.6 : 1,
               cursor: loading ? "wait" : "pointer",
             }}
           >
@@ -419,12 +375,10 @@ export default function PhysioReferrals({
           </button>
         </div>
       </header>
-
       <div style={styles.statsGrid}>
         {stats.map((stat) => (
           <div key={stat.label} style={styles.statCard}>
             <div style={styles.statLabel}>{stat.label}</div>
-
             <div
               style={{
                 ...styles.statValue,
@@ -436,23 +390,19 @@ export default function PhysioReferrals({
           </div>
         ))}
       </div>
-
       {error ? (
         <div role="alert" style={styles.error}>
           {error}
         </div>
       ) : null}
-
       {physiciansLoading ? (
         <div role="status" style={styles.physicianPanel}>
           Loading physicians from the server...
         </div>
       ) : null}
-
       {!physiciansLoading && physiciansError ? (
         <div role="alert" style={styles.physicianError}>
           <div>{physiciansError}</div>
-
           <button
             type="button"
             onClick={retryPhysicianFetch}
@@ -462,7 +412,6 @@ export default function PhysioReferrals({
           </button>
         </div>
       ) : null}
-
       {!physiciansLoading &&
       !physiciansError &&
       physiciansLoaded &&
@@ -471,7 +420,6 @@ export default function PhysioReferrals({
           {availablePhysicians.length} physician option(s) available.
         </div>
       ) : null}
-
       <PhysioCreateReferral
         patients={patients}
         physicians={availablePhysicians}
@@ -481,7 +429,6 @@ export default function PhysioReferrals({
         success={success}
         onCreateReferral={onCreateReferral}
       />
-
       <PhysioReferralHistory
         referrals={referrals}
         physicians={availablePhysicians}
