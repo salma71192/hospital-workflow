@@ -1,4 +1,3 @@
-
 import React, {
   useCallback,
   useEffect,
@@ -12,6 +11,7 @@ import DashboardNotice from "../components/common/DashboardNotice";
 import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 import PhysioStatisticsSection from "../components/physio/PhysioStatisticsSection";
 import EvaluationTrackerSection from "../components/physio/EvaluationTrackerSection";
+import PhysioReferrals from "../components/physio/PhysioReferrals";
 import LeaderboardSection from "../components/common/LeaderboardSection";
 import PerformanceDashboard from "../components/physio/performance/PerformanceDashboard";
 
@@ -94,7 +94,10 @@ function getMonthDateRange(month) {
 
 function getArray(data, key) {
   if (Array.isArray(data)) return data;
-  return Array.isArray(data?.[key]) ? data[key] : [];
+  if (Array.isArray(data?.[key])) return data[key];
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.rows)) return data.rows;
+  return [];
 }
 
 function getTherapistId(item) {
@@ -219,13 +222,7 @@ function buildPhysioStatistics(assignments) {
     if (cash) row.cash += 1;
     if (noShow) row.no_show += 1;
 
-    // Preserve existing behavior until the API provides booked counts.
-    row.booked = 0;
-
-    if (
-      (appointment || evaluation || cash || walkIn) &&
-      !noShow
-    ) {
+    if ((appointment || evaluation || cash || walkIn) && !noShow) {
       row.seen += 1;
     }
   });
@@ -288,6 +285,194 @@ function getLeaderboardId(item) {
   );
 }
 
+function getApiError(err, fallback) {
+  const data = err?.response?.data;
+
+  if (typeof data?.error === "string") return data.error;
+  if (typeof data?.detail === "string") return data.detail;
+  if (typeof data?.message === "string") return data.message;
+
+  if (data && typeof data === "object") {
+    const firstValue = Object.values(data)[0];
+
+    if (Array.isArray(firstValue) && firstValue.length) {
+      return String(firstValue[0]);
+    }
+
+    if (typeof firstValue === "string") return firstValue;
+  }
+
+  if (err?.response?.status === 401) {
+    return "Your session has expired or authentication is missing. Please log in again.";
+  }
+
+  if (err?.response?.status === 403) {
+    return "Your account does not have permission to perform this action.";
+  }
+
+  if (!err?.response) {
+    return "Cannot connect to the server. Please check your connection.";
+  }
+
+  return fallback;
+}
+
+function getPersonName(person) {
+  if (typeof person === "string") return person;
+
+  return (
+    person?.name ??
+    person?.display_name ??
+    person?.full_name ??
+    person?.physician_name ??
+    person?.patient_name ??
+    person?.username ??
+    [
+      person?.first_name,
+      person?.last_name,
+    ].filter(Boolean).join(" ") ??
+    ""
+  );
+}
+
+function extractList(data, keys = []) {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== "object") return [];
+
+  for (const key of keys) {
+    if (Array.isArray(data[key])) return data[key];
+  }
+
+  if (Array.isArray(data.results)) return data.results;
+  if (Array.isArray(data.rows)) return data.rows;
+  if (Array.isArray(data.data)) return data.data;
+
+  if (data.data && typeof data.data === "object") {
+    return extractList(data.data, keys);
+  }
+
+  return [];
+}
+
+/*
+ * Preserve the ID returned by the physician source API.
+ * Do not substitute a different Physician model ID in React.
+ */
+function normalizePhysicians(data) {
+  const rows = extractList(data, [
+    "physicians",
+    "doctors",
+    "users",
+    "results",
+    "data",
+  ]);
+
+  const unique = new Map();
+
+  rows.forEach((person) => {
+    if (!person || typeof person !== "object") return;
+
+    const id =
+      person.user_id ??
+      person.id ??
+      person.physician_id ??
+      person.pk;
+
+    if (id == null || String(id).trim() === "") return;
+
+    const name =
+      getPersonName(person) || `Physician ${id}`;
+
+    unique.set(String(id), {
+      ...person,
+      id,
+      name,
+      display_name: person.display_name ?? name,
+      full_name: person.full_name ?? name,
+    });
+  });
+
+  return Array.from(unique.values()).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+}
+
+function getReferralResponse(data) {
+  if (!data || typeof data !== "object") return null;
+
+  if (data.referral && typeof data.referral === "object") {
+    return data.referral;
+  }
+
+  if (data.data && typeof data.data === "object") {
+    if (
+      data.data.referral &&
+      typeof data.data.referral === "object"
+    ) {
+      return data.data.referral;
+    }
+
+    if (data.data.id != null) return data.data;
+  }
+
+  if (data.id != null) return data;
+
+  return null;
+}
+
+function getReferralPatientId(formData) {
+  const patient =
+    formData?.patient ??
+    formData?.patient_id ??
+    formData?.selectedPatient;
+
+  if (patient == null) return null;
+
+  if (typeof patient === "object") {
+    return (
+      patient.id ??
+      patient.patient_id ??
+      patient.pk ??
+      null
+    );
+  }
+
+  return patient;
+}
+
+function getReferralPhysicianId(formData) {
+  const physician =
+    formData?.physician ??
+    formData?.physician_id ??
+    formData?.selectedPhysician;
+
+  if (physician == null) return null;
+
+  if (typeof physician === "object") {
+    return (
+      physician.user_id ??
+      physician.id ??
+      physician.physician_id ??
+      physician.pk ??
+      null
+    );
+  }
+
+  return physician;
+}
+
+function normalizeReferralRows(data) {
+  return extractList(data, ["referrals", "results", "data"]);
+}
+
+function isValidReferralId(id) {
+  return (
+    id != null &&
+    String(id).trim() !== "" &&
+    !String(id).startsWith("temporary-")
+  );
+}
+
 export default function PhysioFollowupWorkspace({
   user,
   onLogout,
@@ -298,8 +483,8 @@ export default function PhysioFollowupWorkspace({
 
   const [activeSection, setActiveSection] = useState("statistics");
   const [error, setError] = useState("");
-
   const [patientTrackerRows, setPatientTrackerRows] = useState([]);
+
   const [trackerMonth, setTrackerMonth] = useState(
     getLocalMonthString()
   );
@@ -307,6 +492,7 @@ export default function PhysioFollowupWorkspace({
   const [statisticsDate, setStatisticsDate] = useState(
     getLocalDateString()
   );
+
   const [statisticsMonth, setStatisticsMonth] = useState(
     getLocalMonthString()
   );
@@ -316,24 +502,37 @@ export default function PhysioFollowupWorkspace({
 
   const [dailyStatisticsLoading, setDailyStatisticsLoading] =
     useState(false);
+
   const [monthlyStatisticsLoading, setMonthlyStatisticsLoading] =
     useState(false);
 
   const [leaderboardMonth, setLeaderboardMonth] = useState(
     getLocalMonthString()
   );
+
   const [monthlyLeaderboardRows, setMonthlyLeaderboardRows] = useState([]);
+
   const [monthlyLeaderboardLoading, setMonthlyLeaderboardLoading] =
     useState(false);
+
   const [monthlyLeaderboardError, setMonthlyLeaderboardError] =
     useState("");
 
   const [evaluationMonth, setEvaluationMonth] = useState(
     getLocalMonthString()
   );
+
   const [evaluationAssignments, setEvaluationAssignments] = useState([]);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
   const [evaluationError, setEvaluationError] = useState("");
+
+  const [referralPatients, setReferralPatients] = useState([]);
+  const [referralPhysicians, setReferralPhysicians] = useState([]);
+  const [referrals, setReferrals] = useState([]);
+  const [referralsLoading, setReferralsLoading] = useState(false);
+  const [referralSaving, setReferralSaving] = useState(false);
+  const [referralError, setReferralError] = useState("");
+  const [referralSuccess, setReferralSuccess] = useState("");
 
   const selectedTherapistId = actingAs?.id ?? user?.id ?? null;
 
@@ -341,10 +540,7 @@ export default function PhysioFollowupWorkspace({
     if (!trackerMonth) return;
 
     try {
-      const params = new URLSearchParams({
-        month: trackerMonth,
-      });
-
+      const params = new URLSearchParams({ month: trackerMonth });
       const res = await api.get(
         `patients/tracker/?${params.toString()}`
       );
@@ -353,10 +549,8 @@ export default function PhysioFollowupWorkspace({
       setError("");
     } catch (err) {
       console.error("Failed to load patient tracker:", err);
-      console.error("Patient tracker API error:", err?.response?.data);
-
       setPatientTrackerRows([]);
-      setError("Failed to load patient tracker.");
+      setError(getApiError(err, "Failed to load patient tracker."));
     }
   }, [trackerMonth]);
 
@@ -379,10 +573,13 @@ export default function PhysioFollowupWorkspace({
       setError("");
     } catch (err) {
       console.error("Failed to load daily registrations:", err);
-      console.error("Daily statistics API error:", err?.response?.data);
-
       setDailyAssignments([]);
-      setError("Failed to load daily registrations for the selected date.");
+      setError(
+        getApiError(
+          err,
+          "Failed to load daily registrations for the selected date."
+        )
+      );
     } finally {
       setDailyStatisticsLoading(false);
     }
@@ -394,8 +591,9 @@ export default function PhysioFollowupWorkspace({
     setMonthlyStatisticsLoading(true);
 
     try {
-      const range = getMonthDateRange(statisticsMonth);
-      const params = new URLSearchParams(range);
+      const params = new URLSearchParams(
+        getMonthDateRange(statisticsMonth)
+      );
 
       const res = await api.get(
         `reception/assignments/?${params.toString()}`
@@ -404,10 +602,13 @@ export default function PhysioFollowupWorkspace({
       setMonthlyAssignments(getArray(res.data, "assignments"));
     } catch (err) {
       console.error("Failed to load monthly registrations:", err);
-      console.error("Monthly statistics API error:", err?.response?.data);
-
       setMonthlyAssignments([]);
-      setError("Failed to load monthly registrations for the selected month.");
+      setError(
+        getApiError(
+          err,
+          "Failed to load monthly registrations for the selected month."
+        )
+      );
     } finally {
       setMonthlyStatisticsLoading(false);
     }
@@ -420,8 +621,9 @@ export default function PhysioFollowupWorkspace({
     setEvaluationError("");
 
     try {
-      const range = getMonthDateRange(evaluationMonth);
-      const params = new URLSearchParams(range);
+      const params = new URLSearchParams(
+        getMonthDateRange(evaluationMonth)
+      );
 
       const res = await api.get(
         `reception/assignments/?${params.toString()}`
@@ -430,11 +632,12 @@ export default function PhysioFollowupWorkspace({
       setEvaluationAssignments(getArray(res.data, "assignments"));
     } catch (err) {
       console.error("Failed to load evaluation tracker:", err);
-      console.error("Evaluation tracker API error:", err?.response?.data);
-
       setEvaluationAssignments([]);
       setEvaluationError(
-        "Failed to load evaluations for the selected month."
+        getApiError(
+          err,
+          "Failed to load evaluations for the selected month."
+        )
       );
     } finally {
       setEvaluationLoading(false);
@@ -457,6 +660,7 @@ export default function PhysioFollowupWorkspace({
       );
 
       const results = getArray(res.data, "results");
+
       const rows = results.length
         ? results
         : getArray(res.data, "rows").length
@@ -466,19 +670,571 @@ export default function PhysioFollowupWorkspace({
       setMonthlyLeaderboardRows(rows);
     } catch (err) {
       console.error("Failed to load monthly leaderboard:", err);
-      console.error("Monthly leaderboard API error:", err?.response?.data);
-
       setMonthlyLeaderboardRows([]);
 
       setMonthlyLeaderboardError(
         err?.response?.status === 404
           ? "The monthly physiotherapy leaderboard API is not configured yet."
-          : "Failed to load the monthly leaderboard. Please try refreshing."
+          : getApiError(
+              err,
+              "Failed to load the monthly leaderboard. Please try refreshing."
+            )
       );
     } finally {
       setMonthlyLeaderboardLoading(false);
     }
   }, [leaderboardMonth]);
+
+  // -------------------------------------------------------
+  // Load referral patients, physician accounts, and history.
+  // -------------------------------------------------------
+
+  const loadReferralData = useCallback(async () => {
+    setReferralsLoading(true);
+    setReferralError("");
+
+    const problems = [];
+
+    try {
+      const [patientsResult, referralsResult] =
+        await Promise.allSettled([
+          api.get("patients/"),
+          api.get("reception/physio-referrals/"),
+        ]);
+
+      if (patientsResult.status === "fulfilled") {
+        const patients = extractList(
+          patientsResult.value.data,
+          ["patients", "results", "data"]
+        );
+
+        setReferralPatients(patients);
+      } else {
+        setReferralPatients([]);
+
+        problems.push(
+          `Patients: ${getApiError(
+            patientsResult.reason,
+            "Could not load patients."
+          )}`
+        );
+
+        console.error(
+          "Patient list request failed:",
+          patientsResult.reason?.response?.data ||
+            patientsResult.reason?.message
+        );
+      }
+
+      let physicianData = null;
+      let physicianError = null;
+      let physicianEndpoint = "";
+
+      const physicianEndpoints = [
+        "users/physicians/",
+      ];
+
+      for (const endpoint of physicianEndpoints) {
+        try {
+          const response = await api.get(endpoint);
+
+          physicianData = response.data;
+          physicianEndpoint = endpoint;
+          physicianError = null;
+          break;
+        } catch (err) {
+          physicianError = err;
+
+          console.warn(
+            `Physician endpoint failed: ${endpoint}`,
+            err?.response?.status,
+            err?.response?.data || err?.message
+          );
+        }
+      }
+
+      if (physicianData !== null) {
+        const physicians = normalizePhysicians(physicianData);
+
+        setReferralPhysicians(physicians);
+
+        if (!physicians.length) {
+          problems.push(
+            `The endpoint ${physicianEndpoint} responded, but its response contained no usable physician IDs and names.`
+          );
+
+          console.error(
+            "Unexpected physician API response:",
+            physicianData
+          );
+        }
+      } else {
+        setReferralPhysicians([]);
+
+        problems.push(
+          `Physicians: ${getApiError(
+            physicianError,
+            "Could not load physician accounts."
+          )}`
+        );
+
+        console.error(
+          "All physician endpoints failed.",
+          physicianError?.response?.data ||
+            physicianError?.message
+        );
+      }
+
+      if (referralsResult.status === "fulfilled") {
+        const rows = normalizeReferralRows(
+          referralsResult.value.data
+        );
+
+        setReferrals(rows);
+      } else {
+        setReferrals([]);
+
+        problems.push(
+          `Referrals: ${getApiError(
+            referralsResult.reason,
+            "Could not load referral history."
+          )}`
+        );
+
+        console.error(
+          "Referral list request failed:",
+          referralsResult.reason?.response?.data ||
+            referralsResult.reason?.message
+        );
+      }
+
+      setReferralError(problems.join(" "));
+    } catch (err) {
+      console.error("Failed to load referral data:", err);
+
+      setReferralError(
+        getApiError(err, "Could not load physiotherapy referral data.")
+      );
+    } finally {
+      setReferralsLoading(false);
+    }
+  }, []);
+
+  // -------------------------------------------------------
+  // Create referral.
+  // -------------------------------------------------------
+
+  const handleCreateReferral = useCallback(
+    async (formData) => {
+      if (referralSaving) return;
+
+      setReferralSaving(true);
+      setReferralError("");
+      setReferralSuccess("");
+
+      try {
+        const patientId = getReferralPatientId(formData);
+        const physicianId = getReferralPhysicianId(formData);
+        const reason = String(formData?.reason ?? "").trim();
+
+        if (patientId == null || String(patientId).trim() === "") {
+          throw new Error("Please select a patient.");
+        }
+
+        if (physicianId == null || String(physicianId).trim() === "") {
+          throw new Error("Please select a physician.");
+        }
+
+        if (!reason) {
+          throw new Error("Please enter the referral reason.");
+        }
+
+        const selectedPatient = referralPatients.find(
+          (patient) =>
+            String(patient?.id ?? patient?.patient_id ?? patient?.pk) ===
+            String(patientId)
+        );
+
+        const selectedPhysician = referralPhysicians.find(
+          (physician) =>
+            String(
+              physician?.user_id ??
+                physician?.id ??
+                physician?.physician_id ??
+                physician?.pk
+            ) === String(physicianId)
+        );
+
+        if (!selectedPatient) {
+          throw new Error(
+            "The selected patient is not in the loaded patient list. Refresh the list and select the patient again."
+          );
+        }
+
+        if (!selectedPhysician) {
+          throw new Error(
+            "The selected physician is not in the loaded physician list. Refresh the list and select the physician again."
+          );
+        }
+
+        const payload = {
+          patient: patientId,
+          physician: physicianId,
+          reason,
+        };
+
+        const response = await api.post(
+          "reception/physio-referrals/",
+          payload
+        );
+
+        if (
+          response.status < 200 ||
+          response.status >= 300 ||
+          response.data?.success === false
+        ) {
+          throw new Error(
+            response.data?.error ||
+              response.data?.message ||
+              "The server did not confirm that the referral was created."
+          );
+        }
+
+        const savedReferral = getReferralResponse(response.data);
+
+        if (savedReferral?.id) {
+          const immediateReferral = {
+            ...savedReferral,
+            patient: savedReferral.patient ?? selectedPatient,
+            patient_id:
+              savedReferral.patient_id ??
+              selectedPatient.id ??
+              selectedPatient.patient_id,
+            patient_name:
+              savedReferral.patient_name ??
+              getPersonName(selectedPatient),
+            physician: savedReferral.physician ?? selectedPhysician,
+            physician_name:
+              savedReferral.physician_name ??
+              getPersonName(selectedPhysician),
+            physician_id:
+              savedReferral.physician_id ??
+              selectedPhysician.id,
+            reason: savedReferral.reason ?? reason,
+            status: savedReferral.status ?? "awaiting",
+            referred_by_name:
+              savedReferral.referred_by_name ??
+              user?.name ??
+              user?.display_name ??
+              user?.username ??
+              "",
+          };
+
+          setReferrals((current) => {
+            const exists = current.some(
+              (item) =>
+                String(item?.id) === String(savedReferral.id)
+            );
+
+            return exists
+              ? current.map((item) =>
+                  String(item?.id) === String(savedReferral.id)
+                    ? { ...item, ...immediateReferral }
+                    : item
+                )
+              : [immediateReferral, ...current];
+          });
+        }
+
+        setReferralSuccess("Referral created successfully.");
+
+        await loadReferralData();
+        setReferralSuccess("Referral created successfully.");
+      } catch (err) {
+        console.error("Failed to create referral:", err);
+
+        setReferralError(
+          getApiError(err, "Could not create the referral.")
+        );
+      } finally {
+        setReferralSaving(false);
+      }
+    },
+    [
+      referralSaving,
+      referralPatients,
+      referralPhysicians,
+      loadReferralData,
+      user,
+    ]
+  );
+
+  // -------------------------------------------------------
+  // Edit referral.
+  // Called by the referral history component.
+  // -------------------------------------------------------
+
+  const handleEditReferral = useCallback(
+    async (referralId, formData) => {
+      setReferralError("");
+      setReferralSuccess("");
+
+      if (!isValidReferralId(referralId)) {
+        setReferralError(
+          "This referral does not have a valid database ID. Refresh the referral history and try again."
+        );
+        return;
+      }
+
+      const patientId = getReferralPatientId(formData);
+      const physicianId = getReferralPhysicianId(formData);
+      const reason = String(formData?.reason ?? "").trim();
+
+      if (patientId == null || String(patientId).trim() === "") {
+        setReferralError("Please select a patient.");
+        return;
+      }
+
+      if (physicianId == null || String(physicianId).trim() === "") {
+        setReferralError("Please select a physician.");
+        return;
+      }
+
+      if (!reason) {
+        setReferralError("Please enter the referral reason.");
+        return;
+      }
+
+      const selectedPatient = referralPatients.find(
+        (patient) =>
+          String(patient?.id ?? patient?.patient_id ?? patient?.pk) ===
+          String(patientId)
+      );
+
+      const selectedPhysician = referralPhysicians.find(
+        (physician) =>
+          String(
+            physician?.user_id ??
+              physician?.id ??
+              physician?.physician_id ??
+              physician?.pk
+          ) === String(physicianId)
+      );
+
+      if (!selectedPatient) {
+        setReferralError(
+          "The selected patient is not in the loaded patient list. Refresh the list and try again."
+        );
+        return;
+      }
+
+      if (!selectedPhysician) {
+        setReferralError(
+          "The selected physician is not in the loaded physician list. Refresh the list and try again."
+        );
+        return;
+      }
+
+      const payload = {
+        patient: patientId,
+        physician: physicianId,
+        reason,
+      };
+
+      try {
+        const response = await api.patch(
+          `reception/physio-referrals/${referralId}/`,
+          payload
+        );
+
+        if (response.data?.success === false) {
+          throw new Error(
+            response.data?.error ||
+              response.data?.message ||
+              "The server did not confirm that the referral was updated."
+          );
+        }
+
+        const updatedReferral = getReferralResponse(response.data);
+
+        setReferrals((current) =>
+          current.map((referral) =>
+            String(referral?.id) === String(referralId)
+              ? {
+                  ...referral,
+                  ...(updatedReferral ?? {}),
+                  patient:
+                    updatedReferral?.patient ?? selectedPatient,
+                  patient_id: patientId,
+                  patient_name: getPersonName(selectedPatient),
+                  physician:
+                    updatedReferral?.physician ?? selectedPhysician,
+                  physician_id: physicianId,
+                  physician_name: getPersonName(selectedPhysician),
+                  reason,
+                }
+              : referral
+          )
+        );
+
+        setReferralSuccess("Referral updated successfully.");
+
+        await loadReferralData();
+
+        setReferralSuccess("Referral updated successfully.");
+      } catch (err) {
+        console.error("Failed to edit referral:", err);
+
+        setReferralError(
+          getApiError(err, "Could not update the referral.")
+        );
+      }
+    },
+    [
+      referralPatients,
+      referralPhysicians,
+      loadReferralData,
+    ]
+  );
+
+  // -------------------------------------------------------
+  // Delete referral.
+  // -------------------------------------------------------
+
+  const handleDeleteReferral = useCallback(
+    async (referralId) => {
+      setReferralError("");
+      setReferralSuccess("");
+
+      if (!isValidReferralId(referralId)) {
+        setReferralError(
+          "This referral does not have a valid database ID. Refresh the referral history and try again."
+        );
+        return;
+      }
+
+      const referralExists = referrals.some(
+        (referral) =>
+          String(referral?.id) === String(referralId)
+      );
+
+      if (!referralExists) {
+        setReferralError(
+          "This referral could not be found in the current history. Refresh and try again."
+        );
+        return;
+      }
+
+      try {
+        const response = await api.delete(
+          `reception/physio-referrals/${referralId}/`
+        );
+
+        if (response.data?.success === false) {
+          throw new Error(
+            response.data?.error ||
+              response.data?.message ||
+              "The server did not confirm that the referral was deleted."
+          );
+        }
+
+        setReferrals((current) =>
+          current.filter(
+            (referral) =>
+              String(referral?.id) !== String(referralId)
+          )
+        );
+
+        setReferralSuccess("Referral deleted successfully.");
+
+        await loadReferralData();
+
+        setReferralSuccess("Referral deleted successfully.");
+      } catch (err) {
+        console.error("Failed to delete referral:", err);
+
+        setReferralError(
+          getApiError(err, "Could not delete the referral.")
+        );
+      }
+    },
+    [referrals, loadReferralData]
+  );
+
+  // -------------------------------------------------------
+  // Update referral status.
+  // -------------------------------------------------------
+
+  const handleUpdateReferralStatus = useCallback(
+    async (referralId, status) => {
+      setReferralError("");
+      setReferralSuccess("");
+
+      if (!isValidReferralId(referralId)) {
+        setReferralError(
+          "This referral does not have a valid database ID. Refresh the referral history and try again."
+        );
+        return;
+      }
+
+      if (!["awaiting", "completed"].includes(status)) {
+        setReferralError("Invalid referral status.");
+        return;
+      }
+
+      const previousReferrals = referrals;
+
+      setReferrals((current) =>
+        current.map((referral) =>
+          String(referral?.id) === String(referralId)
+            ? { ...referral, status }
+            : referral
+        )
+      );
+
+      try {
+        const response = await api.patch(
+          `reception/physio-referrals/${referralId}/`,
+          { status }
+        );
+
+        if (response.data?.success === false) {
+          throw new Error(
+            response.data?.error ||
+              response.data?.message ||
+              "The server did not confirm that the status was updated."
+          );
+        }
+
+        const updatedReferral = getReferralResponse(response.data);
+
+        if (updatedReferral) {
+          setReferrals((current) =>
+            current.map((referral) =>
+              String(referral?.id) === String(referralId)
+                ? { ...referral, ...updatedReferral }
+                : referral
+            )
+          );
+        }
+
+        setReferralSuccess("Referral status updated successfully.");
+
+        await loadReferralData();
+
+        setReferralSuccess("Referral status updated successfully.");
+      } catch (err) {
+        console.error("Failed to update referral status:", err);
+
+        setReferrals(previousReferrals);
+
+        setReferralError(
+          getApiError(err, "Could not update the referral status.")
+        );
+      }
+    },
+    [referrals, loadReferralData]
+  );
 
   useEffect(() => {
     loadPatientTracker();
@@ -504,10 +1260,28 @@ export default function PhysioFollowupWorkspace({
     }
   }, [activeSection, loadEvaluationTracker]);
 
+  useEffect(() => {
+    if (activeSection === "referrals") {
+      loadReferralData();
+    }
+  }, [activeSection, loadReferralData]);
+
   const handleBackToAdmin = useCallback(() => {
     onStopImpersonation?.();
     navigate("/admin");
   }, [onStopImpersonation, navigate]);
+
+  const handleSidebarSectionChange = useCallback(
+    (key) => {
+      if (key === "home") {
+        navigate("/physio");
+        return;
+      }
+
+      setActiveSection(key);
+    },
+    [navigate]
+  );
 
   const physioDailyAssignments = useMemo(
     () =>
@@ -585,7 +1359,11 @@ export default function PhysioFollowupWorkspace({
     <DashboardLayout
       title="Patient Workflow"
       subtitle={`Welcome, ${
-        actingAs?.username || user?.username || "Physio User"
+        actingAs?.name ||
+        actingAs?.username ||
+        user?.name ||
+        user?.username ||
+        "Physio User"
       }`}
       accent="#059669"
       sidebarTitle="Patient Workflow"
@@ -595,20 +1373,14 @@ export default function PhysioFollowupWorkspace({
         { key: "tracker", label: "Patient Tracker" },
         { key: "evaluation-tracker", label: "Evaluation Tracker" },
         { key: "performance", label: "Performance" },
+        { key: "referrals", label: "Physio Referrals" },
         { key: "leaderboard", label: "Leaderboard" },
       ]}
       activeSection={activeSection}
-      setActiveSection={(key) => {
-        if (key === "home") {
-          navigate("/physio");
-          return;
-        }
-
-        setActiveSection(key);
-      }}
+      setActiveSection={handleSidebarSectionChange}
       onLogout={onLogout}
       actingAs={actingAs}
-      actingAsName={actingAs?.username}
+      actingAsName={actingAs?.name || actingAs?.username}
       onBackToAdmin={handleBackToAdmin}
     >
       {error ? (
@@ -649,10 +1421,7 @@ export default function PhysioFollowupWorkspace({
       )}
 
       {activeSection === "performance" && (
-        <PerformanceDashboard
-          user={user}
-          actingAs={actingAs}
-        />
+        <PerformanceDashboard user={user} actingAs={actingAs} />
       )}
 
       {activeSection === "evaluation-tracker" && (
@@ -666,6 +1435,23 @@ export default function PhysioFollowupWorkspace({
             onReload={loadEvaluationTracker}
           />
         </div>
+      )}
+
+      {activeSection === "referrals" && (
+        <PhysioReferrals
+          patients={referralPatients}
+          physicians={referralPhysicians}
+          referrals={referrals}
+          loading={referralsLoading}
+          saving={referralSaving}
+          error={referralError}
+          success={referralSuccess}
+          onCreateReferral={handleCreateReferral}
+          onUpdateStatus={handleUpdateReferralStatus}
+          onEditReferral={handleEditReferral}
+          onDeleteReferral={handleDeleteReferral}
+          onRefresh={loadReferralData}
+        />
       )}
 
       {activeSection === "leaderboard" && (
@@ -687,7 +1473,6 @@ export default function PhysioFollowupWorkspace({
               >
                 ◷
               </span>
-
               Leaderboard Filters
             </h3>
 

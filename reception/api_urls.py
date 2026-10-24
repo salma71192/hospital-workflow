@@ -17,6 +17,11 @@ from .physician_api import (
     create_physician_api,
 )
 
+from .physio_referral_api import (
+    physio_referrals_api,
+    physio_referral_detail_api,
+)
+
 
 urlpatterns = [
     # Therapists
@@ -90,5 +95,17 @@ urlpatterns = [
         "physicians/create/",
         create_physician_api,
         name="create_physician_api",
+    ),
+
+    # Physiotherapy referrals
+    path(
+        "physio-referrals/",
+        physio_referrals_api,
+        name="physio_referrals_api",
+    ),
+    path(
+        "physio-referrals/<int:referral_id>/",
+        physio_referral_detail_api,
+        name="physio_referral_detail_api",
     ),
 ]

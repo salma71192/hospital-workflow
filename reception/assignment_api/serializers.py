@@ -59,3 +59,50 @@ def assignment_to_dict(
         "can_edit_today": can_manage,
         "can_cancel_today": can_manage,
     }
+
+
+def referral_to_dict(referral):
+    patient = referral.patient
+    physician = referral.physician
+    referring_user = referral.referred_by
+
+    patient_name = (
+        getattr(patient, "name", None)
+        or "-"
+    )
+
+    patient_file_id = (
+        getattr(patient, "patient_id", None)
+        or ""
+    )
+
+    physician_name = (
+        getattr(physician, "display_name", None)
+        or getattr(physician, "name", None)
+        or getattr(physician, "username", None)
+        or ""
+    ) if physician else ""
+
+    referring_name = (
+        getattr(referring_user, "display_name", None)
+        or getattr(referring_user, "username", None)
+        or ""
+    ) if referring_user else ""
+
+    return {
+        "id": referral.id,
+        "patient": referral.patient_id,
+        "patient_id": referral.patient_id,
+        "patient_name": patient_name,
+        "patient_file_id": patient_file_id,
+        "physician": referral.physician_id,
+        "physician_id": referral.physician_id,
+        "physician_name": physician_name,
+        "referred_by": referral.referred_by_id,
+        "referred_by_name": referring_name,
+        "reason": referral.reason,
+        "status": referral.status,
+        "status_label": referral.get_status_display(),
+        "created_at": referral.created_at.isoformat(),
+        "updated_at": referral.updated_at.isoformat(),
+    }

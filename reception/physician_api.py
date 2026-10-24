@@ -1,10 +1,14 @@
-
 import json
 
+from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from reception.models import Physician
+
+
+User = get_user_model()
 
 
 def normalize_physician_name(name):
@@ -12,24 +16,78 @@ def normalize_physician_name(name):
     return " ".join(str(name or "").split()).casefold()
 
 
+def get_user_physician_name(user):
+    """Get the best available display name for a physician account."""
+    return (
+        getattr(user, "display_name", "")
+        or getattr(user, "full_name", "")
+        or user.get_full_name()
+        or getattr(user, "username", "")
+    ).strip()
+
+
 def list_physicians_api(request):
+    """Return physician user accounts mapped to Physician model IDs."""
     if request.method != "GET":
         return JsonResponse(
             {"error": "Method not allowed"},
             status=405,
         )
 
-    physicians = Physician.objects.all().order_by("name")
+    if not hasattr(User, "role"):
+        return JsonResponse(
+            {"error": "The user model does not have a role field."},
+            status=500,
+        )
 
-    return JsonResponse({
-        "physicians": [
-            {
+    with transaction.atomic():
+        physician_users = User.objects.filter(
+            role__in=["doctor", "physician"]
+        ).order_by("id")
+
+        existing_physicians = {}
+
+        for physician in Physician.objects.all().order_by("id"):
+            key = normalize_physician_name(physician.name)
+
+            if key and key not in existing_physicians:
+                existing_physicians[key] = physician
+
+        results = []
+        seen_users = set()
+
+        for user in physician_users:
+            name = " ".join(get_user_physician_name(user).split())
+
+            if not name:
+                continue
+
+            name_key = normalize_physician_name(name)
+
+            # Reuse a matching record or create a missing one.
+            physician = existing_physicians.get(name_key)
+
+            if physician is None:
+                physician = Physician.objects.create(name=name)
+                existing_physicians[name_key] = physician
+
+            if user.pk in seen_users:
+                continue
+
+            seen_users.add(user.pk)
+
+            results.append({
                 "id": physician.id,
-                "name": physician.name,
-            }
-            for physician in physicians
-        ]
-    })
+                "physician_id": physician.id,
+                "user_id": user.id,
+                "name": name,
+                "display_name": name,
+                "full_name": name,
+            })
+
+    results.sort(key=lambda item: item["name"].casefold())
+
+    return JsonResponse({"physicians": results})
 
 
 @csrf_exempt
@@ -43,10 +101,7 @@ def create_physician_api(request):
     try:
         data = json.loads(request.body or b"{}")
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return JsonResponse(
-            {"error": "Invalid JSON"},
-            status=400,
-        )
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     if not isinstance(data, dict):
         return JsonResponse(
@@ -72,8 +127,6 @@ def create_physician_api(request):
 
     normalized_name = normalize_physician_name(name)
 
-    # Reuse an existing physician regardless of capitalization
-    # or repeated whitespace.
     for existing in Physician.objects.all().only("id", "name"):
         if normalize_physician_name(existing.name) == normalized_name:
             return JsonResponse({

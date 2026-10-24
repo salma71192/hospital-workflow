@@ -70,15 +70,12 @@ class PatientAssignment(models.Model):
         default=1,
     )
 
-    # Referring physician; required by application validation
-    # only when category is initial_evaluation.
     referring_physician = models.CharField(
         max_length=150,
         blank=True,
         default="",
     )
 
-    # Optional speciality saved separately for each assignment.
     speciality = models.CharField(
         max_length=150,
         blank=True,
@@ -109,4 +106,69 @@ class PatientAssignment(models.Model):
             f"{self.patient.name} - "
             f"{self.category} - "
             f"{self.assignment_date}"
+        )
+
+
+class PhysioReferral(models.Model):
+    STATUS_CHOICES = [
+        ("awaiting", "Awaiting Follow-up"),
+        ("completed", "Completed"),
+    ]
+
+    patient = models.ForeignKey(
+        Patient,
+        on_delete=models.PROTECT,
+        related_name="physio_referrals",
+    )
+
+    # Use the Physician model displayed in the referral form.
+    # Protect the physician record while referral history exists.
+    physician = models.ForeignKey(
+        Physician,
+        on_delete=models.PROTECT,
+        related_name="physio_referrals",
+    )
+
+    # Keep referral history if the referring user is deleted.
+    referred_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_physio_referrals",
+    )
+
+    reason = models.TextField()
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="awaiting",
+        db_index=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Physio Referral"
+        verbose_name_plural = "Physio Referrals"
+
+    def __str__(self):
+        patient_name = (
+            getattr(self.patient, "name", None)
+            or f"Patient #{self.patient_id}"
+        )
+
+        return (
+            f"{patient_name} - "
+            f"{self.get_status_display()} - "
+            f"{self.created_at:%Y-%m-%d}"
         )
