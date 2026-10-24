@@ -1,8 +1,15 @@
 
+import json
+
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import Physician
+from reception.models import Physician
+
+
+def normalize_physician_name(name):
+    """Normalize whitespace and capitalization for comparison."""
+    return " ".join(str(name or "").split()).casefold()
 
 
 def list_physicians_api(request):
@@ -32,8 +39,6 @@ def create_physician_api(request):
             {"error": "Method not allowed"},
             status=405,
         )
-
-    import json
 
     try:
         data = json.loads(request.body or b"{}")
@@ -65,15 +70,18 @@ def create_physician_api(request):
             status=400,
         )
 
-    existing = Physician.objects.filter(name__iexact=name).first()
+    normalized_name = normalize_physician_name(name)
 
-    if existing:
-        return JsonResponse({
-            "success": True,
-            "id": existing.id,
-            "name": existing.name,
-            "message": "Physician already exists",
-        })
+    # Reuse an existing physician regardless of capitalization
+    # or repeated whitespace.
+    for existing in Physician.objects.all().only("id", "name"):
+        if normalize_physician_name(existing.name) == normalized_name:
+            return JsonResponse({
+                "success": True,
+                "id": existing.id,
+                "name": existing.name,
+                "message": "Physician already exists",
+            })
 
     physician = Physician.objects.create(name=name)
 

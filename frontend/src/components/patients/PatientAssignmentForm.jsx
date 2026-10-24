@@ -65,13 +65,36 @@ function getPhysicianName(physician) {
     return physician.trim();
   }
 
+  if (!physician || typeof physician !== "object") {
+    return "";
+  }
+
   return String(
-    physician?.display_name ||
-      physician?.name ||
-      physician?.full_name ||
-      physician?.username ||
+    physician.name ??
+      physician.display_name ??
+      physician.full_name ??
+      physician.username ??
       ""
   ).trim();
+}
+
+function normalizePhysicianList(list) {
+  const byNormalizedName = new Map();
+
+  for (const physician of Array.isArray(list) ? list : []) {
+    const name = getPhysicianName(physician);
+    if (!name) continue;
+
+    const key = name.toLocaleLowerCase().trim();
+
+    if (!byNormalizedName.has(key)) {
+      byNormalizedName.set(key, name);
+    }
+  }
+
+  return Array.from(byNormalizedName.values()).sort((a, b) =>
+    a.localeCompare(b)
+  );
 }
 
 function isExternalPhysician(value) {
@@ -81,6 +104,26 @@ function isExternalPhysician(value) {
     physician === EXTERNAL_REFERRAL.toLowerCase() ||
     physician.startsWith(`${EXTERNAL_REFERRAL.toLowerCase()}:`)
   );
+}
+
+function extractPhysicianList(data) {
+  if (Array.isArray(data)) return data;
+
+  const possibleKeys = [
+    "physicians",
+    "doctors",
+    "users",
+    "results",
+    "data",
+  ];
+
+  for (const key of possibleKeys) {
+    if (Array.isArray(data?.[key])) {
+      return data[key];
+    }
+  }
+
+  return [];
 }
 
 function getErrorMessage(error) {
@@ -110,36 +153,6 @@ function getErrorMessage(error) {
   }
 
   return error?.message || "Could not load physicians.";
-}
-
-function extractPhysicianList(data) {
-  if (Array.isArray(data)) return data;
-
-  const possibleKeys = [
-    "physicians",
-    "doctors",
-    "users",
-    "results",
-    "data",
-  ];
-
-  for (const key of possibleKeys) {
-    if (Array.isArray(data?.[key])) {
-      return data[key];
-    }
-  }
-
-  return [];
-}
-
-function normalizePhysicianList(list) {
-  const names = (Array.isArray(list) ? list : [])
-    .map(getPhysicianName)
-    .filter(Boolean);
-
-  return Array.from(
-    new Map(names.map((name) => [name.toLowerCase(), name])).values()
-  ).sort((a, b) => a.localeCompare(b));
 }
 
 export default function PatientAssignmentForm({
@@ -222,10 +235,7 @@ export default function PatientAssignmentForm({
     [assignmentForm.additional_therapist_ids]
   );
 
-  /*
-   * Use the application's shared Axios instance for authentication
-   * and the configured API base URL.
-   */
+  // Load the physician list when the assignment is an evaluation.
   useEffect(() => {
     if (!isEvaluation) {
       setPhysiciansLoading(false);
@@ -254,7 +264,7 @@ export default function PatientAssignmentForm({
 
         if (list.length === 0) {
           setPhysiciansError(
-            "The server returned no physicians. You can still use the supplied physician list if available. Otherwise, verify that physician accounts exist and the endpoint returns the expected data."
+            "The server returned no physicians. Check that the physician API returns a list of physician names."
           );
         }
       } catch (error) {
@@ -281,11 +291,7 @@ export default function PatientAssignmentForm({
     };
   }, [isEvaluation, physicianRetry]);
 
-  /*
-   * Always include the parent's physician list as a fallback.
-   * A failed request should not hide options already supplied by
-   * AdminDashboard.
-   */
+  // Combine the parent list, fetched list, and currently saved physician.
   const availablePhysicians = useMemo(() => {
     const parentList = normalizePhysicianList(physicians);
     const fetchedList = normalizePhysicianList(fetchedPhysicians);
@@ -317,6 +323,7 @@ export default function PatientAssignmentForm({
     [specialities]
   );
 
+  // Restore the last-used therapist for a new assignment.
   useEffect(() => {
     if (
       isEditing ||
@@ -353,6 +360,7 @@ export default function PatientAssignmentForm({
     }
   }, [selectedTherapist, therapistMenuOpen, therapistLabel]);
 
+  // Set today's date for an admin-created assignment.
   useEffect(() => {
     if (
       isAdmin &&
@@ -439,12 +447,15 @@ export default function PatientAssignmentForm({
     }
   };
 
+  // Store the exact selected physician name as a string.
   const handlePhysicianChange = (event) => {
-    const physician = event.target.value;
+    const selectedName = String(event.target.value || "").trim();
+
+    console.log("Physician selected in dropdown:", selectedName);
 
     setAssignmentForm((previous) => ({
       ...previous,
-      referring_physician: physician,
+      referring_physician: selectedName,
       external_referring_physician: "",
     }));
   };
@@ -484,39 +495,52 @@ export default function PatientAssignmentForm({
       return;
     }
 
-    if (isEvaluation && !currentPhysician) {
+    const physicianForSubmission = isExternalPhysician(
+      assignmentForm.referring_physician
+    )
+      ? EXTERNAL_REFERRAL
+      : String(assignmentForm.referring_physician || "").trim();
+
+    if (isEvaluation && !physicianForSubmission) {
       alert("Please select the referring physician.");
       return;
     }
 
-    /*
-     * Create a submission snapshot and pass it directly to the parent.
-     * The parent should use this payload rather than reading potentially
-     * stale React state immediately after a state update.
-     */
+    const additionalIds = additionalTherapistIds
+      .filter(
+        (id) => id !== String(assignmentForm.therapist_id)
+      )
+      .slice(0, 1);
+
     const submissionForm = {
       ...assignmentForm,
       patient_id: selectedPatient.id,
-      therapist_id: assignmentForm.therapist_id,
+      therapist_id: String(assignmentForm.therapist_id),
       category: assignmentForm.category || "appointment",
       visit_number: visitNumber,
       referring_physician: isEvaluation
-        ? currentPhysician
+        ? physicianForSubmission
         : "",
       external_referring_physician: "",
-      additional_therapist_ids: additionalTherapistIds.filter(
-        (id) => id !== String(assignmentForm.therapist_id)
-      ),
-      with_another_therapist: additionalTherapistIds.some(
-        (id) => id !== String(assignmentForm.therapist_id)
-      ),
+      additional_therapist_ids: additionalIds,
+      with_another_therapist: additionalIds.length > 0,
     };
+
+    // Diagnostic output: confirms the exact name sent to the parent.
+    console.log("Assignment submission snapshot:", {
+      category: submissionForm.category,
+      referring_physician: submissionForm.referring_physician,
+      patient_id: submissionForm.patient_id,
+      therapist_id: submissionForm.therapist_id,
+    });
 
     if (typeof onSubmit !== "function") {
       console.error(
         "PatientAssignmentForm: onSubmit callback is missing."
       );
-      alert("Unable to save because the assignment submit handler is not configured.");
+      alert(
+        "Unable to save because the assignment submit handler is not configured."
+      );
       return;
     }
 

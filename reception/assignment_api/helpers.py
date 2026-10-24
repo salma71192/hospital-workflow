@@ -2,21 +2,20 @@
 import json
 
 from django.http import JsonResponse
+from django.contrib.auth import get_user_model
 
-from reception.models import PatientAssignment, Physician
+from reception.models import PatientAssignment
 from reception.api_helpers import parse_date
 
-from .constants import PHYSICIAN_NAMES
 
+User = get_user_model()
 
 EXTERNAL_REFERRAL_PREFIX = "External Referral:"
+PHYSICIAN_ROLES = ("physician", "doctor")
 
 
 def error(message, status=400):
-    return JsonResponse(
-        {"error": message},
-        status=status,
-    )
+    return JsonResponse({"error": message}, status=status)
 
 
 def read_json(request):
@@ -26,17 +25,13 @@ def read_json(request):
         return None, error("Invalid JSON")
 
     if not isinstance(data, dict):
-        return None, error(
-            "Request body must be a JSON object"
-        )
+        return None, error("Request body must be a JSON object")
 
     return data, None
 
 
 def get_request_date(request, parameter_name):
-    raw_value = (
-        request.GET.get(parameter_name) or ""
-    ).strip()
+    raw_value = (request.GET.get(parameter_name) or "").strip()
 
     if not raw_value:
         return None, None
@@ -56,63 +51,114 @@ def valid_category(category):
         choice[0]
         for choice in PatientAssignment.CATEGORY_CHOICES
     }
-
     return category in valid_categories
 
 
 def normalize_physician_name(name):
-    """
-    Normalize physician names by removing surrounding
-    whitespace, collapsing repeated spaces, and ignoring
-    capitalization.
-    """
-    return " ".join(
-        str(name or "").split()
-    ).casefold()
+    """Normalize whitespace and capitalization for comparison."""
+    return " ".join(str(name or "").split()).casefold()
 
 
-def get_physician_names():
-    """
-    Return normalized physician names from both the
-    configured list and the Physician database table.
-    """
-    names = {
-        normalize_physician_name(name)
-        for name in PHYSICIAN_NAMES
-        if normalize_physician_name(name)
-    }
+def get_physician_users():
+    """Return active users whose role identifies them as physicians."""
+    return User.objects.filter(
+        is_active=True,
+        role__in=PHYSICIAN_ROLES,
+    ).order_by("id")
 
-    database_names = Physician.objects.values_list(
-        "name",
-        flat=True,
-    )
 
-    names.update(
-        normalize_physician_name(name)
-        for name in database_names
-        if normalize_physician_name(name)
-    )
+def get_user_physician_names(user):
+    """
+    Return the possible names used to identify a physician user.
+
+    Prefer the display name, then the name, then the username.
+    Other populated fields are retained as aliases for matching.
+    """
+    names = []
+
+    for field in ("display_name", "name", "username"):
+        value = getattr(user, field, None)
+
+        if isinstance(value, str) and value.strip():
+            cleaned = " ".join(value.split())
+
+            if cleaned not in names:
+                names.append(cleaned)
 
     return names
 
 
-def validate_fields(data, assignment=None):
-    """
-    Validate assignment fields for creation and updates.
+def get_physician_names():
+    """Return names exposed by the active physician users."""
+    names = set()
 
-    For updates, fields omitted from the request retain
-    their existing values.
-    """
+    for user in get_physician_users():
+        for name in get_user_physician_names(user):
+            normalized = normalize_physician_name(name)
+
+            if normalized:
+                names.add(normalized)
+
+    return names
+
+
+def get_canonical_physician_name(name):
+    """Resolve a submitted name to an active physician user's name."""
+    normalized_name = normalize_physician_name(name)
+
+    if not normalized_name:
+        return None
+
+    for user in get_physician_users():
+        user_names = get_user_physician_names(user)
+
+        for user_name in user_names:
+            if normalize_physician_name(user_name) == normalized_name:
+                # Store the physician's display name when available.
+                display_name = getattr(user, "display_name", None)
+
+                if isinstance(display_name, str) and display_name.strip():
+                    return " ".join(display_name.split())
+
+                actual_name = getattr(user, "name", None)
+
+                if isinstance(actual_name, str) and actual_name.strip():
+                    return " ".join(actual_name.split())
+
+                return user_name
+
+    return None
+
+
+def extract_physician_name(value):
+    """Accept a physician name string or a dictionary containing a name."""
+    if isinstance(value, dict):
+        value = (
+            value.get("display_name")
+            or value.get("name")
+            or value.get("username")
+            or ""
+        )
+
+    if value is None:
+        return ""
+
+    if not isinstance(value, str):
+        value = str(value) if isinstance(value, (int, float)) else ""
+
+    return " ".join(value.split())
+
+
+def validate_fields(data, assignment=None):
+    """Validate assignment fields for creation and updates."""
+
     category = data.get(
         "category",
         assignment.category if assignment else "appointment",
     )
 
     notes = (
-        data.get(
-            "notes",
-            assignment.notes if assignment else "",
-        )
+        data.get("notes", assignment.notes if assignment else "")
         or ""
     )
 
@@ -125,36 +171,30 @@ def validate_fields(data, assignment=None):
             ),
         )
         or ""
-    ).strip()
+    )
 
-    referring_physician = (
+    if not isinstance(speciality, str):
+        speciality = str(speciality)
+
+    speciality = speciality.strip()
+
+    referring_physician = extract_physician_name(
         data.get(
             "referring_physician",
-            (
-                assignment.referring_physician
-                if assignment
-                else ""
-            ),
+            assignment.referring_physician if assignment else "",
         )
-        or ""
-    ).strip()
+    )
 
     visit_number = data.get(
         "visit_number",
         assignment.visit_number if assignment else None,
     )
 
-    # Validate assignment category.
     if not valid_category(category):
-        return None, error(
-            "Invalid assignment category"
-        )
+        return None, error("Invalid assignment category")
 
-    # Validate visit number.
     if not str(visit_number or "").strip():
-        return None, error(
-            "Visit Number is required"
-        )
+        return None, error("Visit Number is required")
 
     try:
         visit_number = int(visit_number)
@@ -163,21 +203,13 @@ def validate_fields(data, assignment=None):
             raise ValueError
 
     except (ValueError, TypeError):
+        return None, error("Visit Number must be a positive integer")
+
+    if category == "initial_evaluation" and not referring_physician:
         return None, error(
-            "Visit Number must be a positive integer"
+            "Referring Physician is required for Initial Evaluation"
         )
 
-    # Initial evaluations require a referring physician.
-    if (
-        category == "initial_evaluation"
-        and not referring_physician
-    ):
-        return None, error(
-            "Referring Physician is required "
-            "for Initial Evaluation"
-        )
-
-    # Validate the referring physician.
     if referring_physician:
         normalized_name = normalize_physician_name(
             referring_physician
@@ -187,49 +219,46 @@ def validate_fields(data, assignment=None):
             EXTERNAL_REFERRAL_PREFIX
         )
 
-        # Handle external referrals without requiring the
-        # physician to exist in the Physician database.
-        if normalized_name.startswith(
-            normalized_external_prefix
-        ):
-            prefix_length = len(
-                EXTERNAL_REFERRAL_PREFIX
-            )
-
+        if normalized_name.startswith(normalized_external_prefix):
             external_name = referring_physician[
-                prefix_length:
+                len(EXTERNAL_REFERRAL_PREFIX):
             ].strip()
 
             if not external_name:
                 return None, error(
-                    "Please enter the external referring "
-                    "physician's name"
+                    "Please enter the external referring physician's name"
                 )
 
             referring_physician = (
-                f"{EXTERNAL_REFERRAL_PREFIX} "
-                f"{external_name}"
+                f"{EXTERNAL_REFERRAL_PREFIX} {external_name}"
             )
 
         else:
-            valid_physicians = get_physician_names()
+            canonical_name = get_canonical_physician_name(
+                referring_physician
+            )
 
-            if normalized_name not in valid_physicians:
-                return None, error(
-                    "Invalid referring physician"
+            if canonical_name is None:
+                print(
+                    "PHYSICIAN VALIDATION DEBUG:",
+                    {
+                        "submitted_name": referring_physician,
+                        "normalized_name": normalized_name,
+                        "physician_users": [
+                            {
+                                "id": user.id,
+                                "names": get_user_physician_names(user),
+                                "role": user.role,
+                            }
+                            for user in get_physician_users()
+                        ],
+                    },
+                    flush=True,
                 )
 
-            # Use the canonical spelling from the database
-            # when a matching physician record exists.
-            database_physicians = Physician.objects.all()
+                return None, error("Invalid referring physician")
 
-            for physician in database_physicians:
-                if (
-                    normalize_physician_name(physician.name)
-                    == normalized_name
-                ):
-                    referring_physician = physician.name
-                    break
+            referring_physician = canonical_name
 
     return {
         "category": category,

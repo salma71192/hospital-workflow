@@ -1,4 +1,3 @@
-
 import React, { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -15,10 +14,7 @@ const STATUS_OPTIONS = [
   { value: "low", label: "Low" },
   { value: "moderate", label: "Moderate" },
   { value: "high", label: "High" },
-  {
-    value: "with_another_therapist",
-    label: "With Another Therapist",
-  },
+  { value: "with_another_therapist", label: "With Another Therapist" },
 ];
 
 const COLORS = {
@@ -50,9 +46,7 @@ function normalizeInsurance(value) {
   if (normalized.includes("thiqa")) return "thiqa";
   if (normalized.includes("daman")) return "daman";
 
-  if (
-    ["cash", "selfpay", "selfpaid", "cashpatient"].includes(normalized)
-  ) {
+  if (["cash", "selfpay", "selfpaid", "cashpatient"].includes(normalized)) {
     return "cash";
   }
 
@@ -75,8 +69,7 @@ function getInsurance(patient) {
 
 function getInsuranceLabel(value) {
   return (
-    INSURANCE_OPTIONS.find((item) => item.value === value)?.label ||
-    "Not Set"
+    INSURANCE_OPTIONS.find((item) => item.value === value)?.label || "Not Set"
   );
 }
 
@@ -116,20 +109,27 @@ function normalizeStatus(value) {
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
 
-  if (normalized === "with_another_therapist") {
-    return "with_another_therapist";
-  }
+  const aliases = {
+    active_low: "low",
+    low_activity: "low",
+    active_moderate: "moderate",
+    moderate_activity: "moderate",
+    active_high: "high",
+    high_activity: "high",
+    transferred: "with_another_therapist",
+    another_therapist: "with_another_therapist",
+    assigned_to_another_therapist: "with_another_therapist",
+    with_other_therapist: "with_another_therapist",
+    transferred_to_another_therapist: "with_another_therapist",
+  };
 
-  return normalized;
+  return aliases[normalized] || normalized;
 }
 
 function getStatusLabel(status) {
   const value = normalizeStatus(status);
 
-  return (
-    STATUS_OPTIONS.find((item) => item.value === value)?.label ||
-    "Inactive"
-  );
+  return STATUS_OPTIONS.find((item) => item.value === value)?.label || "Inactive";
 }
 
 function getStatusStyle(status) {
@@ -176,13 +176,27 @@ function formatDate(value) {
   if (!value) return "-";
 
   const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-
   return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
 }
 
 function normalizeMonth(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})/);
   return match ? `${match[1]}-${match[2]}` : "";
+}
+
+/**
+ * A patient is NEW only when the backend marks the patient as a new
+ * evaluation for the selected reporting month. All other patients are OLD.
+ */
+function isNewPatientForMonth(patient, selectedMonth) {
+  const patientMonth = normalizeMonth(patient?.month);
+  const displayMonth = normalizeMonth(selectedMonth);
+
+  return (
+    Boolean(patient?.is_new_evaluation) &&
+    Boolean(patientMonth) &&
+    (!displayMonth || patientMonth === displayMonth)
+  );
 }
 
 function getInitials(name) {
@@ -370,10 +384,7 @@ const styles = {
     gap: 12,
     minWidth: 0,
   },
-  monthFilter: {
-    display: "grid",
-    gap: 7,
-  },
+  monthFilter: { display: "grid", gap: 7 },
   fieldLabel: {
     display: "block",
     color: COLORS.text,
@@ -470,11 +481,7 @@ const styles = {
     fontSize: 22,
     fontWeight: 800,
   },
-  summaryContent: {
-    display: "grid",
-    gap: 6,
-    minWidth: 0,
-  },
+  summaryContent: { display: "grid", gap: 6, minWidth: 0 },
   summaryLabel: {
     color: COLORS.muted,
     fontSize: 11,
@@ -566,11 +573,7 @@ const styles = {
     flexWrap: "wrap",
     gap: 16,
   },
-  tableHeadingIntro: {
-    display: "grid",
-    gap: 6,
-    minWidth: 0,
-  },
+  tableHeadingIntro: { display: "grid", gap: 6, minWidth: 0 },
   tableTitle: {
     margin: 0,
     color: COLORS.navy,
@@ -589,11 +592,7 @@ const styles = {
     flexWrap: "wrap",
     gap: 10,
   },
-  importTypeField: {
-    display: "grid",
-    gap: 6,
-    minWidth: 110,
-  },
+  importTypeField: { display: "grid", gap: 6, minWidth: 110 },
   toolbarSelect: {
     minHeight: 42,
     boxSizing: "border-box",
@@ -649,10 +648,7 @@ const styles = {
     fontSize: 12,
     lineHeight: 1.7,
   },
-  importWarning: {
-    color: "#92400e",
-    fontWeight: 750,
-  },
+  importWarning: { color: "#92400e", fontWeight: 750 },
   filterPanel: {
     display: "flex",
     alignItems: "flex-end",
@@ -760,9 +756,7 @@ const styles = {
     whiteSpace: "nowrap",
     borderBottom: `1px solid ${COLORS.border}`,
   },
-  tr: {
-    background: COLORS.white,
-  },
+  tr: { background: COLORS.white },
   td: {
     padding: "15px 12px",
     color: "#465970",
@@ -864,11 +858,7 @@ const styles = {
     fontWeight: 800,
     whiteSpace: "nowrap",
   },
-  sessionsCell: {
-    display: "grid",
-    gap: 8,
-    minWidth: 0,
-  },
+  sessionsCell: { display: "grid", gap: 8, minWidth: 0 },
   sessionsTop: {
     display: "flex",
     alignItems: "baseline",
@@ -882,16 +872,8 @@ const styles = {
     lineHeight: 1.2,
     fontVariantNumeric: "tabular-nums",
   },
-  sessionUnit: {
-    color: COLORS.muted,
-    fontSize: 10,
-    fontWeight: 650,
-  },
-  cashSessionNote: {
-    color: "#9a3412",
-    fontSize: 10,
-    fontWeight: 750,
-  },
+  sessionUnit: { color: COLORS.muted, fontSize: 10, fontWeight: 650 },
+  cashSessionNote: { color: "#9a3412", fontSize: 10, fontWeight: 750 },
   progressTrack: {
     width: 90,
     maxWidth: "100%",
@@ -1038,17 +1020,11 @@ export default function PatientTrackerTable({
   const [insuranceOverrides, setInsuranceOverrides] = useState({});
   const [importSummary, setImportSummary] = useState(null);
 
-  // Imported insurance types are temporary display overrides.
-  // They are not saved to the database by this component.
   const trackerPatients = useMemo(
     () =>
       patients.map((patient) => {
-        const fileNumber = normalizeFileNumber(
-          getPatientFileNumber(patient)
-        );
-        const override = fileNumber
-          ? insuranceOverrides[fileNumber]
-          : undefined;
+        const fileNumber = normalizeFileNumber(getPatientFileNumber(patient));
+        const override = fileNumber ? insuranceOverrides[fileNumber] : undefined;
 
         return override
           ? { ...patient, insurance_type: override }
@@ -1076,6 +1052,8 @@ export default function PatientTrackerTable({
       totalPatients: trackerPatients.length,
       activePatients: 0,
       inactivePatients: 0,
+      newPatients: 0,
+      oldPatients: 0,
       totalSessions: 0,
       thiqaPatients: 0,
       damanPatients: 0,
@@ -1088,9 +1066,13 @@ export default function PatientTrackerTable({
     trackerPatients.forEach((patient) => {
       const status = normalizeStatus(patient.status);
       const insurance = getInsurance(patient);
+      const isNew = isNewPatientForMonth(patient, selectedMonth);
 
       if (activeStatuses.has(status)) result.activePatients += 1;
       if (status === "inactive") result.inactivePatients += 1;
+
+      if (isNew) result.newPatients += 1;
+      else result.oldPatients += 1;
 
       result.totalSessions += getSessions(patient);
       result.thiqaSessions += getCategorySessions(patient, "thiqa");
@@ -1103,16 +1085,14 @@ export default function PatientTrackerTable({
     });
 
     return result;
-  }, [trackerPatients]);
+  }, [trackerPatients, selectedMonth]);
 
-  // Clicking the selected card again removes the card filter.
   const handleCardFilter = (filter) => {
     setActiveCardFilter((previous) =>
       previous === filter ? "all" : filter
     );
   };
 
-  // Combine card, name, and speciality filters.
   const filteredPatients = useMemo(() => {
     const search = searchName.trim().toLowerCase();
 
@@ -1122,12 +1102,11 @@ export default function PatientTrackerTable({
       const status = normalizeStatus(patient.status);
       const insurance = getInsurance(patient);
       const sessions = getSessions(patient);
+      const isNew = isNewPatientForMonth(patient, selectedMonth);
 
       const matchesSearch = !search || name.includes(search);
-
       const matchesSpeciality =
-        selectedSpeciality === "all" ||
-        speciality === selectedSpeciality;
+        selectedSpeciality === "all" || speciality === selectedSpeciality;
 
       let matchesCard = true;
 
@@ -1135,21 +1114,23 @@ export default function PatientTrackerTable({
         case "active":
           matchesCard = ["low", "moderate", "high"].includes(status);
           break;
-
         case "inactive":
           matchesCard = status === "inactive";
           break;
-
         case "sessions":
           matchesCard = sessions > 0;
           break;
-
         case "thiqa":
         case "daman":
         case "cash":
           matchesCard = insurance === activeCardFilter;
           break;
-
+        case "new":
+          matchesCard = isNew;
+          break;
+        case "old":
+          matchesCard = !isNew;
+          break;
         default:
           matchesCard = true;
       }
@@ -1161,6 +1142,7 @@ export default function PatientTrackerTable({
     searchName,
     selectedSpeciality,
     activeCardFilter,
+    selectedMonth,
   ]);
 
   const clearMessages = () => {
@@ -1342,9 +1324,7 @@ export default function PatientTrackerTable({
         `${importedNumbers.size} patient insurance assignment(s) applied to the current display.`
       );
     } catch (error) {
-      setErrorMessage(
-        error?.message || "Could not import the insurance file."
-      );
+      setErrorMessage(error?.message || "Could not import the insurance file.");
     } finally {
       setBusyAction("");
     }
@@ -1413,12 +1393,39 @@ export default function PatientTrackerTable({
       color: COLORS.orange,
       background: COLORS.orangeLight,
     },
+    {
+      key: "new",
+      label: "New Patients",
+      value: summary.newPatients,
+      icon: "✦",
+      color: COLORS.orange,
+      background: COLORS.orangeLight,
+    },
+    {
+      key: "old",
+      label: "Old Patients",
+      value: summary.oldPatients,
+      icon: "↻",
+      color: COLORS.purple,
+      background: COLORS.purpleLight,
+    },
   ];
 
   const hasActiveFilters =
     Boolean(searchName.trim()) ||
     selectedSpeciality !== "all" ||
     activeCardFilter !== "all";
+
+  const activeFilterLabel = {
+    active: "Active Patients",
+    inactive: "Inactive Patients",
+    sessions: "Patients with Utilized Sessions",
+    thiqa: "Thiqa Patients",
+    daman: "Daman Patients",
+    cash: "Cash Patients",
+    new: "New Patients",
+    old: "Old Patients",
+  };
 
   return (
     <section style={styles.page}>
@@ -1428,8 +1435,8 @@ export default function PatientTrackerTable({
             <span style={styles.eyebrow}>PATIENT TRACKER</span>
             <h2 style={styles.title}>{title}</h2>
             <p style={styles.subtitle}>
-              Monitor patient activity, insurance coverage, utilized
-              sessions, and follow-up status in one place.
+              Monitor patient activity, insurance coverage, utilized sessions,
+              and follow-up status in one place.
             </p>
           </div>
 
@@ -1540,9 +1547,7 @@ export default function PatientTrackerTable({
                 aria-pressed={isSelected}
                 title={`Filter patient records by ${item.label.toLowerCase()}. Click again to clear.`}
               >
-                <span style={styles.insuranceCardLabel}>
-                  {item.label}
-                </span>
+                <span style={styles.insuranceCardLabel}>{item.label}</span>
 
                 <strong
                   style={{
@@ -1603,9 +1608,7 @@ export default function PatientTrackerTable({
                 ...styles.importButton,
                 opacity: busyAction === "insurance-import" ? 0.65 : 1,
                 cursor:
-                  busyAction === "insurance-import"
-                    ? "not-allowed"
-                    : "pointer",
+                  busyAction === "insurance-import" ? "not-allowed" : "pointer",
               }}
               onClick={() => fileInputRef.current?.click()}
               disabled={busyAction === "insurance-import"}
@@ -1678,9 +1681,7 @@ export default function PatientTrackerTable({
             <span style={styles.fieldLabel}>FILTER BY SPECIALITY</span>
             <select
               value={selectedSpeciality}
-              onChange={(event) =>
-                setSelectedSpeciality(event.target.value)
-              }
+              onChange={(event) => setSelectedSpeciality(event.target.value)}
               style={styles.select}
               aria-label="Filter by speciality"
             >
@@ -1732,16 +1733,8 @@ export default function PatientTrackerTable({
             role="status"
           >
             Showing{" "}
-            <strong>
-              {activeCardFilter === "active"
-                ? "Active Patients"
-                : activeCardFilter === "inactive"
-                  ? "Inactive Patients"
-                  : activeCardFilter === "sessions"
-                    ? "Patients with Utilized Sessions"
-                    : `${getInsuranceLabel(activeCardFilter)} Patients`}
-            </strong>
-            . The card filter is combined with your search and speciality
+            <strong>{activeFilterLabel[activeCardFilter] || "Patients"}</strong>.
+            {" "}The card filter is combined with your search and speciality
             filters.
           </div>
         )}
@@ -1767,14 +1760,7 @@ export default function PatientTrackerTable({
                   const sessions = getSessions(patient);
                   const statusLabel = getStatusLabel(patient.status);
                   const statusStyle = getStatusStyle(patient.status);
-                  const patientMonth = normalizeMonth(patient.month);
-                  const displayMonth = normalizeMonth(selectedMonth);
-
-                  const isNewEvaluation =
-                    Boolean(patient.is_new_evaluation) &&
-                    Boolean(patientMonth) &&
-                    (!displayMonth || patientMonth === displayMonth);
-
+                  const isNew = isNewPatientForMonth(patient, selectedMonth);
                   const fileNumber = getPatientFileNumber(patient) || "-";
                   const speciality = getSpeciality(patient);
                   const insurance = getInsurance(patient);
@@ -1801,15 +1787,9 @@ export default function PatientTrackerTable({
                               {patient.name || "Unnamed patient"}
                             </strong>
                             <span
-                              style={
-                                isNewEvaluation
-                                  ? styles.newBadge
-                                  : styles.oldBadge
-                              }
+                              style={isNew ? styles.newBadge : styles.oldBadge}
                             >
-                              {isNewEvaluation
-                                ? "NEW EVALUATION"
-                                : "OLD"}
+                              {isNew ? "NEW" : "OLD"}
                             </span>
                           </div>
                         </div>
@@ -1870,8 +1850,7 @@ export default function PatientTrackerTable({
 
                           {getCategorySessions(patient, "cash") > 0 && (
                             <span style={styles.cashSessionNote}>
-                              Cash sessions:{" "}
-                              {getCategorySessions(patient, "cash")}
+                              Cash sessions: {getCategorySessions(patient, "cash")}
                             </span>
                           )}
                         </div>
@@ -1903,9 +1882,7 @@ export default function PatientTrackerTable({
                       </td>
 
                       <td style={styles.td}>
-                        <span style={styles.dateText}>
-                          {formatDate(lastSeen)}
-                        </span>
+                        <span style={styles.dateText}>{formatDate(lastSeen)}</span>
                       </td>
 
                       <td style={{ ...styles.td, textAlign: "center" }}>
@@ -1935,7 +1912,11 @@ export default function PatientTrackerTable({
           </div>
         ) : (
           <div style={styles.emptyState}>
-            <div style={styles.emptyIcon} aria-hidden="true">
+            <div
+              className="empty-icon"
+              style={styles.emptyIcon}
+              aria-hidden="true"
+            >
               ♧
             </div>
 
@@ -1966,10 +1947,13 @@ export default function PatientTrackerTable({
         <footer style={styles.footer}>
           <span style={styles.footerDot} aria-hidden="true" />
           <span>
-            Utilized Sessions includes the monthly total. Thiqa, Daman, and
-            Cash session breakdowns require the corresponding category totals
-            from the backend. Status levels: Inactive = 0, Low = 1–2,
-            Moderate = 3–5, High = 6 or more sessions.
+            Utilized Sessions includes the monthly total. Thiqa, Daman, and Cash
+            session breakdowns require the corresponding category totals from
+            the backend. Status levels: Inactive = 0, Low = 1–2, Moderate = 3–5,
+            High = 6 or more sessions. “With Another Therapist” is displayed
+            when that status is supplied by the backend. New/Old classification
+            uses the backend's `is_new_evaluation` flag for the selected
+            reporting month.
           </span>
         </footer>
       </div>
