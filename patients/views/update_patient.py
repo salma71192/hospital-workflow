@@ -95,6 +95,8 @@ def update_patient(request, patient):
         data.get("current_future_appointments") or None
     )
 
+    patient.gender = (data.get("gender") or "").strip()
+
     patient.insurance_provider = (
         (data.get("insurance_provider") or "").strip()
         or None
