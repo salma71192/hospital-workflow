@@ -33,6 +33,13 @@ class Patient(models.Model):
     name = models.CharField(max_length=255)
     patient_id = models.CharField(max_length=100, unique=True)
 
+    # Patient gender can be added or updated later.
+    gender = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+    )
+
     # Archive and restore support.
     is_archived = models.BooleanField(default=False)
     archived_at = models.DateTimeField(
@@ -60,7 +67,7 @@ class Patient(models.Model):
         blank=True,
     )
 
-    # Existing overall treatment tracking.
+    # Overall treatment tracking.
     # Separate from monthly tracker counts.
     sessions_taken = models.PositiveIntegerField(default=0)
     taken_with = models.CharField(
@@ -73,7 +80,7 @@ class Patient(models.Model):
         null=True,
     )
 
-    # Existing patient insurance/provider field.
+    # Patient insurance/provider.
     insurance_provider = models.CharField(
         max_length=50,
         blank=True,
@@ -169,7 +176,6 @@ class PatientMonthlyTracker(models.Model):
     utilized_sessions = models.PositiveIntegerField(default=0)
 
     # Monthly category totals.
-    # These can be reconciled against individual session records.
     thiqa_sessions = models.PositiveIntegerField(default=0)
     daman_sessions = models.PositiveIntegerField(default=0)
     cash_sessions = models.PositiveIntegerField(default=0)
@@ -185,8 +191,7 @@ class PatientMonthlyTracker(models.Model):
         blank=True,
     )
 
-    # True when this patient is identified as a new evaluation
-    # in the tracker. Independent of patient registration.
+    # Independent of patient registration.
     is_new_evaluation = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -226,11 +231,8 @@ class PatientMonthlySession(models.Model):
     One record per visit/session.
 
     Each visit is categorized as Thiqa, Daman, or Cash.
-    Cash visits are separate records but must also contribute
-    to PatientMonthlyTracker.utilized_sessions.
-
-    The API must create/update this record and update the
-    corresponding monthly tracker in one database transaction.
+    Cash visits must also contribute to
+    PatientMonthlyTracker.utilized_sessions.
     """
 
     INSURANCE_THIQA = "thiqa"
@@ -249,8 +251,7 @@ class PatientMonthlySession(models.Model):
         related_name="session_records",
     )
 
-    # Stored directly for convenient filtering/reporting.
-    # The API must ensure this matches tracker.patient.
+    # Must match the patient on the monthly tracker.
     patient = models.ForeignKey(
         Patient,
         on_delete=models.CASCADE,
@@ -340,9 +341,8 @@ class PatientMonthlySession(models.Model):
                 )
 
     def save(self, *args, **kwargs):
-        # Normalize the session date's reporting month through
-        # the associated tracker. Validation is performed by
-        # the API/form using full_clean() before saving.
+        # Validation is performed by the API/form using
+        # full_clean() before saving.
         super().save(*args, **kwargs)
 
     def __str__(self):
