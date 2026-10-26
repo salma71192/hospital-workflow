@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, Suspense } from "react";
 import {
   BrowserRouter as Router,
@@ -7,7 +6,6 @@ import {
   Navigate,
   useLocation,
 } from "react-router-dom";
-
 import api from "./api/api";
 import Login from "./pages/Login";
 import PatientDetails from "./pages/PatientDetails";
@@ -16,28 +14,22 @@ import ReceptionHome from "./pages/ReceptionHome";
 import ReceptionRegistrationWorkspace from "./pages/ReceptionRegistrationWorkspace";
 import ReceptionBookingWorkspace from "./pages/ReceptionBookingWorkspace";
 import RehabDashboard from "./RehabDashboard";
-
-import ClaimsManagement from "./components/rcm/ClaimsManagement";import ClaimHistory from "./components/rcm/ClaimHistory";
-
+import ClaimsManagement from "./pages/ClaimsManagement";
+import ClaimHistory from "./components/rcm/ClaimHistory";
 import ProtectedRoute from "./components/routing/ProtectedRoute";
 import RoleRoute from "./components/routing/RoleRoute";
 import { dashboardRoutes } from "./routes/routesConfig";
-
 function normalizeRole(role) {
   return String(role || "").trim().toLowerCase();
 }
-
 function getDashboardPath(user) {
   if (!user) return "/login";
-
   const role = normalizeRole(user.role);
-
   if (user.is_superuser || role === "admin") {
     return (
       dashboardRoutes.find((route) => route.adminOnly)?.path || "/admin"
     );
   }
-
   const matchingRoute = dashboardRoutes.find(
     (route) =>
       !route.adminOnly &&
@@ -46,27 +38,20 @@ function getDashboardPath(user) {
         (allowedRole) => normalizeRole(allowedRole) === role
       )
   );
-
   return matchingRoute?.path || null;
 }
-
 function AppContent() {
   const [user, setUser] = useState(null);
   const [actingAs, setActingAs] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const location = useLocation();
-
   useEffect(() => {
     let mounted = true;
-
     api
       .get("users/me/")
       .then((response) => {
         if (!mounted) return;
-
         const authenticatedUser = response.data;
-
         if (
           authenticatedUser &&
           authenticatedUser.id &&
@@ -83,19 +68,15 @@ function AppContent() {
       .finally(() => {
         if (mounted) setLoading(false);
       });
-
     return () => {
       mounted = false;
     };
   }, []);
-
   const handleLogin = (userData) => {
     if (!userData) return;
-
     setUser(userData);
     setActingAs(null);
   };
-
   const handleLogout = async () => {
     try {
       await api.post("users/logout/");
@@ -106,27 +87,22 @@ function AppContent() {
       setActingAs(null);
     }
   };
-
   const handleStopImpersonation = () => {
     setActingAs(null);
   };
-
   const currentUser = actingAs || user;
-
   const isAdmin = Boolean(
     user &&
       (user.is_superuser || normalizeRole(user.role) === "admin")
   );
-
   const dashboardPath = getDashboardPath(currentUser);
-
   if (loading) {
     return <div style={{ padding: 20 }}>Loading...</div>;
   }
-
   return (
     <Suspense fallback={<div style={{ padding: 20 }}>Loading page...</div>}>
       <Routes>
+        {/* Home */}
         <Route
           path="/"
           element={
@@ -146,7 +122,7 @@ function AppContent() {
             )
           }
         />
-
+        {/* Login */}
         <Route
           path="/login"
           element={
@@ -164,13 +140,10 @@ function AppContent() {
             )
           }
         />
-
         {/* Existing dashboard routes */}
         {dashboardRoutes.map((route) => {
           const Component = route.component;
-
           if (!Component) return null;
-
           if (route.adminOnly) {
             return (
               <Route
@@ -188,7 +161,6 @@ function AppContent() {
               />
             );
           }
-
           return (
             <Route
               key={route.path}
@@ -210,7 +182,6 @@ function AppContent() {
             />
           );
         })}
-
         {/* Physiotherapy Follow-Up Dashboard */}
         <Route
           path="/physio/followup"
@@ -230,8 +201,7 @@ function AppContent() {
             </RoleRoute>
           }
         />
-
-        {/* RCM Claims Management */}
+        {/* RCM Claims Management: Search and Create */}
         <Route
           path="/rcm/claims"
           element={
@@ -249,7 +219,6 @@ function AppContent() {
             </RoleRoute>
           }
         />
-
         {/* RCM Claim History */}
         <Route
           path="/rcm/claim-history"
@@ -268,8 +237,7 @@ function AppContent() {
             </RoleRoute>
           }
         />
-
-        {/* Reception routes */}
+        {/* Reception Home */}
         <Route
           path="/reception"
           element={
@@ -287,7 +255,7 @@ function AppContent() {
             </RoleRoute>
           }
         />
-
+        {/* Reception Registration */}
         <Route
           path="/reception/registration"
           element={
@@ -305,7 +273,7 @@ function AppContent() {
             </RoleRoute>
           }
         />
-
+        {/* Reception Booking */}
         <Route
           path="/reception/booking"
           element={
@@ -323,8 +291,7 @@ function AppContent() {
             </RoleRoute>
           }
         />
-
-        {/* Patient routes */}
+        {/* Patient Details */}
         <Route
           path="/patients/:id"
           element={
@@ -338,7 +305,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
-
+        {/* Edit Patient */}
         <Route
           path="/patients/:id/edit"
           element={
@@ -352,8 +319,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
-
-        {/* Fallback route */}
+        {/* Fallback */}
         <Route
           path="*"
           element={
@@ -370,7 +336,6 @@ function AppContent() {
     </Suspense>
   );
 }
-
 export default function App() {
   return (
     <Router>

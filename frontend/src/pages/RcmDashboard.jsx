@@ -1,7 +1,7 @@
 
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import ClaimsManagement from "../components/rcm/ClaimsManagement";
+import ClaimsManagement from "./ClaimsManagement";
 
 export default function RcmDashboard({
   user,
