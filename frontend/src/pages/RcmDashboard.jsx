@@ -1,6 +1,7 @@
 
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import ClaimsManagement from "../components/rcm/ClaimsManagement";
 
 export default function RcmDashboard({
   user,
@@ -42,17 +43,15 @@ export default function RcmDashboard({
       eyebrow: "REVENUE CYCLE MANAGEMENT",
       title: "Claims Management",
       description:
-        "Manage rejected claims, search for patients, and review claims history.",
+        "Manage claims, search for patients, and review claims history.",
       icon: "▤",
-      color: "blue",
     },
     alerts: {
       eyebrow: "REVENUE CYCLE MANAGEMENT",
       title: "Alerts & Renewals",
       description:
-        "Review upcoming renewals and identify claims that require follow-up.",
+        "Review upcoming renewals and identify claims requiring follow-up.",
       icon: "◷",
-      color: "orange",
     },
   };
 
@@ -127,7 +126,8 @@ export default function RcmDashboard({
           line-height: 1.5;
         }
 
-        .rcm-brand-name span {
+        .rcm-brand-name span,
+        .rcm-footer-brand span {
           color: var(--blue);
         }
 
@@ -392,10 +392,8 @@ export default function RcmDashboard({
           text-align: left;
           cursor: pointer;
           box-shadow: 0 4px 14px rgba(28, 49, 77, 0.025);
-          transition:
-            transform 0.22s ease,
-            box-shadow 0.22s ease,
-            border-color 0.22s ease;
+          transition: transform 0.22s ease,
+            box-shadow 0.22s ease, border-color 0.22s ease;
         }
 
         .rcm-module-card:hover {
@@ -520,6 +518,11 @@ export default function RcmDashboard({
           font-size: 29px;
         }
 
+        .rcm-placeholder-icon.orange {
+          background: #fff1e5;
+          color: #e78a35;
+        }
+
         .rcm-placeholder h2 {
           margin: 0 0 10px;
           color: var(--navy);
@@ -535,6 +538,7 @@ export default function RcmDashboard({
         }
 
         .rcm-back-home {
+          margin-bottom: 20px;
           border: 1px solid var(--border);
           background: white;
           color: var(--navy);
@@ -555,10 +559,6 @@ export default function RcmDashboard({
           font-size: 10px;
           font-weight: 850;
           letter-spacing: 1.3px;
-        }
-
-        .rcm-footer-brand span {
-          color: var(--blue);
         }
 
         .rcm-footer-text {
@@ -769,9 +769,7 @@ export default function RcmDashboard({
               <div className="rcm-section-heading">
                 <div>
                   <h2>Your Workspace</h2>
-                  <p>
-                    Choose the area you want to work on.
-                  </p>
+                  <p>Choose the area you want to work on.</p>
                 </div>
 
                 <div className="rcm-section-label">
@@ -799,7 +797,7 @@ export default function RcmDashboard({
 
                   <div className="rcm-card-bottom">
                     <span className="rcm-card-category">
-                      CLAIMS & PATIENT RECORDS
+                      CLAIMS &amp; PATIENT RECORDS
                     </span>
                     <span className="rcm-card-action">
                       Open workspace →
@@ -826,7 +824,7 @@ export default function RcmDashboard({
 
                   <div className="rcm-card-bottom">
                     <span className="rcm-card-category">
-                      ALERTS & FOLLOW-UP
+                      ALERTS &amp; FOLLOW-UP
                     </span>
                     <span className="rcm-card-action">
                       Open workspace →
@@ -836,30 +834,44 @@ export default function RcmDashboard({
               </div>
             </section>
           </>
+        ) : view === "claims" ? (
+          <section>
+            <button
+              type="button"
+              className="rcm-back-home"
+              onClick={() => setView("home")}
+            >
+              ← Back to Dashboard
+            </button>
+
+            <ClaimsManagement />
+          </section>
         ) : (
           <section className="rcm-placeholder">
             <div
               className={`rcm-placeholder-icon ${
-                view === "alerts" ? "orange" : "blue"
+                view === "alerts" ? "orange" : ""
               }`}
             >
               {sections[view]?.icon}
             </div>
 
-            <div className="rcm-eyebrow" style={{
-              background: "#edf3ff",
-              borderColor: "#dce7fb",
-              color: "#3478f6",
-            }}>
+            <div
+              className="rcm-eyebrow"
+              style={{
+                background: "#edf3ff",
+                borderColor: "#dce7fb",
+                color: "#3478f6",
+              }}
+            >
               {sections[view]?.eyebrow}
             </div>
 
             <h2>{sections[view]?.title}</h2>
 
             <p>
-              {sections[view]?.description}
-              {" "}This workspace is ready for its dedicated component to be
-              connected in the next step.
+              {sections[view]?.description} This workspace will be connected
+              to its dedicated component in a later step.
             </p>
 
             <button
