@@ -38,6 +38,7 @@ function getApiError(err, fallback) {
 
   if (typeof data?.error === "string") return data.error;
   if (typeof data?.detail === "string") return data.detail;
+  if (typeof data === "string" && data.trim()) return data;
 
   if (data && typeof data === "object") {
     const details = Object.entries(data)
@@ -72,9 +73,7 @@ function extractList(data, keys = []) {
   if (Array.isArray(data)) return data;
 
   for (const key of keys) {
-    if (Array.isArray(data?.[key])) {
-      return data[key];
-    }
+    if (Array.isArray(data?.[key])) return data[key];
   }
 
   return [];
@@ -104,8 +103,10 @@ export default function AdminDashboard({
   const [therapists, setTherapists] = useState([]);
   const [physicians, setPhysicians] = useState([]);
   const [specialities, setSpecialities] = useState([]);
-
   const [evaluationRefreshKey, setEvaluationRefreshKey] = useState(0);
+
+  // Forces patient files to reload after a patient is created or updated.
+  const [patientRefreshKey, setPatientRefreshKey] = useState(0);
 
   const [assignmentForm, setAssignmentForm] = useState({
     ...emptyAssignmentForm,
@@ -184,14 +185,8 @@ export default function AdminDashboard({
     { key: "create", label: "Create New User" },
     { key: "manage", label: "Manage Users" },
     { key: "statistics", label: "Rehab Statistics" },
-    {
-      key: "registration_tracker",
-      label: "Registration History",
-    },
-    {
-      key: "evaluation_tracker",
-      label: "Evaluation Tracker",
-    },
+    { key: "registration_tracker", label: "Registration History" },
+    { key: "evaluation_tracker", label: "Evaluation Tracker" },
     {
       key: "reception_management",
       label: "Reception Management",
@@ -228,44 +223,39 @@ export default function AdminDashboard({
         }))
       );
 
-      setError("");
+      return true;
     } catch (err) {
       console.error("Failed to load users:", err);
       setError(getApiError(err, "Failed to load users."));
+      return false;
     }
   }, []);
 
   const loadTherapists = useCallback(async () => {
     try {
       const res = await api.get("reception/therapists/");
-
       setTherapists(
         extractList(res.data, ["therapists", "results", "data"])
       );
     } catch (err) {
       console.error("Failed to load therapists:", err);
       setTherapists([]);
-      setError(
-        getApiError(err, "Failed to load physiotherapists.")
-      );
+      setError(getApiError(err, "Failed to load physiotherapists."));
     }
   }, []);
 
-  // Uses the shared API instance so the normal authentication
-  // configuration and token interceptor are applied.
   const loadPhysicians = useCallback(async () => {
     try {
       const res = await api.get("users/physicians/");
-
-      const list = extractList(res.data, [
-        "physicians",
-        "doctors",
-        "users",
-        "results",
-        "data",
-      ]);
-
-      setPhysicians(list);
+      setPhysicians(
+        extractList(res.data, [
+          "physicians",
+          "doctors",
+          "users",
+          "results",
+          "data",
+        ])
+      );
     } catch (err) {
       console.error(
         "Failed to load physicians:",
@@ -283,9 +273,7 @@ export default function AdminDashboard({
   }, []);
 
   useEffect(() => {
-    if (isAdmin) {
-      fetchUsers();
-    }
+    if (isAdmin) fetchUsers();
   }, [isAdmin, fetchUsers]);
 
   useEffect(() => {
@@ -298,9 +286,7 @@ export default function AdminDashboard({
   }, [activeSection, loadTherapists]);
 
   useEffect(() => {
-    if (activeSection === "register_patient") {
-      loadPhysicians();
-    }
+    if (activeSection === "register_patient") loadPhysicians();
   }, [activeSection, loadPhysicians]);
 
   const groupedUsers = useMemo(() => {
@@ -326,11 +312,8 @@ export default function AdminDashboard({
           ? "physician"
           : String(item?.role || "").trim().toLowerCase();
 
-      if (groups[role]) {
-        groups[role].push(item);
-      } else {
-        groups.no_role.push(item);
-      }
+      if (groups[role]) groups[role].push(item);
+      else groups.no_role.push(item);
     });
 
     return groups;
@@ -391,7 +374,6 @@ export default function AdminDashboard({
       );
 
       if (!confirmed) return;
-
       resetAssignmentEditor();
     }
 
@@ -401,6 +383,10 @@ export default function AdminDashboard({
 
     if (section === "evaluation_tracker") {
       setEvaluationRefreshKey((previous) => previous + 1);
+    }
+
+    if (section === "patients_file") {
+      setPatientRefreshKey((previous) => previous + 1);
     }
 
     if (section === "open_file") {
@@ -426,7 +412,6 @@ export default function AdminDashboard({
 
     try {
       const res = await api.post("users/create-user/", formData);
-
       setMessage(res.data?.message || "User created successfully.");
 
       const createdRole = formData.role;
@@ -464,11 +449,7 @@ export default function AdminDashboard({
     );
   };
 
-  const handleRoleUpdate = async (
-    userId,
-    newRole,
-    newIsSuperuser
-  ) => {
+  const handleRoleUpdate = async (userId, newRole, newIsSuperuser) => {
     if (!isAdmin) {
       setError("Administrator permissions are required.");
       return false;
@@ -477,12 +458,9 @@ export default function AdminDashboard({
     setMessage("");
     setError("");
 
-    const normalizedRole =
-      newRole === "doctor" ? "physician" : newRole;
-
     try {
       const res = await api.put(`users/update-user/${userId}/`, {
-        role: normalizedRole,
+        role: newRole === "doctor" ? "physician" : newRole,
         is_superuser: newIsSuperuser,
       });
 
@@ -617,11 +595,9 @@ export default function AdminDashboard({
 
     try {
       const res = await api.delete(`users/delete-user/${userId}/`);
-
       setMessage(
         res.data?.message || "User deactivated successfully."
       );
-
       await fetchUsers();
     } catch (err) {
       console.error("Failed to deactivate user:", err);
@@ -679,15 +655,50 @@ export default function AdminDashboard({
     );
 
     setError("");
+    setPatientRefreshKey((previous) => previous + 1);
     setActiveSection("register_patient");
   };
 
-  // The second argument allows PatientAssignmentForm to submit its
-  // latest values directly, without relying on a pending state update.
-  const handleCreateOrUpdateAssignment = async (
-    e,
-    submittedForm
-  ) => {
+  // Callbacks supplied to AdminPatientFilesSection.
+  const handlePatientUpdated = useCallback((patient) => {
+    setMessage(
+      `Patient ${
+        patient?.name || patient?.full_name || "record"
+      } updated successfully.`
+    );
+    setError("");
+    setPatientRefreshKey((previous) => previous + 1);
+  }, []);
+
+  const handlePatientDeleted = useCallback((patient) => {
+    setMessage(
+      `Patient ${
+        patient?.name || patient?.full_name || "record"
+      } deleted successfully.`
+    );
+    setError("");
+    setPatientRefreshKey((previous) => previous + 1);
+  }, []);
+
+  const handlePatientError = useCallback((errorMessage) => {
+    setError(
+      typeof errorMessage === "string" && errorMessage.trim()
+        ? errorMessage
+        : "The patient action failed. Please try again."
+    );
+    setMessage("");
+  }, []);
+
+  const handlePatientMessage = useCallback((successMessage) => {
+    setMessage(
+      typeof successMessage === "string" && successMessage.trim()
+        ? successMessage
+        : "Patient action completed successfully."
+    );
+    setError("");
+  }, []);
+
+  const handleCreateOrUpdateAssignment = async (e, submittedForm) => {
     e?.preventDefault?.();
 
     if (!isAdmin) {
@@ -744,9 +755,7 @@ export default function AdminDashboard({
       with_another_therapist: additionalTherapistIds.length > 0,
     };
 
-    if (currentForm.assignment_date) {
-      payload.assignment_date = currentForm.assignment_date;
-    } else {
+    if (!currentForm.assignment_date) {
       delete payload.assignment_date;
     }
 
@@ -1007,7 +1016,13 @@ export default function AdminDashboard({
         )}
 
         {activeSection === "patients_file" && (
-          <AdminPatientFilesSection />
+          <AdminPatientFilesSection
+            refreshKey={patientRefreshKey}
+            onPatientUpdated={handlePatientUpdated}
+            onPatientDeleted={handlePatientDeleted}
+            onError={handlePatientError}
+            onMessage={handlePatientMessage}
+          />
         )}
 
         {activeSection === "open_file" && (

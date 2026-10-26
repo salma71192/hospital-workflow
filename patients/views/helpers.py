@@ -63,6 +63,7 @@ def _patient_to_dict(patient):
         "id": patient.id,
         "name": patient.name,
         "patient_id": patient.patient_id,
+        "gender": patient.gender or "",
         "current_approval_number": patient.current_approval_number,
         "approval_start_date": (
             str(patient.approval_start_date)
