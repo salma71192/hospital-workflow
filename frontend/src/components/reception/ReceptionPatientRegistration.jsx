@@ -2,6 +2,7 @@
 import React from "react";
 
 import DashboardNotice from "../common/DashboardNotice";
+
 import PatientRegisterForm from "../patients/PatientRegisterForm";
 import PatientAssignmentForm from "../patients/PatientAssignmentForm";
 import UnifiedPatientSearch from "../patients/UnifiedPatientSearch";
