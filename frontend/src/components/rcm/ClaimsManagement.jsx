@@ -1,933 +1,873 @@
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../api/api";
+import CreateClaim from "./CreateClaim";
 
 export default function ClaimsManagement() {
+  const navigate = useNavigate();
+  const requestRef = useRef(0);
+
   const [search, setSearch] = useState("");
   const [patients, setPatients] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
-  const [openedPatient, setOpenedPatient] = useState(null);
-
-  const [claims, setClaims] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-
-  const [claimId, setClaimId] = useState("");
-  const [claimStatus, setClaimStatus] = useState("Approved");
-  const [rejectionReason, setRejectionReason] = useState("");
-  const [renewalDate, setRenewalDate] = useState("");
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
 
-  const searchPatients = async (e) => {
-    e.preventDefault();
-    setError("");
-    setMessage("");
-    setSelectedPatient(null);
-    setOpenedPatient(null);
+  const patientName = (patient) =>
+    patient?.name ||
+    patient?.full_name ||
+    patient?.patient_name ||
+    [
+      patient?.first_name,
+      patient?.middle_name,
+      patient?.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    "Unnamed patient";
 
-    if (!search.trim()) {
-      setError("Enter a patient name or file number.");
+  const patientFileNumber = (patient) =>
+    patient?.patient_id ??
+    patient?.file_number ??
+    patient?.mrn ??
+    patient?.id ??
+    "-";
+
+  const patientApproval = (patient) =>
+    patient?.current_approval_number ||
+    patient?.approval_number ||
+    patient?.authorization_number ||
+    "-";
+
+  useEffect(() => {
+    const query = search.trim();
+
+    if (!query || selectedPatient) {
+      requestRef.current += 1;
       setPatients([]);
+      setLoading(false);
+      return undefined;
+    }
+
+    const requestId = ++requestRef.current;
+    const controller = new AbortController();
+
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        const response = await api.get(
+          `patients/?search=${encodeURIComponent(query)}`,
+          { signal: controller.signal }
+        );
+
+        if (requestId !== requestRef.current) return;
+
+        const data = response.data;
+        const results = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.patients)
+          ? data.patients
+          : Array.isArray(data?.results)
+          ? data.results
+          : [];
+
+        const normalizedQuery = query.toLowerCase();
+
+        const filtered = results.filter((patient) => {
+          const values = [
+            patientName(patient),
+            patientFileNumber(patient),
+            patient?.id,
+            patient?.current_approval_number,
+            patient?.approval_number,
+            patient?.mrn,
+          ];
+
+          return values.some((value) =>
+            String(value ?? "")
+              .toLowerCase()
+              .includes(normalizedQuery)
+          );
+        });
+
+        setPatients(filtered);
+      } catch (err) {
+        if (
+          err.name === "CanceledError" ||
+          err.code === "ERR_CANCELED"
+        ) {
+          return;
+        }
+
+        if (requestId !== requestRef.current) return;
+
+        setPatients([]);
+        setError(
+          err.response?.data?.detail ||
+            err.response?.data?.error ||
+            "Unable to search patients. Please try again."
+        );
+      } finally {
+        if (requestId === requestRef.current) {
+          setLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [search, selectedPatient]);
+
+  const selectPatient = (patient) => {
+    requestRef.current += 1;
+    setSelectedPatient(patient);
+    setPatients([]);
+    setLoading(false);
+    setError("");
+  };
+
+  const openPatientFile = (patient) => {
+    if (patient?.id === undefined || patient?.id === null) {
+      setError("This patient record does not contain a valid patient ID.");
       return;
     }
 
-    setLoading(true);
+    navigate(`/patients/${patient.id}`);
+  };
 
-    try {
-      const response = await api.get(
-        `patients/?search=${encodeURIComponent(search.trim())}`
-      );
-
-      const results = response.data.patients || [];
-      setPatients(results);
-
-      if (!results.length) {
-        setMessage("No patients found. Check the name or file number.");
-      }
-    } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-          "Unable to search patients. Please try again."
-      );
-      setPatients([]);
-    } finally {
-      setLoading(false);
-    }
+  const returnToSearch = () => {
+    setSelectedPatient(null);
+    setError("");
   };
 
   const clearSearch = () => {
+    requestRef.current += 1;
     setSearch("");
     setPatients([]);
-    setSelectedPatient(null);
-    setOpenedPatient(null);
+    setLoading(false);
     setError("");
-    setMessage("");
-  };
-
-  const selectPatient = (patient) => {
-    setSelectedPatient(patient);
-    setOpenedPatient(null);
-    setError("");
-    setMessage("");
-  };
-
-  const openPatientFile = () => {
-    if (!selectedPatient) {
-      setError("Please select a patient first.");
-      return;
-    }
-
-    setOpenedPatient(selectedPatient);
-    setClaimId("");
-    setClaimStatus("Approved");
-    setRejectionReason("");
-    setRenewalDate("");
-    setError("");
-    setMessage("");
-  };
-
-  const addClaim = (e) => {
-    e.preventDefault();
-    setError("");
-    setMessage("");
-
-    if (!openedPatient) {
-      setError("Open a patient file first.");
-      return;
-    }
-
-    if (!claimId.trim()) {
-      setError("Please enter the Claim ID.");
-      return;
-    }
-
-    if (claimStatus === "Rejected" && !rejectionReason.trim()) {
-      setError("Please enter the reason for rejection.");
-      return;
-    }
-
-    const duplicate = claims.some(
-      (claim) =>
-        String(claim.patientId) === String(openedPatient.id) &&
-        claim.claimId.trim().toLowerCase() ===
-          claimId.trim().toLowerCase()
-    );
-
-    if (duplicate) {
-      setError("This Claim ID has already been added for this patient.");
-      return;
-    }
-
-    const newClaim = {
-      id: `${Date.now()}-${Math.random()}`,
-      patientId: openedPatient.id,
-      claimId: claimId.trim(),
-      status: claimStatus,
-      rejectionReason:
-        claimStatus === "Rejected" ? rejectionReason.trim() : "",
-      createdAt: new Date().toISOString(),
-    };
-
-    setClaims((previous) => [newClaim, ...previous]);
-    setClaimId("");
-    setClaimStatus("Approved");
-    setRejectionReason("");
-    setMessage("Claim added to the current workspace.");
-  };
-
-  const addRenewalAlert = (e) => {
-    e.preventDefault();
-    setError("");
-    setMessage("");
-
-    if (!openedPatient) {
-      setError("Open a patient file first.");
-      return;
-    }
-
-    if (!renewalDate) {
-      setError("Please select a renewal date.");
-      return;
-    }
-
-    const newAlert = {
-      id: `${Date.now()}-${Math.random()}`,
-      patientId: openedPatient.id,
-      patientName: openedPatient.name,
-      patientFileNumber: openedPatient.patient_id || "",
-      renewalDate,
-      createdAt: new Date().toISOString(),
-    };
-
-    setAlerts((previous) => [newAlert, ...previous]);
-    setRenewalDate("");
-    setMessage("Renewal alert added to the current workspace.");
-  };
-
-  const patientClaims = openedPatient
-    ? claims.filter(
-        (claim) =>
-          String(claim.patientId) === String(openedPatient.id)
-      )
-    : [];
-
-  const patientAlerts = openedPatient
-    ? alerts.filter(
-        (alert) =>
-          String(alert.patientId) === String(openedPatient.id)
-      )
-    : [];
-
-  const formatDate = (value) => {
-    if (!value) return "-";
-
-    return new Date(`${value}T00:00:00`).toLocaleDateString();
   };
 
   return (
-    <div className="rcm-claims">
+    <main className="rcm-page">
       <style>{`
-        .rcm-claims {
-          --navy: #172c46;
-          --blue: #3478f6;
-          --text: #233750;
-          --muted: #7a8ba0;
-          --border: #e5ebf3;
+        .rcm-page {
+          --navy: #172b4d;
+          --blue: #3767e8;
+          --blue-dark: #2853c7;
+          --green: #0b9b72;
+          --text: #27364b;
+          --muted: #7b8799;
+          --border: #e5eaf2;
+          width: 100%;
+          min-width: 0;
           color: var(--text);
           font-family: Inter, -apple-system, BlinkMacSystemFont,
             "Segoe UI", sans-serif;
         }
 
-        .rcm-claims * {
+        .rcm-page * {
           box-sizing: border-box;
         }
 
-        .rcm-claims button,
-        .rcm-claims input,
-        .rcm-claims select,
-        .rcm-claims textarea {
+        .rcm-page button,
+        .rcm-page input {
           font: inherit;
         }
 
-        .rcm-claims-header {
-          margin-bottom: 24px;
+        .rcm-page button {
+          cursor: pointer;
         }
 
-        .rcm-claims-eyebrow {
-          margin-bottom: 9px;
+        .rcm-page button:focus-visible,
+        .rcm-page input:focus-visible {
+          outline: 3px solid rgba(55, 103, 232, .2);
+          outline-offset: 2px;
+        }
+
+        .rcm-hero {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+          padding: 30px;
+          margin-bottom: 24px;
+          border: 1px solid #dce6fa;
+          border-radius: 22px;
+          background: linear-gradient(
+            120deg,
+            #fff 0%,
+            #f2f6ff 70%,
+            #eaf1ff 100%
+          );
+        }
+
+        .rcm-eyebrow {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 10px;
           color: var(--blue);
           font-size: 10px;
-          font-weight: 800;
-          letter-spacing: 1.4px;
+          font-weight: 850;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
         }
 
-        .rcm-claims-header h2 {
+        .rcm-eyebrow-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--green);
+        }
+
+        .rcm-hero h1 {
           margin: 0;
           color: var(--navy);
-          font-size: 28px;
-          font-weight: 800;
-          letter-spacing: -0.7px;
+          font-size: clamp(25px, 3vw, 34px);
+          font-weight: 850;
+          letter-spacing: -1px;
         }
 
-        .rcm-claims-header p {
-          margin: 9px 0 0;
+        .rcm-hero p {
+          max-width: 590px;
+          margin: 10px 0 0;
           color: var(--muted);
-          font-size: 14px;
+          font-size: 13px;
+          line-height: 1.8;
+        }
+
+        .rcm-hero-icon {
+          display: grid;
+          place-items: center;
+          width: 66px;
+          height: 66px;
+          flex: 0 0 66px;
+          border-radius: 20px;
+          background: var(--navy);
+          color: white;
+          font-size: 29px;
+          font-weight: 800;
+          box-shadow: 0 12px 25px rgba(23, 43, 77, .16);
+        }
+
+        .rcm-workspace {
+          border: 1px solid var(--border);
+          border-radius: 20px;
+          background: white;
+          box-shadow: 0 5px 24px rgba(29, 48, 79, .035);
+        }
+
+        .rcm-section-head {
+          display: flex;
+          align-items: flex-start;
+          gap: 14px;
+          padding: 24px 25px 20px;
+          border-bottom: 1px solid #edf0f6;
+        }
+
+        .rcm-section-icon {
+          display: grid;
+          place-items: center;
+          width: 43px;
+          height: 43px;
+          flex: 0 0 43px;
+          border: 1px solid #dce7ff;
+          border-radius: 13px;
+          background: #edf3ff;
+          color: var(--blue);
+          font-size: 21px;
+        }
+
+        .rcm-section-head h2 {
+          margin: 0;
+          color: var(--navy);
+          font-size: 17px;
+          font-weight: 850;
+        }
+
+        .rcm-section-head p {
+          margin: 6px 0 0;
+          color: var(--muted);
+          font-size: 12px;
           line-height: 1.7;
         }
 
-        .rcm-claims-panel {
-          margin-bottom: 22px;
-          padding: 25px;
-          border: 1px solid var(--border);
-          border-radius: 19px;
-          background: #fff;
-          box-shadow: 0 4px 14px rgba(28, 49, 77, 0.025);
+        .rcm-search-content {
+          padding: 23px 25px 25px;
         }
 
-        .rcm-claims-panel-title {
-          margin: 0 0 7px;
-          color: var(--navy);
-          font-size: 19px;
+        .rcm-search-label {
+          display: block;
+          margin-bottom: 9px;
+          color: var(--text);
+          font-size: 12px;
           font-weight: 800;
         }
 
-        .rcm-claims-panel-description {
-          margin: 0 0 20px;
-          color: var(--muted);
-          font-size: 13px;
-          line-height: 1.6;
+        .rcm-search-wrap {
+          position: relative;
         }
 
-        .rcm-claims-search-form {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) auto auto;
-          gap: 10px;
+        .rcm-search-symbol {
+          position: absolute;
+          top: 50%;
+          left: 16px;
+          transform: translateY(-50%);
+          color: var(--blue);
+          font-size: 22px;
+          pointer-events: none;
         }
 
-        .rcm-claims-input,
-        .rcm-claims-select,
-        .rcm-claims-textarea {
+        .rcm-search-input {
           width: 100%;
-          min-width: 0;
-          padding: 12px 13px;
-          border: 1px solid #d8e1ed;
-          border-radius: 10px;
-          outline: none;
-          background: #fff;
+          min-height: 54px;
+          padding: 13px 48px 13px 46px;
+          border: 1.5px solid #d7e1f1;
+          border-radius: 13px;
+          background: #f9fbff;
           color: var(--text);
-          font-size: 14px;
+          font-size: 13px;
+          transition: border-color .2s, box-shadow .2s;
         }
 
-        .rcm-claims-input:focus,
-        .rcm-claims-select:focus,
-        .rcm-claims-textarea:focus {
+        .rcm-search-input::placeholder {
+          color: #9aa6b8;
+        }
+
+        .rcm-search-input:focus {
           border-color: var(--blue);
-          box-shadow: 0 0 0 3px rgba(52, 120, 246, 0.1);
+          background: white;
+          box-shadow: 0 0 0 4px rgba(55, 103, 232, .08);
+          outline: none;
         }
 
-        .rcm-claims-textarea {
-          min-height: 95px;
-          resize: vertical;
+        .rcm-clear {
+          position: absolute;
+          top: 50%;
+          right: 10px;
+          display: grid;
+          place-items: center;
+          width: 32px;
+          height: 32px;
+          transform: translateY(-50%);
+          border: 0;
+          border-radius: 9px;
+          background: #eaf0fa;
+          color: #53637b;
+          font-size: 21px;
         }
 
-        .rcm-claims-primary,
-        .rcm-claims-secondary,
-        .rcm-claims-open {
+        .rcm-search-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 12px;
+          color: var(--muted);
+          font-size: 11px;
+        }
+
+        .rcm-live {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+        }
+
+        .rcm-live-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--green);
+        }
+
+        .rcm-count {
+          padding: 6px 10px;
+          border: 1px solid #e1e9fb;
+          border-radius: 20px;
+          background: #f2f6ff;
+          color: #3d5db6;
+          font-size: 10px;
+          font-weight: 850;
+        }
+
+        .rcm-results {
+          margin-top: 24px;
+          overflow: hidden;
+          border: 1px solid var(--border);
+          border-radius: 15px;
+        }
+
+        .rcm-results-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 15px 17px;
+          border-bottom: 1px solid var(--border);
+          background: #f8faff;
+        }
+
+        .rcm-results-title {
+          color: var(--navy);
+          font-size: 13px;
+          font-weight: 850;
+        }
+
+        .rcm-results-subtitle {
+          margin-top: 4px;
+          color: var(--muted);
+          font-size: 11px;
+        }
+
+        .rcm-result-list {
+          display: grid;
+        }
+
+        .rcm-patient-row {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          min-width: 0;
+          padding: 17px;
+          border-bottom: 1px solid #edf1f6;
+          background: white;
+          transition: background .15s;
+        }
+
+        .rcm-patient-row:last-child {
+          border-bottom: 0;
+        }
+
+        .rcm-patient-row:hover {
+          background: #fbfcff;
+        }
+
+        .rcm-patient-avatar {
+          display: grid;
+          place-items: center;
+          width: 46px;
+          height: 46px;
+          flex: 0 0 46px;
+          border: 1px solid #dce6ff;
+          border-radius: 14px;
+          background: linear-gradient(145deg, #e6eeff, #f0eaff);
+          color: #4058bc;
+          font-size: 17px;
+          font-weight: 900;
+        }
+
+        .rcm-patient-main {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .rcm-patient-name {
+          color: var(--navy);
+          font-size: 13px;
+          font-weight: 850;
+          line-height: 1.5;
+          overflow-wrap: anywhere;
+        }
+
+        .rcm-patient-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+          margin-top: 8px;
+        }
+
+        .rcm-meta-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px 8px;
+          border: 1px solid #e7ecf4;
+          border-radius: 7px;
+          background: #f8faff;
+          color: #65748a;
+          font-size: 10px;
+          line-height: 1.4;
+          overflow-wrap: anywhere;
+        }
+
+        .rcm-meta-chip strong {
+          color: #43536b;
+          font-weight: 800;
+        }
+
+        .rcm-patient-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+
+        .rcm-action-btn {
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 7px;
-          min-height: 43px;
-          padding: 0 17px;
+          min-height: 37px;
+          padding: 0 12px;
+          border: 1px solid transparent;
           border-radius: 10px;
-          font-size: 13px;
-          font-weight: 750;
-          cursor: pointer;
-          transition: background 0.2s, transform 0.2s;
+          font-size: 11px !important;
+          font-weight: 850;
+          white-space: nowrap;
+          transition: background .15s, transform .15s;
         }
 
-        .rcm-claims-primary,
-        .rcm-claims-open {
-          border: 1px solid var(--blue);
+        .rcm-action-btn:hover {
+          transform: translateY(-1px);
+        }
+
+        .rcm-btn-select {
+          border-color: #2b61dd;
           background: var(--blue);
           color: white;
         }
 
-        .rcm-claims-primary:hover,
-        .rcm-claims-open:hover {
-          background: #2563d9;
+        .rcm-btn-select:hover {
+          background: var(--blue-dark);
         }
 
-        .rcm-claims-secondary {
-          border: 1px solid var(--border);
-          background: #fff;
-          color: var(--navy);
-        }
-
-        .rcm-claims-secondary:hover {
-          background: #f2f6fc;
-        }
-
-        .rcm-claims-primary:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .rcm-claims-results {
-          display: grid;
-          gap: 12px;
-          margin-top: 20px;
-        }
-
-        .rcm-claims-patient {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 16px;
-          padding: 17px;
-          border: 1px solid var(--border);
-          border-radius: 13px;
+        .rcm-btn-open {
+          border-color: #d8e3f2;
           background: white;
-          transition: border-color 0.2s, background 0.2s;
+          color: #405571;
         }
 
-        .rcm-claims-patient.selected {
-          border-color: var(--blue);
-          background: #f4f8ff;
+        .rcm-btn-open:hover {
+          border-color: #a9c4f5;
+          background: #f0f5ff;
+          color: #2f59b9;
         }
 
-        .rcm-claims-patient-info {
+        .rcm-empty {
           display: flex;
-          align-items: flex-start;
-          gap: 13px;
-          min-width: 0;
-        }
-
-        .rcm-claims-patient-radio {
-          width: 18px;
-          height: 18px;
-          margin-top: 3px;
-          flex-shrink: 0;
-          accent-color: var(--blue);
-          cursor: pointer;
-        }
-
-        .rcm-claims-patient-name {
-          margin-bottom: 7px;
-          color: var(--navy);
-          font-size: 15px;
-          font-weight: 800;
-        }
-
-        .rcm-claims-patient-meta {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 7px 16px;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 36px 20px;
           color: var(--muted);
-          font-size: 12px;
-          line-height: 1.6;
-        }
-
-        .rcm-claims-selected-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 10px;
-          margin-top: 18px;
-        }
-
-        .rcm-claims-notice {
-          margin-top: 15px;
-          padding: 12px 14px;
-          border-radius: 10px;
-          font-size: 13px;
-          line-height: 1.6;
-        }
-
-        .rcm-claims-notice.error {
-          border: 1px solid #fecaca;
-          background: #fff1f2;
-          color: #b91c1c;
-        }
-
-        .rcm-claims-notice.success {
-          border: 1px solid #bbf7d0;
-          background: #f0fdf4;
-          color: #166534;
-        }
-
-        .rcm-claims-empty {
-          padding: 20px;
-          border: 1px dashed #d8e1ed;
-          border-radius: 12px;
-          background: #f8fafc;
-          color: var(--muted);
-          font-size: 13px;
           text-align: center;
         }
 
-        .rcm-claims-patient-banner {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 16px;
-          margin-bottom: 22px;
-          padding: 20px;
-          border: 1px solid #d9e6fb;
-          border-radius: 15px;
-          background: linear-gradient(110deg, #f3f7ff, #fff);
+        .rcm-empty-icon {
+          display: grid;
+          place-items: center;
+          width: 46px;
+          height: 46px;
+          border-radius: 14px;
+          background: #f0f4fa;
+          color: #71829c;
+          font-size: 21px;
         }
 
-        .rcm-claims-patient-banner h3 {
-          margin: 0 0 6px;
+        .rcm-empty strong {
           color: var(--navy);
-          font-size: 19px;
-          font-weight: 800;
+          font-size: 13px;
         }
 
-        .rcm-claims-patient-banner p {
-          margin: 0;
-          color: var(--muted);
-          font-size: 12px;
+        .rcm-empty span {
+          max-width: 360px;
+          font-size: 11px;
           line-height: 1.7;
         }
 
-        .rcm-claims-form-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 17px;
-        }
-
-        .rcm-claims-field {
+        .rcm-error {
           display: flex;
-          flex-direction: column;
-          gap: 8px;
-          min-width: 0;
-        }
-
-        .rcm-claims-field.full {
-          grid-column: 1 / -1;
-        }
-
-        .rcm-claims-field label {
-          color: var(--text);
+          gap: 9px;
+          margin-top: 16px;
+          padding: 13px 14px;
+          border: 1px solid #fecaca;
+          border-radius: 11px;
+          background: #fff1f2;
+          color: #b42332;
           font-size: 12px;
-          font-weight: 750;
+          line-height: 1.6;
+          overflow-wrap: anywhere;
         }
 
-        .rcm-claims-field label span {
-          color: #dc2626;
-        }
-
-        .rcm-claims-form-actions {
-          display: flex;
-          justify-content: flex-end;
-          margin-top: 20px;
-        }
-
-        .rcm-claims-status {
+        .rcm-back-button {
           display: inline-flex;
           align-items: center;
-          width: fit-content;
-          padding: 5px 10px;
-          border-radius: 30px;
-          font-size: 11px;
+          gap: 8px;
+          min-height: 38px;
+          margin-bottom: 16px;
+          padding: 0 13px;
+          border: 1px solid #d8e3f2;
+          border-radius: 10px;
+          background: white;
+          color: #405571;
+          font-size: 12px;
           font-weight: 800;
         }
 
-        .rcm-claims-status.approved {
-          background: #dcfce7;
-          color: #166534;
+        .rcm-back-button:hover {
+          background: #f0f5ff;
+          border-color: #a9c4f5;
         }
 
-        .rcm-claims-status.rejected {
-          background: #fee2e2;
-          color: #b91c1c;
-        }
-
-        .rcm-claims-table-wrap {
-          overflow-x: auto;
-          margin-top: 16px;
-        }
-
-        .rcm-claims-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 13px;
-          text-align: left;
-        }
-
-        .rcm-claims-table th {
-          padding: 12px;
-          border-bottom: 1px solid var(--border);
-          background: #f8fafc;
-          color: var(--muted);
-          font-size: 10px;
-          letter-spacing: 0.6px;
-          text-transform: uppercase;
-          white-space: nowrap;
-        }
-
-        .rcm-claims-table td {
-          padding: 14px 12px;
-          border-bottom: 1px solid #edf1f6;
-          color: var(--text);
-          vertical-align: top;
-        }
-
-        .rcm-claims-table tr:last-child td {
-          border-bottom: none;
-        }
-
-        .rcm-claims-renewal-date {
-          color: var(--navy);
-          font-weight: 750;
-          white-space: nowrap;
-        }
-
-        @media (max-width: 650px) {
-          .rcm-claims-panel {
-            padding: 18px;
+        @media (max-width: 760px) {
+          .rcm-hero {
+            padding: 22px;
           }
 
-          .rcm-claims-search-form {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .rcm-claims-search-form input {
-            grid-column: 1 / -1;
-          }
-
-          .rcm-claims-patient {
+          .rcm-patient-row {
             align-items: flex-start;
-            flex-direction: column;
+            flex-wrap: wrap;
           }
 
-          .rcm-claims-selected-actions {
+          .rcm-patient-main {
+            flex-basis: calc(100% - 62px);
+          }
+
+          .rcm-patient-actions {
             width: 100%;
+            padding-left: 60px;
           }
 
-          .rcm-claims-selected-actions button {
+          .rcm-patient-actions .rcm-action-btn {
             flex: 1;
           }
+        }
 
-          .rcm-claims-patient-banner {
-            align-items: flex-start;
-            flex-direction: column;
+        @media (max-width: 480px) {
+          .rcm-hero {
+            padding: 19px;
           }
 
-          .rcm-claims-form-grid {
-            grid-template-columns: 1fr;
+          .rcm-hero-icon {
+            display: none;
           }
 
-          .rcm-claims-field.full {
-            grid-column: auto;
+          .rcm-section-head,
+          .rcm-search-content {
+            padding-right: 16px;
+            padding-left: 16px;
+          }
+
+          .rcm-patient-actions {
+            padding-left: 0;
+          }
+
+          .rcm-action-btn {
+            padding: 0 9px;
+            font-size: 10px !important;
+          }
+
+          .rcm-results-head {
+            padding: 13px;
           }
         }
       `}</style>
 
-      <div className="rcm-claims-header">
-        <div className="rcm-claims-eyebrow">
-          REVENUE CYCLE MANAGEMENT
+      <header className="rcm-hero">
+        <div>
+          <div className="rcm-eyebrow">
+            <span className="rcm-eyebrow-dot" />
+            Revenue Cycle Management
+          </div>
+          <h1>Claims Management</h1>
+          <p>
+            Search patient records, open patient files, and create claims
+            from one organized workspace.
+          </p>
         </div>
-        <h2>Claims Management</h2>
-        <p>
-          Search patient files, record claim decisions, and schedule renewal
-          reminders.
-        </p>
-      </div>
 
-      {/* STEP 1: SEARCH AND SELECT A PATIENT */}
-      <section className="rcm-claims-panel">
-        <h3 className="rcm-claims-panel-title">Find a Patient</h3>
-        <p className="rcm-claims-panel-description">
-          Search using the patient's name or file number, then select the
-          correct patient.
-        </p>
+        <div className="rcm-hero-icon" aria-hidden="true">
+          $
+        </div>
+      </header>
 
-        <form
-          className="rcm-claims-search-form"
-          onSubmit={searchPatients}
-        >
-          <input
-            className="rcm-claims-input"
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Enter patient name or file number..."
-            aria-label="Search by patient name or file number"
-          />
-
-          <button
-            className="rcm-claims-primary"
-            type="submit"
-            disabled={loading}
-          >
-            {loading ? "Searching..." : "Search"}
-          </button>
-
-          <button
-            className="rcm-claims-secondary"
-            type="button"
-            onClick={clearSearch}
-          >
-            Clear
-          </button>
-        </form>
-
-        {patients.length > 0 && (
-          <>
-            <div className="rcm-claims-results">
-              {patients.map((patient) => (
-                <div
-                  key={patient.id}
-                  className={`rcm-claims-patient ${
-                    String(selectedPatient?.id) === String(patient.id)
-                      ? "selected"
-                      : ""
-                  }`}
-                >
-                  <div className="rcm-claims-patient-info">
-                    <input
-                      className="rcm-claims-patient-radio"
-                      type="radio"
-                      name="selectedPatient"
-                      checked={
-                        String(selectedPatient?.id) === String(patient.id)
-                      }
-                      onChange={() => selectPatient(patient)}
-                      aria-label={`Select ${patient.name}`}
-                    />
-
-                    <div>
-                      <div className="rcm-claims-patient-name">
-                        {patient.name || "Unnamed patient"}
-                      </div>
-
-                      <div className="rcm-claims-patient-meta">
-                        <span>
-                          File number: {patient.patient_id || "-"}
-                        </span>
-                        <span>
-                          Approval number:{" "}
-                          {patient.current_approval_number || "-"}
-                        </span>
-                        <span>
-                          Approved sessions: {patient.approved_sessions ?? 0}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+      {!selectedPatient ? (
+        <section className="rcm-workspace">
+          <div className="rcm-section-head">
+            <div className="rcm-section-icon" aria-hidden="true">
+              ⌕
             </div>
-
-            <div className="rcm-claims-selected-actions">
-              <button
-                type="button"
-                className="rcm-claims-secondary"
-                onClick={() => {
-                  if (!selectedPatient) {
-                    setError("Select a patient from the list first.");
-                    setMessage("");
-                    return;
-                  }
-                  setError("");
-                  setMessage(`Selected ${selectedPatient.name}.`);
-                }}
-              >
-                Select Patient
-              </button>
-
-              <button
-                type="button"
-                className="rcm-claims-primary"
-                onClick={openPatientFile}
-              >
-                Open Patient File →
-              </button>
-            </div>
-          </>
-        )}
-
-        {error && (
-          <div className="rcm-claims-notice error" role="alert">
-            {error}
-          </div>
-        )}
-
-        {message && (
-          <div className="rcm-claims-notice success" role="status">
-            {message}
-          </div>
-        )}
-      </section>
-
-      {/* STEP 2: CLAIM AND RENEWAL WORKSPACE */}
-      {openedPatient && (
-        <>
-          <section className="rcm-claims-patient-banner">
             <div>
-              <div className="rcm-claims-eyebrow">PATIENT FILE OPENED</div>
-              <h3>{openedPatient.name}</h3>
+              <h2>Find a Patient</h2>
               <p>
-                File number: {openedPatient.patient_id || "-"}
-                {" · "}
-                Approval number: {openedPatient.current_approval_number || "-"}
+                Search by patient name or file number. Each result has
+                Select and Open File actions.
               </p>
             </div>
+          </div>
 
-            <button
-              type="button"
-              className="rcm-claims-secondary"
-              onClick={() => {
-                setOpenedPatient(null);
-                setError("");
-                setMessage("");
-              }}
+          <div className="rcm-search-content">
+            <label
+              className="rcm-search-label"
+              htmlFor="rcm-patient-search"
             >
-              Close File
-            </button>
-          </section>
+              Patient search
+            </label>
 
-          <section className="rcm-claims-panel">
-            <h3 className="rcm-claims-panel-title">Add Claim Record</h3>
-            <p className="rcm-claims-panel-description">
-              Record the claim ID and its approval status.
-            </p>
+            <div className="rcm-search-wrap">
+              <span className="rcm-search-symbol" aria-hidden="true">
+                ⌕
+              </span>
 
-            <form onSubmit={addClaim}>
-              <div className="rcm-claims-form-grid">
-                <div className="rcm-claims-field">
-                  <label htmlFor="rcm-claim-id">
-                    Claim ID <span>*</span>
-                  </label>
-                  <input
-                    id="rcm-claim-id"
-                    className="rcm-claims-input"
-                    value={claimId}
-                    onChange={(e) => setClaimId(e.target.value)}
-                    placeholder="Enter claim ID"
-                    required
-                  />
+              <input
+                id="rcm-patient-search"
+                className="rcm-search-input"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setError("");
+                }}
+                placeholder="Start typing a patient name or file number..."
+                autoComplete="off"
+              />
+
+              {search && (
+                <button
+                  type="button"
+                  className="rcm-clear"
+                  onClick={clearSearch}
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            <div className="rcm-search-footer">
+              <span className="rcm-live">
+                <span className="rcm-live-dot" />
+                Results update automatically as you type
+              </span>
+
+              {search.trim() && (
+                <span className="rcm-count">
+                  {loading ? "Searching..." : `${patients.length} result(s)`}
+                </span>
+              )}
+            </div>
+
+            {error && (
+              <div className="rcm-error" role="alert">
+                <span aria-hidden="true">!</span>
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* The ONLY patient results list. No second dropdown. */}
+            {search.trim() && (
+              <div className="rcm-results">
+                <div className="rcm-results-head">
+                  <div>
+                    <div className="rcm-results-title">
+                      Patient Search Results
+                    </div>
+                    <div className="rcm-results-subtitle">
+                      Select a patient to create a claim or open their file.
+                    </div>
+                  </div>
+
+                  <span className="rcm-count">
+                    {loading ? "Loading..." : `${patients.length} patient(s)`}
+                  </span>
                 </div>
 
-                <div className="rcm-claims-field">
-                  <label htmlFor="rcm-claim-status">
-                    Claim Status <span>*</span>
-                  </label>
-                  <select
-                    id="rcm-claim-status"
-                    className="rcm-claims-select"
-                    value={claimStatus}
-                    onChange={(e) => setClaimStatus(e.target.value)}
-                  >
-                    <option value="Approved">Approved</option>
-                    <option value="Rejected">Rejected</option>
-                  </select>
-                </div>
+                {loading ? (
+                  <div className="rcm-empty">
+                    <strong>Searching patients...</strong>
+                    <span>Please wait while matching records are retrieved.</span>
+                  </div>
+                ) : patients.length === 0 ? (
+                  <div className="rcm-empty">
+                    <div className="rcm-empty-icon" aria-hidden="true">
+                      ⌕
+                    </div>
+                    <strong>No patients found</strong>
+                    <span>
+                      Try another patient name, file number, or record ID.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="rcm-result-list">
+                    {patients.map((patient) => (
+                      <article
+                        key={patient.id}
+                        className="rcm-patient-row"
+                      >
+                        <div
+                          className="rcm-patient-avatar"
+                          aria-hidden="true"
+                        >
+                          {patientName(patient).charAt(0).toUpperCase()}
+                        </div>
 
-                {claimStatus === "Rejected" && (
-                  <div className="rcm-claims-field full">
-                    <label htmlFor="rcm-rejection-reason">
-                      Reason for Rejection <span>*</span>
-                    </label>
-                    <textarea
-                      id="rcm-rejection-reason"
-                      className="rcm-claims-textarea"
-                      value={rejectionReason}
-                      onChange={(e) => setRejectionReason(e.target.value)}
-                      placeholder="Enter the reason stated for rejecting the claim"
-                      required
-                    />
+                        <div className="rcm-patient-main">
+                          <div className="rcm-patient-name">
+                            {patientName(patient)}
+                          </div>
+
+                          <div className="rcm-patient-meta">
+                            <span className="rcm-meta-chip">
+                              <strong>File:</strong>
+                              {patientFileNumber(patient)}
+                            </span>
+
+                            <span className="rcm-meta-chip">
+                              <strong>Approval:</strong>
+                              {patientApproval(patient)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="rcm-patient-actions">
+                          <button
+                            type="button"
+                            className="rcm-action-btn rcm-btn-select"
+                            onClick={() => selectPatient(patient)}
+                          >
+                            + Select
+                          </button>
+
+                          <button
+                            type="button"
+                            className="rcm-action-btn rcm-btn-open"
+                            onClick={() => openPatientFile(patient)}
+                          >
+                            ↗ Open File
+                          </button>
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 )}
               </div>
-
-              <div className="rcm-claims-form-actions">
-                <button type="submit" className="rcm-claims-primary">
-                  + Add Claim
-                </button>
-              </div>
-            </form>
-          </section>
-
-          <section className="rcm-claims-panel">
-            <h3 className="rcm-claims-panel-title">
-              Claims History ({patientClaims.length})
-            </h3>
-            <p className="rcm-claims-panel-description">
-              Claim records added for this patient in the current workspace.
-            </p>
-
-            {patientClaims.length === 0 ? (
-              <div className="rcm-claims-empty">
-                No claim records have been added in this session.
-              </div>
-            ) : (
-              <div className="rcm-claims-table-wrap">
-                <table className="rcm-claims-table">
-                  <thead>
-                    <tr>
-                      <th>Claim ID</th>
-                      <th>Status</th>
-                      <th>Rejection Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {patientClaims.map((claim) => (
-                      <tr key={claim.id}>
-                        <td>{claim.claimId}</td>
-                        <td>
-                          <span
-                            className={`rcm-claims-status ${
-                              claim.status.toLowerCase()
-                            }`}
-                          >
-                            {claim.status}
-                          </span>
-                        </td>
-                        <td>{claim.rejectionReason || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             )}
-          </section>
+          </div>
+        </section>
+      ) : (
+        <section className="rcm-claim-container">
+          <button
+            type="button"
+            className="rcm-back-button"
+            onClick={returnToSearch}
+          >
+            ← Back to Patient Search
+          </button>
 
-          <section className="rcm-claims-panel">
-            <h3 className="rcm-claims-panel-title">
-              Add Renewal Alert
-            </h3>
-            <p className="rcm-claims-panel-description">
-              Add a renewal date for this patient. We will connect these alerts
-              to the Alerts &amp; Renewals component later.
-            </p>
-
-            <form onSubmit={addRenewalAlert}>
-              <div className="rcm-claims-form-grid">
-                <div className="rcm-claims-field">
-                  <label htmlFor="rcm-renewal-date">
-                    Renewal Date <span>*</span>
-                  </label>
-                  <input
-                    id="rcm-renewal-date"
-                    className="rcm-claims-input"
-                    type="date"
-                    value={renewalDate}
-                    onChange={(e) => setRenewalDate(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="rcm-claims-form-actions">
-                <button type="submit" className="rcm-claims-primary">
-                  + Add Renewal Alert
-                </button>
-              </div>
-            </form>
-          </section>
-
-          <section className="rcm-claims-panel">
-            <h3 className="rcm-claims-panel-title">
-              Renewal Alerts ({patientAlerts.length})
-            </h3>
-
-            {patientAlerts.length === 0 ? (
-              <div className="rcm-claims-empty">
-                No renewal alerts have been added in this session.
-              </div>
-            ) : (
-              <div className="rcm-claims-table-wrap">
-                <table className="rcm-claims-table">
-                  <thead>
-                    <tr>
-                      <th>Patient</th>
-                      <th>File Number</th>
-                      <th>Renewal Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {patientAlerts.map((alert) => (
-                      <tr key={alert.id}>
-                        <td>{alert.patientName}</td>
-                        <td>{alert.patientFileNumber || "-"}</td>
-                        <td className="rcm-claims-renewal-date">
-                          {formatDate(alert.renewalDate)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        </>
+          <CreateClaim
+            key={selectedPatient.id}
+            patient={selectedPatient}
+            onClose={returnToSearch}
+          />
+        </section>
       )}
-    </div>
+    </main>
   );
 }
