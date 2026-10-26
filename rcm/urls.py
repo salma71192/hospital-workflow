@@ -1,6 +1,12 @@
+
 from django.urls import path
 from . import views
 
 urlpatterns = [
-    path('', views.rcm_dashboard, name='rcm_dashboard'),
+    path("claims/", views.claims_list_create, name="rcm-claims"),
+    path(
+        "renewal-alerts/",
+        views.renewal_alerts_list_create,
+        name="rcm-renewal-alerts",
+    ),
 ]

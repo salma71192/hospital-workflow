@@ -20,6 +20,8 @@ urlpatterns = [
     path("api/reception/", include("reception.api_urls")),
     path("api/approvals/", include("approvals.api_urls")),
     path("api/callcenter/", include("callcenter.urls")),
+    path("api/rcm/", include("rcm.urls")),
+
 
     # Monthly physiotherapy leaderboard
     path(

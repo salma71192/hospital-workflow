@@ -17,6 +17,8 @@ import ReceptionRegistrationWorkspace from "./pages/ReceptionRegistrationWorkspa
 import ReceptionBookingWorkspace from "./pages/ReceptionBookingWorkspace";
 import RehabDashboard from "./RehabDashboard";
 
+import ClaimsManagement from "./components/rcm/ClaimsManagement";import ClaimHistory from "./components/rcm/ClaimHistory";
+
 import ProtectedRoute from "./components/routing/ProtectedRoute";
 import RoleRoute from "./components/routing/RoleRoute";
 import { dashboardRoutes } from "./routes/routesConfig";
@@ -209,7 +211,7 @@ function AppContent() {
           );
         })}
 
-        {/* NEW: Physiotherapy Follow-Up Dashboard */}
+        {/* Physiotherapy Follow-Up Dashboard */}
         <Route
           path="/physio/followup"
           element={
@@ -229,7 +231,45 @@ function AppContent() {
           }
         />
 
-        {/* Existing reception routes */}
+        {/* RCM Claims Management */}
+        <Route
+          path="/rcm/claims"
+          element={
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["rcm"]}
+            >
+              <ClaimsManagement
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={handleStopImpersonation}
+              />
+            </RoleRoute>
+          }
+        />
+
+        {/* RCM Claim History */}
+        <Route
+          path="/rcm/claim-history"
+          element={
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["rcm"]}
+            >
+              <ClaimHistory
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={handleStopImpersonation}
+              />
+            </RoleRoute>
+          }
+        />
+
+        {/* Reception routes */}
         <Route
           path="/reception"
           element={
@@ -284,7 +324,7 @@ function AppContent() {
           }
         />
 
-        {/* Existing patient routes */}
+        {/* Patient routes */}
         <Route
           path="/patients/:id"
           element={
