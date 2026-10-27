@@ -1,4 +1,5 @@
 
+from django.conf import settings
 from django.db import models
 from patients.models import Patient
 
@@ -15,13 +16,27 @@ class Claim(models.Model):
         on_delete=models.PROTECT,
         related_name="rcm_claims",
     )
+
+    # Keep the existing claim ID and uniqueness rule.
     claim_id = models.CharField(max_length=100)
+
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default="Pending",
     )
+
     rejection_reason = models.TextField(blank=True, default="")
+
+    # Nullable so existing claims remain intact after migration.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rcm_claims_created",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -44,6 +59,7 @@ class RenewalAlert(models.Model):
         on_delete=models.PROTECT,
         related_name="rcm_renewal_alerts",
     )
+
     renewal_date = models.DateField()
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -51,5 +67,7 @@ class RenewalAlert(models.Model):
         ordering = ["renewal_date", "-created_at"]
 
     def __str__(self):
-        return f"Renewal for patient {self.patient_id} on {self.renewal_date}"
-
+        return (
+            f"Renewal for patient {self.patient_id} "
+            f"on {self.renewal_date}"
+        )
