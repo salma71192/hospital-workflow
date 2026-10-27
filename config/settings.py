@@ -32,7 +32,7 @@ INSTALLED_APPS = [
     "reception",
     "approvals",
     "callcenter",
-    "rcm"
+    "rcm",
 ]
 
 # -------------------
@@ -134,8 +134,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
 
-# The frontend uses Authorization tokens, not session cookies.
-CORS_ALLOW_CREDENTIALS = False
+# Required because the React claim request uses withCredentials: true
+CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_HEADERS = [
     "accept",
@@ -157,7 +157,7 @@ CSRF_TRUSTED_ORIGINS = [
 # -------------------
 # Cookies
 # -------------------
-# Retained for Django admin and any existing session-based pages.
+# Retained for Django admin and existing session-based pages.
 SESSION_COOKIE_SAMESITE = "None"
 SESSION_COOKIE_SECURE = True
 
