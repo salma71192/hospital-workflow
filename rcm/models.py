@@ -9,6 +9,7 @@ class Claim(models.Model):
         ("Approved", "Approved"),
         ("Rejected", "Rejected"),
         ("Pending", "Pending"),
+        ("Submitted", "Submitted"),
     ]
 
     patient = models.ForeignKey(
@@ -17,7 +18,6 @@ class Claim(models.Model):
         related_name="rcm_claims",
     )
 
-    # Keep the existing claim ID and uniqueness rule.
     claim_id = models.CharField(max_length=100)
 
     status = models.CharField(
@@ -28,7 +28,6 @@ class Claim(models.Model):
 
     rejection_reason = models.TextField(blank=True, default="")
 
-    # Nullable so existing claims remain intact after migration.
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -54,20 +53,68 @@ class Claim(models.Model):
 
 
 class RenewalAlert(models.Model):
+    ALERT_TYPE_CHOICES = [
+        ("renewal", "Renewal"),
+        ("rejection", "Rejection"),
+    ]
+
+    STATUS_CHOICES = [
+        ("Pending", "Pending"),
+        ("Submitted", "Submitted"),
+    ]
+
     patient = models.ForeignKey(
         Patient,
         on_delete=models.PROTECT,
         related_name="rcm_renewal_alerts",
     )
 
+    # Link to the existing claim when available.
+    claim = models.ForeignKey(
+        Claim,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="renewal_alerts",
+    )
+
+    # Preserve the Claim ID for display and history.
+    claim_id_value = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+    )
+
+    alert_type = models.CharField(
+        max_length=20,
+        choices=ALERT_TYPE_CHOICES,
+        default="renewal",
+    )
+
     renewal_date = models.DateField()
+
+    rejection_reason = models.TextField(blank=True, default="")
+    message = models.TextField(blank=True, default="")
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="Pending",
+    )
+
+    submission_date = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["renewal_date", "-created_at"]
 
     def __str__(self):
         return (
-            f"Renewal for patient {self.patient_id} "
-            f"on {self.renewal_date}"
+            f"{self.alert_type.title()} alert for "
+            f"patient {self.patient_id} on {self.renewal_date}"
         )
