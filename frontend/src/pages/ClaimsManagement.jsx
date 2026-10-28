@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 import CreateClaim from "../components/rcm/CreateClaim";
 import ClaimHistory from "../components/rcm/ClaimHistory";
+import RenewalAlerts from "../components/rcm/RenewalAlerts";
 
 const styles = `
 .claim-management{min-height:100%;padding:28px;background:#f3f6fc;color:#172b4d;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;font-size:15px}
@@ -21,7 +22,7 @@ const styles = `
 .claim-back-button{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:46px;padding:11px 18px;border:1px solid rgba(255,255,255,.45);border-radius:11px;color:#fff;background:rgba(255,255,255,.12);font-size:14px;font-weight:800;cursor:pointer}
 .claim-back-button:hover{background:rgba(255,255,255,.22)}
 .claim-management-tabs-card{padding:8px;margin-bottom:20px;background:#fff;border:1px solid #e1e8f2;border-radius:15px;box-shadow:0 5px 18px rgba(25,42,70,.04)}
-.claim-tab-bar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.claim-tab-bar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .claim-tab{display:flex;align-items:center;justify-content:center;gap:12px;min-height:70px;padding:13px 18px;border:1px solid transparent;border-radius:11px;background:transparent;color:#53647b;font-size:16px;font-weight:800;cursor:pointer}
 .claim-tab:hover{background:#f4f7ff;color:#2e4eb8}
 .claim-tab.active{color:#2547bd;background:#edf2ff;border-color:#dbe4ff}
@@ -50,8 +51,9 @@ const styles = `
 .claim-management-content .claim-title,.claim-management-content .claim-subtitle{display:none}
 .claim-management-alert-error{margin:0 0 18px;padding:14px 16px;border:1px solid #fecaca;border-radius:11px;background:#fef2f2;color:#b91c1c;font-size:14px;line-height:1.6}
 @media(min-width:1200px){.claim-management{padding:32px}.claim-management-content{padding:30px}}
+@media(max-width:900px){.claim-tab{gap:8px;padding:12px 9px;font-size:14px}.claim-tab-label small{font-size:12px}}
 @media(max-width:750px){.claim-management{padding:15px}.claim-management-header{padding:24px 21px;border-radius:15px}.claim-management-header h1{font-size:28px}.claim-management-header p{font-size:15px}.claim-management-header-bottom{align-items:flex-start;flex-direction:column}.claim-back-button{width:100%}.claim-tab{min-height:65px;gap:8px;padding:11px 8px;font-size:14px}.claim-tab-icon{width:32px;height:32px;font-size:18px}.claim-tab-label small{font-size:12px}.claim-management-content{padding:17px;border-radius:14px}.claim-management-content-heading h2{font-size:22px}}
-@media(max-width:430px){.claim-management{padding:10px}.claim-management-header h1{font-size:25px}.claim-tab-bar{grid-template-columns:minmax(0,1fr)}.claim-tab{justify-content:flex-start;padding:12px 15px}.claim-management-content{padding:13px}.claim-management-content-heading{align-items:flex-start;flex-direction:column}}
+@media(max-width:520px){.claim-tab-bar{grid-template-columns:minmax(0,1fr)}.claim-tab{justify-content:flex-start;padding:12px 15px}.claim-management-content{padding:13px}.claim-management-content-heading{align-items:flex-start;flex-direction:column}}
 `;
 
 export default function ClaimsManagement() {
@@ -60,6 +62,7 @@ export default function ClaimsManagement() {
   const [activeTab, setActiveTab] = useState("create");
   const [refreshKey, setRefreshKey] = useState(0);
   const [alertError, setAlertError] = useState("");
+  const [selectedRenewalAlert, setSelectedRenewalAlert] = useState(null);
 
   function handleBack() {
     if (window.history.length > 1) {
@@ -69,11 +72,16 @@ export default function ClaimsManagement() {
     }
   }
 
-  const handleClaimCreated = useCallback(() => {
+  const refreshData = useCallback(() => {
     setRefreshKey((previous) => previous + 1);
+  }, []);
+
+  const handleClaimCreated = useCallback(() => {
+    refreshData();
+    setSelectedRenewalAlert(null);
     setActiveTab("history");
     setAlertError("");
-  }, []);
+  }, [refreshData]);
 
   const handleCreateAlert = useCallback(async (alertDetails) => {
     setAlertError("");
@@ -81,9 +89,11 @@ export default function ClaimsManagement() {
     const patientId =
       alertDetails?.patient?.id ??
       alertDetails?.claim?.patientId ??
-      alertDetails?.claim?.patient_id;
+      alertDetails?.claim?.patient_id ??
+      alertDetails?.patientId ??
+      alertDetails?.patient_id;
 
-    const alertType = alertDetails?.alertType;
+    const alertType = alertDetails?.alertType || alertDetails?.alert_type;
 
     if (!patientId) {
       throw new Error("Cannot create an alert because the patient ID is missing.");
@@ -92,28 +102,73 @@ export default function ClaimsManagement() {
     let payload;
 
     if (alertType === "renewal") {
-      if (!alertDetails.renewalDate) {
+      const renewalDate =
+        alertDetails.renewalDate || alertDetails.renewal_date;
+
+      if (!renewalDate) {
         throw new Error("Choose a renewal date before creating the alert.");
       }
 
       payload = {
         patientId,
-        claimId: alertDetails.claimId,
+        claimPk:
+          alertDetails.claimPk ??
+          alertDetails.claim_pk ??
+          alertDetails.claim?.id ??
+          null,
+        claimId:
+          alertDetails.claimId ??
+          alertDetails.claim_id ??
+          alertDetails.claim?.claim_id ??
+          "",
         alertType: "renewal",
-        renewalDate: alertDetails.renewalDate,
-        message: `Claim ${alertDetails.claimId} renewal reminder`,
+        renewalDate,
+        message: `Claim ${
+          alertDetails.claimId ??
+          alertDetails.claim_id ??
+          alertDetails.claim?.claim_id ??
+          ""
+        } renewal reminder`,
       };
     } else if (alertType === "rejection") {
       payload = {
         patientId,
-        claimId: alertDetails.claimId,
+        claimPk:
+          alertDetails.claimPk ??
+          alertDetails.claim_pk ??
+          alertDetails.claim?.id ??
+          null,
+        claimId:
+          alertDetails.claimId ??
+          alertDetails.claim_id ??
+          alertDetails.claim?.claim_id ??
+          "",
         alertType: "rejection",
-        rejectionReason: alertDetails.rejectionReason,
-        message: `Claim ${alertDetails.claimId} was rejected`,
+        rejectionReason:
+          alertDetails.rejectionReason ??
+          alertDetails.rejection_reason ??
+          "",
+        renewalDate:
+          alertDetails.renewalDate ??
+          alertDetails.renewal_date ??
+          alertDetails.renewalDate,
+        message: `Claim ${
+          alertDetails.claimId ??
+          alertDetails.claim_id ??
+          alertDetails.claim?.claim_id ??
+          ""
+        } was rejected`,
       };
     } else {
       throw new Error("Unsupported claim alert type.");
     }
+
+    // Remove null/empty optional identifiers before sending.
+    Object.keys(payload).forEach((key) => {
+      if (payload[key] === null || payload[key] === undefined || payload[key] === "") {
+        delete payload[key];
+      }
+    });
 
     try {
       const response = await api.post(
@@ -122,7 +177,7 @@ export default function ClaimsManagement() {
         { withCredentials: true }
       );
 
-      setRefreshKey((previous) => previous + 1);
+      refreshData();
       return response.data;
     } catch (error) {
       const data = error?.response?.data;
@@ -142,7 +197,45 @@ export default function ClaimsManagement() {
       setAlertError(String(message));
       throw new Error(String(message));
     }
+  }, [refreshData]);
+
+  const handleRenewal = useCallback((alert) => {
+    setAlertError("");
+    setSelectedRenewalAlert(alert);
+    setActiveTab("create");
   }, []);
+
+  const handleRenewalUpdated = useCallback(() => {
+    refreshData();
+    setSelectedRenewalAlert(null);
+    setAlertError("");
+    setActiveTab("history");
+  }, [refreshData]);
+
+  const getPageHeading = () => {
+    if (activeTab === "create") {
+      return selectedRenewalAlert
+        ? "Renew Existing Claim"
+        : "New Claim Registration";
+    }
+
+    if (activeTab === "history") return "Claim History";
+    return "Renewal Alerts";
+  };
+
+  const getPageDescription = () => {
+    if (activeTab === "create") {
+      return selectedRenewalAlert
+        ? "Review the existing claim details before submitting its renewal."
+        : "Select a patient and complete the claim information.";
+    }
+
+    if (activeTab === "history") {
+      return "Search and review existing claim records.";
+    }
+
+    return "Review daily or monthly renewals and search claims by Claim ID.";
+  };
 
   return (
     <main className="claim-management">
@@ -159,7 +252,7 @@ export default function ClaimsManagement() {
 
           <p>
             Manage patient claims, register new claim records, and review claim
-            history from one organized workspace.
+            history and scheduled renewals from one organized workspace.
           </p>
 
           <div className="claim-management-header-bottom">
@@ -192,7 +285,11 @@ export default function ClaimsManagement() {
             aria-controls="claim-management-panel"
             aria-selected={activeTab === "create"}
             className={`claim-tab ${activeTab === "create" ? "active" : ""}`}
-            onClick={() => setActiveTab("create")}
+            onClick={() => {
+              setSelectedRenewalAlert(null);
+              setActiveTab("create");
+              setAlertError("");
+            }}
           >
             <span className="claim-tab-icon" aria-hidden="true">+</span>
             <span className="claim-tab-label">
@@ -208,12 +305,36 @@ export default function ClaimsManagement() {
             aria-controls="claim-management-panel"
             aria-selected={activeTab === "history"}
             className={`claim-tab ${activeTab === "history" ? "active" : ""}`}
-            onClick={() => setActiveTab("history")}
+            onClick={() => {
+              setSelectedRenewalAlert(null);
+              setActiveTab("history");
+              setAlertError("");
+            }}
           >
             <span className="claim-tab-icon" aria-hidden="true">☷</span>
             <span className="claim-tab-label">
               <span>Claim History</span>
               <small>Review and track claims</small>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            id="renewal-alerts-tab"
+            aria-controls="claim-management-panel"
+            aria-selected={activeTab === "alerts"}
+            className={`claim-tab ${activeTab === "alerts" ? "active" : ""}`}
+            onClick={() => {
+              setSelectedRenewalAlert(null);
+              setActiveTab("alerts");
+              setAlertError("");
+            }}
+          >
+            <span className="claim-tab-icon" aria-hidden="true">◷</span>
+            <span className="claim-tab-label">
+              <span>Renewal Alerts</span>
+              <small>Track scheduled renewals</small>
             </span>
           </button>
         </div>
@@ -224,41 +345,55 @@ export default function ClaimsManagement() {
         id="claim-management-panel"
         role="tabpanel"
         aria-labelledby={
-          activeTab === "create" ? "create-claim-tab" : "claim-history-tab"
+          activeTab === "create"
+            ? "create-claim-tab"
+            : activeTab === "history"
+            ? "claim-history-tab"
+            : "renewal-alerts-tab"
         }
       >
         <div className="claim-management-content-heading">
           <div>
-            <h2>
-              {activeTab === "create"
-                ? "New Claim Registration"
-                : "Claim History"}
-            </h2>
-            <p>
-              {activeTab === "create"
-                ? "Select a patient and complete the claim information."
-                : "Search and review existing claim records."}
-            </p>
+            <h2>{getPageHeading()}</h2>
+            <p>{getPageDescription()}</p>
           </div>
 
           <span className="claim-management-section-tag">
-            {activeTab === "create" ? "＋ CREATE CLAIM" : "☷ CLAIM RECORDS"}
+            {activeTab === "create"
+              ? selectedRenewalAlert
+                ? "↻ RENEW CLAIM"
+                : "＋ CREATE CLAIM"
+              : activeTab === "history"
+              ? "☷ CLAIM RECORDS"
+              : "◷ RENEWAL ALERTS"}
           </span>
         </div>
 
         {alertError && (
           <div className="claim-management-alert-error" role="alert">
-            Alert error: {alertError}
+            {alertError}
           </div>
         )}
 
         {activeTab === "create" ? (
           <CreateClaim
+            key={
+              selectedRenewalAlert
+                ? `renewal-${selectedRenewalAlert.id}`
+                : "new-claim"
+            }
+            renewalAlert={selectedRenewalAlert}
             onClaimCreated={handleClaimCreated}
+            onRenewalUpdated={handleRenewalUpdated}
             onCreateAlert={handleCreateAlert}
           />
-        ) : (
+        ) : activeTab === "history" ? (
           <ClaimHistory refreshKey={refreshKey} />
+        ) : (
+          <RenewalAlerts
+            key={refreshKey}
+            onRenewal={handleRenewal}
+          />
         )}
       </section>
     </main>

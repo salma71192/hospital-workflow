@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/api";
@@ -50,6 +49,7 @@ const styles = `
 .create-claim-field-full{grid-column:1/-1}
 .create-claim-input,.create-claim-select,.create-claim-textarea{display:block;box-sizing:border-box;width:100%;min-height:50px;padding:12px 14px;border:1px solid #cbd5e1;border-radius:11px;background:#fff;color:#172b4d;outline:none;font:inherit;font-size:15px}
 .create-claim-input:focus,.create-claim-select:focus,.create-claim-textarea:focus{border-color:#5368d7;box-shadow:0 0 0 3px rgba(83,104,215,.11)}
+.create-claim-input:read-only{background:#f1f5f9;color:#475569}
 .create-claim-textarea{min-height:105px;resize:vertical}
 .create-claim-form-note{margin-top:8px;color:#64748b;font-size:13px;line-height:1.5}
 .create-claim-alert-option{display:flex;align-items:flex-start;gap:13px;padding:17px;border:1px solid #c7d2fe;background:#f5f7ff;border-radius:13px;cursor:pointer}
@@ -59,6 +59,7 @@ const styles = `
 .create-claim-message{padding:14px 16px;margin-bottom:17px;border-radius:11px;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
 .create-claim-error{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c}
 .create-claim-success{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+.create-claim-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8}
 .create-claim-form-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;padding-top:22px;margin-top:22px;border-top:1px solid #e9eef5}
 .create-claim-footer-note{font-size:13px;color:#64748b;line-height:1.6}
 .create-claim-footer-actions{display:flex;gap:10px;flex-wrap:wrap}
@@ -224,13 +225,60 @@ function getApiError(err) {
   return err?.message || "The request failed. Please check the information and try again.";
 }
 
+function getAlertClaimId(alert) {
+  return (
+    alert?.claimId ||
+    alert?.claim_id_value ||
+    alert?.claim_id ||
+    alert?.claim?.claim_id ||
+    ""
+  );
+}
+
+function getAlertPatientId(alert) {
+  return (
+    alert?.patientId ||
+    alert?.patient_id ||
+    alert?.patient?.id ||
+    alert?.claim?.patientId ||
+    alert?.claim?.patient_id ||
+    null
+  );
+}
+
+function getAlertDate(alert) {
+  return String(alert?.renewalDate || alert?.renewal_date || "").slice(0, 10);
+}
+
+function getLocalToday() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function getInitialForm(renewalAlert) {
+  return {
+    claimId: renewalAlert ? getAlertClaimId(renewalAlert) : "",
+    status: renewalAlert ? "Submitted" : "Pending",
+    rejectionReason:
+      renewalAlert?.rejectionReason ||
+      renewalAlert?.rejection_reason ||
+      renewalAlert?.claim?.rejection_reason ||
+      "",
+    renewalDate: renewalAlert ? getAlertDate(renewalAlert) : "",
+  };
+}
+
 export default function CreateClaim({
   patient: initialPatient,
+  renewalAlert = null,
   onClose,
   onClaimCreated,
+  onRenewalUpdated,
   onCreateAlert,
 }) {
   const navigate = useNavigate();
+  const isRenewalMode = Boolean(renewalAlert);
 
   const [patients, setPatients] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(initialPatient || null);
@@ -245,13 +293,7 @@ export default function CreateClaim({
 
   const [createRejectionAlert, setCreateRejectionAlert] = useState(false);
   const [createRenewalAlert, setCreateRenewalAlert] = useState(false);
-
-  const [form, setForm] = useState({
-    claimId: "",
-    status: "Pending",
-    rejectionReason: "",
-    renewalDate: "",
-  });
+  const [form, setForm] = useState(() => getInitialForm(renewalAlert));
 
   useEffect(() => {
     let active = true;
@@ -260,8 +302,32 @@ export default function CreateClaim({
       setLoadingPatients(true);
 
       try {
-        const response = await api.get("patients/");
-        if (active) setPatients(getPatientList(response));
+        const response = await api.get("patients/", {
+          withCredentials: true,
+        });
+
+        if (!active) return;
+
+        const patientList = getPatientList(response);
+        setPatients(patientList);
+
+        if (renewalAlert) {
+          const patientId = getAlertPatientId(renewalAlert);
+          const matchedPatient = patientList.find(
+            (item) => String(item.id) === String(patientId)
+          );
+
+          if (matchedPatient) {
+            setSelectedPatient(matchedPatient);
+          } else if (
+            renewalAlert.patient &&
+            typeof renewalAlert.patient === "object"
+          ) {
+            setSelectedPatient(renewalAlert.patient);
+          }
+        } else if (initialPatient) {
+          setSelectedPatient(initialPatient);
+        }
       } catch (err) {
         if (active) setError(getApiError(err));
       } finally {
@@ -274,14 +340,17 @@ export default function CreateClaim({
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialPatient, renewalAlert]);
 
   useEffect(() => {
     let active = true;
 
     async function loadCurrentUser() {
       try {
-        const response = await api.get("users/me/");
+        const response = await api.get("users/me/", {
+          withCredentials: true,
+        });
+
         if (active) setCurrentUser(response?.data || null);
       } catch (err) {
         console.error("Could not load the logged-in user:", err);
@@ -296,38 +365,58 @@ export default function CreateClaim({
   }, []);
 
   useEffect(() => {
-    setSelectedPatient(initialPatient || null);
-  }, [initialPatient]);
+    if (!renewalAlert) {
+      setForm(getInitialForm(null));
+      return;
+    }
+
+    setSelectedPatient(renewalAlert.patient || initialPatient || null);
+    setForm(getInitialForm(renewalAlert));
+    setCreateRejectionAlert(false);
+    setCreateRenewalAlert(false);
+    setError("");
+    setSuccess("");
+    setCreatedClaim(null);
+  }, [renewalAlert, initialPatient]);
 
   const filteredPatients = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return [];
 
-    return patients.filter((patient) => {
-      const values = [
-        getPatientName(patient),
-        getPatientNumber(patient),
-        getPatientPhone(patient),
-        patient?.national_id,
-        patient?.nationalId,
-        patient?.emirates_id,
-        patient?.emiratesId,
-        patient?.id,
-      ];
+    return patients
+      .filter((patient) => {
+        const values = [
+          getPatientName(patient),
+          getPatientNumber(patient),
+          getPatientPhone(patient),
+          patient?.national_id,
+          patient?.nationalId,
+          patient?.emirates_id,
+          patient?.emiratesId,
+          patient?.id,
+        ];
 
-      return values.some((value) =>
-        String(value ?? "").toLowerCase().includes(term)
-      );
-    }).slice(0, 10);
+        return values.some((value) =>
+          String(value ?? "").toLowerCase().includes(term)
+        );
+      })
+      .slice(0, 10);
   }, [patients, search]);
 
   const isRejected = form.status.toLowerCase() === "rejected";
+  const renewalDate = getAlertDate(renewalAlert);
+  const isRenewalDateToday =
+    !isRenewalMode || renewalDate === getLocalToday();
+  const isAlreadySubmitted =
+    String(renewalAlert?.status || "").toLowerCase() === "submitted";
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
   function selectPatient(patient) {
+    if (isRenewalMode) return;
+
     setSelectedPatient(patient);
     setSearch("");
     setShowResults(false);
@@ -346,12 +435,15 @@ export default function CreateClaim({
   }
 
   function resetForm() {
-    setForm({
-      claimId: "",
-      status: "Pending",
-      rejectionReason: "",
-      renewalDate: "",
-    });
+    if (isRenewalMode) {
+      setForm(getInitialForm(renewalAlert));
+      setError("");
+      setSuccess("");
+      setCreatedClaim(null);
+      return;
+    }
+
+    setForm(getInitialForm(null));
     setCreateRejectionAlert(false);
     setCreateRenewalAlert(false);
     setError("");
@@ -365,8 +457,8 @@ export default function CreateClaim({
     setSuccess("");
     setCreatedClaim(null);
 
-    if (!selectedPatient) {
-      setError("Please select a patient before creating the claim.");
+    if (!selectedPatient?.id) {
+      setError("Please select a valid patient before continuing.");
       return;
     }
 
@@ -375,35 +467,92 @@ export default function CreateClaim({
       return;
     }
 
-    if (isRejected && !form.rejectionReason.trim()) {
-      setError("Please enter the rejection reason.");
-      return;
-    }
+    if (isRenewalMode) {
+      if (!renewalAlert?.id) {
+        setError("The renewal alert ID is missing. Reopen the alert and try again.");
+        return;
+      }
 
-    if (createRenewalAlert && !form.renewalDate) {
-      setError("Please choose a renewal date before creating a renewal alert.");
-      return;
-    }
+      if (
+        !renewalAlert?.claimPk &&
+        !renewalAlert?.claim_pk &&
+        !renewalAlert?.claim?.id
+      ) {
+        setError(
+          "This renewal alert is not linked to an existing claim. The existing claim cannot be updated safely. Link the alert to its claim before resubmitting."
+        );
+        return;
+      }
 
-    if ((createRejectionAlert || createRenewalAlert) &&
-        typeof onCreateAlert !== "function") {
-      setError(
-        "Alert creation is not connected to the parent component yet. The claim can still be created, but alerts cannot be saved until the alert handler is connected."
-      );
-      return;
+      if (!isRenewalDateToday) {
+        setError("This claim can only be renewed on its scheduled renewal date.");
+        return;
+      }
+
+      if (isAlreadySubmitted) {
+        setError("This renewal has already been submitted.");
+        return;
+      }
+    } else {
+      if (isRejected && !form.rejectionReason.trim()) {
+        setError("Please enter the rejection reason.");
+        return;
+      }
+
+      if (isRejected && createRenewalAlert && !form.renewalDate) {
+        setError("Please choose a renewal date before creating a renewal alert.");
+        return;
+      }
+
+      if (
+        isRejected &&
+        (createRejectionAlert || createRenewalAlert) &&
+        typeof onCreateAlert !== "function"
+      ) {
+        setError("Alert creation is not connected. Check the parent alert handler.");
+        return;
+      }
     }
 
     setSaving(true);
 
     try {
+      if (isRenewalMode) {
+        const claimPk =
+          renewalAlert.claimPk ??
+          renewalAlert.claim_pk ??
+          renewalAlert.claim?.id;
+
+        const response = await api.patch(
+          `rcm/claims/${claimPk}/`,
+          {
+            status: "Submitted",
+            alertId: renewalAlert.id,
+          },
+          { withCredentials: true }
+        );
+
+        const claim = response?.data || null;
+        setCreatedClaim(claim);
+        setSuccess(
+          `Claim ${form.claimId.trim()} has been updated and marked as Submitted. The original Claim ID has been preserved.`
+        );
+
+        if (typeof onRenewalUpdated === "function") {
+          onRenewalUpdated(claim);
+        }
+
+        return;
+      }
+
       const response = await api.post(
         "rcm/claims/",
         {
           patientId: selectedPatient.id,
           claimId: form.claimId.trim(),
           status: form.status,
-          rejectionReason: form.rejectionReason.trim(),
-          renewalDate: form.renewalDate || null,
+          rejectionReason: isRejected ? form.rejectionReason.trim() : "",
+          renewalDate: isRejected ? form.renewalDate || null : null,
         },
         { withCredentials: true }
       );
@@ -411,7 +560,7 @@ export default function CreateClaim({
       const claim = response?.data || null;
       setCreatedClaim(claim);
 
-      if (createRejectionAlert) {
+      if (isRejected && createRejectionAlert) {
         await onCreateAlert({
           alertType: "rejection",
           patient: selectedPatient,
@@ -422,7 +571,7 @@ export default function CreateClaim({
         });
       }
 
-      if (createRenewalAlert) {
+      if (isRejected && createRenewalAlert) {
         await onCreateAlert({
           alertType: "renewal",
           patient: selectedPatient,
@@ -435,13 +584,7 @@ export default function CreateClaim({
 
       setSuccess("Claim created successfully.");
 
-      setForm({
-        claimId: "",
-        status: "Pending",
-        rejectionReason: "",
-        renewalDate: "",
-      });
-
+      setForm(getInitialForm(null));
       setCreateRejectionAlert(false);
       setCreateRenewalAlert(false);
 
@@ -463,9 +606,14 @@ export default function CreateClaim({
 
       <div className="create-claim-header">
         <div>
-          <h1 className="create-claim-title">Create New Claim</h1>
+          <h1 className="create-claim-title">
+            {isRenewalMode ? "Renew Existing Claim" : "Create New Claim"}
+          </h1>
+
           <p className="create-claim-subtitle">
-            Search for a patient, enter claim details, and optionally schedule a renewal reminder.
+            {isRenewalMode
+              ? "Review the existing claim details and submit the renewal on its scheduled date."
+              : "Search for a patient and enter the claim details. Rejection notes and renewal reminders appear only for rejected claims."}
           </p>
         </div>
 
@@ -480,6 +628,18 @@ export default function CreateClaim({
         )}
       </div>
 
+      {isRenewalMode && (
+        <div className="create-claim-message create-claim-info" role="status">
+          <strong>Renewal mode</strong>
+          <br />
+          Existing Claim ID: <strong>{form.claimId || "—"}</strong>
+          <br />
+          Scheduled renewal date: <strong>{renewalDate || "—"}</strong>
+          <br />
+          The existing claim record will be updated. A new claim will not be created.
+        </div>
+      )}
+
       {error && (
         <div className="create-claim-message create-claim-error" role="alert">
           {error}
@@ -491,7 +651,7 @@ export default function CreateClaim({
           {success}
           {creatorName && (
             <div className="create-claim-creator">
-              Created by: <strong>{creatorName}</strong>
+              Processed by: <strong>{creatorName}</strong>
             </div>
           )}
         </div>
@@ -503,128 +663,164 @@ export default function CreateClaim({
           <div>
             <h2 className="create-claim-section-title">Select Patient</h2>
             <p className="create-claim-section-description">
-              Search by patient name, file number, phone number, or patient ID.
+              {isRenewalMode
+                ? "The patient is taken from the existing claim and cannot be changed during renewal."
+                : "Search by patient name, file number, phone number, or patient ID."}
             </p>
           </div>
         </div>
 
-        <label className="create-claim-label" htmlFor="claim-patient-search">
-          Search patients
-        </label>
-
-        <div className="create-claim-search-box">
-          <span className="create-claim-search-icon" aria-hidden="true">⌕</span>
-          <input
-            id="claim-patient-search"
-            className="create-claim-search-input"
-            type="search"
-            value={search}
-            placeholder="Type a name, file number, phone, or patient ID..."
-            autoComplete="off"
-            onFocus={() => {
-              if (search.trim()) setShowResults(true);
-            }}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setShowResults(true);
-              setError("");
-            }}
-          />
-          {search && (
-            <button
-              type="button"
-              className="create-claim-button create-claim-button-secondary"
-              onClick={() => {
-                setSearch("");
-                setShowResults(false);
-              }}
+        {!isRenewalMode && (
+          <>
+            <label
+              className="create-claim-label"
+              htmlFor="claim-patient-search"
             >
-              Clear
-            </button>
-          )}
-        </div>
+              Search patients
+            </label>
 
-        <div className="create-claim-search-meta">
-          <span>
-            {loadingPatients
-              ? "Loading patient records..."
-              : `${patients.length} patient record${patients.length === 1 ? "" : "s"} available`}
-          </span>
-          <span>Enter a search term to filter results.</span>
-        </div>
+            <div className="create-claim-search-box">
+              <span className="create-claim-search-icon" aria-hidden="true">
+                ⌕
+              </span>
 
-        {showResults && search.trim() && (
-          <div className="create-claim-results">
-            <div className="create-claim-results-heading">
-              <span>Matching patients</span>
-              {!loadingPatients && (
-                <span>
-                  {filteredPatients.length} result{filteredPatients.length === 1 ? "" : "s"}
-                  {filteredPatients.length === 10 ? " · Showing first 10" : ""}
-                </span>
+              <input
+                id="claim-patient-search"
+                className="create-claim-search-input"
+                type="search"
+                value={search}
+                placeholder="Type a name, file number, phone, or patient ID..."
+                autoComplete="off"
+                onFocus={() => {
+                  if (search.trim()) setShowResults(true);
+                }}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setShowResults(true);
+                  setError("");
+                }}
+              />
+
+              {search && (
+                <button
+                  type="button"
+                  className="create-claim-button create-claim-button-secondary"
+                  onClick={() => {
+                    setSearch("");
+                    setShowResults(false);
+                  }}
+                >
+                  Clear
+                </button>
               )}
             </div>
 
-            {loadingPatients ? (
-              <div className="create-claim-empty">Loading patient records...</div>
-            ) : filteredPatients.length === 0 ? (
-              <div className="create-claim-empty">
-                No matching patients found. Try a different search term.
-              </div>
-            ) : (
-              filteredPatients.map((patient) => {
-                const name = getPatientName(patient);
-                const isSelected = selectedPatient?.id === patient.id;
+            <div className="create-claim-search-meta">
+              <span>
+                {loadingPatients
+                  ? "Loading patient records..."
+                  : `${patients.length} patient record${patients.length === 1 ? "" : "s"} available`}
+              </span>
+              <span>Enter a search term to filter results.</span>
+            </div>
 
-                return (
-                  <div
-                    className={`create-claim-result${isSelected ? " selected" : ""}`}
-                    key={patient.id}
-                  >
-                    <div className="create-claim-patient-info">
-                      <div className="create-claim-avatar">{getInitials(name)}</div>
-                      <div className="create-claim-patient-details">
-                        <p className="create-claim-patient-name">{name}</p>
-                        <div className="create-claim-patient-meta">
-                          <span>File No: {getPatientNumber(patient)}</span>
-                          {getPatientPhone(patient) && (
-                            <span>Phone: {getPatientPhone(patient)}</span>
-                          )}
-                          {patient?.gender && <span>Gender: {patient.gender}</span>}
+            {showResults && search.trim() && (
+              <div className="create-claim-results">
+                <div className="create-claim-results-heading">
+                  <span>Matching patients</span>
+
+                  {!loadingPatients && (
+                    <span>
+                      {filteredPatients.length} result
+                      {filteredPatients.length === 1 ? "" : "s"}
+                      {filteredPatients.length === 10
+                        ? " · Showing first 10"
+                        : ""}
+                    </span>
+                  )}
+                </div>
+
+                {loadingPatients ? (
+                  <div className="create-claim-empty">
+                    Loading patient records...
+                  </div>
+                ) : filteredPatients.length === 0 ? (
+                  <div className="create-claim-empty">
+                    No matching patients found. Try a different search term.
+                  </div>
+                ) : (
+                  filteredPatients.map((patient) => {
+                    const name = getPatientName(patient);
+                    const isSelected = selectedPatient?.id === patient.id;
+
+                    return (
+                      <div
+                        className={`create-claim-result${isSelected ? " selected" : ""}`}
+                        key={patient.id}
+                      >
+                        <div className="create-claim-patient-info">
+                          <div className="create-claim-avatar">
+                            {getInitials(name)}
+                          </div>
+
+                          <div className="create-claim-patient-details">
+                            <p className="create-claim-patient-name">{name}</p>
+
+                            <div className="create-claim-patient-meta">
+                              <span>
+                                File No: {getPatientNumber(patient)}
+                              </span>
+
+                              {getPatientPhone(patient) && (
+                                <span>
+                                  Phone: {getPatientPhone(patient)}
+                                </span>
+                              )}
+
+                              {patient?.gender && (
+                                <span>Gender: {patient.gender}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="create-claim-result-actions">
+                          <button
+                            type="button"
+                            className="create-claim-button create-claim-button-primary"
+                            onClick={() => selectPatient(patient)}
+                          >
+                            {isSelected ? "✓ Selected" : "Select Patient"}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="create-claim-button create-claim-button-secondary"
+                            onClick={() => openPatientFile(patient)}
+                          >
+                            Open Patient File ↗
+                          </button>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="create-claim-result-actions">
-                      <button
-                        type="button"
-                        className="create-claim-button create-claim-button-primary"
-                        onClick={() => selectPatient(patient)}
-                      >
-                        {isSelected ? "✓ Selected" : "Select Patient"}
-                      </button>
-                      <button
-                        type="button"
-                        className="create-claim-button create-claim-button-secondary"
-                        onClick={() => openPatientFile(patient)}
-                      >
-                        Open Patient File ↗
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
+                    );
+                  })
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
 
         {selectedPatient && (
           <div className="create-claim-selected">
             <div>
-              <div className="create-claim-selected-label">✓ Patient selected</div>
+              <div className="create-claim-selected-label">
+                ✓ Patient selected
+              </div>
+
               <div className="create-claim-selected-name">
                 {getPatientName(selectedPatient)}
               </div>
+
               <div className="create-claim-selected-meta">
                 File No: {getPatientNumber(selectedPatient)}
                 {getPatientPhone(selectedPatient)
@@ -632,6 +828,7 @@ export default function CreateClaim({
                   : ""}
               </div>
             </div>
+
             <div className="create-claim-selected-actions">
               <button
                 type="button"
@@ -640,21 +837,31 @@ export default function CreateClaim({
               >
                 Open Patient File ↗
               </button>
-              <button
-                type="button"
-                className="create-claim-button create-claim-button-light"
-                onClick={() => {
-                  setSelectedPatient(null);
-                  setSearch("");
-                  setShowResults(false);
-                  setError("");
-                  setSuccess("");
-                  setCreatedClaim(null);
-                }}
-              >
-                Change Patient
-              </button>
+
+              {!isRenewalMode && (
+                <button
+                  type="button"
+                  className="create-claim-button create-claim-button-light"
+                  onClick={() => {
+                    setSelectedPatient(null);
+                    setSearch("");
+                    setShowResults(false);
+                    setError("");
+                    setSuccess("");
+                    setCreatedClaim(null);
+                  }}
+                >
+                  Change Patient
+                </button>
+              )}
             </div>
+          </div>
+        )}
+
+        {!selectedPatient && !loadingPatients && isRenewalMode && (
+          <div className="create-claim-empty">
+            The patient associated with this alert could not be loaded. Please
+            verify the alert's patient ID and try again.
           </div>
         )}
       </section>
@@ -665,7 +872,9 @@ export default function CreateClaim({
           <div>
             <h2 className="create-claim-section-title">Claim Details</h2>
             <p className="create-claim-section-description">
-              Enter the claim reference, status, and renewal information.
+              {isRenewalMode
+                ? "The existing Claim ID and scheduled renewal date are preserved."
+                : "Enter the claim reference and status. Renewal details are required only for rejected claims."}
             </p>
           </div>
         </div>
@@ -673,20 +882,32 @@ export default function CreateClaim({
         <form onSubmit={submitClaim}>
           <div className="create-claim-form-grid">
             <div className="create-claim-field">
-              <label className="create-claim-label" htmlFor="claim-reference">
+              <label
+                className="create-claim-label"
+                htmlFor="claim-reference"
+              >
                 Claim Number / Reference *
               </label>
+
               <input
                 id="claim-reference"
                 className="create-claim-input"
                 type="text"
                 value={form.claimId}
-                onChange={(event) => updateForm("claimId", event.target.value)}
+                onChange={(event) => {
+                  if (!isRenewalMode) {
+                    updateForm("claimId", event.target.value);
+                  }
+                }}
                 placeholder="Enter claim number or reference"
+                readOnly={isRenewalMode}
                 required
               />
+
               <div className="create-claim-form-note">
-                Enter the reference used by your RCM team.
+                {isRenewalMode
+                  ? "The original Claim ID cannot be changed during renewal."
+                  : "Enter the reference used by your RCM team."}
               </div>
             </div>
 
@@ -694,18 +915,29 @@ export default function CreateClaim({
               <label className="create-claim-label" htmlFor="claim-status">
                 Claim Status *
               </label>
+
               <select
                 id="claim-status"
                 className="create-claim-select"
                 value={form.status}
+                disabled={isRenewalMode}
                 onChange={(event) => {
                   const status = event.target.value;
+                  const rejected = status.toLowerCase() === "rejected";
+
                   setForm((current) => ({
                     ...current,
                     status,
-                    rejectionReason: status === "Rejected" ? current.rejectionReason : "",
+                    rejectionReason: rejected
+                      ? current.rejectionReason
+                      : "",
+                    renewalDate: rejected ? current.renewalDate : "",
                   }));
-                  if (status !== "Rejected") setCreateRejectionAlert(false);
+
+                  if (!rejected) {
+                    setCreateRejectionAlert(false);
+                    setCreateRenewalAlert(false);
+                  }
                 }}
                 required
               >
@@ -714,84 +946,151 @@ export default function CreateClaim({
                 <option value="Approved">Approved</option>
                 <option value="Rejected">Rejected</option>
               </select>
+
               <div className="create-claim-form-note">
-                Choose the current status of the claim.
+                {isRenewalMode
+                  ? "Submitting the renewal will set the existing claim status to Submitted."
+                  : "Choose the current status of the claim."}
               </div>
             </div>
 
-            <div className="create-claim-field">
-              <label className="create-claim-label" htmlFor="claim-renewal-date">
-                Renewal Date
-              </label>
-              <input
-                id="claim-renewal-date"
-                className="create-claim-input"
-                type="date"
-                value={form.renewalDate}
-                min={new Date().toLocaleDateString("en-CA")}
-                onChange={(event) => updateForm("renewalDate", event.target.value)}
-              />
-              <div className="create-claim-form-note">
-                Choose the date when this claim or authorization needs renewal.
-              </div>
-            </div>
-
-            {isRejected && (
-              <div className="create-claim-field create-claim-field-full">
-                <label className="create-claim-label" htmlFor="claim-rejection-reason">
-                  Rejection Reason *
+            {(isRejected || isRenewalMode) && (
+              <div className="create-claim-field">
+                <label
+                  className="create-claim-label"
+                  htmlFor="claim-renewal-date"
+                >
+                  Renewal Date
                 </label>
+
+                <input
+                  id="claim-renewal-date"
+                  className="create-claim-input"
+                  type="date"
+                  value={form.renewalDate}
+                  min={isRenewalMode ? undefined : getLocalToday()}
+                  readOnly={isRenewalMode}
+                  onChange={(event) =>
+                    updateForm("renewalDate", event.target.value)
+                  }
+                />
+
+                <div className="create-claim-form-note">
+                  {isRenewalMode
+                    ? "The scheduled renewal date is read-only."
+                    : "Choose the date when this rejected claim needs renewal."}
+                </div>
+              </div>
+            )}
+
+            {(isRejected ||
+              (isRenewalMode && form.rejectionReason)) && (
+              <div className="create-claim-field create-claim-field-full">
+                <label
+                  className="create-claim-label"
+                  htmlFor="claim-rejection-reason"
+                >
+                  Rejection Reason {isRejected && !isRenewalMode ? "*" : ""}
+                </label>
+
                 <textarea
                   id="claim-rejection-reason"
                   className="create-claim-textarea"
                   value={form.rejectionReason}
-                  onChange={(event) => updateForm("rejectionReason", event.target.value)}
+                  readOnly={isRenewalMode}
+                  onChange={(event) =>
+                    updateForm("rejectionReason", event.target.value)
+                  }
                   placeholder="Explain why the claim was rejected..."
-                  required
+                  required={isRejected && !isRenewalMode}
                 />
               </div>
             )}
 
-            {isRejected && (
+            {!isRenewalMode && isRejected && (
               <div className="create-claim-field create-claim-field-full">
                 <label className="create-claim-alert-option">
                   <input
                     type="checkbox"
                     checked={createRejectionAlert}
-                    onChange={(event) => setCreateRejectionAlert(event.target.checked)}
+                    onChange={(event) =>
+                      setCreateRejectionAlert(event.target.checked)
+                    }
                   />
+
                   <span>
-                    <span className="create-claim-alert-title">Create rejection alert</span>
-                    <span className="create-claim-alert-description" style={{ display: "block" }}>
-                      Request an alert for this rejected claim through the connected alert handler.
+                    <span className="create-claim-alert-title">
+                      Create rejection alert
+                    </span>
+
+                    <span
+                      className="create-claim-alert-description"
+                      style={{ display: "block" }}
+                    >
+                      Create a record for this rejected claim through the
+                      connected alert handler.
                     </span>
                   </span>
                 </label>
               </div>
             )}
 
-            <div className="create-claim-field create-claim-field-full">
-              <label className="create-claim-alert-option">
-                <input
-                  type="checkbox"
-                  checked={createRenewalAlert}
-                  onChange={(event) => setCreateRenewalAlert(event.target.checked)}
-                />
-                <span>
-                  <span className="create-claim-alert-title">Create renewal reminder</span>
-                  <span className="create-claim-alert-description" style={{ display: "block" }}>
-                    Request a reminder for the selected renewal date. Choose a renewal date above before submitting.
+            {!isRenewalMode && isRejected && (
+              <div className="create-claim-field create-claim-field-full">
+                <label className="create-claim-alert-option">
+                  <input
+                    type="checkbox"
+                    checked={createRenewalAlert}
+                    onChange={(event) =>
+                      setCreateRenewalAlert(event.target.checked)
+                    }
+                  />
+
+                  <span>
+                    <span className="create-claim-alert-title">
+                      Create renewal reminder
+                    </span>
+
+                    <span
+                      className="create-claim-alert-description"
+                      style={{ display: "block" }}
+                    >
+                      Create a reminder for the selected renewal date. Choose
+                      a renewal date above before submitting.
+                    </span>
                   </span>
-                </span>
-              </label>
-            </div>
+                </label>
+              </div>
+            )}
           </div>
+
+          {isRenewalMode && !isRenewalDateToday && (
+            <div
+              className="create-claim-message create-claim-info"
+              role="status"
+            >
+              Renewal submission is only available on{" "}
+              {renewalDate || "the scheduled renewal date"}.
+            </div>
+          )}
+
+          {isRenewalMode && isAlreadySubmitted && (
+            <div
+              className="create-claim-message create-claim-success"
+              role="status"
+            >
+              This renewal has already been submitted.
+            </div>
+          )}
 
           <div className="create-claim-form-footer">
             <div className="create-claim-footer-note">
               * Required fields
-              {!selectedPatient && <span> · Select a patient before submitting.</span>}
+              {!selectedPatient && (
+                <span> · Select a patient before submitting.</span>
+              )}
             </div>
+
             <div className="create-claim-footer-actions">
               <button
                 type="button"
@@ -799,14 +1098,26 @@ export default function CreateClaim({
                 onClick={resetForm}
                 disabled={saving}
               >
-                Reset Form
+                {isRenewalMode ? "Reset Details" : "Reset Form"}
               </button>
+
               <button
                 type="submit"
                 className="create-claim-button create-claim-button-primary"
-                disabled={saving || !selectedPatient}
+                disabled={
+                  saving ||
+                  !selectedPatient ||
+                  (isRenewalMode &&
+                    (!isRenewalDateToday || isAlreadySubmitted))
+                }
               >
-                {saving ? "Creating Claim..." : "＋ Create Claim"}
+                {saving
+                  ? isRenewalMode
+                    ? "Submitting Renewal..."
+                    : "Creating Claim..."
+                  : isRenewalMode
+                    ? "✓ Submit Renewal"
+                    : "＋ Create Claim"}
               </button>
             </div>
           </div>
