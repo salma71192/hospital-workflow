@@ -1,82 +1,70 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../../api/api";
 
 const styles = `
-.create-claim-page{width:100%;min-width:0;color:#172b4d;font-family:inherit;font-size:15px}
-.create-claim-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:24px}
-.create-claim-title{margin:0;font-size:29px;font-weight:800;letter-spacing:-.5px;color:#172b4d}
-.create-claim-subtitle{margin:8px 0 0;color:#64748b;font-size:15px;line-height:1.6}
-.create-claim-card{background:#fff;border:1px solid #dce4ef;border-radius:17px;padding:26px;margin-bottom:22px;box-shadow:0 5px 20px rgba(25,42,70,.05);min-width:0}
-.create-claim-section-heading{display:flex;align-items:center;gap:13px;margin-bottom:22px}
-.create-claim-section-number{width:42px;height:42px;border-radius:12px;background:#eef2ff;color:#4057cf;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;flex-shrink:0}
-.create-claim-section-title{margin:0;font-size:20px;font-weight:800}
-.create-claim-section-description{margin:5px 0 0;font-size:14px;color:#64748b;line-height:1.5}
-.create-claim-label{display:block;margin-bottom:9px;font-size:15px;font-weight:750;color:#334155}
-.create-claim-search-box{display:flex;align-items:center;gap:12px;width:100%;min-height:54px;padding:0 15px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:12px;box-sizing:border-box}
-.create-claim-search-box:focus-within{background:#fff;border-color:#5368d7;box-shadow:0 0 0 3px rgba(83,104,215,.12)}
-.create-claim-search-icon{font-size:22px;color:#64748b;flex-shrink:0}
-.create-claim-search-input{border:0!important;outline:0!important;box-shadow:none!important;background:transparent!important;width:100%;min-width:0;padding:13px 0!important;color:#172b4d;font-size:16px}
-.create-claim-search-input::placeholder,.create-claim-input::placeholder,.create-claim-textarea::placeholder{color:#94a3b8}
-.create-claim-search-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;color:#64748b;font-size:13px;margin-top:10px}
-.create-claim-results{display:flex;flex-direction:column;gap:11px;width:100%;margin-top:15px;padding:14px;box-sizing:border-box;border:1px solid #dce4ef;border-radius:14px;background:#f7f9fd}
-.create-claim-results-heading{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:3px 3px 9px;color:#475569;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
-.create-claim-result{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap;padding:17px;background:#fff;border:1px solid #dbe3ee;border-radius:12px}
-.create-claim-result:hover{border-color:#a8b6ed;background:#fcfcff}
-.create-claim-result.selected{border-color:#6678db;background:#f2f4ff}
-.create-claim-patient-info{display:flex;align-items:center;gap:13px;flex:1 1 240px;min-width:0}
-.create-claim-avatar{width:48px;height:48px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:13px;background:#e9edff;color:#4057cf;font-weight:800;font-size:16px}
+.create-claim-page{max-width:1500px;margin:auto;padding:12px 4px 28px;color:#183451;font-family:inherit}
+.create-claim-header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:24px}
+.create-claim-title{margin:0;font-size:clamp(27px,2.5vw,36px);font-weight:800;color:#17365d}
+.create-claim-subtitle{margin:9px 0 0;color:#647b98;line-height:1.7}
+.create-claim-card{padding:clamp(18px,2.2vw,30px);margin-bottom:22px;border:1px solid #dce7f5;border-radius:18px;background:#fff;box-shadow:0 8px 28px rgba(35,65,110,.05)}
+.create-claim-section-heading{display:flex;align-items:center;gap:14px;margin-bottom:22px;padding-bottom:16px;border-bottom:1px solid #edf1f7}
+.create-claim-section-number{width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:13px;background:#eef2ff;color:#4057cf;font-size:17px;font-weight:800}
+.create-claim-section-title{margin:0;font-size:20px;font-weight:800;color:#183451}
+.create-claim-section-description{margin:5px 0 0;color:#71829a;font-size:14px;line-height:1.6}
+.create-claim-label{display:block;margin-bottom:9px;color:#334b68;font-size:14px;font-weight:800}
+.create-claim-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 24px}
+.create-claim-field{min-width:0}
+.create-claim-field-full{grid-column:1/-1}
+.create-claim-input,.create-claim-select,.create-claim-textarea,.create-claim-search-input{box-sizing:border-box;width:100%;min-height:51px;padding:12px 14px;border:1px solid #d4deeb;border-radius:11px;background:#fff;color:#203b5c;font:inherit;font-size:15px;outline:none}
+.create-claim-input:focus,.create-claim-select:focus,.create-claim-textarea:focus,.create-claim-search-input:focus{border-color:#536cda;box-shadow:0 0 0 3px rgba(83,108,218,.12)}
+.create-claim-input:read-only{background:#f4f7fb;color:#526780}
+.create-claim-textarea{min-height:110px;resize:vertical}
+.create-claim-form-note{margin-top:7px;color:#7a8ba2;font-size:12px;line-height:1.6}
+.create-claim-search-box{display:flex;align-items:center;gap:10px;padding:6px 10px;border:1px solid #d4deeb;border-radius:12px;background:#f8faff}
+.create-claim-search-box .create-claim-search-input{border:0;background:transparent;box-shadow:none}
+.create-claim-search-icon{font-size:23px;color:#647ca3}
+.create-claim-search-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:10px;color:#7a8ba2;font-size:12px}
+.create-claim-results{display:flex;flex-direction:column;gap:10px;margin-top:15px;padding:14px;border:1px solid #e0e8f3;border-radius:14px;background:#f7f9fd}
+.create-claim-results-heading{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:5px;color:#526985;font-size:12px;font-weight:800}
+.create-claim-result{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:15px;border:1px solid #e0e7f1;border-radius:12px;background:#fff}
+.create-claim-result.selected{border-color:#7d8ee7;background:#f4f6ff}
+.create-claim-patient-info{display:flex;align-items:center;gap:12px;flex:1 1 230px;min-width:0}
+.create-claim-avatar{width:48px;height:48px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:14px;background:#e9edff;color:#3655c8;font-weight:800}
 .create-claim-patient-details{min-width:0}
-.create-claim-patient-name{margin:0;color:#172b4d;font-size:16px;font-weight:800;overflow-wrap:anywhere}
-.create-claim-patient-meta{display:flex;flex-wrap:wrap;gap:7px 14px;margin-top:7px;color:#64748b;font-size:13px}
-.create-claim-patient-meta span{overflow-wrap:anywhere}
-.create-claim-result-actions{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
-.create-claim-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:43px;padding:10px 15px;border:1px solid transparent;border-radius:10px;font-size:14px;font-weight:750;cursor:pointer;white-space:nowrap}
+.create-claim-patient-name{margin:0;font-weight:800;overflow-wrap:anywhere}
+.create-claim-patient-meta{display:flex;flex-wrap:wrap;gap:7px 12px;margin-top:7px;color:#71829a;font-size:12px}
+.create-claim-result-actions,.create-claim-selected-actions,.create-claim-footer-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.create-claim-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:43px;padding:10px 15px;border:1px solid transparent;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer}
 .create-claim-button:disabled{opacity:.55;cursor:not-allowed}
 .create-claim-button-primary{background:#4057cf;color:#fff}
 .create-claim-button-primary:hover:not(:disabled){background:#3349bd}
-.create-claim-button-secondary{color:#334155;background:#fff;border-color:#cbd5e1}
-.create-claim-button-secondary:hover:not(:disabled){background:#f1f5f9}
-.create-claim-button-light{color:#4057cf;background:#eef2ff;border-color:#dce3ff}
-.create-claim-selected{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;flex-wrap:wrap;padding:17px;margin-top:17px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:13px}
-.create-claim-selected-label{color:#15803d;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-.create-claim-selected-name{color:#166534;font-size:17px;font-weight:800;overflow-wrap:anywhere}
-.create-claim-selected-meta{color:#4b7c5b;font-size:13px;margin-top:6px}
-.create-claim-selected-actions{display:flex;gap:9px;flex-wrap:wrap}
-.create-claim-empty{text-align:center;padding:28px 14px;border:1px dashed #cbd5e1;border-radius:12px;background:#fff;color:#64748b;font-size:14px}
-.create-claim-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:21px}
-.create-claim-field{min-width:0}
-.create-claim-field-full{grid-column:1/-1}
-.create-claim-input,.create-claim-select,.create-claim-textarea{display:block;box-sizing:border-box;width:100%;min-height:50px;padding:12px 14px;border:1px solid #cbd5e1;border-radius:11px;background:#fff;color:#172b4d;outline:none;font:inherit;font-size:15px}
-.create-claim-input:focus,.create-claim-select:focus,.create-claim-textarea:focus{border-color:#5368d7;box-shadow:0 0 0 3px rgba(83,104,215,.11)}
-.create-claim-input:read-only{background:#f1f5f9;color:#475569}
-.create-claim-textarea{min-height:105px;resize:vertical}
-.create-claim-form-note{margin-top:8px;color:#64748b;font-size:13px;line-height:1.5}
-.create-claim-alert-option{display:flex;align-items:flex-start;gap:13px;padding:17px;border:1px solid #c7d2fe;background:#f5f7ff;border-radius:13px;cursor:pointer}
-.create-claim-alert-option input{margin-top:4px;accent-color:#4057cf;width:19px;height:19px;flex-shrink:0}
-.create-claim-alert-title{font-size:15px;font-weight:800;color:#273c9b}
-.create-claim-alert-description{margin-top:5px;font-size:13px;color:#475569;line-height:1.6}
+.create-claim-button-secondary{background:#fff;color:#3e536e;border-color:#d5dfeb}
+.create-claim-button-secondary:hover:not(:disabled){background:#f5f8fc}
+.create-claim-button-light{background:#eef2ff;color:#4057cf;border-color:#dce4ff}
+.create-claim-selected{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;flex-wrap:wrap;padding:17px;margin-top:17px;border:1px solid #b8e8ca;border-radius:14px;background:#f0fdf5}
+.create-claim-selected-label{margin-bottom:6px;color:#15803d;font-size:12px;font-weight:800}
+.create-claim-selected-name{color:#166534;font-size:17px;font-weight:800}
+.create-claim-selected-meta{margin-top:6px;color:#4b7c5b;font-size:12px}
+.create-claim-empty{text-align:center;padding:24px 14px;border:1px dashed #cbd5e1;border-radius:12px;background:#fff;color:#64748b;font-size:14px}
+.create-claim-alert-option{display:flex;align-items:flex-start;gap:12px;padding:16px;border:1px solid #d7e0ff;border-radius:13px;background:#f5f7ff;cursor:pointer}
+.create-claim-alert-option input{width:18px;height:18px;margin-top:3px;accent-color:#4057cf}
+.create-claim-alert-title{font-weight:800;color:#2f469e}
+.create-claim-alert-description{margin-top:5px;color:#687991;font-size:13px;line-height:1.6}
 .create-claim-message{padding:14px 16px;margin-bottom:17px;border-radius:11px;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
 .create-claim-error{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c}
 .create-claim-success{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
 .create-claim-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8}
-.create-claim-form-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;padding-top:22px;margin-top:22px;border-top:1px solid #e9eef5}
-.create-claim-footer-note{font-size:13px;color:#64748b;line-height:1.6}
-.create-claim-footer-actions{display:flex;gap:10px;flex-wrap:wrap}
-.create-claim-creator{margin-top:8px;color:#475569}
+.create-claim-form-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;padding-top:22px;margin-top:23px;border-top:1px solid #e8edf5}
+.create-claim-footer-note{color:#7a8ba2;font-size:12px;line-height:1.6}
+.create-claim-creator{margin-top:8px;color:#4f6b5a}
 @media(max-width:700px){
-.create-claim-card{padding:17px;border-radius:14px}
-.create-claim-title{font-size:25px}
-.create-claim-form-grid{grid-template-columns:minmax(0,1fr);gap:17px}
-.create-claim-field-full{grid-column:auto}
-.create-claim-result{align-items:stretch}
-.create-claim-result-actions{width:100%}
-.create-claim-result-actions .create-claim-button{flex:1 1 auto}
-.create-claim-selected-actions{width:100%}
-.create-claim-selected-actions .create-claim-button{flex:1 1 auto}
-.create-claim-form-footer{align-items:stretch;flex-direction:column}
-.create-claim-footer-actions{width:100%}
-.create-claim-footer-actions .create-claim-button{flex:1 1 auto}
+ .create-claim-form-grid{grid-template-columns:minmax(0,1fr);gap:17px}
+ .create-claim-field-full{grid-column:auto}
+ .create-claim-card{padding:17px}
+ .create-claim-result-actions,.create-claim-selected-actions,.create-claim-footer-actions{width:100%}
+ .create-claim-result-actions .create-claim-button,.create-claim-selected-actions .create-claim-button,.create-claim-footer-actions .create-claim-button{flex:1 1 auto}
+ .create-claim-form-footer{align-items:stretch;flex-direction:column}
 }
 `;
 
@@ -127,11 +115,9 @@ function getPatientPhone(patient) {
 
 function getPatientList(response) {
   const data = response?.data;
-
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.results)) return data.results;
   if (Array.isArray(data?.patients)) return data.patients;
-
   return [];
 }
 
@@ -183,16 +169,14 @@ function getCreatorName(claim) {
 }
 
 function getUserName(user) {
-  if (!user) return "";
-
   return (
-    user.display_name ||
-    user.displayName ||
-    user.full_name ||
-    user.fullName ||
-    user.name ||
-    user.username ||
-    user.email ||
+    user?.display_name ||
+    user?.displayName ||
+    user?.full_name ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    user?.email ||
     ""
   );
 }
@@ -212,14 +196,13 @@ function getApiError(err) {
           : typeof value === "object"
             ? JSON.stringify(value)
             : String(value);
-
         return `${key}: ${message}`;
       })
       .join(" · ");
   }
 
   if (err?.message === "Network Error") {
-    return "Network error: the server could not be reached. Check the backend and CORS settings, then try again.";
+    return "Network error: the server could not be reached. Check the backend and CORS settings.";
   }
 
   return err?.message || "The request failed. Please check the information and try again.";
@@ -269,6 +252,48 @@ function getInitialForm(renewalAlert) {
   };
 }
 
+function getClaimDatabaseId(claim) {
+  const id =
+    claim?.id ??
+    claim?.pk ??
+    claim?.claim_pk ??
+    claim?.claimPk ??
+    claim?.database_id ??
+    claim?.databaseId;
+
+  return id === undefined || id === null || id === "" ? null : id;
+}
+
+function getClaimForm(claim) {
+  const rawStatus = String(claim?.status || "Pending").trim().toLowerCase();
+
+  const statusMap = {
+    pending: "Pending",
+    submitted: "Submitted",
+    approved: "Approved",
+    rejected: "Rejected",
+    denied: "Rejected",
+  };
+
+  return {
+    claimId: String(
+      claim?.claimId ??
+      claim?.claim_id ??
+      claim?.claim_id_value ??
+      claim?.claim_number ??
+      claim?.claimNumber ??
+      ""
+    ),
+    status: statusMap[rawStatus] || "Pending",
+    rejectionReason: String(
+      claim?.rejectionReason ?? claim?.rejection_reason ?? ""
+    ),
+    renewalDate: String(
+      claim?.renewalDate ?? claim?.renewal_date ?? ""
+    ).slice(0, 10),
+  };
+}
+
 export default function CreateClaim({
   patient: initialPatient,
   renewalAlert = null,
@@ -278,7 +303,17 @@ export default function CreateClaim({
   onCreateAlert,
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // IMPORTANT: CreateClaim only enters edit mode when mode is explicitly "edit".
+  // A stale claimId alone must never make Create New Claim show Edit Claim.
+  const routeState = location.state;
   const isRenewalMode = Boolean(renewalAlert);
+  const isEditing = !isRenewalMode && routeState?.mode === "edit";
+  const editClaim = isEditing ? routeState?.editClaim || null : null;
+  const editClaimId = isEditing
+    ? routeState?.claimId ?? getClaimDatabaseId(editClaim)
+    : null;
 
   const [patients, setPatients] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(initialPatient || null);
@@ -290,10 +325,14 @@ export default function CreateClaim({
   const [success, setSuccess] = useState("");
   const [createdClaim, setCreatedClaim] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
-
   const [createRejectionAlert, setCreateRejectionAlert] = useState(false);
   const [createRenewalAlert, setCreateRenewalAlert] = useState(false);
-  const [form, setForm] = useState(() => getInitialForm(renewalAlert));
+
+  const [form, setForm] = useState(() =>
+    isEditing && editClaim
+      ? getClaimForm(editClaim)
+      : getInitialForm(renewalAlert)
+  );
 
   useEffect(() => {
     let active = true;
@@ -325,8 +364,29 @@ export default function CreateClaim({
           ) {
             setSelectedPatient(renewalAlert.patient);
           }
+        } else if (isEditing && editClaim) {
+          const claimPatient =
+            editClaim.patient && typeof editClaim.patient === "object"
+              ? editClaim.patient
+              : null;
+
+          const patientId =
+            editClaim.patientId ??
+            editClaim.patient_id ??
+            editClaim.patient?.id;
+
+          const matchedPatient = patientList.find(
+            (item) => String(item.id) === String(patientId)
+          );
+
+          setSelectedPatient(matchedPatient || claimPatient || null);
         } else if (initialPatient) {
-          setSelectedPatient(initialPatient);
+          const matchedPatient = patientList.find(
+            (item) => String(item.id) === String(initialPatient.id)
+          );
+          setSelectedPatient(matchedPatient || initialPatient);
+        } else {
+          setSelectedPatient(null);
         }
       } catch (err) {
         if (active) setError(getApiError(err));
@@ -335,49 +395,53 @@ export default function CreateClaim({
       }
     }
 
-    loadPatients();
-
-    return () => {
-      active = false;
-    };
-  }, [initialPatient, renewalAlert]);
-
-  useEffect(() => {
-    let active = true;
-
     async function loadCurrentUser() {
       try {
         const response = await api.get("users/me/", {
           withCredentials: true,
         });
-
         if (active) setCurrentUser(response?.data || null);
-      } catch (err) {
-        console.error("Could not load the logged-in user:", err);
+      } catch {
+        if (active) setCurrentUser(null);
       }
     }
 
+    loadPatients();
     loadCurrentUser();
 
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialPatient, renewalAlert, isEditing, editClaim]);
 
+  // Reset the form whenever navigation changes between create and edit.
   useEffect(() => {
-    if (!renewalAlert) {
-      setForm(getInitialForm(null));
-      return;
-    }
-
-    setSelectedPatient(renewalAlert.patient || initialPatient || null);
-    setForm(getInitialForm(renewalAlert));
-    setCreateRejectionAlert(false);
-    setCreateRenewalAlert(false);
     setError("");
     setSuccess("");
     setCreatedClaim(null);
-  }, [renewalAlert, initialPatient]);
+    setSearch("");
+    setShowResults(false);
+    setCreateRejectionAlert(false);
+    setCreateRenewalAlert(false);
+
+    if (isEditing && editClaim) {
+      setForm(getClaimForm(editClaim));
+
+      const claimPatient =
+        editClaim.patient && typeof editClaim.patient === "object"
+          ? editClaim.patient
+          : null;
+
+      if (claimPatient) setSelectedPatient(claimPatient);
+      return;
+    }
+
+    setForm(getInitialForm(renewalAlert));
+
+    if (!renewalAlert) {
+      setSelectedPatient(initialPatient || null);
+    }
+  }, [location.key, renewalAlert, initialPatient, isEditing, editClaim]);
 
   const filteredPatients = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -407,6 +471,7 @@ export default function CreateClaim({
   const renewalDate = getAlertDate(renewalAlert);
   const isRenewalDateToday =
     !isRenewalMode || renewalDate === getLocalToday();
+
   const isAlreadySubmitted =
     String(renewalAlert?.status || "").toLowerCase() === "submitted";
 
@@ -415,7 +480,7 @@ export default function CreateClaim({
   }
 
   function selectPatient(patient) {
-    if (isRenewalMode) return;
+    if (isRenewalMode || isEditing) return;
 
     setSelectedPatient(patient);
     setSearch("");
@@ -435,20 +500,23 @@ export default function CreateClaim({
   }
 
   function resetForm() {
+    setError("");
+    setSuccess("");
+    setCreatedClaim(null);
+
     if (isRenewalMode) {
       setForm(getInitialForm(renewalAlert));
-      setError("");
-      setSuccess("");
-      setCreatedClaim(null);
+      return;
+    }
+
+    if (isEditing && editClaim) {
+      setForm(getClaimForm(editClaim));
       return;
     }
 
     setForm(getInitialForm(null));
     setCreateRejectionAlert(false);
     setCreateRenewalAlert(false);
-    setError("");
-    setSuccess("");
-    setCreatedClaim(null);
   }
 
   async function submitClaim(event) {
@@ -467,19 +535,27 @@ export default function CreateClaim({
       return;
     }
 
+    if (isEditing && (editClaimId === null || editClaimId === "")) {
+      setError(
+        "The database ID for this claim is missing. Reopen the claim from Claim History and try again."
+      );
+      return;
+    }
+
     if (isRenewalMode) {
       if (!renewalAlert?.id) {
         setError("The renewal alert ID is missing. Reopen the alert and try again.");
         return;
       }
 
-      if (
-        !renewalAlert?.claimPk &&
-        !renewalAlert?.claim_pk &&
-        !renewalAlert?.claim?.id
-      ) {
+      const linkedClaimId =
+        renewalAlert.claimPk ??
+        renewalAlert.claim_pk ??
+        renewalAlert.claim?.id;
+
+      if (!linkedClaimId) {
         setError(
-          "This renewal alert is not linked to an existing claim. The existing claim cannot be updated safely. Link the alert to its claim before resubmitting."
+          "This renewal alert is not linked to an existing claim. Link it to its claim before resubmitting."
         );
         return;
       }
@@ -499,13 +575,13 @@ export default function CreateClaim({
         return;
       }
 
-      if (isRejected && createRenewalAlert && !form.renewalDate) {
+      if (createRenewalAlert && !form.renewalDate) {
         setError("Please choose a renewal date before creating a renewal alert.");
         return;
       }
 
       if (
-        isRejected &&
+        !isEditing &&
         (createRejectionAlert || createRenewalAlert) &&
         typeof onCreateAlert !== "function"
       ) {
@@ -545,22 +621,30 @@ export default function CreateClaim({
         return;
       }
 
-      const response = await api.post(
-        "rcm/claims/",
-        {
-          patientId: selectedPatient.id,
-          claimId: form.claimId.trim(),
-          status: form.status,
-          rejectionReason: isRejected ? form.rejectionReason.trim() : "",
-          renewalDate: isRejected ? form.renewalDate || null : null,
-        },
-        { withCredentials: true }
-      );
+      const payload = {
+        patientId: selectedPatient.id,
+        claimId: form.claimId.trim(),
+        status: form.status,
+        rejectionReason: form.rejectionReason.trim(),
+        renewalDate: form.renewalDate || null,
+      };
+
+      const response = isEditing
+        ? await api.patch(
+            `rcm/claims/${editClaimId}/`,
+            payload,
+            { withCredentials: true }
+          )
+        : await api.post(
+            "rcm/claims/",
+            payload,
+            { withCredentials: true }
+          );
 
       const claim = response?.data || null;
       setCreatedClaim(claim);
 
-      if (isRejected && createRejectionAlert) {
+      if (!isEditing && createRejectionAlert) {
         await onCreateAlert({
           alertType: "rejection",
           patient: selectedPatient,
@@ -571,7 +655,7 @@ export default function CreateClaim({
         });
       }
 
-      if (isRejected && createRenewalAlert) {
+      if (!isEditing && createRenewalAlert) {
         await onCreateAlert({
           alertType: "renewal",
           patient: selectedPatient,
@@ -582,14 +666,26 @@ export default function CreateClaim({
         });
       }
 
-      setSuccess("Claim created successfully.");
+      if (isEditing) {
+        setSuccess("Claim updated successfully.");
+        if (typeof onClaimCreated === "function") {
+          onClaimCreated(claim);
+        }
 
-      setForm(getInitialForm(null));
-      setCreateRejectionAlert(false);
-      setCreateRenewalAlert(false);
+        // Clear the edit state so a later Create New Claim opens a blank form.
+        navigate("/rcm/claims", {
+          replace: true,
+          state: null,
+        });
+      } else {
+        setSuccess("Claim created successfully.");
+        setForm(getInitialForm(null));
+        setCreateRejectionAlert(false);
+        setCreateRenewalAlert(false);
 
-      if (typeof onClaimCreated === "function") {
-        onClaimCreated(claim);
+        if (typeof onClaimCreated === "function") {
+          onClaimCreated(claim);
+        }
       }
     } catch (err) {
       setError(getApiError(err));
@@ -598,7 +694,8 @@ export default function CreateClaim({
     }
   }
 
-  const creatorName = getCreatorName(createdClaim) || getUserName(currentUser);
+  const creatorName =
+    getCreatorName(createdClaim) || getUserName(currentUser);
 
   return (
     <div className="create-claim-page">
@@ -607,13 +704,19 @@ export default function CreateClaim({
       <div className="create-claim-header">
         <div>
           <h1 className="create-claim-title">
-            {isRenewalMode ? "Renew Existing Claim" : "Create New Claim"}
+            {isRenewalMode
+              ? "Renew Existing Claim"
+              : isEditing
+                ? "Edit Claim"
+                : "Create New Claim"}
           </h1>
 
           <p className="create-claim-subtitle">
             {isRenewalMode
               ? "Review the existing claim details and submit the renewal on its scheduled date."
-              : "Search for a patient and enter the claim details. Rejection notes and renewal reminders appear only for rejected claims."}
+              : isEditing
+                ? "Update the selected claim and save your changes."
+                : "Search for a patient, enter claim details, and optionally schedule a renewal reminder."}
           </p>
         </div>
 
@@ -637,6 +740,13 @@ export default function CreateClaim({
           Scheduled renewal date: <strong>{renewalDate || "—"}</strong>
           <br />
           The existing claim record will be updated. A new claim will not be created.
+        </div>
+      )}
+
+      {isEditing && (
+        <div className="create-claim-message create-claim-info" role="status">
+          You are editing an existing claim. Saving changes will update this claim
+          rather than create a new record.
         </div>
       )}
 
@@ -665,12 +775,14 @@ export default function CreateClaim({
             <p className="create-claim-section-description">
               {isRenewalMode
                 ? "The patient is taken from the existing claim and cannot be changed during renewal."
-                : "Search by patient name, file number, phone number, or patient ID."}
+                : isEditing
+                  ? "The patient linked to this claim is shown below."
+                  : "Search by patient name, file number, phone number, or patient ID."}
             </p>
           </div>
         </div>
 
-        {!isRenewalMode && (
+        {!isRenewalMode && !isEditing && (
           <>
             <label
               className="create-claim-label"
@@ -728,14 +840,11 @@ export default function CreateClaim({
               <div className="create-claim-results">
                 <div className="create-claim-results-heading">
                   <span>Matching patients</span>
-
                   {!loadingPatients && (
                     <span>
                       {filteredPatients.length} result
                       {filteredPatients.length === 1 ? "" : "s"}
-                      {filteredPatients.length === 10
-                        ? " · Showing first 10"
-                        : ""}
+                      {filteredPatients.length === 10 ? " · Showing first 10" : ""}
                     </span>
                   )}
                 </div>
@@ -751,7 +860,8 @@ export default function CreateClaim({
                 ) : (
                   filteredPatients.map((patient) => {
                     const name = getPatientName(patient);
-                    const isSelected = selectedPatient?.id === patient.id;
+                    const isSelected =
+                      String(selectedPatient?.id) === String(patient.id);
 
                     return (
                       <div
@@ -767,16 +877,10 @@ export default function CreateClaim({
                             <p className="create-claim-patient-name">{name}</p>
 
                             <div className="create-claim-patient-meta">
-                              <span>
-                                File No: {getPatientNumber(patient)}
-                              </span>
-
+                              <span>File No: {getPatientNumber(patient)}</span>
                               {getPatientPhone(patient) && (
-                                <span>
-                                  Phone: {getPatientPhone(patient)}
-                                </span>
+                                <span>Phone: {getPatientPhone(patient)}</span>
                               )}
-
                               {patient?.gender && (
                                 <span>Gender: {patient.gender}</span>
                               )}
@@ -838,7 +942,7 @@ export default function CreateClaim({
                 Open Patient File ↗
               </button>
 
-              {!isRenewalMode && (
+              {!isRenewalMode && !isEditing && (
                 <button
                   type="button"
                   className="create-claim-button create-claim-button-light"
@@ -874,7 +978,9 @@ export default function CreateClaim({
             <p className="create-claim-section-description">
               {isRenewalMode
                 ? "The existing Claim ID and scheduled renewal date are preserved."
-                : "Enter the claim reference and status. Renewal details are required only for rejected claims."}
+                : isEditing
+                  ? "Review and update the existing claim details."
+                  : "Enter the claim reference, status, and renewal information."}
             </p>
           </div>
         </div>
@@ -882,10 +988,7 @@ export default function CreateClaim({
         <form onSubmit={submitClaim}>
           <div className="create-claim-form-grid">
             <div className="create-claim-field">
-              <label
-                className="create-claim-label"
-                htmlFor="claim-reference"
-              >
+              <label className="create-claim-label" htmlFor="claim-reference">
                 Claim Number / Reference *
               </label>
 
@@ -923,20 +1026,16 @@ export default function CreateClaim({
                 disabled={isRenewalMode}
                 onChange={(event) => {
                   const status = event.target.value;
-                  const rejected = status.toLowerCase() === "rejected";
 
                   setForm((current) => ({
                     ...current,
                     status,
-                    rejectionReason: rejected
-                      ? current.rejectionReason
-                      : "",
-                    renewalDate: rejected ? current.renewalDate : "",
+                    rejectionReason:
+                      status === "Rejected" ? current.rejectionReason : "",
                   }));
 
-                  if (!rejected) {
+                  if (status !== "Rejected") {
                     setCreateRejectionAlert(false);
-                    setCreateRenewalAlert(false);
                   }
                 }}
                 required
@@ -954,43 +1053,41 @@ export default function CreateClaim({
               </div>
             </div>
 
-            {(isRejected || isRenewalMode) && (
-              <div className="create-claim-field">
-                <label
-                  className="create-claim-label"
-                  htmlFor="claim-renewal-date"
-                >
-                  Renewal Date
-                </label>
+            <div className="create-claim-field">
+              <label
+                className="create-claim-label"
+                htmlFor="claim-renewal-date"
+              >
+                Renewal Date
+              </label>
 
-                <input
-                  id="claim-renewal-date"
-                  className="create-claim-input"
-                  type="date"
-                  value={form.renewalDate}
-                  min={isRenewalMode ? undefined : getLocalToday()}
-                  readOnly={isRenewalMode}
-                  onChange={(event) =>
-                    updateForm("renewalDate", event.target.value)
-                  }
-                />
+              <input
+                id="claim-renewal-date"
+                className="create-claim-input"
+                type="date"
+                value={form.renewalDate}
+                min={isRenewalMode ? undefined : getLocalToday()}
+                readOnly={isRenewalMode}
+                onChange={(event) =>
+                  updateForm("renewalDate", event.target.value)
+                }
+              />
 
-                <div className="create-claim-form-note">
-                  {isRenewalMode
-                    ? "The scheduled renewal date is read-only."
-                    : "Choose the date when this rejected claim needs renewal."}
-                </div>
+              <div className="create-claim-form-note">
+                {isRenewalMode
+                  ? "The scheduled renewal date is read-only."
+                  : "Choose the date when this claim or authorization needs renewal."}
               </div>
-            )}
+            </div>
 
-            {(isRejected ||
-              (isRenewalMode && form.rejectionReason)) && (
+            {(isRejected || (isRenewalMode && form.rejectionReason)) && (
               <div className="create-claim-field create-claim-field-full">
                 <label
                   className="create-claim-label"
                   htmlFor="claim-rejection-reason"
                 >
-                  Rejection Reason {isRejected && !isRenewalMode ? "*" : ""}
+                  Rejection Reason
+                  {isRejected && !isRenewalMode ? " *" : ""}
                 </label>
 
                 <textarea
@@ -1007,7 +1104,7 @@ export default function CreateClaim({
               </div>
             )}
 
-            {!isRenewalMode && isRejected && (
+            {!isRenewalMode && !isEditing && isRejected && (
               <div className="create-claim-field create-claim-field-full">
                 <label className="create-claim-alert-option">
                   <input
@@ -1017,25 +1114,19 @@ export default function CreateClaim({
                       setCreateRejectionAlert(event.target.checked)
                     }
                   />
-
                   <span>
                     <span className="create-claim-alert-title">
                       Create rejection alert
                     </span>
-
-                    <span
-                      className="create-claim-alert-description"
-                      style={{ display: "block" }}
-                    >
-                      Create a record for this rejected claim through the
-                      connected alert handler.
-                    </span>
+                    <div className="create-claim-alert-description">
+                      Create an alert for the rejected claim after it is saved.
+                    </div>
                   </span>
                 </label>
               </div>
             )}
 
-            {!isRenewalMode && isRejected && (
+            {!isRenewalMode && !isEditing && (
               <div className="create-claim-field create-claim-field-full">
                 <label className="create-claim-alert-option">
                   <input
@@ -1045,50 +1136,26 @@ export default function CreateClaim({
                       setCreateRenewalAlert(event.target.checked)
                     }
                   />
-
                   <span>
                     <span className="create-claim-alert-title">
-                      Create renewal reminder
+                      Create renewal alert
                     </span>
-
-                    <span
-                      className="create-claim-alert-description"
-                      style={{ display: "block" }}
-                    >
-                      Create a reminder for the selected renewal date. Choose
-                      a renewal date above before submitting.
-                    </span>
+                    <div className="create-claim-alert-description">
+                      Schedule a reminder for the renewal date entered above.
+                    </div>
                   </span>
                 </label>
               </div>
             )}
           </div>
 
-          {isRenewalMode && !isRenewalDateToday && (
-            <div
-              className="create-claim-message create-claim-info"
-              role="status"
-            >
-              Renewal submission is only available on{" "}
-              {renewalDate || "the scheduled renewal date"}.
-            </div>
-          )}
-
-          {isRenewalMode && isAlreadySubmitted && (
-            <div
-              className="create-claim-message create-claim-success"
-              role="status"
-            >
-              This renewal has already been submitted.
-            </div>
-          )}
-
           <div className="create-claim-form-footer">
             <div className="create-claim-footer-note">
-              * Required fields
-              {!selectedPatient && (
-                <span> · Select a patient before submitting.</span>
-              )}
+              {isRenewalMode
+                ? "This action updates the linked claim record."
+                : isEditing
+                  ? "Your changes will be saved to the existing claim."
+                  : "Check the claim information before submitting."}
             </div>
 
             <div className="create-claim-footer-actions">
@@ -1098,26 +1165,25 @@ export default function CreateClaim({
                 onClick={resetForm}
                 disabled={saving}
               >
-                {isRenewalMode ? "Reset Details" : "Reset Form"}
+                {isRenewalMode
+                  ? "Reset Details"
+                  : isEditing
+                    ? "Reset Changes"
+                    : "Reset Form"}
               </button>
 
               <button
                 type="submit"
                 className="create-claim-button create-claim-button-primary"
-                disabled={
-                  saving ||
-                  !selectedPatient ||
-                  (isRenewalMode &&
-                    (!isRenewalDateToday || isAlreadySubmitted))
-                }
+                disabled={saving || loadingPatients}
               >
                 {saving
-                  ? isRenewalMode
-                    ? "Submitting Renewal..."
-                    : "Creating Claim..."
+                  ? "Saving..."
                   : isRenewalMode
-                    ? "✓ Submit Renewal"
-                    : "＋ Create Claim"}
+                    ? "Submit Renewal"
+                    : isEditing
+                      ? "Save Changes"
+                      : "Create Claim"}
               </button>
             </div>
           </div>

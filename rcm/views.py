@@ -128,13 +128,25 @@ def claim_to_dict(claim):
     }
 
 
+
 def alert_to_dict(alert):
     patient = alert.patient
     file_number = patient_file_number_of(patient)
 
+    claim = alert.claim
+
     linked_claim_id = ""
-    if alert.claim_id and alert.claim:
-        linked_claim_id = alert.claim.claim_id
+    claim_status = None
+    claim_pk = None
+    rejection_reason = alert.rejection_reason or ""
+
+    if claim:
+        linked_claim_id = claim.claim_id
+        claim_status = claim.status
+        claim_pk = claim.pk
+        rejection_reason = (
+            claim.rejection_reason or rejection_reason
+        )
 
     return {
         "id": alert.pk,
@@ -143,15 +155,35 @@ def alert_to_dict(alert):
         "patientName": patient_name_of(patient),
         "patientFileNumber": file_number,
         "file_number": file_number,
-        "claimPk": alert.claim_id,
+
+        # Linked claim information
+        "claimPk": claim_pk,
+        "claim_id": claim_pk,
         "claimId": alert.claim_id_value or linked_claim_id,
+        "claim_id_value": alert.claim_id_value or linked_claim_id,
+        "claim_status": claim_status,
+        "claimStatus": claim_status,
+        "claim": {
+            "id": claim_pk,
+            "claim_id": linked_claim_id,
+            "status": claim_status,
+            "rejection_reason": (
+                claim.rejection_reason if claim else ""
+            ),
+        } if claim else None,
+
+        # Keep the renewal alert status separate.
+        "renewal_status": alert.status,
+        "renewalStatus": alert.status,
+        "status": claim_status or alert.status,
+
         "alertType": alert.alert_type,
+        "alert_type": alert.alert_type,
         "renewalDate": alert.renewal_date.isoformat(),
         "renewal_date": alert.renewal_date.isoformat(),
-        "status": alert.status,
         "message": alert.message,
-        "rejectionReason": alert.rejection_reason,
-        "rejection_reason": alert.rejection_reason,
+        "rejectionReason": rejection_reason,
+        "rejection_reason": rejection_reason,
         "submissionDate": (
             alert.submission_date.isoformat()
             if alert.submission_date else None
@@ -277,7 +309,7 @@ def claims_list_create(request):
         data.get("claimId", data.get("claim_id", ""))
     ).strip()
 
-    status = data.get("status", "Pending")
+    status = str(data.get("status", "Pending") or "Pending").strip()
 
     rejection_reason = str(
         data.get(
@@ -305,9 +337,8 @@ def claims_list_create(request):
             status=400,
         )
 
-    # New claims are created in their initial status.
-    # Existing claims must be updated through claim_detail.
-    if status not in {"Approved", "Rejected", "Pending"}:
+    # Allow all valid claim statuses when creating a claim.
+    if status not in VALID_CLAIM_STATUSES:
         return JsonResponse(
             {"error": "Invalid initial claim status."},
             status=400,

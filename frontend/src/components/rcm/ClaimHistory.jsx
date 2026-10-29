@@ -9,22 +9,19 @@ import api from "../../api/api";
 
 const C = {
   navy: "#172b4d",
-  blue: "#2563eb",
-  blueDark: "#1d4ed8",
   text: "#334155",
   muted: "#64748b",
-  border: "#e2e8f0",
-  background: "#f5f8fc",
+  border: "#dbe4f0",
+  blue: "#2563eb",
   green: "#15803d",
   purple: "#7c3aed",
   red: "#b91c1c",
 };
 
 const localDateString = (date = new Date()) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}-${String(date.getDate()).padStart(2, "0")}`;
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+const localMonthString = () => localDateString().slice(0, 7);
 
 function valueOf(obj, keys, fallback = "") {
   for (const key of keys) {
@@ -58,7 +55,7 @@ function objectOf(obj, keys) {
 function listFromResponse(data, keys = []) {
   if (Array.isArray(data)) return data;
 
-  for (const key of [...keys, "results", "items", "claims"]) {
+  for (const key of [...keys, "results", "items", "users", "claims"]) {
     if (Array.isArray(data?.[key])) return data[key];
   }
 
@@ -141,7 +138,6 @@ const FILE_KEYS = [
 
 function fileNumberOf(claim) {
   const direct = valueOf(claim, FILE_KEYS);
-
   if (direct) return String(direct);
 
   const patient = patientOf(claim);
@@ -159,10 +155,14 @@ function fileNumberOf(claim) {
   return String(valueOf(record, FILE_KEYS, "—"));
 }
 
+function claimDatabaseId(claim) {
+  return valueOf(claim, ["id", "claim_id", "claimId"], "");
+}
+
 function claimIdOf(claim) {
   return valueOf(
     claim,
-    ["claimId", "claim_id", "claim_number", "claimNumber", "id"],
+    ["claim_number", "claimNumber", "claim_id", "claimId", "id"],
     "—"
   );
 }
@@ -188,65 +188,48 @@ function creatorOf(claim) {
 }
 
 function creatorIdOf(claim) {
-  return valueOf(
-    creatorOf(claim),
-    ["id", "user_id", "userId", "pk", "user_pk"],
-    valueOf(
-      claim,
-      [
-        "created_by_id",
-        "createdById",
-        "creator_id",
-        "creatorId",
-        "created_user_id",
-        "createdUserId",
-        "submitted_by_id",
-        "submittedById",
-      ],
-      ""
-    )
-  );
-}
-
-function creatorNameOf(claim) {
   const creator = creatorOf(claim);
 
-  const name = valueOf(creator, [
-    "display_name",
-    "displayName",
-    "full_name",
-    "fullName",
-    "name",
-    "username",
-    "email",
-  ]);
+  const nestedId = valueOf(
+    creator,
+    ["id", "user_id", "userId", "pk"],
+    ""
+  );
 
-  if (name) return String(name);
+  if (nestedId !== "") return String(nestedId);
 
-  const firstName = valueOf(creator, ["first_name", "firstName"]);
-  const lastName = valueOf(creator, ["last_name", "lastName"]);
-  const fullName = `${firstName} ${lastName}`.trim();
+  const direct = valueOf(
+    claim,
+    [
+      "created_by_id",
+      "createdById",
+      "creator_id",
+      "creatorId",
+      "created_user_id",
+      "createdUserId",
+      "submitted_by_id",
+      "submittedById",
+    ],
+    ""
+  );
 
-  if (fullName) return fullName;
+  if (direct !== "") return String(direct);
 
-  const direct = valueOf(claim, [
-    "created_by_name",
-    "createdByName",
-    "creator_name",
-    "creatorName",
-    "created_by_username",
-    "createdByUsername",
-    "created_by_display_name",
-    "createdByDisplayName",
-    "submitted_by_name",
-    "submittedByName",
-  ]);
+  const rawCreator =
+    claim?.created_by ??
+    claim?.createdBy ??
+    claim?.creator ??
+    claim?.submitted_by ??
+    claim?.submittedBy;
 
-  if (direct) return String(direct);
+  if (
+    typeof rawCreator === "number" ||
+    typeof rawCreator === "string"
+  ) {
+    return String(rawCreator);
+  }
 
-  const id = creatorIdOf(claim);
-
-  return id !== "" ? `User #${id}` : "Not recorded";
+  return "";
 }
 
 function createdDateOf(claim) {
@@ -257,58 +240,13 @@ function createdDateOf(claim) {
     "date_created",
     "submittedAt",
     "submitted_at",
-    "created",
-    "creation_date",
-    "created_date",
-    "claim_date",
     "submission_date",
-    "date",
+    "submissionDate",
+    "created_date",
+    "createdDate",
+    "date_submitted",
+    "dateSubmitted",
   ]);
-}
-
-function rejectionReasonOf(claim) {
-  return String(
-    valueOf(
-      claim,
-      [
-        "rejectionReason",
-        "rejection_reason",
-        "rejectionRemarks",
-        "rejection_remarks",
-        "rejection_description",
-        "denial_reason",
-        "denialReason",
-        "reason",
-      ],
-      ""
-    )
-  );
-}
-
-function statusCategory(input) {
-  const status = (
-    typeof input === "string" ? input : statusOf(input)
-  )
-    .toLowerCase()
-    .trim();
-
-  if (
-    status.includes("reject") ||
-    status.includes("denied") ||
-    status.includes("denial")
-  ) {
-    return "Rejected";
-  }
-
-  if (
-    status.includes("approv") ||
-    status.includes("complete") ||
-    status.includes("paid")
-  ) {
-    return "Approved";
-  }
-
-  return "Pending";
 }
 
 function dateParts(value) {
@@ -330,7 +268,6 @@ function dateParts(value) {
 
 function formatDate(value) {
   const parts = dateParts(value);
-
   if (!parts) return "—";
 
   const [year, month, day] = parts.day.split("-").map(Number);
@@ -346,7 +283,6 @@ function formatMonth(value) {
   if (!value) return "All months";
 
   const [year, month] = value.split("-").map(Number);
-
   if (!year || !month) return value;
 
   return new Date(year, month - 1, 1).toLocaleDateString("en-GB", {
@@ -355,14 +291,38 @@ function formatMonth(value) {
   });
 }
 
+function statusCategory(input) {
+  const status = (
+    typeof input === "string" ? input : statusOf(input)
+  ).toLowerCase().trim();
+
+  if (
+    status.includes("reject") ||
+    status.includes("denied") ||
+    status.includes("denial")
+  ) {
+    return "Rejected";
+  }
+
+  if (
+    status.includes("approv") ||
+    status.includes("complete") ||
+    status.includes("paid")
+  ) {
+    return "Approved";
+  }
+
+  return "Pending";
+}
+
 function statusColors(status) {
   const category = statusCategory(status);
 
   if (category === "Approved") {
     return {
       color: "#047857",
-      bg: "#ecfdf5",
-      border: "#a7f3d0",
+      bg: "#e8faf3",
+      border: "#b8eee0",
       dot: "#10b981",
     };
   }
@@ -370,7 +330,7 @@ function statusColors(status) {
   if (category === "Rejected") {
     return {
       color: "#be123c",
-      bg: "#fff1f2",
+      bg: "#fff0f2",
       border: "#fecdd3",
       dot: "#f43f5e",
     };
@@ -378,16 +338,187 @@ function statusColors(status) {
 
   return {
     color: "#6d28d9",
-    bg: "#f5f3ff",
-    border: "#ddd6fe",
+    bg: "#f3efff",
+    border: "#ddd0ff",
     dot: "#8b5cf6",
   };
 }
 
-function openPatientFile(navigate, id) {
-  if (id !== null && id !== undefined && id !== "") {
-    navigate(`/patients/${id}`);
+function rejectionReasonOf(claim) {
+  return String(
+    valueOf(
+      claim,
+      [
+        "rejectionReason",
+        "rejection_reason",
+        "rejectionRemarks",
+        "rejection_remarks",
+        "rejection_description",
+        "denial_reason",
+        "denialReason",
+        "reason",
+      ],
+      ""
+    )
+  );
+}
+
+function currentUserFromStorage() {
+  for (const key of [
+    "user",
+    "currentUser",
+    "current_user",
+    "authUser",
+    "loggedInUser",
+    "userData",
+  ]) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+
+      const parsed = JSON.parse(raw);
+      const user = parsed?.user || parsed?.currentUser || parsed;
+
+      if (user && typeof user === "object") return user;
+    } catch {
+      // Continue checking other storage keys.
+    }
   }
+
+  return {
+    id:
+      localStorage.getItem("user_id") ||
+      localStorage.getItem("userId") ||
+      localStorage.getItem("id") ||
+      "",
+  };
+}
+
+function userIdOf(user) {
+  return valueOf(user, ["id", "user_id", "userId", "pk"], "");
+}
+
+function isCreatedTodayByCurrentUser(claim, userId) {
+  if (userId === "" || userId == null) return false;
+
+  const creatorId = creatorIdOf(claim);
+  const createdDate = dateParts(createdDateOf(claim))?.day;
+
+  return (
+    creatorId !== "" &&
+    String(creatorId) === String(userId) &&
+    createdDate === localDateString()
+  );
+}
+
+function creatorNameOf(claim) {
+  const creator = creatorOf(claim);
+
+  const name = valueOf(creator, [
+    "display_name",
+    "displayName",
+    "full_name",
+    "fullName",
+    "name",
+    "username",
+    "email",
+  ]);
+
+  if (name) return String(name);
+
+  const direct = valueOf(claim, [
+    "created_by_name",
+    "createdByName",
+    "creator_name",
+    "creatorName",
+    "created_by_username",
+    "createdByUsername",
+    "created_by_display_name",
+    "createdByDisplayName",
+    "submitted_by_name",
+    "submittedByName",
+  ]);
+
+  if (direct) return String(direct);
+
+  const id = creatorIdOf(claim);
+
+  return id !== "" ? `RCM user #${id}` : "Not recorded";
+}
+
+function normalizeRole(user) {
+  const parts = [];
+
+  const collect = (value) => {
+    if (value == null) return;
+
+    if (typeof value === "string" || typeof value === "number") {
+      parts.push(String(value));
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach(collect);
+      return;
+    }
+
+    if (typeof value === "object") {
+      [
+        "name",
+        "code",
+        "slug",
+        "title",
+        "role",
+        "role_name",
+        "user_type",
+      ].forEach((key) => collect(value[key]));
+    }
+  };
+
+  [
+    user?.role,
+    user?.user_role,
+    user?.userRole,
+    user?.role_name,
+    user?.roleName,
+    user?.user_type,
+    user?.userType,
+    user?.department,
+    user?.groups,
+  ].forEach(collect);
+
+  return parts.join(" ").toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function isRcmUser(user) {
+  const role = normalizeRole(user);
+
+  return (
+    role === "rcm" ||
+    role.includes("rcm_user") ||
+    role.includes("rcm_staff") ||
+    role.includes("revenue_cycle") ||
+    role.includes("revenue_cycle_management") ||
+    role.split(/[\s,;]+/).some(
+      (part) => part === "rcm" || part.startsWith("rcm_")
+    )
+  );
+}
+
+function userDisplayName(user) {
+  const name = valueOf(user, [
+    "display_name",
+    "displayName",
+    "full_name",
+    "fullName",
+    "name",
+    "username",
+    "email",
+  ]);
+
+  const id = userIdOf(user);
+
+  return String(name || (id !== "" ? `User #${id}` : "Unnamed user"));
 }
 
 function Icon({ name, size = 18 }) {
@@ -441,7 +572,6 @@ function Icon({ name, size = 18 }) {
         <path d="M10 10v6m4-6v6" />
       </>
     ),
-    close: <path d="m18 6-12 12M6 6l12 12" />,
     list: (
       <>
         <path d="M8 6h13M8 12h13M8 18h13" />
@@ -459,12 +589,6 @@ function Icon({ name, size = 18 }) {
       <>
         <path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0Z" />
         <path d="M12 9v4m0 4h.01" />
-      </>
-    ),
-    user: (
-      <>
-        <circle cx="12" cy="8" r="4" />
-        <path d="M5 21a7 7 0 0 1 14 0" />
       </>
     ),
   };
@@ -490,28 +614,30 @@ export default function ClaimHistory({ refreshKey = 0 }) {
   const navigate = useNavigate();
 
   const [claims, setClaims] = useState([]);
+  const [rcmUsers, setRcmUsers] = useState([]);
+  const [currentUser, setCurrentUser] = useState(currentUserFromStorage);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
+  const [expandedClaim, setExpandedClaim] = useState(null);
 
   const [search, setSearch] = useState("");
   const [createdByFilter, setCreatedByFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [selectedMonth, setSelectedMonth] = useState("");
-  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(localMonthString());
+  const [selectedDate, setSelectedDate] = useState(localDateString());
 
-  const [expandedClaim, setExpandedClaim] = useState(null);
-  const [editingClaim, setEditingClaim] = useState(null);
-  const [editStatus, setEditStatus] = useState("Pending");
-  const [editReason, setEditReason] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
+  const userId = String(userIdOf(currentUser) || "");
 
   const loadClaims = useCallback(async (showLoader = true) => {
-    if (showLoader) setLoading(true);
-    else setRefreshing(true);
+    if (showLoader) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
 
     setError("");
     setActionError("");
@@ -541,22 +667,49 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     }
   }, []);
 
+  const loadCurrentUser = useCallback(async () => {
+    try {
+      const response = await api.get("users/me/");
+      const data = response.data;
+      const user = data?.user || data?.data?.user || data?.data || data;
+
+      if (user && typeof user === "object") {
+        setCurrentUser(user);
+      }
+    } catch {
+      // Keep the local-storage user if the current-user endpoint fails.
+    }
+  }, []);
+
+  const loadRcmUsers = useCallback(async () => {
+    // The users/ endpoint is not available in this project, so do not call it.
+    // Build creator filter choices from the claims returned by the working API.
+    setRcmUsers([]);
+  }, []);
+
   useEffect(() => {
     loadClaims();
-  }, [loadClaims, refreshKey]);
-
-  // Use the creator saved in the claim API response.
-  // Do not depend on /api/users/, which may not be available.
-  const displayCreatorName = useCallback((claim) => {
-    return creatorNameOf(claim);
-  }, []);
+    loadCurrentUser();
+    loadRcmUsers();
+  }, [loadClaims, loadCurrentUser, loadRcmUsers, refreshKey]);
 
   const creatorOptions = useMemo(() => {
     const map = new Map();
 
+    rcmUsers.forEach((user) => {
+      const id = userIdOf(user);
+
+      if (id !== "") {
+        map.set(String(id), {
+          key: String(id),
+          name: userDisplayName(user),
+        });
+      }
+    });
+
     claims.forEach((claim) => {
       const id = creatorIdOf(claim);
-      const name = displayCreatorName(claim);
+      const name = creatorNameOf(claim);
 
       if (name === "Not recorded") return;
 
@@ -570,7 +723,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     return [...map.values()].sort((a, b) =>
       a.name.localeCompare(b.name)
     );
-  }, [claims, displayCreatorName]);
+  }, [claims, rcmUsers]);
 
   const stats = useMemo(
     () => ({
@@ -594,7 +747,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     return claims.filter((claim) => {
       const parts = dateParts(createdDateOf(claim));
       const creatorId = creatorIdOf(claim);
-      const creatorName = displayCreatorName(claim);
+      const creatorName = creatorNameOf(claim);
       const creatorKey =
         creatorId !== "" ? String(creatorId) : creatorName;
 
@@ -604,9 +757,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         claimIdOf(claim),
         statusOf(claim),
         creatorName,
-      ]
-        .join(" ")
-        .toLowerCase();
+      ].join(" ").toLowerCase();
 
       if (query && !searchText.includes(query)) return false;
 
@@ -643,22 +794,21 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     createdByFilter,
     selectedDate,
     selectedMonth,
-    displayCreatorName,
   ]);
 
   const hasFilters =
     Boolean(search.trim()) ||
     createdByFilter !== "All" ||
     statusFilter !== "All" ||
-    selectedDate !== "" ||
-    selectedMonth !== "";
+    selectedDate !== localDateString() ||
+    selectedMonth !== localMonthString();
 
   function resetFilters() {
     setSearch("");
     setCreatedByFilter("All");
     setStatusFilter("All");
-    setSelectedMonth("");
-    setSelectedDate("");
+    setSelectedMonth(localMonthString());
+    setSelectedDate(localDateString());
   }
 
   function selectStatus(status) {
@@ -668,101 +818,65 @@ export default function ClaimHistory({ refreshKey = 0 }) {
   }
 
   function startEditing(claim) {
-    setActionError("");
-    setSuccessMessage("");
-    setEditingClaim(claim);
-    setEditStatus(statusOf(claim));
-    setEditReason(rejectionReasonOf(claim));
-  }
+    const id = claimDatabaseId(claim);
 
-  function closeEdit() {
-    if (saving) return;
-    setEditingClaim(null);
-    setActionError("");
-  }
-
-  async function saveClaim(event) {
-    event.preventDefault();
-
-    if (!editingClaim) return;
-
-    setSaving(true);
-    setActionError("");
-    setSuccessMessage("");
-
-    try {
-      const response = await api.patch(
-        `rcm/claims/${editingClaim.id}/`,
-        {
-          status: editStatus,
-          rejection_reason: editReason,
-        }
-      );
-
-      const updated =
-        response.data?.claim ||
-        response.data?.data ||
-        response.data;
-
-      setClaims((current) =>
-        current.map((claim) => {
-          if (String(claim.id) !== String(editingClaim.id)) {
-            return claim;
-          }
-
-          return {
-            ...claim,
-            ...(updated && typeof updated === "object"
-              ? updated
-              : {}),
-            status: updated?.status ?? editStatus,
-            rejection_reason:
-              updated?.rejection_reason ??
-              updated?.rejectionReason ??
-              editReason,
-          };
-        })
-      );
-
-      setEditingClaim(null);
-      setSuccessMessage("Claim updated successfully.");
-    } catch (err) {
+    if (id === "" || id === "—") {
       setActionError(
-        err.response?.data?.detail ||
-          err.response?.data?.message ||
-          err.response?.data?.error ||
-          "Unable to update the claim. Check the backend update endpoint and permissions."
+        "This claim has no database ID. Check the claim API response."
       );
-    } finally {
-      setSaving(false);
+      return;
     }
+
+    setActionError("");
+    setSuccessMessage("");
+
+    navigate("/rcm/claims", {
+      state: {
+        editClaim: claim,
+        claimId: id,
+        mode: "edit",
+      },
+    });
   }
 
   async function deleteClaim(claim) {
+    setActionError("");
+    setSuccessMessage("");
+
+    if (!isCreatedTodayByCurrentUser(claim, userId)) {
+      setActionError(
+        "You can delete only claims you created today."
+      );
+      return;
+    }
+
+    const id = claimDatabaseId(claim);
+
+    if (id === "" || id === "—") {
+      setActionError("The claim database ID is missing. Unable to delete.");
+      return;
+    }
+
     const confirmed = window.confirm(
-      `Delete claim ${claimIdOf(claim)} for ${patientName(
-        claim
-      )}?\n\nThis action cannot be undone.`
+      `Delete claim ${claimIdOf(claim)} for ${patientName(claim)}?\n\nThis action cannot be undone.`
     );
 
     if (!confirmed) return;
 
-    setDeletingId(String(claim.id));
-    setActionError("");
-    setSuccessMessage("");
+    setDeletingId(String(id));
 
     try {
-      await api.delete(`rcm/claims/${claim.id}/`);
+      await api.delete(`rcm/claims/${id}/`);
 
       setClaims((current) =>
         current.filter(
-          (item) => String(item.id) !== String(claim.id)
+          (item) => String(claimDatabaseId(item)) !== String(id)
         )
       );
 
-      if (String(expandedClaim) === String(claim.id)) {
-        setExpandedClaim(null);
-      }
+      setExpandedClaim((current) =>
+        String(current) === String(id) ? null : current
+      );
 
       setSuccessMessage("Claim deleted successfully.");
     } catch (err) {
@@ -777,6 +891,12 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     }
   }
 
+  function openPatientFile(id) {
+    if (id !== null && id !== undefined && id !== "") {
+      navigate(`/patients/${id}`);
+    }
+  }
+
   const cards = [
     {
       label: "Total Claims",
@@ -784,8 +904,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       description: "All recorded claims",
       status: "All",
       color: C.blue,
-      bg: "#eff6ff",
-      border: "#bfdbfe",
+      bg: "#f1f7ff",
+      border: "#c9e0ff",
       icon: "list",
     },
     {
@@ -794,8 +914,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       description: "Approved, completed, or paid",
       status: "Approved",
       color: C.green,
-      bg: "#ecfdf5",
-      border: "#a7f3d0",
+      bg: "#effbf6",
+      border: "#c2f0df",
       icon: "check",
     },
     {
@@ -804,8 +924,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       description: "Awaiting processing or review",
       status: "Pending",
       color: C.purple,
-      bg: "#f5f3ff",
-      border: "#ddd6fe",
+      bg: "#f6f3ff",
+      border: "#e0d7ff",
       icon: "clock",
     },
     {
@@ -814,542 +934,97 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       description: "Requiring review",
       status: "Rejected",
       color: C.red,
-      bg: "#fff1f2",
-      border: "#fecdd3",
+      bg: "#fff3f4",
+      border: "#ffd4dc",
       icon: "alert",
     },
   ];
 
-  const monthDescription = formatMonth(selectedMonth);
-  const dateDescription = selectedDate
-    ? formatDate(selectedDate)
-    : "All days";
-
   return (
     <div className="claim-history-page">
       <style>{`
-        .claim-history-page {
-          --ch-navy: #172b4d;
-          --ch-muted: #64748b;
-          --ch-border: #e2e8f0;
-          width: 100%;
-          color: var(--ch-navy);
-          font-family: inherit;
-          font-size: 14px;
-        }
-
-        .claim-history-page * { box-sizing: border-box; }
-
-        .ch-hero {
-          position: relative;
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          flex-wrap: wrap;
-          padding: 27px;
-          margin-bottom: 22px;
-          border-radius: 18px;
-          color: #fff;
-          background: linear-gradient(120deg, #172b4d 0%, #234f87 65%, #2563eb 100%);
-          box-shadow: 0 12px 30px #172b4d20;
-        }
-
-        .ch-hero:after {
-          content: "";
-          position: absolute;
-          width: 230px;
-          height: 230px;
-          right: -65px;
-          top: -120px;
-          border: 35px solid #ffffff12;
-          border-radius: 50%;
-          pointer-events: none;
-        }
-
-        .ch-hero-content { position: relative; z-index: 1; }
-        .ch-eyebrow {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 9px;
-          color: #c7ddff;
-          font-size: 10px;
-          font-weight: 850;
-          letter-spacing: .13em;
-          text-transform: uppercase;
-        }
-
-        .ch-hero h2 {
-          margin: 0 0 8px;
-          font-size: clamp(23px, 3vw, 30px);
-          font-weight: 900;
-          letter-spacing: -.035em;
-        }
-
-        .ch-hero p {
-          max-width: 580px;
-          margin: 0;
-          color: #dbeafe;
-          font-size: 12px;
-          line-height: 1.7;
-        }
-
-        .ch-hero-action {
-          position: relative;
-          z-index: 1;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 15px;
-          border: 1px solid #ffffff4a;
-          border-radius: 10px;
-          background: #ffffff17;
-          color: #fff;
-          font-family: inherit;
-          font-size: 12px;
-          font-weight: 800;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-
-        .ch-hero-action:hover { background: #ffffff28; }
-        .ch-cards {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 14px;
-          margin-bottom: 22px;
-        }
-
-        .ch-card {
-          display: flex;
-          align-items: flex-start;
-          gap: 12px;
-          min-width: 0;
-          padding: 17px;
-          border: 1px solid;
-          border-radius: 14px;
-          text-align: left;
-          cursor: pointer;
-          font-family: inherit;
-          transition: box-shadow .18s, transform .18s;
-        }
-
-        .ch-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 22px #172b4d12;
-        }
-
-        .ch-card.ch-selected {
-          outline: 2px solid #93c5fd;
-          outline-offset: 2px;
-        }
-
-        .ch-card-icon {
-          display: grid;
-          place-items: center;
-          width: 40px;
-          height: 40px;
-          border-radius: 12px;
-          flex-shrink: 0;
-        }
-
-        .ch-card-content { min-width: 0; }
-        .ch-card-label { font-size: 11px; font-weight: 800; line-height: 1.6; }
-        .ch-card-value { font-size: 28px; font-weight: 900; margin: 4px 0; }
-        .ch-card-description { color: #64748b; font-size: 10px; line-height: 1.5; }
-
-        .ch-panel {
-          overflow: hidden;
-          border: 1px solid var(--ch-border);
-          border-radius: 16px;
-          background: #fff;
-          box-shadow: 0 5px 20px #172b4d08;
-        }
-
-        .ch-content { padding: 22px; }
-        .ch-header, .ch-heading, .ch-footer, .ch-table-heading {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .ch-header { margin-bottom: 20px; }
-        .ch-title { margin: 0 0 6px; color: var(--ch-navy); font-size: 21px; font-weight: 900; }
-        .ch-subtitle { margin: 0; color: var(--ch-muted); font-size: 11px; line-height: 1.7; }
-        .ch-count {
-          display: inline-flex;
-          padding: 7px 10px;
-          border: 1px solid #d2e3fc;
-          border-radius: 20px;
-          background: #eff6ff;
-          color: #2455a0;
-          font-size: 10px;
-          font-weight: 850;
-          white-space: nowrap;
-        }
-
-        .ch-button {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          min-height: 35px;
-          padding: 8px 12px;
-          border: 1px solid #1557b0;
-          border-radius: 9px;
-          background: #1557b0;
-          color: #fff;
-          font-family: inherit;
-          font-size: 11px;
-          font-weight: 800;
-          cursor: pointer;
-        }
-
-        .ch-button:hover:not(:disabled) { filter: brightness(.96); }
-        .ch-button:disabled { opacity: .55; cursor: wait; }
-        .ch-secondary { border-color: #cbdcf3; background: #fff; color: #174b91; }
-        .ch-danger { border-color: #fecdd3; background: #fff5f5; color: #be123c; }
-        .ch-edit { border-color: #c9ddfc; background: #f0f6ff; color: #1d4ed8; }
-
-        .ch-filter {
-          overflow: hidden;
-          border: 1px solid #dbe7f7;
-          border-radius: 13px;
-          background: #fff;
-        }
-
-        .ch-heading {
-          justify-content: flex-start;
-          padding: 15px 18px;
-          border-bottom: 1px solid #e5edf8;
-          background: linear-gradient(110deg, #f3f7ff, #fff);
-        }
-
-        .ch-heading-title {
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          color: #173b73;
-          font-size: 13px;
-          font-weight: 900;
-        }
-
-        .ch-filter-grid {
-          display: grid;
-          grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(140px, 1fr));
-          gap: 14px;
-          align-items: end;
-          padding: 18px;
-        }
-
-        .ch-label {
-          display: block;
-          min-width: 0;
-          color: #526781;
-          font-size: 11px;
-          font-weight: 800;
-        }
-
-        .ch-control-wrap { position: relative; margin-top: 7px; }
-
-        .ch-control {
-          width: 100%;
-          min-width: 0;
-          min-height: 41px;
-          padding: 9px 11px;
-          border: 1px solid #d4dfed;
-          border-radius: 9px;
-          background: #fff;
-          color: var(--ch-navy);
-          font-family: inherit;
-          font-size: 12px;
-          outline: none;
-          transition: border-color .18s, box-shadow .18s;
-        }
-
-        .ch-control:hover { border-color: #a9bfdf; }
-        .ch-control:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px #3b82f61a; }
-        .ch-search-icon {
-          position: absolute;
-          left: 12px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: #64748b;
-          pointer-events: none;
-        }
-
-        .ch-search { padding-left: 38px; }
-
-        .ch-date-box {
-          grid-column: 1 / -1;
-          padding: 14px;
-          border: 1px solid #e0eaf7;
-          border-radius: 11px;
-          background: #f8fbff;
-        }
-
-        .ch-date-title {
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          margin-bottom: 12px;
-          color: #244b83;
-          font-size: 12px;
-          font-weight: 900;
-        }
-
-        .ch-date-title-icon {
-          display: grid;
-          place-items: center;
-          width: 30px;
-          height: 30px;
-          border-radius: 8px;
-          background: #e2edff;
-          color: #2563eb;
-        }
-
-        .ch-date-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
-        .ch-date-hint {
-          margin-top: 12px;
-          padding: 10px 12px;
-          border-radius: 8px;
-          background: #edf4ff;
-          color: #526781;
-          font-size: 10px;
-          line-height: 1.8;
-        }
-
-        .ch-date-hint strong { color: #1d4ed8; }
-        .ch-chips { display: flex; gap: 7px; flex-wrap: wrap; padding: 0 18px 13px; }
-        .ch-chip {
-          padding: 6px 9px;
-          border: 1px solid #cfe0fb;
-          border-radius: 20px;
-          background: #eff6ff;
-          color: #1d4ed8;
-          font-size: 10px;
-          font-weight: 800;
-          overflow-wrap: anywhere;
-        }
-
-        .ch-footer {
-          padding: 12px 18px;
-          border-top: 1px solid #e7edf6;
-          background: #fbfdff;
-        }
-
-        .ch-muted { color: var(--ch-muted); font-size: 10px; }
-        .ch-table-section { margin-top: 25px; }
-        .ch-table-heading { margin-bottom: 13px; }
-        .ch-table-title { margin: 0 0 5px; color: var(--ch-navy); font-size: 17px; font-weight: 900; }
-
-        .ch-table-wrap {
-          width: 100%;
-          overflow: auto;
-          border: 1px solid #dce7f5;
-          border-radius: 11px;
-          background: #fff;
-        }
-
-        .ch-table { width: 100%; min-width: 1000px; border-collapse: separate; border-spacing: 0; text-align: left; }
-        .ch-table th {
-          padding: 13px;
-          border-bottom: 1px solid #dce7f5;
-          background: #eff5fd;
-          color: #31527f;
-          font-size: 10px;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: .035em;
-          white-space: nowrap;
-        }
-
-        .ch-table td {
-          padding: 12px 13px;
-          border-bottom: 1px solid #eaf0f8;
-          color: #526781;
-          font-size: 11px;
-          vertical-align: middle;
-        }
-
-        .ch-row { transition: background .15s; }
-        .ch-row:hover { background: #f5f9ff; }
-        .ch-table tbody tr:last-child td { border-bottom: 0; }
-
-        .ch-claim-id {
-          display: inline-block;
-          padding: 6px 9px;
-          border: 1px solid #d8e8ff;
-          border-radius: 20px;
-          background: #eaf3ff;
-          color: #1554a5;
-          font-size: 10px;
-          font-weight: 900;
-          white-space: nowrap;
-        }
-
-        .ch-link {
-          padding: 0;
-          border: 0;
-          background: transparent;
-          color: #17365f;
-          font-family: inherit;
-          font-size: 11px;
-          font-weight: 850;
-          text-align: left;
-          cursor: pointer;
-        }
-
-        .ch-link:hover { color: #2563eb; text-decoration: underline; }
-
-        .ch-status {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 9px;
-          border: 1px solid;
-          border-radius: 20px;
-          font-size: 10px;
-          font-weight: 850;
-          white-space: nowrap;
-        }
-
-        .ch-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-        .ch-creator {
-          display: inline-block;
-          max-width: 180px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          color: #49617f;
-          font-weight: 750;
-        }
-
-        .ch-table .ch-button { min-height: 30px; padding: 6px 8px; border-radius: 7px; font-size: 10px; white-space: nowrap; }
-        .ch-detail-row td { padding: 0; background: #f4f8ff; }
-        .ch-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 15px; }
-
-        .ch-detail-item {
-          min-width: 0;
-          padding: 12px;
-          border: 1px solid #dce8f8;
-          border-radius: 9px;
-          background: #fff;
-        }
-
-        .ch-detail-label { margin-bottom: 7px; color: #71839d; font-size: 9px; font-weight: 900; text-transform: uppercase; }
-        .ch-detail-value { color: #203c63; font-size: 11px; font-weight: 750; overflow-wrap: anywhere; white-space: pre-wrap; }
-        .ch-detail-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-
-        .ch-empty { padding: 38px 16px; text-align: center; color: #71839d; font-size: 12px; line-height: 1.7; }
-        .ch-empty strong { display: block; margin-bottom: 8px; color: #203c63; font-size: 15px; }
-
-        .ch-alert { margin: 14px 0; padding: 12px 14px; border: 1px solid; border-radius: 10px; font-size: 12px; line-height: 1.6; }
-        .ch-error { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
-        .ch-success { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
-
-        .ch-modal-backdrop {
-          position: fixed;
-          inset: 0;
-          z-index: 1000;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 18px;
-          background: #0f172a99;
-          backdrop-filter: blur(4px);
-        }
-
-        .ch-modal {
-          width: 100%;
-          max-width: 530px;
-          max-height: 90vh;
-          overflow: auto;
-          border: 1px solid #e2e8f0;
-          border-radius: 16px;
-          background: #fff;
-          box-shadow: 0 24px 80px #0003;
-        }
-
-        .ch-modal-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          padding: 20px;
-          border-bottom: 1px solid var(--ch-border);
-          background: #f8fbff;
-        }
-
-        .ch-modal-title { margin: 0 0 5px; font-size: 19px; font-weight: 900; }
-        .ch-modal-body { padding: 20px; }
-        .ch-modal-field { margin-bottom: 17px; }
-        .ch-modal-actions { display: flex; justify-content: flex-end; gap: 9px; flex-wrap: wrap; padding-top: 9px; }
-
-        @media(max-width: 1050px) {
-          .ch-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .ch-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        }
-
-        @media(max-width: 850px) {
-          .ch-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .ch-filter-grid > .ch-label:first-child { grid-column: 1 / -1; }
-        }
-
-        @media(max-width: 600px) {
-          .ch-hero { padding: 20px; }
-          .ch-content { padding: 13px; }
-          .ch-cards { gap: 9px; }
-          .ch-card { padding: 12px; gap: 9px; }
-          .ch-card-value { font-size: 23px; }
-          .ch-card-icon { width: 34px; height: 34px; }
-          .ch-detail-grid { grid-template-columns: 1fr; }
-          .ch-filter-grid, .ch-date-grid { grid-template-columns: 1fr; }
-          .ch-filter-grid > .ch-label:first-child, .ch-date-box { grid-column: auto; }
-          .ch-heading, .ch-filter-grid { padding: 14px; }
-          .ch-chips { padding: 0 14px 12px; }
-          .ch-footer { padding: 12px 14px; }
-          .ch-title { font-size: 19px; }
-        }
+        .claim-history-page { width:100%; color:${C.navy}; font-family:inherit; font-size:14px; }
+        .claim-history-page * { box-sizing:border-box; }
+        .ch-cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:15px; margin-bottom:22px; }
+        .ch-card { display:flex; align-items:flex-start; gap:13px; padding:18px; border:1px solid; border-radius:13px; text-align:left; cursor:pointer; font-family:inherit; transition:box-shadow .18s,transform .18s; min-width:0; }
+        .ch-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px #172b4d12; }
+        .ch-card.ch-selected { outline:2px solid #93baff; outline-offset:1px; }
+        .ch-card-icon { display:grid; place-items:center; width:42px; height:42px; border-radius:50%; flex-shrink:0; }
+        .ch-card-content { min-width:0; }
+        .ch-card-label { font-size:13px; font-weight:800; line-height:1.5; }
+        .ch-card-value { font-size:27px; font-weight:900; margin:5px 0; }
+        .ch-card-description { color:${C.muted}; font-size:12px; line-height:1.5; }
+        .ch-panel { border:1px solid ${C.border}; border-radius:15px; background:#fff; box-shadow:0 4px 18px #172b4d08; overflow:hidden; }
+        .ch-content { padding:22px; }
+        .ch-header,.ch-heading,.ch-footer,.ch-table-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+        .ch-header { margin-bottom:20px; }
+        .ch-title { font-size:24px; font-weight:900; margin:0 0 6px; color:${C.navy}; }
+        .ch-subtitle { margin:0; color:${C.muted}; font-size:13px; line-height:1.6; }
+        .ch-count { display:inline-flex; padding:7px 11px; border:1px solid #d2e3fc; border-radius:20px; background:#eff6ff; color:#2455a0; font-size:12px; font-weight:800; white-space:nowrap; }
+        .ch-button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:40px; padding:9px 13px; border:1px solid #1557b0; border-radius:9px; background:#1557b0; color:#fff; font-family:inherit; font-size:13px; font-weight:750; cursor:pointer; }
+        .ch-button:hover:not(:disabled) { filter:brightness(.96); }
+        .ch-button:focus-visible,.ch-card:focus-visible,.ch-link:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+        .ch-button:disabled { opacity:.55; cursor:not-allowed; }
+        .ch-secondary { border-color:#cbdcf3; background:#fff; color:#174b91; }
+        .ch-danger { border-color:#fecdd3; background:#fff5f5; color:#be123c; }
+        .ch-edit { border-color:#c9ddfc; background:#f0f6ff; color:#1d4ed8; }
+        .ch-filter { padding:0; border:1px solid #dbe7f7; border-radius:13px; background:#fff; overflow:hidden; box-shadow:0 3px 12px #1e40af08; }
+        .ch-heading { padding:16px 19px; border-bottom:1px solid #e5edf8; background:linear-gradient(110deg,#f5f9ff,#fff); }
+        .ch-heading-title { display:flex; align-items:center; gap:10px; color:#173b73; font-size:17px; font-weight:850; }
+        .ch-filter-grid { display:grid; grid-template-columns:minmax(230px,1.5fr) repeat(2,minmax(150px,1fr)); gap:16px; align-items:end; padding:20px; }
+        .ch-label { display:block; min-width:0; color:#526781; font-size:14px; font-weight:750; }
+        .ch-control-wrap { position:relative; margin-top:8px; }
+        .ch-control { width:100%; min-width:0; height:46px; padding:0 12px; border:1px solid #d4dfed; border-radius:9px; background:#fff; color:${C.navy}; font-family:inherit; font-size:14px; outline:none; }
+        .ch-control:focus { border-color:#3b82f6; box-shadow:0 0 0 3px #3b82f61a; }
+        .ch-search-icon { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#64748b; pointer-events:none; }
+        .ch-search { padding-left:39px; }
+        .ch-date-box { grid-column:1/-1; padding:17px; border:1px solid #e0eaf7; border-radius:11px; background:#f8fbff; }
+        .ch-date-title { display:flex; align-items:center; gap:9px; margin-bottom:14px; color:#244b83; font-size:15px; font-weight:800; }
+        .ch-date-title-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:9px; background:#e2edff; color:#2563eb; }
+        .ch-date-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .ch-date-hint { margin-top:13px; padding:11px 13px; border-radius:8px; background:#edf4ff; color:#526781; font-size:13px; line-height:1.8; }
+        .ch-date-hint strong { color:#1d4ed8; }
+        .ch-chips { display:flex; gap:8px; flex-wrap:wrap; padding:0 19px; margin-top:-3px; }
+        .ch-chip { padding:7px 11px; border:1px solid #cfe0fb; border-radius:20px; background:#eff6ff; color:#1d4ed8; font-size:13px; font-weight:750; overflow-wrap:anywhere; }
+        .ch-footer { padding:14px 19px; border-top:1px solid #e7edf6; background:#fbfdff; }
+        .ch-muted { color:${C.muted}; font-size:13px; }
+        .ch-table-section { margin-top:25px; }
+        .ch-table-heading { margin-bottom:13px; }
+        .ch-table-title { margin:0 0 5px; color:${C.navy}; font-size:18px; font-weight:850; }
+        .ch-table-wrap { width:100%; overflow:auto; border:1px solid #dce7f5; border-radius:11px; background:#fff; }
+        .ch-table { width:100%; min-width:1150px; border-collapse:separate; border-spacing:0; text-align:left; }
+        .ch-table th { padding:14px; border-bottom:1px solid #dce7f5; background:#eff5fd; color:#31527f; font-size:12px; font-weight:850; text-transform:uppercase; letter-spacing:.035em; white-space:nowrap; }
+        .ch-table td { padding:13px; border-bottom:1px solid #eaf0f8; color:#526781; font-size:13px; vertical-align:middle; }
+        .ch-row:hover { background:#f5f9ff; }
+        .ch-claim-id { display:inline-block; padding:7px 10px; border:1px solid #d8e8ff; border-radius:20px; background:#eaf3ff; color:#1554a5; font-size:12px; font-weight:850; white-space:nowrap; }
+        .ch-link { padding:0; border:0; background:transparent; color:#17365f; font-family:inherit; font-size:13px; font-weight:800; text-align:left; cursor:pointer; }
+        .ch-link:hover { color:${C.blue}; text-decoration:underline; }
+        .ch-status { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border:1px solid; border-radius:20px; font-size:12px; font-weight:800; white-space:nowrap; }
+        .ch-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+        .ch-creator { display:inline-block; max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#49617f; font-weight:650; }
+        .ch-table .ch-button { min-height:36px; padding:7px 11px; border-radius:8px; font-size:12px; }
+        .ch-detail-row td { padding:0; background:#f4f8ff; }
+        .ch-detail-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; padding:15px; }
+        .ch-detail-item { min-width:0; padding:12px; border:1px solid #dce8f8; border-radius:9px; background:#fff; }
+        .ch-detail-label { margin-bottom:7px; color:#71839d; font-size:11px; font-weight:800; text-transform:uppercase; }
+        .ch-detail-value { color:#203c63; font-size:13px; font-weight:700; overflow-wrap:anywhere; white-space:pre-wrap; }
+        .ch-detail-actions { grid-column:1/-1; display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+        .ch-empty { padding:38px 16px; text-align:center; color:#71839d; font-size:14px; }
+        .ch-empty strong { display:block; margin-bottom:8px; color:#203c63; font-size:17px; }
+        .ch-alert { margin:14px 0; padding:12px 14px; border:1px solid; border-radius:10px; font-size:14px; line-height:1.6; }
+        .ch-error { border-color:#fecaca; background:#fef2f2; color:${C.red}; }
+        .ch-success { border-color:#bbf7d0; background:#f0fdf4; color:${C.green}; }
+        @media (max-width:1100px) { .ch-cards { grid-template-columns:repeat(2,minmax(0,1fr)); } .ch-detail-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+        @media (max-width:850px) { .ch-filter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ch-filter-grid>.ch-label:first-child { grid-column:1/-1; } }
+        @media (max-width:650px) { .ch-content { padding:13px; } .ch-cards { gap:9px; } .ch-card { padding:12px; gap:9px; } .ch-card-value { font-size:23px; } .ch-card-icon { width:34px; height:34px; } .ch-detail-grid,.ch-filter-grid,.ch-date-grid { grid-template-columns:1fr; } .ch-filter-grid>.ch-label:first-child,.ch-date-box { grid-column:auto; } .ch-heading,.ch-filter-grid { padding:14px; } .ch-chips { padding:0 14px; } .ch-footer { padding:12px 14px; } .ch-title { font-size:21px; } }
       `}</style>
-
-      <header className="ch-hero">
-        <div className="ch-hero-content">
-          <div className="ch-eyebrow">
-            <Icon name="file" size={14} />
-            Revenue Cycle Management
-          </div>
-          <h2>Claims Management</h2>
-          <p>
-            Review claim activity, track processing status, identify the
-            staff member who created each record, and manage claim updates
-            from one place.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          className="ch-hero-action"
-          onClick={() => loadClaims(false)}
-          disabled={refreshing}
-        >
-          <Icon name="refresh" size={15} />
-          {refreshing ? "Refreshing..." : "Refresh claims"}
-        </button>
-      </header>
 
       <div className="ch-cards">
         {cards.map((card) => (
           <button
             type="button"
             key={card.label}
-            className={`ch-card ${
-              statusFilter === card.status ? "ch-selected" : ""
-            }`}
+            className={`ch-card ${statusFilter === card.status ? "ch-selected" : ""}`}
             style={{ background: card.bg, borderColor: card.border }}
             onClick={() => selectStatus(card.status)}
             aria-pressed={statusFilter === card.status}
@@ -1359,7 +1034,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
               className="ch-card-icon"
               style={{ background: card.border, color: card.color }}
             >
-              <Icon name={card.icon} size={20} />
+              <Icon name={card.icon} size={21} />
             </span>
 
             <span className="ch-card-content">
@@ -1370,9 +1045,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
               >
                 {card.value}
               </span>
-              <span className="ch-card-description">
-                {card.description}
-              </span>
+              <span className="ch-card-description">{card.description}</span>
             </span>
           </button>
         ))}
@@ -1388,12 +1061,27 @@ export default function ClaimHistory({ refreshKey = 0 }) {
               </p>
             </div>
 
-            <span className="ch-count">
-              {filteredClaims.length} of {claims.length} claims
-            </span>
+            <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+              <span className="ch-count">
+                {filteredClaims.length} of {claims.length} claims
+              </span>
+
+              <button
+                type="button"
+                className="ch-button"
+                onClick={() => {
+                  loadClaims(false);
+                  loadCurrentUser();
+                }}
+                disabled={refreshing}
+              >
+                <Icon name="refresh" size={16} />
+                {refreshing ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
           </div>
 
-          {actionError && !editingClaim && (
+          {actionError && (
             <div className="ch-alert ch-error" role="alert">
               {actionError}
             </div>
@@ -1408,10 +1096,9 @@ export default function ClaimHistory({ refreshKey = 0 }) {
           <div className="ch-filter">
             <div className="ch-heading">
               <div className="ch-heading-title">
-                <Icon name="filter" size={18} />
+                <Icon name="filter" size={20} />
                 Filters &amp; Search
               </div>
-
               {hasFilters && <span className="ch-count">Filters active</span>}
             </div>
 
@@ -1420,7 +1107,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                 Search claims
                 <div className="ch-control-wrap">
                   <span className="ch-search-icon">
-                    <Icon name="search" size={16} />
+                    <Icon name="search" size={18} />
                   </span>
                   <input
                     className="ch-control ch-search"
@@ -1449,16 +1136,14 @@ export default function ClaimHistory({ refreshKey = 0 }) {
               </label>
 
               <label className="ch-label">
-                Created by
+                Created by (RCM user)
                 <div className="ch-control-wrap">
                   <select
                     className="ch-control"
                     value={createdByFilter}
-                    onChange={(event) =>
-                      setCreatedByFilter(event.target.value)
-                    }
+                    onChange={(event) => setCreatedByFilter(event.target.value)}
                   >
-                    <option value="All">All creators</option>
+                    <option value="All">All RCM creators</option>
                     {creatorOptions.map((user) => (
                       <option key={user.key} value={user.key}>
                         {user.name}
@@ -1472,7 +1157,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
               <div className="ch-date-box">
                 <div className="ch-date-title">
                   <span className="ch-date-title-icon">
-                    <Icon name="calendar" size={16} />
+                    <Icon name="calendar" size={18} />
                   </span>
                   Filter by date
                 </div>
@@ -1489,7 +1174,6 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                           setSelectedMonth(event.target.value);
                           setSelectedDate("");
                         }}
-                        aria-label="Select claim month"
                       />
                     </div>
                   </label>
@@ -1506,7 +1190,6 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                           setSelectedDate(day);
                           if (day) setSelectedMonth(day.slice(0, 7));
                         }}
-                        aria-label="Select specific claim date"
                       />
                     </div>
                   </label>
@@ -1514,10 +1197,34 @@ export default function ClaimHistory({ refreshKey = 0 }) {
 
                 <div className="ch-date-hint">
                   <strong>Current selection:</strong>{" "}
-                  {selectedDate ? dateDescription : monthDescription}
+                  {selectedDate ? formatDate(selectedDate) : formatMonth(selectedMonth)}
                   <br />
-                  By default, all dates are shown. Select a month or date to
-                  narrow the results.
+                  Select a specific date or clear that field to view the entire selected month.
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    className="ch-button ch-secondary"
+                    onClick={() => {
+                      setSelectedDate("");
+                      setSelectedMonth(localMonthString());
+                    }}
+                  >
+                    View Entire Month
+                  </button>
+
+                  <button
+                    type="button"
+                    className="ch-button ch-secondary"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => {
+                      setSelectedMonth(localMonthString());
+                      setSelectedDate(localDateString());
+                    }}
+                  >
+                    Today
+                  </button>
                 </div>
               </div>
             </div>
@@ -1527,32 +1234,25 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                 {statusFilter !== "All" && (
                   <span className="ch-chip">Status: {statusFilter}</span>
                 )}
-
                 {search.trim() && (
                   <span className="ch-chip">Search: {search.trim()}</span>
                 )}
-
                 {createdByFilter !== "All" && (
                   <span className="ch-chip">
                     Created by:{" "}
-                    {creatorOptions.find(
-                      (user) => user.key === createdByFilter
-                    )?.name || createdByFilter}
+                    {creatorOptions.find((user) => user.key === createdByFilter)?.name ||
+                      createdByFilter}
                   </span>
                 )}
-
-                {selectedDate ? (
-                  <span className="ch-chip">Date: {dateDescription}</span>
-                ) : selectedMonth ? (
-                  <span className="ch-chip">Month: {monthDescription}</span>
-                ) : null}
+                <span className="ch-chip">
+                  Date: {selectedDate ? formatDate(selectedDate) : formatMonth(selectedMonth)}
+                </span>
               </div>
             )}
 
             <div className="ch-footer">
               <span className="ch-muted">
-                Showing <strong>{filteredClaims.length}</strong> matching
-                claims
+                Showing <strong>{filteredClaims.length}</strong> matching claims
               </span>
 
               {hasFilters && (
@@ -1561,7 +1261,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                   className="ch-button ch-secondary"
                   onClick={resetFilters}
                 >
-                  <Icon name="reset" size={14} />
+                  <Icon name="reset" size={16} />
                   Reset filters
                 </button>
               )}
@@ -1586,15 +1286,13 @@ export default function ClaimHistory({ refreshKey = 0 }) {
           <div className="ch-table-section">
             <div className="ch-table-heading">
               <div>
-                <h3 className="ch-table-title">Claim History</h3>
+                <h3 className="ch-table-title">Claim Records</h3>
                 <p className="ch-subtitle">
-                  Review patient details, claim status, creator, and creation
-                  date.
+                  Review claim details, status, creator, and submission date.
                 </p>
               </div>
-
               <span className="ch-count">
-                {filteredClaims.length} records
+                {filteredClaims.length} of {claims.length} claims
               </span>
             </div>
 
@@ -1620,21 +1318,17 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                       const status = statusOf(claim);
                       const badge = statusColors(status);
                       const patientId = patientIdOf(claim);
-                      const claimKey = String(
-                        claim.id ?? `${claimIdOf(claim)}-${index}`
-                      );
-                      const isExpanded =
-                        String(expandedClaim) === claimKey;
-                      const isDeleting =
-                        deletingId === String(claim.id);
+                      const id = claimDatabaseId(claim);
+                      const claimKey = String(id || `${claimIdOf(claim)}-${index}`);
+                      const isExpanded = String(expandedClaim) === claimKey;
+                      const canDelete = isCreatedTodayByCurrentUser(claim, userId);
+                      const isDeleting = deletingId === String(id);
 
                       return (
                         <React.Fragment key={claimKey}>
                           <tr className="ch-row">
                             <td>
-                              <span className="ch-claim-id">
-                                {claimIdOf(claim)}
-                              </span>
+                              <span className="ch-claim-id">{claimIdOf(claim)}</span>
                             </td>
 
                             <td>
@@ -1642,9 +1336,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                                 <button
                                   type="button"
                                   className="ch-link"
-                                  onClick={() =>
-                                    openPatientFile(navigate, patientId)
-                                  }
+                                  onClick={() => openPatientFile(patientId)}
                                 >
                                   {patientName(claim)}
                                 </button>
@@ -1661,16 +1353,12 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                                   type="button"
                                   className="ch-link"
                                   style={{ color: C.blue }}
-                                  onClick={() =>
-                                    openPatientFile(navigate, patientId)
-                                  }
+                                  onClick={() => openPatientFile(patientId)}
                                   title="Open patient file"
                                 >
                                   {fileNumberOf(claim)}
                                 </button>
-                              ) : (
-                                fileNumberOf(claim)
-                              )}
+                              ) : fileNumberOf(claim)}
                             </td>
 
                             <td>
@@ -1682,20 +1370,14 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                                   borderColor: badge.border,
                                 }}
                               >
-                                <span
-                                  className="ch-dot"
-                                  style={{ background: badge.dot }}
-                                />
+                                <span className="ch-dot" style={{ background: badge.dot }} />
                                 {status}
                               </span>
                             </td>
 
                             <td>
-                              <span
-                                className="ch-creator"
-                                title={displayCreatorName(claim)}
-                              >
-                                {displayCreatorName(claim)}
+                              <span className="ch-creator" title={creatorNameOf(claim)}>
+                                {creatorNameOf(claim)}
                               </span>
                             </td>
 
@@ -1704,23 +1386,13 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                             </td>
 
                             <td>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: 6,
-                                  flexWrap: "wrap",
-                                }}
-                              >
+                              <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
                                 <button
                                   type="button"
                                   className="ch-button ch-secondary"
-                                  onClick={() =>
-                                    setExpandedClaim(
-                                      isExpanded ? null : claimKey
-                                    )
-                                  }
+                                  onClick={() => setExpandedClaim(isExpanded ? null : claimKey)}
                                 >
-                                  {isExpanded ? "Hide" : "Details"}
+                                  {isExpanded ? "Hide details" : "Details"}
                                 </button>
 
                                 <button
@@ -1728,8 +1400,9 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                                   className="ch-button ch-edit"
                                   onClick={() => startEditing(claim)}
                                   aria-label={`Edit claim ${claimIdOf(claim)}`}
+                                  title="Edit claim"
                                 >
-                                  <Icon name="edit" size={12} />
+                                  <Icon name="edit" size={15} />
                                   Edit
                                 </button>
 
@@ -1737,13 +1410,24 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                                   type="button"
                                   className="ch-button ch-danger"
                                   onClick={() => deleteClaim(claim)}
-                                  disabled={isDeleting}
+                                  disabled={isDeleting || !canDelete}
                                   aria-label={`Delete claim ${claimIdOf(claim)}`}
+                                  title={
+                                    canDelete
+                                      ? "Delete today's claim"
+                                      : "Only the creator can delete a claim created today"
+                                  }
                                 >
-                                  <Icon name="trash" size={12} />
+                                  <Icon name="trash" size={15} />
                                   {isDeleting ? "Deleting..." : "Delete"}
                                 </button>
                               </div>
+
+                              {!canDelete && (
+                                <div style={{ marginTop: 5, color: C.muted, fontSize: 11 }}>
+                                  Delete is available only for your claims created today.
+                                </div>
+                              )}
                             </td>
                           </tr>
 
@@ -1752,53 +1436,52 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                               <td colSpan={7}>
                                 <div className="ch-detail-grid">
                                   {[
+                                    ["Claim ID", claimIdOf(claim)],
                                     ["Patient", patientName(claim)],
                                     ["File Number", fileNumberOf(claim)],
-                                    [
-                                      "Created By",
-                                      displayCreatorName(claim),
-                                    ],
+                                    ["Created By", creatorNameOf(claim)],
                                     ["Status", status],
-                                    [
-                                      "Date Created",
-                                      formatDate(createdDateOf(claim)),
-                                    ],
-                                    [
-                                      "Rejection Reason",
-                                      rejectionReasonOf(claim) ||
-                                        "No rejection reason recorded.",
-                                    ],
+                                    ["Date Created", formatDate(createdDateOf(claim))],
+                                    ["Rejection Reason", rejectionReasonOf(claim) || "No rejection reason recorded."],
                                   ].map(([label, value]) => (
-                                    <div
-                                      className="ch-detail-item"
-                                      key={label}
-                                    >
-                                      <div className="ch-detail-label">
-                                        {label}
-                                      </div>
-                                      <div className="ch-detail-value">
-                                        {value}
-                                      </div>
+                                    <div className="ch-detail-item" key={label}>
+                                      <div className="ch-detail-label">{label}</div>
+                                      <div className="ch-detail-value">{value}</div>
                                     </div>
                                   ))}
 
                                   <div className="ch-detail-actions">
-                                    {patientId !== "" &&
-                                      patientId != null && (
-                                        <button
-                                          type="button"
-                                          className="ch-button"
-                                          onClick={() =>
-                                            openPatientFile(
-                                              navigate,
-                                              patientId
-                                            )
-                                          }
-                                        >
-                                          <Icon name="file" size={14} />
-                                          Open Patient File
-                                        </button>
-                                      )}
+                                    {patientId !== "" && patientId != null && (
+                                      <button
+                                        type="button"
+                                        className="ch-button"
+                                        onClick={() => openPatientFile(patientId)}
+                                      >
+                                        <Icon name="file" size={15} />
+                                        Open Patient File
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      className="ch-button ch-edit"
+                                      onClick={() => startEditing(claim)}
+                                    >
+                                      <Icon name="edit" size={15} />
+                                      Edit Claim
+                                    </button>
+
+                                    {canDelete && (
+                                      <button
+                                        type="button"
+                                        className="ch-button ch-danger"
+                                        onClick={() => deleteClaim(claim)}
+                                        disabled={isDeleting}
+                                      >
+                                        <Icon name="trash" size={15} />
+                                        {isDeleting ? "Deleting..." : "Delete Claim"}
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               </td>
@@ -1817,7 +1500,6 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                                 ? "No matching claims found"
                                 : "No claims recorded yet"}
                             </strong>
-
                             {claims.length
                               ? "Try changing the search, status, creator, or date filter."
                               : "Submitted claims will appear here."}
@@ -1844,129 +1526,6 @@ export default function ClaimHistory({ refreshKey = 0 }) {
           </div>
         </div>
       </section>
-
-      {editingClaim && (
-        <div
-          className="ch-modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeEdit();
-          }}
-        >
-          <section
-            className="ch-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="ch-edit-title"
-          >
-            <div className="ch-modal-header">
-              <div>
-                <h3 className="ch-modal-title" id="ch-edit-title">
-                  Edit Claim
-                </h3>
-                <p className="ch-subtitle">
-                  Claim {claimIdOf(editingClaim)} ·{" "}
-                  {patientName(editingClaim)}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                className="ch-button ch-secondary"
-                onClick={closeEdit}
-                disabled={saving}
-                aria-label="Close edit form"
-              >
-                <Icon name="close" size={15} />
-              </button>
-            </div>
-
-            <form className="ch-modal-body" onSubmit={saveClaim}>
-              <label className="ch-label ch-modal-field">
-                Claim status
-                <div className="ch-control-wrap">
-                  <select
-                    className="ch-control"
-                    value={editStatus}
-                    onChange={(event) =>
-                      setEditStatus(event.target.value)
-                    }
-                    required
-                  >
-                    {[
-                      "Pending",
-                      "Submitted",
-                      "Processing",
-                      "Approved",
-                      "Rejected",
-                      "Paid",
-                    ].map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-
-                    {![
-                      "Pending",
-                      "Submitted",
-                      "Processing",
-                      "Approved",
-                      "Rejected",
-                      "Paid",
-                    ].some(
-                      (status) =>
-                        status.toLowerCase() ===
-                        editStatus.toLowerCase()
-                    ) && <option value={editStatus}>{editStatus}</option>}
-                  </select>
-                </div>
-              </label>
-
-              <label className="ch-label ch-modal-field">
-                Rejection reason / remarks
-                <div className="ch-control-wrap">
-                  <textarea
-                    className="ch-control"
-                    value={editReason}
-                    onChange={(event) => setEditReason(event.target.value)}
-                    placeholder="Enter rejection reason or additional remarks..."
-                    rows={4}
-                    style={{
-                      minHeight: 120,
-                      padding: 12,
-                      resize: "vertical",
-                    }}
-                  />
-                </div>
-              </label>
-
-              {actionError && (
-                <div className="ch-alert ch-error" role="alert">
-                  {actionError}
-                </div>
-              )}
-
-              <div className="ch-modal-actions">
-                <button
-                  type="button"
-                  className="ch-button ch-secondary"
-                  onClick={closeEdit}
-                  disabled={saving}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  className="ch-button"
-                  disabled={saving}
-                >
-                  {saving ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
     </div>
   );
 }

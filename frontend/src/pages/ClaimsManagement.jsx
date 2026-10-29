@@ -2,6 +2,7 @@
 import React, { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
+
 import CreateClaim from "../components/rcm/CreateClaim";
 import ClaimHistory from "../components/rcm/ClaimHistory";
 import RenewalAlerts from "../components/rcm/RenewalAlerts";
@@ -83,121 +84,125 @@ export default function ClaimsManagement() {
     setAlertError("");
   }, [refreshData]);
 
-  const handleCreateAlert = useCallback(async (alertDetails) => {
-    setAlertError("");
+  const handleCreateAlert = useCallback(
+    async (alertDetails) => {
+      setAlertError("");
 
-    const patientId =
-      alertDetails?.patient?.id ??
-      alertDetails?.claim?.patientId ??
-      alertDetails?.claim?.patient_id ??
-      alertDetails?.patientId ??
-      alertDetails?.patient_id;
+      const patientId =
+        alertDetails?.patient?.id ??
+        alertDetails?.claim?.patientId ??
+        alertDetails?.claim?.patient_id ??
+        alertDetails?.patientId ??
+        alertDetails?.patient_id;
 
-    const alertType = alertDetails?.alertType || alertDetails?.alert_type;
+      const alertType =
+        alertDetails?.alertType || alertDetails?.alert_type;
 
-    if (!patientId) {
-      throw new Error("Cannot create an alert because the patient ID is missing.");
-    }
-
-    let payload;
-
-    if (alertType === "renewal") {
-      const renewalDate =
-        alertDetails.renewalDate || alertDetails.renewal_date;
-
-      if (!renewalDate) {
-        throw new Error("Choose a renewal date before creating the alert.");
+      if (!patientId) {
+        throw new Error(
+          "Cannot create an alert because the patient ID is missing."
+        );
       }
 
-      payload = {
-        patientId,
-        claimPk:
-          alertDetails.claimPk ??
-          alertDetails.claim_pk ??
-          alertDetails.claim?.id ??
-          null,
-        claimId:
-          alertDetails.claimId ??
-          alertDetails.claim_id ??
-          alertDetails.claim?.claim_id ??
-          "",
-        alertType: "renewal",
-        renewalDate,
-        message: `Claim ${
-          alertDetails.claimId ??
-          alertDetails.claim_id ??
-          alertDetails.claim?.claim_id ??
-          ""
-        } renewal reminder`,
-      };
-    } else if (alertType === "rejection") {
-      payload = {
-        patientId,
-        claimPk:
-          alertDetails.claimPk ??
-          alertDetails.claim_pk ??
-          alertDetails.claim?.id ??
-          null,
-        claimId:
-          alertDetails.claimId ??
-          alertDetails.claim_id ??
-          alertDetails.claim?.claim_id ??
-          "",
-        alertType: "rejection",
-        rejectionReason:
-          alertDetails.rejectionReason ??
-          alertDetails.rejection_reason ??
-          "",
-        renewalDate:
-          alertDetails.renewalDate ??
-          alertDetails.renewal_date ??
-          alertDetails.renewalDate,
-        message: `Claim ${
-          alertDetails.claimId ??
-          alertDetails.claim_id ??
-          alertDetails.claim?.claim_id ??
-          ""
-        } was rejected`,
-      };
-    } else {
-      throw new Error("Unsupported claim alert type.");
-    }
+      const claimPk =
+        alertDetails.claimPk ??
+        alertDetails.claim_pk ??
+        alertDetails.claim?.id ??
+        null;
 
-    // Remove null/empty optional identifiers before sending.
-    Object.keys(payload).forEach((key) => {
-      if (payload[key] === null || payload[key] === undefined || payload[key] === "") {
-        delete payload[key];
+      const claimId =
+        alertDetails.claimId ??
+        alertDetails.claim_id ??
+        alertDetails.claim?.claim_id ??
+        "";
+
+      let payload;
+
+      if (alertType === "renewal") {
+        const renewalDate =
+          alertDetails.renewalDate || alertDetails.renewal_date;
+
+        if (!renewalDate) {
+          throw new Error(
+            "Choose a renewal date before creating the alert."
+          );
+        }
+
+        payload = {
+          patientId,
+          claimPk,
+          claimId,
+          alertType: "renewal",
+          renewalDate,
+          message: `Claim ${claimId} renewal reminder`,
+        };
+      } else if (alertType === "rejection") {
+        payload = {
+          patientId,
+          claimPk,
+          claimId,
+          alertType: "rejection",
+          rejectionReason:
+            alertDetails.rejectionReason ??
+            alertDetails.rejection_reason ??
+            "",
+          renewalDate:
+            alertDetails.renewalDate ??
+            alertDetails.renewal_date ??
+            null,
+          message: `Claim ${claimId} was rejected`,
+        };
+      } else {
+        throw new Error("Unsupported claim alert type.");
       }
-    });
 
-    try {
-      const response = await api.post(
-        "rcm/renewal-alerts/",
-        payload,
-        { withCredentials: true }
-      );
+      Object.keys(payload).forEach((key) => {
+        if (
+          payload[key] === null ||
+          payload[key] === undefined ||
+          payload[key] === ""
+        ) {
+          delete payload[key];
+        }
+      });
 
-      refreshData();
-      return response.data;
-    } catch (error) {
-      const data = error?.response?.data;
-      const message =
-        data?.detail ||
-        data?.message ||
-        (data && typeof data === "object"
-          ? Object.entries(data)
-              .map(([key, value]) =>
-                `${key}: ${Array.isArray(value) ? value.join(", ") : String(value)}`
-              )
-              .join(" · ")
-          : "") ||
-        error?.message ||
-        "Unable to create the alert.";
+      try {
+        const response = await api.post(
+          "rcm/renewal-alerts/",
+          payload,
+          { withCredentials: true }
+        );
 
-      setAlertError(String(message));
-      throw new Error(String(message));
-    }
-  }, [refreshData]);
+        refreshData();
+        return response.data;
+      } catch (error) {
+        const data = error?.response?.data;
+
+        const message =
+          data?.detail ||
+          data?.message ||
+          (data && typeof data === "object"
+            ? Object.entries(data)
+                .map(([key, value]) =>
+                  `${key}: ${
+                    Array.isArray(value)
+                      ? value.join(", ")
+                      : typeof value === "object"
+                      ? JSON.stringify(value)
+                      : String(value)
+                  }`
+                )
+                .join(" · ")
+            : "") ||
+          error?.message ||
+          "Unable to create the alert.";
+
+        setAlertError(String(message));
+        throw new Error(String(message));
+      }
+    },
+    [refreshData]
+  );
 
   const handleRenewal = useCallback((alert) => {
     setAlertError("");
@@ -220,6 +225,7 @@ export default function ClaimsManagement() {
     }
 
     if (activeTab === "history") return "Claim History";
+
     return "Renewal Alerts";
   };
 
@@ -284,14 +290,18 @@ export default function ClaimsManagement() {
             id="create-claim-tab"
             aria-controls="claim-management-panel"
             aria-selected={activeTab === "create"}
-            className={`claim-tab ${activeTab === "create" ? "active" : ""}`}
+            className={`claim-tab ${
+              activeTab === "create" ? "active" : ""
+            }`}
             onClick={() => {
               setSelectedRenewalAlert(null);
               setActiveTab("create");
               setAlertError("");
             }}
           >
-            <span className="claim-tab-icon" aria-hidden="true">+</span>
+            <span className="claim-tab-icon" aria-hidden="true">
+              +
+            </span>
             <span className="claim-tab-label">
               <span>Create New Claim</span>
               <small>Register a patient claim</small>
@@ -304,14 +314,18 @@ export default function ClaimsManagement() {
             id="claim-history-tab"
             aria-controls="claim-management-panel"
             aria-selected={activeTab === "history"}
-            className={`claim-tab ${activeTab === "history" ? "active" : ""}`}
+            className={`claim-tab ${
+              activeTab === "history" ? "active" : ""
+            }`}
             onClick={() => {
               setSelectedRenewalAlert(null);
               setActiveTab("history");
               setAlertError("");
             }}
           >
-            <span className="claim-tab-icon" aria-hidden="true">☷</span>
+            <span className="claim-tab-icon" aria-hidden="true">
+              ☷
+            </span>
             <span className="claim-tab-label">
               <span>Claim History</span>
               <small>Review and track claims</small>
@@ -324,14 +338,18 @@ export default function ClaimsManagement() {
             id="renewal-alerts-tab"
             aria-controls="claim-management-panel"
             aria-selected={activeTab === "alerts"}
-            className={`claim-tab ${activeTab === "alerts" ? "active" : ""}`}
+            className={`claim-tab ${
+              activeTab === "alerts" ? "active" : ""
+            }`}
             onClick={() => {
               setSelectedRenewalAlert(null);
               setActiveTab("alerts");
               setAlertError("");
             }}
           >
-            <span className="claim-tab-icon" aria-hidden="true">◷</span>
+            <span className="claim-tab-icon" aria-hidden="true">
+              ◷
+            </span>
             <span className="claim-tab-label">
               <span>Renewal Alerts</span>
               <small>Track scheduled renewals</small>
