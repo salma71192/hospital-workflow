@@ -14,6 +14,7 @@ from patients.models import (
     PatientMonthlySession,
 )
 from reception.models import PatientAssignment
+from rcm.models import Claim
 
 from .helpers import (
     _can_view_patient_tracker,
@@ -351,6 +352,26 @@ def _tracker_session_counts(record):
     return counts
 
 
+def _tracker_get_rcm_approval(patient):
+    """
+    Return the latest RCM claim status for this patient.
+
+    If the patient has no RCM claim, default to Approved.
+    Claim.status is the status field defined in rcm.models.
+    """
+    claim = (
+        Claim.objects
+        .filter(patient_id=patient.pk)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+
+    if claim and claim.status:
+        return str(claim.status).strip()
+
+    return "Approved"
+
+
 def _tracker_row(patient, month, user):
     """Build one patient tracker row."""
     record = PatientMonthlyTracker.objects.filter(
@@ -403,6 +424,8 @@ def _tracker_row(patient, month, user):
         getattr(patient, "insurance_provider", "")
     ) or ""
 
+    approval_status = _tracker_get_rcm_approval(patient)
+
     return {
         "id": patient.id,
         "patient_db_id": patient.id,
@@ -425,6 +448,8 @@ def _tracker_row(patient, month, user):
             status,
             status,
         ),
+        "approval_status": approval_status,
+        "rcm_approval_status": approval_status,
         "speciality": speciality,
         "specialty": speciality,
         "last_seen_date": (

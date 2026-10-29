@@ -17,6 +17,13 @@ const STATUS_OPTIONS = [
   { value: "with_another_therapist", label: "With Another Therapist" },
 ];
 
+const RCM_STATUS_OPTIONS = [
+  "Approved",
+  "Rejected",
+  "Pending",
+  "Submitted",
+];
+
 const COLORS = {
   navy: "#17365d",
   text: "#243b5a",
@@ -129,7 +136,9 @@ function normalizeStatus(value) {
 function getStatusLabel(status) {
   const value = normalizeStatus(status);
 
-  return STATUS_OPTIONS.find((item) => item.value === value)?.label || "Inactive";
+  return (
+    STATUS_OPTIONS.find((item) => item.value === value)?.label || "Inactive"
+  );
 }
 
 function getStatusStyle(status) {
@@ -141,6 +150,7 @@ function getStatusStyle(status) {
         dot: "#059669",
         border: "#a7f3d0",
       };
+
     case "Moderate":
       return {
         background: "#eff6ff",
@@ -148,6 +158,7 @@ function getStatusStyle(status) {
         dot: "#3268f5",
         border: "#bfdbfe",
       };
+
     case "Low":
       return {
         background: "#fff7ed",
@@ -155,6 +166,7 @@ function getStatusStyle(status) {
         dot: "#e76a16",
         border: "#fed7aa",
       };
+
     case "With Another Therapist":
       return {
         background: "#f7f1ff",
@@ -162,6 +174,7 @@ function getStatusStyle(status) {
         dot: "#8b32ed",
         border: "#e8d4ff",
       };
+
     default:
       return {
         background: "#f1f5f9",
@@ -172,10 +185,92 @@ function getStatusStyle(status) {
   }
 }
 
+/*
+ * Reads the status fields supplied by the tracker API.
+ * If there is no RCM claim/status, display Approved by default.
+ */
+function getRcmApproval(patient) {
+  const rawValue =
+    patient?.approval_status ??
+    patient?.rcm_approval_status ??
+    patient?.rcmApprovalStatus ??
+    patient?.claim_status ??
+    patient?.claimStatus ??
+    patient?.rcm_status ??
+    patient?.rcmStatus ??
+    patient?.approval ??
+    "";
+
+  const value = String(rawValue || "").trim().toLowerCase();
+
+  if (!value) return "Approved";
+
+  const normalized = value.replace(/[\s_-]+/g, "");
+
+  const aliases = {
+    approved: "Approved",
+    approve: "Approved",
+    rejected: "Rejected",
+    reject: "Rejected",
+    pending: "Pending",
+    submitted: "Submitted",
+  };
+
+  return aliases[normalized] || String(rawValue).trim();
+}
+
+function getRcmApprovalStyle(status) {
+  const normalized = String(status || "Approved").trim().toLowerCase();
+
+  if (normalized === "approved") {
+    return {
+      background: "#ecfdf5",
+      color: "#047857",
+      border: "1px solid #a7f3d0",
+      dot: "#059669",
+    };
+  }
+
+  if (normalized === "rejected") {
+    return {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecdd3",
+      dot: "#dc2626",
+    };
+  }
+
+  if (normalized === "pending") {
+    return {
+      background: "#fff7ed",
+      color: "#9a3412",
+      border: "1px solid #fed7aa",
+      dot: "#e76a16",
+    };
+  }
+
+  if (normalized === "submitted") {
+    return {
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      border: "1px solid #bfdbfe",
+      dot: "#3268f5",
+    };
+  }
+
+  return {
+    background: "#f1f5f9",
+    color: "#475569",
+    border: "1px solid #dce6f2",
+    dot: "#94a3b8",
+  };
+}
+
 function formatDate(value) {
   if (!value) return "-";
 
   const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+
   return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
 }
 
@@ -184,10 +279,6 @@ function normalizeMonth(value) {
   return match ? `${match[1]}-${match[2]}` : "";
 }
 
-/**
- * A patient is NEW only when the backend marks the patient as a new
- * evaluation for the selected reporting month. All other patients are OLD.
- */
 function isNewPatientForMonth(patient, selectedMonth) {
   const patientMonth = normalizeMonth(patient?.month);
   const displayMonth = normalizeMonth(selectedMonth);
@@ -203,7 +294,11 @@ function getInitials(name) {
   const words = String(name || "").trim().split(/\s+/).filter(Boolean);
 
   return words.length
-    ? words.slice(0, 2).map((word) => word[0]).join("").toUpperCase()
+    ? words
+        .slice(0, 2)
+        .map((word) => word[0])
+        .join("")
+        .toUpperCase()
     : "?";
 }
 
@@ -737,7 +832,7 @@ const styles = {
   },
   table: {
     width: "100%",
-    minWidth: 1240,
+    minWidth: 1360,
     tableLayout: "fixed",
     borderCollapse: "separate",
     borderSpacing: 0,
@@ -746,19 +841,21 @@ const styles = {
   th: {
     position: "sticky",
     top: 0,
-    padding: "14px 12px",
+    padding: "14px 10px",
     textAlign: "left",
     background: "#f3f7fc",
     color: "#61738a",
     fontSize: 10,
     fontWeight: 850,
     letterSpacing: "0.4px",
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    lineHeight: 1.5,
     borderBottom: `1px solid ${COLORS.border}`,
+    overflowWrap: "anywhere",
   },
   tr: { background: COLORS.white },
   td: {
-    padding: "15px 12px",
+    padding: "15px 10px",
     color: "#465970",
     fontSize: 12,
     verticalAlign: "middle",
@@ -852,11 +949,12 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     maxWidth: "100%",
-    padding: "7px 10px",
+    padding: "7px 8px",
     borderRadius: 24,
     fontSize: 10,
     fontWeight: 800,
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
   },
   sessionsCell: { display: "grid", gap: 8, minWidth: 0 },
   sessionsTop: {
@@ -893,7 +991,7 @@ const styles = {
     gap: 7,
     width: "fit-content",
     maxWidth: "100%",
-    padding: "7px 9px",
+    padding: "7px 8px",
     border: "1px solid transparent",
     borderRadius: 24,
     fontSize: 10,
@@ -902,6 +1000,25 @@ const styles = {
     lineHeight: 1.45,
   },
   statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+  approvalBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 7,
+    maxWidth: "100%",
+    padding: "7px 8px",
+    borderRadius: 24,
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1.45,
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
+  },
+  approvalDot: {
     width: 7,
     height: 7,
     borderRadius: "50%",
@@ -929,18 +1046,21 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 90,
-    minHeight: 38,
-    padding: "8px 12px",
+    width: "100%",
+    minWidth: 0,
+    minHeight: 34,
+    boxSizing: "border-box",
+    padding: "7px 5px",
     border: `1px solid ${COLORS.navy}`,
     borderRadius: 24,
     background: COLORS.navy,
     color: COLORS.white,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 800,
     fontFamily: "inherit",
     cursor: "pointer",
     textAlign: "center",
+    whiteSpace: "nowrap",
     boxShadow: "0 3px 8px rgba(23, 54, 93, 0.12)",
   },
   emptyState: {
@@ -1015,6 +1135,10 @@ export default function PatientTrackerTable({
   const [successMessage, setSuccessMessage] = useState("");
   const [searchName, setSearchName] = useState("");
   const [selectedSpeciality, setSelectedSpeciality] = useState("all");
+
+  // RCM approval filter state must be inside the React component.
+  const [selectedApproval, setSelectedApproval] = useState("all");
+
   const [activeCardFilter, setActiveCardFilter] = useState("all");
   const [importInsurance, setImportInsurance] = useState("thiqa");
   const [insuranceOverrides, setInsuranceOverrides] = useState({});
@@ -1024,7 +1148,9 @@ export default function PatientTrackerTable({
     () =>
       patients.map((patient) => {
         const fileNumber = normalizeFileNumber(getPatientFileNumber(patient));
-        const override = fileNumber ? insuranceOverrides[fileNumber] : undefined;
+        const override = fileNumber
+          ? insuranceOverrides[fileNumber]
+          : undefined;
 
         return override
           ? { ...patient, insurance_type: override }
@@ -1103,10 +1229,16 @@ export default function PatientTrackerTable({
       const insurance = getInsurance(patient);
       const sessions = getSessions(patient);
       const isNew = isNewPatientForMonth(patient, selectedMonth);
+      const approvalStatus = getRcmApproval(patient).trim().toLowerCase();
 
       const matchesSearch = !search || name.includes(search);
+
       const matchesSpeciality =
         selectedSpeciality === "all" || speciality === selectedSpeciality;
+
+      const matchesApproval =
+        selectedApproval === "all" ||
+        approvalStatus === selectedApproval.toLowerCase();
 
       let matchesCard = true;
 
@@ -1114,33 +1246,45 @@ export default function PatientTrackerTable({
         case "active":
           matchesCard = ["low", "moderate", "high"].includes(status);
           break;
+
         case "inactive":
           matchesCard = status === "inactive";
           break;
+
         case "sessions":
           matchesCard = sessions > 0;
           break;
+
         case "thiqa":
         case "daman":
         case "cash":
           matchesCard = insurance === activeCardFilter;
           break;
+
         case "new":
           matchesCard = isNew;
           break;
+
         case "old":
           matchesCard = !isNew;
           break;
+
         default:
           matchesCard = true;
       }
 
-      return matchesSearch && matchesSpeciality && matchesCard;
+      return (
+        matchesSearch &&
+        matchesSpeciality &&
+        matchesApproval &&
+        matchesCard
+      );
     });
   }, [
     trackerPatients,
     searchName,
     selectedSpeciality,
+    selectedApproval,
     activeCardFilter,
     selectedMonth,
   ]);
@@ -1159,6 +1303,7 @@ export default function PatientTrackerTable({
   const clearFilters = () => {
     setSearchName("");
     setSelectedSpeciality("all");
+    setSelectedApproval("all");
     setActiveCardFilter("all");
   };
 
@@ -1414,6 +1559,7 @@ export default function PatientTrackerTable({
   const hasActiveFilters =
     Boolean(searchName.trim()) ||
     selectedSpeciality !== "all" ||
+    selectedApproval !== "all" ||
     activeCardFilter !== "all";
 
   const activeFilterLabel = {
@@ -1436,7 +1582,7 @@ export default function PatientTrackerTable({
             <h2 style={styles.title}>{title}</h2>
             <p style={styles.subtitle}>
               Monitor patient activity, insurance coverage, utilized sessions,
-              and follow-up status in one place.
+              RCM approval, and follow-up status in one place.
             </p>
           </div>
 
@@ -1580,8 +1726,8 @@ export default function PatientTrackerTable({
           <div style={styles.tableHeadingIntro}>
             <h3 style={styles.tableTitle}>Patient Records</h3>
             <p style={styles.tableSubtitle}>
-              Search patients and review their insurance and monthly session
-              totals.
+              Search patients and review insurance, monthly session totals, and
+              the latest RCM claim status.
             </p>
           </div>
 
@@ -1697,7 +1843,29 @@ export default function PatientTrackerTable({
             </select>
           </label>
 
-          <div style={styles.filterResult} aria-live="polite">
+          {/* New RCM approval filter */}
+          <label style={styles.filterField}>
+            <span style={styles.fieldLabel}>FILTER BY RCM APPROVAL</span>
+            <select
+              value={selectedApproval}
+              onChange={(event) => setSelectedApproval(event.target.value)}
+              style={styles.select}
+              aria-label="Filter by RCM approval status"
+            >
+              <option value="all">All Approval Statuses</option>
+              {RCM_STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div
+            className="filter-result"
+            style={styles.filterResult}
+            aria-live="polite"
+          >
             <strong style={styles.filterResultNumber}>
               {filteredPatients.length.toLocaleString()}
             </strong>
@@ -1733,15 +1901,30 @@ export default function PatientTrackerTable({
             role="status"
           >
             Showing{" "}
-            <strong>{activeFilterLabel[activeCardFilter] || "Patients"}</strong>.
-            {" "}The card filter is combined with your search and speciality
-            filters.
+            <strong>
+              {activeFilterLabel[activeCardFilter] || "Patients"}
+            </strong>
+            . The card filter is combined with your search, speciality, and RCM
+            approval filters.
           </div>
         )}
 
         {filteredPatients.length > 0 ? (
           <div style={styles.tableWrap}>
             <table style={styles.table}>
+              {/* Wider Patient column; narrower final columns */}
+              <colgroup>
+                <col style={{ width: "23%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "9%" }} />
+              </colgroup>
+
               <thead>
                 <tr>
                   <th style={styles.th}>PATIENT</th>
@@ -1749,6 +1932,7 @@ export default function PatientTrackerTable({
                   <th style={styles.th}>INSURANCE TYPE</th>
                   <th style={styles.th}>UTILIZED SESSIONS</th>
                   <th style={styles.th}>STATUS</th>
+                  <th style={styles.th}>RCM APPROVAL</th>
                   <th style={styles.th}>SPECIALITY</th>
                   <th style={styles.th}>LAST SEEN</th>
                   <th style={styles.th}>PATIENT FILE</th>
@@ -1760,6 +1944,8 @@ export default function PatientTrackerTable({
                   const sessions = getSessions(patient);
                   const statusLabel = getStatusLabel(patient.status);
                   const statusStyle = getStatusStyle(patient.status);
+                  const approvalStatus = getRcmApproval(patient);
+                  const approvalStyle = getRcmApprovalStyle(approvalStatus);
                   const isNew = isNewPatientForMonth(patient, selectedMonth);
                   const fileNumber = getPatientFileNumber(patient) || "-";
                   const speciality = getSpeciality(patient);
@@ -1850,7 +2036,8 @@ export default function PatientTrackerTable({
 
                           {getCategorySessions(patient, "cash") > 0 && (
                             <span style={styles.cashSessionNote}>
-                              Cash sessions: {getCategorySessions(patient, "cash")}
+                              Cash sessions:{" "}
+                              {getCategorySessions(patient, "cash")}
                             </span>
                           )}
                         </div>
@@ -1876,13 +2063,36 @@ export default function PatientTrackerTable({
                       </td>
 
                       <td style={styles.td}>
+                        <span
+                          style={{
+                            ...styles.approvalBadge,
+                            background: approvalStyle.background,
+                            color: approvalStyle.color,
+                            border: approvalStyle.border,
+                          }}
+                          title={`Latest RCM claim status: ${approvalStatus}`}
+                        >
+                          <span
+                            style={{
+                              ...styles.approvalDot,
+                              background: approvalStyle.dot,
+                            }}
+                            aria-hidden="true"
+                          />
+                          {approvalStatus}
+                        </span>
+                      </td>
+
+                      <td style={styles.td}>
                         <span style={styles.specialityText}>
                           {speciality === "-" ? "Not Specified" : speciality}
                         </span>
                       </td>
 
                       <td style={styles.td}>
-                        <span style={styles.dateText}>{formatDate(lastSeen)}</span>
+                        <span style={styles.dateText}>
+                          {formatDate(lastSeen)}
+                        </span>
                       </td>
 
                       <td style={{ ...styles.td, textAlign: "center" }}>
@@ -1912,11 +2122,7 @@ export default function PatientTrackerTable({
           </div>
         ) : (
           <div style={styles.emptyState}>
-            <div
-              className="empty-icon"
-              style={styles.emptyIcon}
-              aria-hidden="true"
-            >
+            <div style={styles.emptyIcon} aria-hidden="true">
               ♧
             </div>
 
@@ -1929,7 +2135,7 @@ export default function PatientTrackerTable({
             <p style={styles.emptyText}>
               {trackerPatients.length === 0
                 ? "There are no patient records to display for this month. Try selecting another reporting month."
-                : "No patients match your selected card, search, or speciality filter. Try changing your filters or clearing them."}
+                : "No patients match your selected card, search, speciality, or RCM approval filter. Try changing your filters or clearing them."}
             </p>
 
             {hasActiveFilters && (
@@ -1947,13 +2153,15 @@ export default function PatientTrackerTable({
         <footer style={styles.footer}>
           <span style={styles.footerDot} aria-hidden="true" />
           <span>
-            Utilized Sessions includes the monthly total. Thiqa, Daman, and Cash
-            session breakdowns require the corresponding category totals from
-            the backend. Status levels: Inactive = 0, Low = 1–2, Moderate = 3–5,
-            High = 6 or more sessions. “With Another Therapist” is displayed
-            when that status is supplied by the backend. New/Old classification
-            uses the backend's `is_new_evaluation` flag for the selected
-            reporting month.
+            Utilized Sessions includes the monthly total. Thiqa, Daman, and
+            Cash session breakdowns require the corresponding category totals
+            from the backend. Status levels: Inactive = 0, Low = 1–2,
+            Moderate = 3–5, High = 6 or more sessions. “With Another Therapist”
+            is displayed when that status is supplied by the backend. RCM
+            Approval displays the latest claim status supplied by the backend;
+            if no claim status is supplied, it defaults to Approved. New/Old
+            classification uses the backend's is_new_evaluation flag for the
+            selected reporting month.
           </span>
         </footer>
       </div>
