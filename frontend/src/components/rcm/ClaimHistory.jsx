@@ -1,3 +1,4 @@
+
 import React, {
   Fragment,
   useCallback,
@@ -172,13 +173,6 @@ function statusOf(claim) {
   );
 }
 
-/*
- * Status categories:
- * Rejected: rejected or denied claims.
- * Approved: approved, completed, or paid claims.
- * Submitted: submitted/filed claims awaiting a decision.
- * Pending: other statuses that have not been approved or rejected.
- */
 function statusCategory(input) {
   const status = (typeof input === "string" ? input : statusOf(input))
     .toLowerCase()
@@ -489,7 +483,9 @@ function isCreationEvent(event) {
   return (
     type.includes("creat") ||
     type.includes("initial") ||
-    type.includes("claim submitted")
+    type.includes("claim submitted") ||
+    type === "new" ||
+    type === "insert"
   );
 }
 
@@ -627,6 +623,86 @@ function embeddedHistoryOf(claim) {
   }
 
   return null;
+}
+
+/*
+ * Remove duplicate history entries before displaying them.
+ *
+ * First, remove repeated records with the same database ID.
+ * Next, remove exact duplicate events based on their event type,
+ * timestamp, status and actor.
+ * Finally, if a creation event exists, suppress a non-creation event
+ * that has the same timestamp and status as that creation event.
+ *
+ * This is a display-layer safeguard. If the backend creates two
+ * different records with different timestamps, the backend should
+ * also be corrected so the stored history remains accurate.
+ */
+function deduplicateHistoryEvents(events, claim) {
+  if (!Array.isArray(events)) return [];
+
+  const sorted = [...events].sort((a, b) => {
+    const aTime = new Date(eventDate(a) || 0).getTime();
+    const bTime = new Date(eventDate(b) || 0).getTime();
+
+    return aTime - bTime;
+  });
+
+  const unique = [];
+  const seenIds = new Set();
+  const seenSignatures = new Set();
+
+  for (const event of sorted) {
+    const rawId = valueOf(event, ["id", "pk"], "");
+
+    if (rawId !== "") {
+      const id = String(rawId);
+
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+    }
+
+    const type = normalizedEventType(event);
+    const status = eventStatus(event, claim).trim().toLowerCase();
+    const actor = eventUserName(event).trim().toLowerCase();
+    const timestamp = eventDate(event);
+    const creation = isCreationEvent(event);
+
+    const signature = [
+      timestamp || "",
+      status,
+      actor,
+      type,
+    ].join("|");
+
+    if (seenSignatures.has(signature)) continue;
+    seenSignatures.add(signature);
+
+    const duplicateOfCreation =
+      !creation &&
+      unique.some((existing) => {
+        if (!isCreationEvent(existing)) return false;
+
+        const existingTimestamp = eventDate(existing);
+        const existingStatus = eventStatus(existing, claim)
+          .trim()
+          .toLowerCase();
+
+        return (
+          Boolean(timestamp) &&
+          Boolean(existingTimestamp) &&
+          new Date(timestamp).getTime() ===
+            new Date(existingTimestamp).getTime() &&
+          existingStatus === status
+        );
+      });
+
+    if (duplicateOfCreation) continue;
+
+    unique.push(event);
+  }
+
+  return unique;
 }
 
 function Icon({ name, size = 18 }) {
@@ -833,7 +909,6 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     });
   }, [claims, dateMode, selectedDate, selectedMonth]);
 
-  // Summary cards count each status category independently.
   const stats = useMemo(
     () => ({
       total: periodClaims.length,
@@ -953,7 +1028,6 @@ export default function ClaimHistory({ refreshKey = 0 }) {
 
     const count = historyCountOf(claim);
 
-    // History must be verified before deletion is allowed.
     if (count === null) return false;
 
     return count <= 1;
@@ -994,6 +1068,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         [id]: events,
       }));
 
+      // Keep the stored record count for deletion protection.
+      // Do not use the deduplicated display count for this rule.
       setHistoryCountByClaim((current) => ({
         ...current,
         [id]: events.length,
@@ -1312,7 +1388,6 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         </div>
       )}
 
-      {/* Clickable summary cards */}
       <div className="ch-cards">
         {cards.map((card) => {
           const active = statusFilter === card.category;
@@ -1633,19 +1708,10 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                         typeof count === "number" && count > 1;
                       const isDeleting = deletingId === String(id);
 
-                      const historyEvents = Array.isArray(
-                        historyByClaim[claimKey]
-                      )
-                        ? [...historyByClaim[claimKey]].sort((a, b) => {
-                            const aTime = new Date(
-                              eventDate(a) || 0
-                            ).getTime();
-                            const bTime = new Date(
-                              eventDate(b) || 0
-                            ).getTime();
-                            return aTime - bTime;
-                          })
-                        : [];
+                      const historyEvents = deduplicateHistoryEvents(
+                        historyByClaim[claimKey],
+                        claim
+                      );
 
                       const deleteDisabled =
                         isDeleting || !canDelete || hasMultipleHistory;

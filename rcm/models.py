@@ -59,9 +59,6 @@ class ClaimHistory(models.Model):
     """
     Permanent audit record for claim creation, rejection,
     resubmission, approval, status changes, and renewals.
-
-    Each history record stores the event, the previous and new
-    statuses, the user responsible, and the event timestamp.
     """
 
     EVENT_CHOICES = [
@@ -141,6 +138,8 @@ class RenewalAlert(models.Model):
     STATUS_CHOICES = [
         ("Pending", "Pending"),
         ("Submitted", "Submitted"),
+        ("Approved", "Approved"),
+        ("Rejected", "Rejected"),
     ]
 
     patient = models.ForeignKey(
@@ -199,6 +198,44 @@ class RenewalAlert(models.Model):
 
     class Meta:
         ordering = ["renewal_date", "-created_at", "-pk"]
+
+    def save(self, *args, **kwargs):
+        """
+        Keep the renewal alert's status aligned with its linked claim.
+
+        The claim is authoritative when a linked claim exists.
+        The alert's own status is retained when no claim is linked.
+        """
+        if self.claim_id:
+            # Use the linked claim's current database status so that
+            # an outdated in-memory claim object does not override it.
+            claim_status = (
+                Claim.objects.filter(pk=self.claim_id)
+                .values_list("status", flat=True)
+                .first()
+            )
+
+            if claim_status in {"Pending", "Submitted", "Approved", "Rejected"}:
+                self.status = claim_status
+
+            if not self.claim_id_value:
+                claim = Claim.objects.filter(pk=self.claim_id).only(
+                    "claim_id"
+                ).first()
+
+                if claim:
+                    self.claim_id_value = claim.claim_id
+
+        update_fields = kwargs.get("update_fields")
+
+        # If the caller uses update_fields, include synchronized fields
+        # so that the status and preserved Claim ID are actually saved.
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            update_fields.update({"status", "claim_id_value"})
+            kwargs["update_fields"] = update_fields
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return (

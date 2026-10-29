@@ -1,3 +1,4 @@
+
 from django.urls import path
 from . import views
 
@@ -56,6 +57,17 @@ urlpatterns = [
         "renewal-alerts/",
         views.renewal_alerts_list_create,
         name="rcm-renewal-alerts",
+    ),
+
+    # -----------------------------------------------------
+    # Approve Renewal Alert
+    # POST: approve the linked claim and record claim history
+    # Example: /api/rcm/renewal-alerts/12/approve/
+    # -----------------------------------------------------
+    path(
+        "renewal-alerts/<int:alert_pk>/approve/",
+        views.approve_renewal_alert,
+        name="rcm-renewal-alert-approve",
     ),
 
     # -----------------------------------------------------

@@ -136,12 +136,6 @@ def record_claim_history(
     renewal_date=None,
     user=None,
 ):
-    """
-    Create an audit record for a claim event.
-
-    The history record and the related claim change should be
-    saved inside the same transaction.
-    """
     return ClaimHistory.objects.create(
         claim=claim,
         event=event,
@@ -150,10 +144,29 @@ def record_claim_history(
         rejection_reason=rejection_reason or "",
         notes=notes or "",
         renewal_date=renewal_date,
-        created_by=(
-            user if is_authenticated_user(user) else None
-        ),
+        created_by=user if is_authenticated_user(user) else None,
     )
+
+
+def renewal_alert_permission_error(request):
+    if not is_authenticated_user(request.user):
+        return JsonResponse(
+            {"error": "Please log in to manage renewal alerts."},
+            status=401,
+        )
+
+    if not user_can_manage_claims(request.user):
+        return JsonResponse(
+            {
+                "error": (
+                    "You do not have permission to edit, delete, "
+                    "or approve renewal alerts."
+                )
+            },
+            status=403,
+        )
+
+    return None
 
 
 # =========================================================
@@ -172,9 +185,6 @@ def history_to_dict(record):
 
     event_type = record.event
 
-    # Compatibility for older records where the initial claim
-    # was created directly with Rejected status and recorded as
-    # a Rejected event with no previous status.
     if (
         event_type == "Rejected"
         and not record.previous_status
@@ -218,7 +228,6 @@ def history_to_dict(record):
         "new_status": record.new_status,
         "status": record.new_status,
 
-        # User who performed this specific event.
         "createdBy": event_user,
         "created_by": event_user,
         "createdByName": event_user,
@@ -248,7 +257,6 @@ def history_to_dict(record):
         "actorName": event_user,
         "actor_name": event_user,
 
-        # Original claim creator.
         "claimCreator": original_creator,
         "claim_creator": original_creator,
         "claimCreatedBy": original_creator,
@@ -386,6 +394,10 @@ def alert_to_dict(alert):
         else None
     )
 
+    # The linked Claim is the source of truth for the latest status.
+    # Fall back to the alert's own status if no claim is linked.
+    effective_status = claim_status or alert.status
+
     return {
         "id": alert.pk,
         "patientId": alert.patient_id,
@@ -393,12 +405,15 @@ def alert_to_dict(alert):
         "patientName": patient_name_of(patient),
         "patientFileNumber": file_number,
         "file_number": file_number,
+
         "claimPk": claim_pk,
         "claim_pk": claim_pk,
         "claimId": alert.claim_id_value or linked_claim_id,
         "claim_id_value": alert.claim_id_value or linked_claim_id,
+
         "claim_status": claim_status,
         "claimStatus": claim_status,
+
         "claim": {
             "id": claim_pk,
             "pk": claim_pk,
@@ -409,9 +424,12 @@ def alert_to_dict(alert):
                 claim.rejection_reason if claim else ""
             ),
         } if claim else None,
-        "renewal_status": alert.status,
-        "renewalStatus": alert.status,
-        "status": claim_status or alert.status,
+
+        # All status fields return the effective latest status.
+        "renewal_status": effective_status,
+        "renewalStatus": effective_status,
+        "status": effective_status,
+
         "alertType": alert.alert_type,
         "alert_type": alert.alert_type,
         "renewalDate": renewal_date,
@@ -477,27 +495,6 @@ def claim_permission_error(request, claim):
                 "error": (
                     "Claims can only be edited or deleted "
                     "on the day they were created."
-                )
-            },
-            status=403,
-        )
-
-    return None
-
-
-def renewal_alert_permission_error(request):
-    if not is_authenticated_user(request.user):
-        return JsonResponse(
-            {"error": "Please log in to manage renewal alerts."},
-            status=401,
-        )
-
-    if not user_can_manage_claims(request.user):
-        return JsonResponse(
-            {
-                "error": (
-                    "You do not have permission to edit "
-                    "or delete renewal alerts."
                 )
             },
             status=403,
@@ -632,11 +629,12 @@ def claims_list_create(request):
                         status=404,
                     )
 
-                if renewal_alert.status == "Submitted":
+                if renewal_alert.status in {"Submitted", "Approved"}:
                     return JsonResponse(
                         {
                             "error": (
-                                "This renewal has already been submitted."
+                                "This renewal has already been "
+                                f"{renewal_alert.status.lower()}."
                             )
                         },
                         status=409,
@@ -786,8 +784,6 @@ def claims_list_create(request):
                     created_by=request.user,
                 )
 
-                # Always record the initial event as Created.
-                # The initial status is stored in new_status.
                 record_claim_history(
                     claim=claim,
                     event="Created",
@@ -882,8 +878,6 @@ def claim_detail(request, claim_pk):
     if request.method == "DELETE":
         try:
             with transaction.atomic():
-                # Preserve the original protection behavior for
-                # claims linked to protected records.
                 ClaimHistory.objects.filter(
                     claim_id=claim.pk
                 ).delete()
@@ -995,7 +989,20 @@ def claim_detail(request, claim_pk):
                         status=400,
                     )
 
-                if renewal_alert.status == "Submitted":
+                if renewal_alert.status == "Approved":
+                    return JsonResponse(
+                        {
+                            "error": (
+                                "This renewal has already been approved "
+                                "and cannot be changed from this alert."
+                            )
+                        },
+                        status=409,
+                    )
+
+                if renewal_alert.status == "Submitted" and status == "Submitted":
+                    # Re-saving Submitted is harmless, but do not
+                    # permit a duplicate submission action.
                     return JsonResponse(
                         {
                             "error": (
@@ -1033,7 +1040,6 @@ def claim_detail(request, claim_pk):
                 ]
             )
 
-            # Record an audit entry when the status changes.
             if previous_status != status:
                 if status == "Rejected":
                     event = "Rejected"
@@ -1076,8 +1082,6 @@ def claim_detail(request, claim_pk):
                 status == "Rejected"
                 and previous_rejection_reason != rejection_reason
             ):
-                # Record a history entry when the rejection reason
-                # changes even if the status remains Rejected.
                 record_claim_history(
                     claim=claim,
                     event="Rejected",
@@ -1088,11 +1092,16 @@ def claim_detail(request, claim_pk):
                     user=request.user,
                 )
 
-            if renewal_alert and status == "Submitted":
+            # Keep the linked renewal alert in sync with the claim.
+            if renewal_alert:
                 renewal_alert.claim = claim
                 renewal_alert.claim_id_value = claim.claim_id
-                renewal_alert.status = "Submitted"
-                renewal_alert.submission_date = timezone.now()
+
+                if status in {"Submitted", "Approved", "Rejected", "Pending"}:
+                    renewal_alert.status = status
+
+                if status == "Submitted":
+                    renewal_alert.submission_date = timezone.now()
 
                 renewal_alert.save(
                     update_fields=[
@@ -1137,19 +1146,156 @@ def claim_detail(request, claim_pk):
 
 
 # =========================================================
+# APPROVE RENEWAL ALERT
+# POST /api/rcm/renewal-alerts/<alert_pk>/approve/
+# =========================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def approve_renewal_alert(request, alert_pk):
+    permission_error = renewal_alert_permission_error(request)
+
+    if permission_error:
+        return permission_error
+
+    try:
+        with transaction.atomic():
+            alert = (
+                RenewalAlert.objects
+                .select_for_update(of=("self",))
+                .select_related("patient", "claim")
+                .get(
+                    pk=alert_pk,
+                    alert_type="renewal",
+                )
+            )
+
+            if not alert.claim_id:
+                # Try to find the original claim by patient and Claim ID.
+                if alert.claim_id_value:
+                    claim = (
+                        Claim.objects
+                        .select_for_update(of=("self",))
+                        .filter(
+                            patient_id=alert.patient_id,
+                            claim_id__iexact=alert.claim_id_value,
+                        )
+                        .first()
+                    )
+                else:
+                    claim = None
+            else:
+                claim = (
+                    Claim.objects
+                    .select_for_update(of=("self",))
+                    .filter(pk=alert.claim_id)
+                    .first()
+                )
+
+            if not claim:
+                return JsonResponse(
+                    {
+                        "error": (
+                            "This renewal has no linked claim. "
+                            "Link the original claim before approving."
+                        )
+                    },
+                    status=400,
+                )
+
+            if claim.patient_id != alert.patient_id:
+                return JsonResponse(
+                    {"error": "The claim belongs to another patient."},
+                    status=400,
+                )
+
+            if claim.status == "Approved":
+                # Repair the alert status if the claim was approved
+                # through another workflow.
+                alert.claim = claim
+                alert.claim_id_value = claim.claim_id
+                alert.status = "Approved"
+                alert.save(
+                    update_fields=[
+                        "claim",
+                        "claim_id_value",
+                        "status",
+                        "updated_at",
+                    ]
+                )
+            else:
+                previous_status = claim.status
+                previous_rejection_reason = (
+                    claim.rejection_reason or ""
+                )
+
+                claim.status = "Approved"
+                claim.rejection_reason = ""
+
+                claim.save(
+                    update_fields=[
+                        "status",
+                        "rejection_reason",
+                        "updated_at",
+                    ]
+                )
+
+                record_claim_history(
+                    claim=claim,
+                    event="Approved",
+                    previous_status=previous_status,
+                    new_status="Approved",
+                    rejection_reason=previous_rejection_reason,
+                    notes="Claim approved from Renewal Alerts.",
+                    renewal_date=alert.renewal_date,
+                    user=request.user,
+                )
+
+                alert.claim = claim
+                alert.claim_id_value = claim.claim_id
+                alert.status = "Approved"
+
+                alert.save(
+                    update_fields=[
+                        "claim",
+                        "claim_id_value",
+                        "status",
+                        "updated_at",
+                    ]
+                )
+
+            alert = (
+                RenewalAlert.objects
+                .select_related("patient", "claim")
+                .get(pk=alert.pk)
+            )
+
+            claim = (
+                Claim.objects
+                .select_related("patient", "created_by")
+                .get(pk=claim.pk)
+            )
+
+    except RenewalAlert.DoesNotExist:
+        return JsonResponse(
+            {"error": "Renewal reminder was not found."},
+            status=404,
+        )
+
+    return JsonResponse({
+        "message": "Renewal approved successfully.",
+        "alert": alert_to_dict(alert),
+        "claim": claim_to_dict(claim),
+    })
+
+
+# =========================================================
 # CLAIM HISTORY: GENERAL AND CLAIM-SPECIFIC GET
 # =========================================================
 
 @csrf_exempt
 @require_http_methods(["GET"])
 def claim_history_list(request, claim_pk=None):
-    """
-    Supports:
-      GET /api/rcm/claim-history/
-      GET /api/rcm/claims/<claim_pk>/history/
-
-    History is returned oldest first.
-    """
     if not is_authenticated_user(request.user):
         return JsonResponse(
             {"error": "Please log in to view claim history."},
@@ -1213,7 +1359,6 @@ def claim_history_list(request, claim_pk=None):
 
 # =========================================================
 # RENEWAL ALERTS: GET LIST / POST CREATE
-# Only renewal reminders are supported.
 # =========================================================
 
 @csrf_exempt
@@ -1367,11 +1512,7 @@ def renewal_alerts_list_create(request):
 
     if not parsed_date:
         return JsonResponse(
-            {
-                "error": (
-                    "Renewal date must use YYYY-MM-DD format."
-                )
-            },
+            {"error": "Renewal date must use YYYY-MM-DD format."},
             status=400,
         )
 
@@ -1459,7 +1600,6 @@ def renewal_alerts_list_create(request):
             message=message,
         )
 
-        # Scheduling a reminder does not change claim status.
         if claim:
             record_claim_history(
                 claim=claim,
@@ -1531,6 +1671,7 @@ def renewal_alert_detail(request, alert_pk):
             alert = (
                 RenewalAlert.objects
                 .select_for_update(of=("self",))
+                .select_related("patient", "claim")
                 .get(
                     pk=alert_pk,
                     alert_type="renewal",
@@ -1540,6 +1681,20 @@ def renewal_alert_detail(request, alert_pk):
             return JsonResponse(
                 {"error": "Renewal reminder was not found."},
                 status=404,
+            )
+
+        # Approved alerts are locked against editing and deletion.
+        if alert.status == "Approved" or (
+            alert.claim_id and alert.claim.status == "Approved"
+        ):
+            return JsonResponse(
+                {
+                    "error": (
+                        "An approved renewal reminder cannot be "
+                        "edited or deleted."
+                    )
+                },
+                status=403,
             )
 
         today = timezone.localdate()
@@ -1567,7 +1722,6 @@ def renewal_alert_detail(request, alert_pk):
             )
 
         if request.method == "DELETE":
-            # Preserve claim history when deleting a reminder.
             alert.delete()
 
             return JsonResponse({
@@ -1655,4 +1809,3 @@ def renewal_alert_detail(request, alert_pk):
             "alert": alert_to_dict(alert),
             "message": "Renewal reminder updated successfully.",
         })
-
