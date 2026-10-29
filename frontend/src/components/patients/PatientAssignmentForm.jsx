@@ -1,4 +1,3 @@
-
 import React, {
   useMemo,
   useState,
@@ -9,6 +8,7 @@ import api from "../../api/api";
 
 const EXTERNAL_REFERRAL = "External Referral";
 const LAST_THERAPIST_KEY = "hospital_workflow_last_therapist_id";
+const CLAIMS_ENDPOINT = "rcm/claims/";
 
 const CATEGORIES = [
   { value: "appointment", label: "Appointment" },
@@ -83,6 +83,7 @@ function normalizePhysicianList(list) {
 
   for (const physician of Array.isArray(list) ? list : []) {
     const name = getPhysicianName(physician);
+
     if (!name) continue;
 
     const key = name.toLocaleLowerCase().trim();
@@ -109,15 +110,13 @@ function isExternalPhysician(value) {
 function extractPhysicianList(data) {
   if (Array.isArray(data)) return data;
 
-  const possibleKeys = [
+  for (const key of [
     "physicians",
     "doctors",
     "users",
     "results",
     "data",
-  ];
-
-  for (const key of possibleKeys) {
+  ]) {
     if (Array.isArray(data?.[key])) {
       return data[key];
     }
@@ -155,6 +154,148 @@ function getErrorMessage(error) {
   return error?.message || "Could not load physicians.";
 }
 
+/* ---------------- CLAIM STATUS HELPERS ---------------- */
+
+function extractClaims(data) {
+  if (Array.isArray(data)) return data;
+
+  for (const key of ["claims", "results", "items"]) {
+    if (Array.isArray(data?.[key])) {
+      return data[key];
+    }
+  }
+
+  if (data?.data && typeof data.data === "object") {
+    return extractClaims(data.data);
+  }
+
+  return [];
+}
+
+function getPatientIdFromClaim(claim) {
+  const nestedPatient =
+    claim?.patient ??
+    claim?.patient_details ??
+    claim?.patientDetails ??
+    claim?.patient_data ??
+    claim?.patientData;
+
+  const id =
+    claim?.patient_id ??
+    claim?.patientId ??
+    nestedPatient?.id ??
+    nestedPatient?.patient_id ??
+    nestedPatient?.patientId;
+
+  return id === null || id === undefined ? "" : String(id);
+}
+
+function getClaimStatusValue(claim) {
+  return (
+    claim?.status ??
+    claim?.claim_status ??
+    claim?.claimStatus ??
+    claim?.approval_status ??
+    claim?.approvalStatus ??
+    claim?.approval_state ??
+    claim?.approval?.status ??
+    ""
+  );
+}
+
+function normalizeApprovalStatus(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  const status = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  if (
+    ["approved", "approve", "accepted"].includes(status)
+  ) {
+    return "approved";
+  }
+
+  if (["submitted", "submit"].includes(status)) {
+    return "submitted";
+  }
+
+  if (
+    ["rejected", "reject", "denied", "declined"].includes(status)
+  ) {
+    return "rejected";
+  }
+
+  if (
+    [
+      "pending",
+      "awaiting_approval",
+      "under_review",
+      "in_review",
+    ].includes(status)
+  ) {
+    return "pending";
+  }
+
+  return "";
+}
+
+function getApprovalStatus(source) {
+  if (!source || typeof source !== "object") {
+    return "";
+  }
+
+  const candidates = [
+    source.approval_status,
+    source.approvalStatus,
+    source.approval_state,
+    source.approval?.status,
+  ];
+
+  for (const value of candidates) {
+    const normalized = normalizeApprovalStatus(value);
+
+    if (normalized) return normalized;
+  }
+
+  return "";
+}
+
+function getStatusLabel(status) {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "submitted":
+      return "Submitted";
+    case "rejected":
+      return "Rejected";
+    case "pending":
+      return "Pending";
+    default:
+      return "Approved";
+  }
+}
+
+function getStatusStyle(status) {
+  switch (status) {
+    case "approved":
+      return styles.approvalApproved;
+    case "submitted":
+      return styles.approvalSubmitted;
+    case "rejected":
+      return styles.approvalRejected;
+    case "pending":
+      return styles.approvalPending;
+    default:
+      return styles.approvalApproved;
+  }
+}
+
+/* ---------------- COMPONENT ---------------- */
+
 export default function PatientAssignmentForm({
   selectedPatient,
   assignmentForm = {},
@@ -170,6 +311,7 @@ export default function PatientAssignmentForm({
   userRole = "",
   role = "",
   user = null,
+  selectedAssignment = null,
 }) {
   const [therapistSearch, setTherapistSearch] = useState("");
   const [therapistMenuOpen, setTherapistMenuOpen] = useState(false);
@@ -179,6 +321,11 @@ export default function PatientAssignmentForm({
   const [physiciansError, setPhysiciansError] = useState("");
   const [physicianRetry, setPhysicianRetry] = useState(0);
   const [physiciansLoaded, setPhysiciansLoaded] = useState(false);
+
+  const [claims, setClaims] = useState([]);
+  const [claimsLoading, setClaimsLoading] = useState(false);
+  const [claimsError, setClaimsError] = useState("");
+  const [claimsRetry, setClaimsRetry] = useState(0);
 
   const isBusy = Boolean(loading || savingAssignment);
 
@@ -193,7 +340,6 @@ export default function PatientAssignmentForm({
 
   const isAdmin = effectiveRole === "admin";
   const isEditing = Boolean(editingAssignmentId);
-
   const isEvaluation =
     assignmentForm.category === "initial_evaluation";
 
@@ -206,6 +352,96 @@ export default function PatientAssignmentForm({
   const currentPhysician = isExternalReferral
     ? EXTERNAL_REFERRAL
     : storedPhysician;
+
+  /* ---------------- LOAD RCM CLAIMS ---------------- */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadClaims() {
+      setClaimsLoading(true);
+      setClaimsError("");
+
+      try {
+        const response = await api.get(CLAIMS_ENDPOINT);
+
+        if (cancelled) return;
+
+        setClaims(extractClaims(response.data));
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error(
+          "Failed to fetch claims:",
+          error?.response?.status,
+          error?.response?.data || error
+        );
+
+        setClaims([]);
+
+        setClaimsError(
+          error?.response?.status === 404
+            ? "Claims endpoint not found."
+            : "Could not load claim status."
+        );
+      } finally {
+        if (!cancelled) {
+          setClaimsLoading(false);
+        }
+      }
+    }
+
+    if (selectedPatient?.id) {
+      loadClaims();
+    } else {
+      setClaims([]);
+      setClaimsLoading(false);
+      setClaimsError("");
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPatient?.id, claimsRetry]);
+
+  const matchingClaim = useMemo(() => {
+    if (!selectedPatient?.id || !Array.isArray(claims)) {
+      return null;
+    }
+
+    const patientId = String(selectedPatient.id);
+
+    const patientClaims = claims.filter(
+      (claim) => getPatientIdFromClaim(claim) === patientId
+    );
+
+    if (patientClaims.length === 0) {
+      return null;
+    }
+
+    return (
+      patientClaims.find((claim) =>
+        normalizeApprovalStatus(getClaimStatusValue(claim))
+      ) || patientClaims[0]
+    );
+  }, [claims, selectedPatient?.id]);
+
+  const approvalStatus = useMemo(() => {
+    return (
+      getApprovalStatus(selectedAssignment) ||
+      getApprovalStatus(selectedPatient) ||
+      getApprovalStatus(assignmentForm) ||
+      normalizeApprovalStatus(getClaimStatusValue(matchingClaim)) ||
+      "approved"
+    );
+  }, [
+    selectedAssignment,
+    selectedPatient,
+    assignmentForm,
+    matchingClaim,
+  ]);
+
+  /* ---------------- THERAPISTS ---------------- */
 
   const therapistLabel = useCallback(
     (therapist) =>
@@ -235,7 +471,8 @@ export default function PatientAssignmentForm({
     [assignmentForm.additional_therapist_ids]
   );
 
-  // Load the physician list when the assignment is an evaluation.
+  /* ---------------- LOAD PHYSICIANS ---------------- */
+
   useEffect(() => {
     if (!isEvaluation) {
       setPhysiciansLoading(false);
@@ -264,7 +501,7 @@ export default function PatientAssignmentForm({
 
         if (list.length === 0) {
           setPhysiciansError(
-            "The server returned no physicians. Check that the physician API returns a list of physician names."
+            "The server returned no physicians. You can still select External Referral."
           );
         }
       } catch (error) {
@@ -291,7 +528,6 @@ export default function PatientAssignmentForm({
     };
   }, [isEvaluation, physicianRetry]);
 
-  // Combine the parent list, fetched list, and currently saved physician.
   const availablePhysicians = useMemo(() => {
     const parentList = normalizePhysicianList(physicians);
     const fetchedList = normalizePhysicianList(fetchedPhysicians);
@@ -316,14 +552,11 @@ export default function PatientAssignmentForm({
   const availableSpecialities = useMemo(
     () =>
       Array.from(
-        new Set(
-          [...SPECIALITIES, ...specialities].filter(Boolean)
-        )
+        new Set([...SPECIALITIES, ...specialities].filter(Boolean))
       ),
     [specialities]
   );
 
-  // Restore the last-used therapist for a new assignment.
   useEffect(() => {
     if (
       isEditing ||
@@ -337,8 +570,7 @@ export default function PatientAssignmentForm({
     const rememberedId = getRememberedTherapistId();
 
     const rememberedTherapist = therapists.find(
-      (therapist) =>
-        String(therapist.id) === String(rememberedId)
+      (therapist) => String(therapist.id) === String(rememberedId)
     );
 
     if (rememberedTherapist) {
@@ -360,7 +592,6 @@ export default function PatientAssignmentForm({
     }
   }, [selectedTherapist, therapistMenuOpen, therapistLabel]);
 
-  // Set today's date for an admin-created assignment.
   useEffect(() => {
     if (
       isAdmin &&
@@ -369,8 +600,7 @@ export default function PatientAssignmentForm({
     ) {
       setAssignmentForm((previous) => ({
         ...previous,
-        assignment_date:
-          previous.assignment_date || getTodayDate(),
+        assignment_date: previous.assignment_date || getTodayDate(),
       }));
     }
   }, [
@@ -423,9 +653,7 @@ export default function PatientAssignmentForm({
     setAssignmentForm((previous) => ({
       ...previous,
       with_another_therapist: Boolean(therapistId),
-      additional_therapist_ids: therapistId
-        ? [therapistId]
-        : [],
+      additional_therapist_ids: therapistId ? [therapistId] : [],
     }));
   };
 
@@ -439,6 +667,7 @@ export default function PatientAssignmentForm({
         category === "initial_evaluation"
           ? previous.referring_physician || ""
           : "",
+      // External physician details are no longer collected.
       external_referring_physician: "",
     }));
 
@@ -447,18 +676,20 @@ export default function PatientAssignmentForm({
     }
   };
 
-  // Store the exact selected physician name as a string.
   const handlePhysicianChange = (event) => {
     const selectedName = String(event.target.value || "").trim();
 
-    console.log("Physician selected in dropdown:", selectedName);
-
     setAssignmentForm((previous) => ({
       ...previous,
-      referring_physician: selectedName,
+      referring_physician: isExternalPhysician(selectedName)
+        ? EXTERNAL_REFERRAL
+        : selectedName,
+      // Keep the legacy API field empty for compatibility.
       external_referring_physician: "",
     }));
   };
+
+  /* ---------------- SUBMIT ---------------- */
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -521,26 +752,22 @@ export default function PatientAssignmentForm({
       referring_physician: isEvaluation
         ? physicianForSubmission
         : "",
+      // Never submit a separately entered external physician name.
       external_referring_physician: "",
       additional_therapist_ids: additionalIds,
       with_another_therapist: additionalIds.length > 0,
     };
 
-    // Diagnostic output: confirms the exact name sent to the parent.
-    console.log("Assignment submission snapshot:", {
-      category: submissionForm.category,
-      referring_physician: submissionForm.referring_physician,
-      patient_id: submissionForm.patient_id,
-      therapist_id: submissionForm.therapist_id,
-    });
-
+    // Claim status is display-only and is not submitted from this form.
     if (typeof onSubmit !== "function") {
       console.error(
         "PatientAssignmentForm: onSubmit callback is missing."
       );
+
       alert(
         "Unable to save because the assignment submit handler is not configured."
       );
+
       return;
     }
 
@@ -552,14 +779,19 @@ export default function PatientAssignmentForm({
     setPhysicianRetry((previous) => previous + 1);
   }, []);
 
+  const retryClaimsFetch = useCallback(() => {
+    setClaimsError("");
+    setClaimsRetry((previous) => previous + 1);
+  }, []);
+
+  /* ---------------- UI ---------------- */
+
   return (
     <form
       onSubmit={handleSubmit}
       style={styles.card}
       onClick={(event) => {
-        if (
-          !event.target.closest("[data-therapist-autocomplete]")
-        ) {
+        if (!event.target.closest("[data-therapist-autocomplete]")) {
           setTherapistMenuOpen(false);
         }
       }}
@@ -569,9 +801,11 @@ export default function PatientAssignmentForm({
       <div style={styles.header}>
         <div style={styles.headerText}>
           <div style={styles.eyebrow}>PATIENT MANAGEMENT</div>
+
           <h3 style={styles.title}>
             {isEditing ? "Edit Assignment" : "Assign Patient"}
           </h3>
+
           <p style={styles.subtitle}>
             {isEditing
               ? "Review and update the existing patient assignment."
@@ -593,17 +827,47 @@ export default function PatientAssignmentForm({
           <div style={styles.patientInfo}>
             <span style={styles.patientLabel}>SELECTED PATIENT</span>
 
-            <strong style={styles.patientName}>
-              {selectedPatient.full_name ||
-                selectedPatient.name ||
-                selectedPatient.patient_name ||
-                "Selected patient"}
-            </strong>
+            <div style={styles.patientNameRow}>
+              <strong style={styles.patientName}>
+                {selectedPatient.full_name ||
+                  selectedPatient.name ||
+                  selectedPatient.patient_name ||
+                  "Selected patient"}
+              </strong>
+
+              <span
+                style={{
+                  ...styles.approvalBadge,
+                  ...getStatusStyle(approvalStatus),
+                }}
+                title={
+                  claimsError
+                    ? `${claimsError} Defaulting to Approved until a recognizable status is available.`
+                    : "Approval status supplied by RCM when available; otherwise defaults to Approved."
+                }
+              >
+                <span style={styles.approvalDot} />
+                {getStatusLabel(approvalStatus)}
+              </span>
+            </div>
 
             {selectedPatient.patient_id && (
               <span style={styles.patientMeta}>
                 File No: {selectedPatient.patient_id}
               </span>
+            )}
+
+            {claimsError && !claimsLoading && (
+              <div style={styles.claimError}>
+                {claimsError}{" "}
+                <button
+                  type="button"
+                  style={styles.inlineRetryButton}
+                  onClick={retryClaimsFetch}
+                >
+                  Retry
+                </button>
+              </div>
             )}
           </div>
 
@@ -621,10 +885,12 @@ export default function PatientAssignmentForm({
 
       <div style={styles.sectionHeading}>
         <span style={styles.sectionNumber}>01</span>
+
         <div>
           <div style={styles.sectionTitle}>Assignment details</div>
+
           <div style={styles.sectionSubtitle}>
-            Select the therapist and visit information.
+            Select the therapist and complete the visit information.
             {isAdmin
               ? " Admin can also set the assignment date."
               : ""}
@@ -838,20 +1104,25 @@ export default function PatientAssignmentForm({
         <>
           <div style={styles.sectionHeading}>
             <span style={styles.sectionNumber}>02</span>
+
             <div>
-              <div style={styles.sectionTitle}>Referral information</div>
+              <div style={styles.sectionTitle}>
+                Referral information
+              </div>
+
               <div style={styles.sectionSubtitle}>
-                Select an internal physician or record an external referral.
+                Select an internal physician or External Referral.
               </div>
             </div>
           </div>
 
           <div style={styles.field}>
-            <label style={styles.label}>
+            <label style={styles.label} htmlFor="referring_physician">
               Referring Physician <span style={styles.required}>*</span>
             </label>
 
             <select
+              id="referring_physician"
               value={currentPhysician}
               onChange={handlePhysicianChange}
               style={styles.select}
@@ -880,10 +1151,12 @@ export default function PatientAssignmentForm({
             {!physiciansLoading && physiciansError && (
               <div style={styles.errorPanel} role="alert">
                 <p style={styles.errorText}>{physiciansError}</p>
+
                 <button
                   type="button"
                   style={styles.retryButton}
                   onClick={retryPhysicianFetch}
+                  disabled={isBusy}
                 >
                   Retry loading physicians
                 </button>
@@ -895,7 +1168,8 @@ export default function PatientAssignmentForm({
               physiciansLoaded &&
               availablePhysicians.length > 0 && (
                 <p style={styles.successHint}>
-                  {availablePhysicians.length} physician option(s) available.
+                  {availablePhysicians.length} physician option(s)
+                  available.
                 </p>
               )}
           </div>
@@ -904,9 +1178,14 @@ export default function PatientAssignmentForm({
 
       <details
         style={styles.optional}
-        open={Boolean(assignmentForm.speciality || assignmentForm.notes)}
+        open={Boolean(
+          assignmentForm.speciality || assignmentForm.notes
+        )}
       >
-        <summary style={styles.optionalTitle}>
+        <summary
+          className="patient-assignment-optional-title"
+          style={styles.optionalTitle}
+        >
           <span style={styles.optionalPlus}>＋</span>
           <span>Speciality and notes</span>
           <span style={styles.optionalHint}>OPTIONAL</span>
@@ -934,8 +1213,7 @@ export default function PatientAssignmentForm({
             </select>
 
             <p style={styles.helperText}>
-              The selected speciality is included with the assignment.
-              Choose None to clear it.
+              Choose a speciality or None to clear it.
             </p>
           </div>
 
@@ -977,6 +1255,7 @@ export default function PatientAssignmentForm({
               <span>
                 {isEditing ? "Update Assignment" : "Save Assignment"}
               </span>
+
               <span style={styles.buttonArrow} aria-hidden="true">
                 →
               </span>
@@ -1003,8 +1282,11 @@ export default function PatientAssignmentForm({
 
       <style>{`
         @keyframes patientAssignmentSpin {
-          to { transform: rotate(360deg); }
+          to {
+            transform: rotate(360deg);
+          }
         }
+
         details > summary::-webkit-details-marker {
           display: none;
         }
@@ -1012,6 +1294,8 @@ export default function PatientAssignmentForm({
     </form>
   );
 }
+
+/* ---------------- STYLES ---------------- */
 
 const styles = {
   card: {
@@ -1029,6 +1313,7 @@ const styles = {
     boxSizing: "border-box",
     minWidth: 0,
   },
+
   topAccent: {
     position: "absolute",
     top: 0,
@@ -1039,6 +1324,7 @@ const styles = {
     background:
       "linear-gradient(90deg, #6D28D9 0%, #A855F7 50%, #EC4899 100%)",
   },
+
   header: {
     display: "flex",
     justifyContent: "space-between",
@@ -1047,7 +1333,9 @@ const styles = {
     marginBottom: "24px",
     paddingTop: "5px",
   },
+
   headerText: { minWidth: 0 },
+
   eyebrow: {
     display: "inline-block",
     color: "#6D28D9",
@@ -1060,6 +1348,7 @@ const styles = {
     letterSpacing: "1.1px",
     marginBottom: "9px",
   },
+
   title: {
     margin: 0,
     color: "#2E1065",
@@ -1067,12 +1356,14 @@ const styles = {
     fontWeight: 800,
     letterSpacing: "-0.5px",
   },
+
   subtitle: {
     margin: "7px 0 0",
     color: "#7C7194",
     fontSize: "13px",
     lineHeight: 1.6,
   },
+
   headerIcon: {
     display: "flex",
     alignItems: "center",
@@ -1087,9 +1378,11 @@ const styles = {
     fontSize: "28px",
     boxShadow: "0 7px 16px rgba(109, 40, 217, 0.2)",
   },
+
   patient: {
     display: "flex",
     alignItems: "center",
+    flexWrap: "wrap",
     gap: "12px",
     background: "linear-gradient(120deg, #F5F3FF, #FDF4FF)",
     border: "1px solid #DDD6FE",
@@ -1099,6 +1392,7 @@ const styles = {
     marginBottom: "25px",
     minWidth: 0,
   },
+
   patientIcon: {
     display: "flex",
     alignItems: "center",
@@ -1111,6 +1405,7 @@ const styles = {
     borderRadius: "12px",
     fontSize: "24px",
   },
+
   patientInfo: {
     display: "flex",
     flexDirection: "column",
@@ -1118,18 +1413,33 @@ const styles = {
     flex: 1,
     minWidth: 0,
   },
+
   patientLabel: {
     color: "#8B5CF6",
     fontSize: "10px",
     fontWeight: 800,
     letterSpacing: "0.8px",
   },
+
+  patientNameRow: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "8px",
+    minWidth: 0,
+  },
+
   patientName: {
     color: "#3B0764",
     fontSize: "14px",
     overflowWrap: "anywhere",
   },
-  patientMeta: { color: "#7C3AED", fontSize: "11px" },
+
+  patientMeta: {
+    color: "#7C3AED",
+    fontSize: "11px",
+  },
+
   patientStatus: {
     display: "inline-flex",
     alignItems: "center",
@@ -1143,12 +1453,81 @@ const styles = {
     fontWeight: 800,
     flexShrink: 0,
   },
+
   statusDot: {
     width: "7px",
     height: "7px",
     borderRadius: "50%",
     background: "#22C55E",
   },
+
+  approvalBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    border: "1px solid",
+    borderRadius: "20px",
+    padding: "5px 9px",
+    fontSize: "11px",
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+
+  approvalDot: {
+    width: "7px",
+    height: "7px",
+    borderRadius: "50%",
+    background: "currentColor",
+    flexShrink: 0,
+  },
+
+  approvalPending: {
+    background: "#FFFBEB",
+    borderColor: "#FCD34D",
+    color: "#92400E",
+  },
+
+  approvalSubmitted: {
+    background: "#EFF6FF",
+    borderColor: "#93C5FD",
+    color: "#1D4ED8",
+  },
+
+  approvalApproved: {
+    background: "#F0FDF4",
+    borderColor: "#86EFAC",
+    color: "#166534",
+  },
+
+  approvalRejected: {
+    background: "#FFF1F2",
+    borderColor: "#FDA4AF",
+    color: "#9F1239",
+  },
+
+  approvalUnknown: {
+    background: "#F8FAFC",
+    borderColor: "#CBD5E1",
+    color: "#64748B",
+  },
+
+  claimError: {
+    color: "#B91C1C",
+    fontSize: "11px",
+    lineHeight: 1.5,
+  },
+
+  inlineRetryButton: {
+    border: "none",
+    background: "transparent",
+    color: "#6D28D9",
+    textDecoration: "underline",
+    cursor: "pointer",
+    fontSize: "11px",
+    fontWeight: 700,
+    padding: 0,
+  },
+
   notice: {
     display: "flex",
     alignItems: "center",
@@ -1161,12 +1540,14 @@ const styles = {
     color: "#92400E",
     fontSize: "13px",
   },
+
   sectionHeading: {
     display: "flex",
     alignItems: "center",
     gap: "12px",
     marginBottom: "18px",
   },
+
   sectionNumber: {
     display: "flex",
     alignItems: "center",
@@ -1181,23 +1562,27 @@ const styles = {
     fontWeight: 800,
     boxShadow: "0 4px 10px rgba(109, 40, 217, 0.18)",
   },
+
   sectionTitle: {
     color: "#3B0764",
     fontSize: "14px",
     fontWeight: 800,
   },
+
   sectionSubtitle: {
     color: "#9588A9",
     fontSize: "12px",
     marginTop: "4px",
     lineHeight: 1.4,
   },
+
   row: {
     display: "grid",
     gridTemplateColumns:
       "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
     gap: "14px",
   },
+
   field: {
     display: "flex",
     flexDirection: "column",
@@ -1205,12 +1590,17 @@ const styles = {
     marginBottom: "17px",
     minWidth: 0,
   },
+
   label: {
     color: "#4C3A65",
     fontSize: "12px",
     fontWeight: 750,
   },
-  required: { color: "#E11D48" },
+
+  required: {
+    color: "#E11D48",
+  },
+
   input: {
     display: "block",
     width: "100%",
@@ -1224,6 +1614,7 @@ const styles = {
     fontSize: "14px",
     outlineColor: "#8B5CF6",
   },
+
   inputWithIcon: {
     display: "block",
     width: "100%",
@@ -1237,6 +1628,7 @@ const styles = {
     fontSize: "14px",
     outlineColor: "#8B5CF6",
   },
+
   select: {
     display: "block",
     width: "100%",
@@ -1251,11 +1643,13 @@ const styles = {
     outlineColor: "#8B5CF6",
     cursor: "pointer",
   },
+
   autocomplete: {
     position: "relative",
     width: "100%",
     minWidth: 0,
   },
+
   searchIcon: {
     position: "absolute",
     right: "13px",
@@ -1264,6 +1658,7 @@ const styles = {
     color: "#8B5CF6",
     pointerEvents: "none",
   },
+
   dropdown: {
     position: "absolute",
     top: "calc(100% + 6px)",
@@ -1277,6 +1672,7 @@ const styles = {
     maxHeight: "240px",
     overflowY: "auto",
   },
+
   dropdownItem: {
     display: "flex",
     alignItems: "center",
@@ -1292,16 +1688,19 @@ const styles = {
     fontSize: "13px",
     cursor: "pointer",
   },
+
   dropdownItemSelected: {
     background: "#F3E8FF",
     color: "#6D28D9",
     fontWeight: 700,
   },
+
   therapistName: {
     flex: 1,
     minWidth: 0,
     overflowWrap: "anywhere",
   },
+
   avatar: {
     display: "inline-flex",
     alignItems: "center",
@@ -1314,34 +1713,40 @@ const styles = {
     color: "#6D28D9",
     fontWeight: 800,
   },
+
   check: {
     marginLeft: "auto",
     color: "#7C3AED",
     fontWeight: 800,
   },
+
   noResults: {
     padding: "16px",
     color: "#9588A9",
     textAlign: "center",
     fontSize: "13px",
   },
+
   rememberedHint: {
     margin: "7px 0 0",
     color: "#7C3AED",
     fontSize: "11px",
     lineHeight: 1.5,
   },
+
   dateHint: {
     margin: "-2px 0 0",
     color: "#9588A9",
     fontSize: "11px",
   },
+
   helperText: {
     margin: 0,
     color: "#7C7194",
     fontSize: "12px",
     lineHeight: 1.5,
   },
+
   errorPanel: {
     display: "grid",
     gap: "10px",
@@ -1350,6 +1755,7 @@ const styles = {
     borderRadius: "9px",
     background: "#FEF2F2",
   },
+
   errorText: {
     margin: 0,
     color: "#B91C1C",
@@ -1357,6 +1763,7 @@ const styles = {
     lineHeight: 1.5,
     overflowWrap: "anywhere",
   },
+
   retryButton: {
     justifySelf: "start",
     padding: "8px 11px",
@@ -1368,11 +1775,13 @@ const styles = {
     fontWeight: 700,
     cursor: "pointer",
   },
+
   successHint: {
     margin: 0,
     color: "#15803D",
     fontSize: "11px",
   },
+
   optional: {
     border: "1px solid #E9DDFB",
     borderRadius: "13px",
@@ -1380,6 +1789,7 @@ const styles = {
     marginTop: "5px",
     background: "#FCFAFF",
   },
+
   optionalTitle: {
     display: "flex",
     alignItems: "center",
@@ -1391,6 +1801,7 @@ const styles = {
     padding: "14px 0",
     listStyle: "none",
   },
+
   optionalPlus: {
     display: "inline-flex",
     alignItems: "center",
@@ -1402,6 +1813,7 @@ const styles = {
     color: "#7C3AED",
     fontSize: "19px",
   },
+
   optionalHint: {
     marginLeft: "auto",
     color: "#A78BFA",
@@ -1409,10 +1821,12 @@ const styles = {
     fontWeight: 800,
     letterSpacing: "0.5px",
   },
+
   optionalContent: {
     borderTop: "1px solid #EDE5FA",
     paddingTop: "16px",
   },
+
   textarea: {
     display: "block",
     width: "100%",
@@ -1429,11 +1843,13 @@ const styles = {
     fontFamily: "inherit",
     lineHeight: 1.6,
   },
+
   actions: {
     display: "grid",
     gap: "10px",
     marginTop: "22px",
   },
+
   button: {
     display: "flex",
     alignItems: "center",
@@ -1452,11 +1868,13 @@ const styles = {
     cursor: "pointer",
     boxShadow: "0 7px 17px rgba(109, 40, 217, 0.22)",
   },
+
   buttonDisabled: {
     opacity: 0.65,
     cursor: "not-allowed",
     boxShadow: "none",
   },
+
   cancelButton: {
     width: "100%",
     padding: "12px 16px",
@@ -1468,16 +1886,19 @@ const styles = {
     fontWeight: 700,
     cursor: "pointer",
   },
+
   buttonContent: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     gap: "10px",
   },
+
   buttonArrow: {
     fontSize: "20px",
     lineHeight: 1,
   },
+
   spinner: {
     width: "15px",
     height: "15px",
@@ -1487,6 +1908,7 @@ const styles = {
     display: "inline-block",
     animation: "patientAssignmentSpin 0.8s linear infinite",
   },
+
   footer: {
     margin: "13px 0 0",
     textAlign: "center",

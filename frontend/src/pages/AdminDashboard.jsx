@@ -26,12 +26,16 @@ const emptyAssignmentForm = {
   category: "appointment",
   visit_number: "",
   referring_physician: "",
+  external_referring_physician: "",
+  approval_status: "approved",
   speciality: "",
   notes: "",
   assignment_date: "",
   with_another_therapist: false,
   additional_therapist_ids: [],
 };
+
+const EXTERNAL_REFERRAL = "External Referral";
 
 function getApiError(err, fallback) {
   const data = err?.response?.data;
@@ -79,6 +83,23 @@ function extractList(data, keys = []) {
   return [];
 }
 
+function isExternalReferral(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .startsWith(EXTERNAL_REFERRAL.toLowerCase());
+}
+
+function normalizeApprovalStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+
+  if (["approved", "pending", "rejected"].includes(status)) {
+    return status;
+  }
+
+  return "approved";
+}
+
 export default function AdminDashboard({
   user,
   onLogout,
@@ -104,8 +125,6 @@ export default function AdminDashboard({
   const [physicians, setPhysicians] = useState([]);
   const [specialities, setSpecialities] = useState([]);
   const [evaluationRefreshKey, setEvaluationRefreshKey] = useState(0);
-
-  // Forces patient files to reload after a patient is created or updated.
   const [patientRefreshKey, setPatientRefreshKey] = useState(0);
 
   const [assignmentForm, setAssignmentForm] = useState({
@@ -659,7 +678,6 @@ export default function AdminDashboard({
     setActiveSection("register_patient");
   };
 
-  // Callbacks supplied to AdminPatientFilesSection.
   const handlePatientUpdated = useCallback((patient) => {
     setMessage(
       `Patient ${
@@ -714,7 +732,7 @@ export default function AdminDashboard({
     const currentForm =
       submittedForm && typeof submittedForm === "object"
         ? { ...assignmentForm, ...submittedForm }
-        : assignmentForm;
+        : { ...assignmentForm };
 
     if (!currentForm.patient_id) {
       setError("Please select a patient first.");
@@ -740,6 +758,12 @@ export default function AdminDashboard({
     const isEvaluation =
       currentForm.category === "initial_evaluation";
 
+    const externalReferral = isExternalReferral(
+      currentForm.referring_physician
+    );
+
+    // Keep the External Referral selection, but do not require
+    // or submit a separate external physician/facility name.
     const payload = {
       ...currentForm,
       patient_id: currentForm.patient_id,
@@ -747,8 +771,14 @@ export default function AdminDashboard({
       category: currentForm.category || "appointment",
       visit_number: currentForm.visit_number,
       referring_physician: isEvaluation
-        ? currentForm.referring_physician || ""
+        ? externalReferral
+          ? EXTERNAL_REFERRAL
+          : currentForm.referring_physician || ""
         : "",
+      external_referring_physician: "",
+      approval_status: normalizeApprovalStatus(
+        currentForm.approval_status
+      ),
       speciality: currentForm.speciality || "",
       notes: currentForm.notes || "",
       additional_therapist_ids: additionalTherapistIds,
@@ -824,6 +854,12 @@ export default function AdminDashboard({
       ? assignment.additional_therapist_ids.map(String).slice(0, 1)
       : [];
 
+    const physicianValue = String(
+      assignment.referring_physician || ""
+    ).trim();
+
+    const externalReferral = isExternalReferral(physicianValue);
+
     setEditingAssignmentId(assignment.id);
 
     setSelectedPatient({
@@ -838,7 +874,13 @@ export default function AdminDashboard({
       therapist_id: String(assignment.therapist_id || ""),
       category: assignment.category || "appointment",
       visit_number: assignment.visit_number ?? "",
-      referring_physician: assignment.referring_physician || "",
+      referring_physician: externalReferral
+        ? EXTERNAL_REFERRAL
+        : physicianValue,
+      external_referring_physician: "",
+      approval_status: normalizeApprovalStatus(
+        assignment.approval_status
+      ),
       speciality:
         assignment.speciality || assignment.specialty || "",
       notes: assignment.notes || "",

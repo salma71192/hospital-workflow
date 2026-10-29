@@ -11,6 +11,8 @@ from reception.api_helpers import parse_date
 User = get_user_model()
 
 EXTERNAL_REFERRAL_PREFIX = "External Referral:"
+EXTERNAL_REFERRAL_LABEL = "External Referral"
+
 PHYSICIAN_ROLES = ("physician", "doctor")
 
 
@@ -89,7 +91,7 @@ def get_user_physician_names(user):
 
 
 def get_physician_names():
-    """Return names exposed by the active physician users."""
+    """Return normalized names exposed by active physician users."""
     names = set()
 
     for user in get_physician_users():
@@ -114,7 +116,6 @@ def get_canonical_physician_name(name):
 
         for user_name in user_names:
             if normalize_physician_name(user_name) == normalized_name:
-                # Store the physician's display name when available.
                 display_name = getattr(user, "display_name", None)
 
                 if isinstance(display_name, str) and display_name.strip():
@@ -147,6 +148,55 @@ def extract_physician_name(value):
         value = str(value) if isinstance(value, (int, float)) else ""
 
     return " ".join(value.split())
+
+
+def is_external_referral(value):
+    """
+    Recognize both supported external referral formats:
+    - External Referral
+    - External Referral: Physician Name
+    """
+    normalized_value = normalize_physician_name(value)
+
+    normalized_label = normalize_physician_name(
+        EXTERNAL_REFERRAL_LABEL
+    )
+
+    normalized_prefix = normalize_physician_name(
+        EXTERNAL_REFERRAL_PREFIX
+    )
+
+    return (
+        normalized_value == normalized_label
+        or normalized_value.startswith(normalized_prefix)
+    )
+
+
+def normalize_external_referral(value):
+    """
+    Keep the simple External Referral label when no external name
+    is supplied. Preserve the legacy format when a name is provided.
+    """
+    value = extract_physician_name(value)
+
+    if normalize_physician_name(value) == normalize_physician_name(
+        EXTERNAL_REFERRAL_LABEL
+    ):
+        return EXTERNAL_REFERRAL_LABEL
+
+    normalized_prefix = normalize_physician_name(
+        EXTERNAL_REFERRAL_PREFIX
+    )
+
+    if normalize_physician_name(value).startswith(normalized_prefix):
+        external_name = value[len(EXTERNAL_REFERRAL_PREFIX):].strip()
+
+        if not external_name:
+            return EXTERNAL_REFERRAL_LABEL
+
+        return f"{EXTERNAL_REFERRAL_PREFIX} {external_name}"
+
+    return EXTERNAL_REFERRAL_LABEL
 
 
 def validate_fields(data, assignment=None):
@@ -205,35 +255,22 @@ def validate_fields(data, assignment=None):
     except (ValueError, TypeError):
         return None, error("Visit Number must be a positive integer")
 
+    # Initial evaluations still require a referral source.
+    # "External Referral" is a valid source without a physician name.
     if category == "initial_evaluation" and not referring_physician:
         return None, error(
             "Referring Physician is required for Initial Evaluation"
         )
 
     if referring_physician:
-        normalized_name = normalize_physician_name(
-            referring_physician
-        )
-
-        normalized_external_prefix = normalize_physician_name(
-            EXTERNAL_REFERRAL_PREFIX
-        )
-
-        if normalized_name.startswith(normalized_external_prefix):
-            external_name = referring_physician[
-                len(EXTERNAL_REFERRAL_PREFIX):
-            ].strip()
-
-            if not external_name:
-                return None, error(
-                    "Please enter the external referring physician's name"
-                )
-
-            referring_physician = (
-                f"{EXTERNAL_REFERRAL_PREFIX} {external_name}"
+        if is_external_referral(referring_physician):
+            # Do not require an external physician or facility name.
+            referring_physician = normalize_external_referral(
+                referring_physician
             )
 
         else:
+            # Keep the existing validation for registered physicians.
             canonical_name = get_canonical_physician_name(
                 referring_physician
             )
@@ -243,7 +280,9 @@ def validate_fields(data, assignment=None):
                     "PHYSICIAN VALIDATION DEBUG:",
                     {
                         "submitted_name": referring_physician,
-                        "normalized_name": normalized_name,
+                        "normalized_name": normalize_physician_name(
+                            referring_physician
+                        ),
                         "physician_users": [
                             {
                                 "id": user.id,

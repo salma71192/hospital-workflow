@@ -97,10 +97,19 @@ def create_assignment(request, role, admin, today_value):
                 marked_by=request.user,
             )
 
+    # Return the actual status stored in the database.
+    approval_status = getattr(
+        assignment,
+        "approval_status",
+        None,
+    )
+
     return JsonResponse({
         "success": True,
         "message": "Patient assigned successfully",
         "id": assignment.id,
+        "patient_id": locked_patient.id,
+        "patient_name": str(locked_patient),
         "assignment_date": str(assignment.assignment_date),
         "therapist_id": therapist.id,
         "therapist_name": therapist.username,
@@ -109,4 +118,5 @@ def create_assignment(request, role, admin, today_value):
         "referring_physician": assignment.referring_physician,
         "speciality": assignment.speciality,
         "specialty": assignment.speciality,
+        "approval_status": approval_status,
     })

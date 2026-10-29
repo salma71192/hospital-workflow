@@ -121,15 +121,12 @@ class PhysioReferral(models.Model):
         related_name="physio_referrals",
     )
 
-    # Use the Physician model displayed in the referral form.
-    # Protect the physician record while referral history exists.
     physician = models.ForeignKey(
         Physician,
         on_delete=models.PROTECT,
         related_name="physio_referrals",
     )
 
-    # Keep referral history if the referring user is deleted.
     referred_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
