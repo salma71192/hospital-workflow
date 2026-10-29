@@ -1,4 +1,5 @@
 import React, {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -14,19 +15,21 @@ const C = {
   border: "#dbe4f0",
   blue: "#2563eb",
   green: "#15803d",
-  purple: "#7c3aed",
+  teal: "#0f766e",
+  orange: "#c2410c",
   red: "#b91c1c",
 };
 
 const localDateString = (date = new Date()) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
 
 const localMonthString = () => localDateString().slice(0, 7);
 
 function valueOf(obj, keys, fallback = "") {
   for (const key of keys) {
     const value = obj?.[key];
-
     if (
       value !== undefined &&
       value !== null &&
@@ -36,26 +39,23 @@ function valueOf(obj, keys, fallback = "") {
       return value;
     }
   }
-
   return fallback;
 }
 
 function objectOf(obj, keys) {
   for (const key of keys) {
     const value = obj?.[key];
-
     if (value && typeof value === "object" && !Array.isArray(value)) {
       return value;
     }
   }
-
   return {};
 }
 
 function listFromResponse(data, keys = []) {
   if (Array.isArray(data)) return data;
 
-  for (const key of [...keys, "results", "items", "users", "claims"]) {
+  for (const key of [...keys, "results", "items", "claims", "history"]) {
     if (Array.isArray(data?.[key])) return data[key];
   }
 
@@ -142,7 +142,6 @@ function fileNumberOf(claim) {
 
   const patient = patientOf(claim);
   const patientValue = valueOf(patient, FILE_KEYS);
-
   if (patientValue) return String(patientValue);
 
   const record = objectOf(patient, [
@@ -156,7 +155,7 @@ function fileNumberOf(claim) {
 }
 
 function claimDatabaseId(claim) {
-  return valueOf(claim, ["id", "claim_id", "claimId"], "");
+  return valueOf(claim, ["id", "claim_pk", "claimPk"], "");
 }
 
 function claimIdOf(claim) {
@@ -173,63 +172,84 @@ function statusOf(claim) {
   );
 }
 
-function creatorOf(claim) {
-  return objectOf(claim, [
-    "created_by",
-    "createdBy",
-    "creator",
-    "created_user",
-    "createdUser",
-    "created_by_user",
-    "createdByUser",
-    "submitted_by",
-    "submittedBy",
-  ]);
-}
-
-function creatorIdOf(claim) {
-  const creator = creatorOf(claim);
-
-  const nestedId = valueOf(
-    creator,
-    ["id", "user_id", "userId", "pk"],
-    ""
-  );
-
-  if (nestedId !== "") return String(nestedId);
-
-  const direct = valueOf(
-    claim,
-    [
-      "created_by_id",
-      "createdById",
-      "creator_id",
-      "creatorId",
-      "created_user_id",
-      "createdUserId",
-      "submitted_by_id",
-      "submittedById",
-    ],
-    ""
-  );
-
-  if (direct !== "") return String(direct);
-
-  const rawCreator =
-    claim?.created_by ??
-    claim?.createdBy ??
-    claim?.creator ??
-    claim?.submitted_by ??
-    claim?.submittedBy;
+/*
+ * Status categories:
+ * Rejected: rejected or denied claims.
+ * Approved: approved, completed, or paid claims.
+ * Submitted: submitted/filed claims awaiting a decision.
+ * Pending: other statuses that have not been approved or rejected.
+ */
+function statusCategory(input) {
+  const status = (typeof input === "string" ? input : statusOf(input))
+    .toLowerCase()
+    .trim()
+    .replace(/[_-]+/g, " ");
 
   if (
-    typeof rawCreator === "number" ||
-    typeof rawCreator === "string"
+    status.includes("reject") ||
+    status.includes("denied") ||
+    status.includes("denial")
   ) {
-    return String(rawCreator);
+    return "Rejected";
   }
 
-  return "";
+  if (
+    status.includes("approv") ||
+    status.includes("complete") ||
+    status.includes("paid")
+  ) {
+    return "Approved";
+  }
+
+  if (
+    status.includes("submit") ||
+    status.includes("filed") ||
+    status.includes("sent for review") ||
+    status.includes("sent to insurance") ||
+    status.includes("under review")
+  ) {
+    return "Submitted";
+  }
+
+  return "Pending";
+}
+
+function statusColors(status) {
+  const category = statusCategory(status);
+
+  if (category === "Approved") {
+    return {
+      color: "#047857",
+      bg: "#e8faf3",
+      border: "#b8eee0",
+      dot: "#10b981",
+    };
+  }
+
+  if (category === "Rejected") {
+    return {
+      color: "#be123c",
+      bg: "#fff0f2",
+      border: "#fecdd3",
+      dot: "#f43f5e",
+    };
+  }
+
+  if (category === "Submitted") {
+    return {
+      color: "#0f766e",
+      bg: "#f0fdfa",
+      border: "#99f6e4",
+      dot: "#14b8a6",
+    };
+  }
+
+  return {
+    color: "#c2410c",
+    bg: "#fff7ed",
+    border: "#fed7aa",
+    dot: "#f97316",
+  };
 }
 
 function createdDateOf(claim) {
@@ -260,7 +280,6 @@ function dateParts(value) {
   }
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return null;
 
   return { day: localDateString(date) };
@@ -279,6 +298,21 @@ function formatDate(value) {
   });
 }
 
+function formatDateTime(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return formatDate(value);
+
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function formatMonth(value) {
   if (!value) return "All months";
 
@@ -289,78 +323,6 @@ function formatMonth(value) {
     month: "long",
     year: "numeric",
   });
-}
-
-function statusCategory(input) {
-  const status = (
-    typeof input === "string" ? input : statusOf(input)
-  ).toLowerCase().trim();
-
-  if (
-    status.includes("reject") ||
-    status.includes("denied") ||
-    status.includes("denial")
-  ) {
-    return "Rejected";
-  }
-
-  if (
-    status.includes("approv") ||
-    status.includes("complete") ||
-    status.includes("paid")
-  ) {
-    return "Approved";
-  }
-
-  return "Pending";
-}
-
-function statusColors(status) {
-  const category = statusCategory(status);
-
-  if (category === "Approved") {
-    return {
-      color: "#047857",
-      bg: "#e8faf3",
-      border: "#b8eee0",
-      dot: "#10b981",
-    };
-  }
-
-  if (category === "Rejected") {
-    return {
-      color: "#be123c",
-      bg: "#fff0f2",
-      border: "#fecdd3",
-      dot: "#f43f5e",
-    };
-  }
-
-  return {
-    color: "#6d28d9",
-    bg: "#f3efff",
-    border: "#ddd0ff",
-    dot: "#8b5cf6",
-  };
-}
-
-function rejectionReasonOf(claim) {
-  return String(
-    valueOf(
-      claim,
-      [
-        "rejectionReason",
-        "rejection_reason",
-        "rejectionRemarks",
-        "rejection_remarks",
-        "rejection_description",
-        "denial_reason",
-        "denialReason",
-        "reason",
-      ],
-      ""
-    )
-  );
 }
 
 function currentUserFromStorage() {
@@ -398,33 +360,72 @@ function userIdOf(user) {
   return valueOf(user, ["id", "user_id", "userId", "pk"], "");
 }
 
-function isCreatedTodayByCurrentUser(claim, userId) {
-  if (userId === "" || userId == null) return false;
+function creatorOf(claim) {
+  return objectOf(claim, [
+    "created_by",
+    "createdBy",
+    "creator",
+    "created_user",
+    "createdUser",
+    "created_by_user",
+    "createdByUser",
+    "submitted_by",
+    "submittedBy",
+  ]);
+}
 
-  const creatorId = creatorIdOf(claim);
-  const createdDate = dateParts(createdDateOf(claim))?.day;
+function creatorIdOf(claim) {
+  const creator = creatorOf(claim);
+  const nestedId = valueOf(creator, ["id", "user_id", "userId", "pk"], "");
 
-  return (
-    creatorId !== "" &&
-    String(creatorId) === String(userId) &&
-    createdDate === localDateString()
+  if (nestedId !== "") return String(nestedId);
+
+  const direct = valueOf(
+    claim,
+    [
+      "created_by_id",
+      "createdById",
+      "creator_id",
+      "creatorId",
+      "created_user_id",
+      "createdUserId",
+      "submitted_by_id",
+      "submittedById",
+    ],
+    ""
+  );
+
+  if (direct !== "") return String(direct);
+
+  const raw =
+    claim?.created_by ??
+    claim?.createdBy ??
+    claim?.creator ??
+    claim?.submitted_by ??
+    claim?.submittedBy;
+
+  return typeof raw === "number" || typeof raw === "string"
+    ? String(raw)
+    : "";
+}
+
+function nameFromUser(user) {
+  return String(
+    valueOf(user, [
+      "display_name",
+      "displayName",
+      "full_name",
+      "fullName",
+      "name",
+      "username",
+      "email",
+    ])
   );
 }
 
 function creatorNameOf(claim) {
-  const creator = creatorOf(claim);
-
-  const name = valueOf(creator, [
-    "display_name",
-    "displayName",
-    "full_name",
-    "fullName",
-    "name",
-    "username",
-    "email",
-  ]);
-
-  if (name) return String(name);
+  const nestedName = nameFromUser(creatorOf(claim));
+  if (nestedName) return nestedName;
 
   const direct = valueOf(claim, [
     "created_by_name",
@@ -442,83 +443,190 @@ function creatorNameOf(claim) {
   if (direct) return String(direct);
 
   const id = creatorIdOf(claim);
-
   return id !== "" ? `RCM user #${id}` : "Not recorded";
 }
 
-function normalizeRole(user) {
-  const parts = [];
+/* ---------------- Claim history helpers ---------------- */
 
-  const collect = (value) => {
-    if (value == null) return;
-
-    if (typeof value === "string" || typeof value === "number") {
-      parts.push(String(value));
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach(collect);
-      return;
-    }
-
-    if (typeof value === "object") {
-      [
-        "name",
-        "code",
-        "slug",
-        "title",
-        "role",
-        "role_name",
-        "user_type",
-      ].forEach((key) => collect(value[key]));
-    }
-  };
-
-  [
-    user?.role,
-    user?.user_role,
-    user?.userRole,
-    user?.role_name,
-    user?.roleName,
-    user?.user_type,
-    user?.userType,
-    user?.department,
-    user?.groups,
-  ].forEach(collect);
-
-  return parts.join(" ").toLowerCase().replace(/[\s-]+/g, "_");
+function eventDate(event) {
+  return valueOf(event, [
+    "created_at",
+    "createdAt",
+    "timestamp",
+    "event_date",
+    "eventDate",
+    "changed_at",
+    "changedAt",
+    "date",
+  ]);
 }
 
-function isRcmUser(user) {
-  const role = normalizeRole(user);
+function normalizedEventType(event) {
+  return String(
+    valueOf(
+      event,
+      [
+        "event_type",
+        "eventType",
+        "action",
+        "event",
+        "title",
+        "change_type",
+        "activity_type",
+        "activityType",
+      ],
+      ""
+    )
+  )
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .trim();
+}
+
+function isCreationEvent(event) {
+  const type = normalizedEventType(event);
 
   return (
-    role === "rcm" ||
-    role.includes("rcm_user") ||
-    role.includes("rcm_staff") ||
-    role.includes("revenue_cycle") ||
-    role.includes("revenue_cycle_management") ||
-    role.split(/[\s,;]+/).some(
-      (part) => part === "rcm" || part.startsWith("rcm_")
-    )
+    type.includes("creat") ||
+    type.includes("initial") ||
+    type.includes("claim submitted")
   );
 }
 
-function userDisplayName(user) {
-  const name = valueOf(user, [
-    "display_name",
-    "displayName",
-    "full_name",
-    "fullName",
-    "name",
-    "username",
-    "email",
+function eventStatus(event, claim) {
+  const status = valueOf(
+    event,
+    [
+      "new_status",
+      "newStatus",
+      "current_status",
+      "currentStatus",
+      "to_status",
+      "toStatus",
+      "status_after",
+      "statusAfter",
+      "claim_status",
+      "claimStatus",
+      "status",
+    ],
+    ""
+  );
+
+  if (status) return String(status);
+
+  const details = objectOf(event, [
+    "changes",
+    "details",
+    "metadata",
+    "data",
   ]);
 
-  const id = userIdOf(user);
+  const nestedStatus = valueOf(
+    details,
+    ["new_status", "newStatus", "current_status", "status"],
+    ""
+  );
 
-  return String(name || (id !== "" ? `User #${id}` : "Unnamed user"));
+  if (nestedStatus) return String(nestedStatus);
+
+  if (isCreationEvent(event)) return statusOf(claim);
+
+  return "Status not recorded";
+}
+
+function eventUserName(event) {
+  const user = objectOf(event, [
+    "changed_by",
+    "changedBy",
+    "edited_by",
+    "editedBy",
+    "updated_by",
+    "updatedBy",
+    "performed_by",
+    "performedBy",
+    "actor",
+    "user",
+    "created_by",
+    "createdBy",
+    "changed_by_user",
+    "changedByUser",
+  ]);
+
+  const nestedName = nameFromUser(user);
+  if (nestedName) return nestedName;
+
+  const directName = valueOf(
+    event,
+    [
+      "changed_by_name",
+      "changedByName",
+      "edited_by_name",
+      "editedByName",
+      "updated_by_name",
+      "updatedByName",
+      "performed_by_name",
+      "performedByName",
+      "actor_name",
+      "actorName",
+      "user_name",
+      "userName",
+      "created_by_name",
+      "createdByName",
+      "username",
+    ],
+    ""
+  );
+
+  if (directName) return String(directName);
+
+  const id = valueOf(
+    event,
+    [
+      "changed_by_id",
+      "changedById",
+      "edited_by_id",
+      "editedById",
+      "updated_by_id",
+      "updatedById",
+      "performed_by_id",
+      "performedById",
+      "actor_id",
+      "actorId",
+      "user_id",
+      "userId",
+      "created_by_id",
+      "createdById",
+    ],
+    ""
+  );
+
+  return id !== "" ? `User #${id}` : "Not recorded";
+}
+
+function eventKey(event, index) {
+  return String(
+    event.id ||
+      event.pk ||
+      `${eventDate(event) || "event"}-${normalizedEventType(event)}-${index}`
+  );
+}
+
+function historyActorLabel(event) {
+  return isCreationEvent(event) ? "Created by" : "Edited by";
+}
+
+function embeddedHistoryOf(claim) {
+  for (const key of [
+    "history",
+    "claim_history",
+    "claimHistory",
+    "history_records",
+    "historyRecords",
+  ]) {
+    if (Array.isArray(claim?.[key])) return claim[key];
+  }
+
+  return null;
 }
 
 function Icon({ name, size = 18 }) {
@@ -535,13 +643,7 @@ function Icon({ name, size = 18 }) {
         <path d="M16 3v4M8 3v4M3 10h18" />
       </>
     ),
-    filter: (
-      <>
-        <path d="M4 5h16M7 12h10m-7 7h4" />
-        <circle cx="8" cy="5" r="1" />
-        <circle cx="15" cy="12" r="1" />
-      </>
-    ),
+    filter: <path d="M4 5h16M7 12h10m-7 7h4" />,
     refresh: (
       <>
         <path d="M20 7v5h-5M4 17v-5h5" />
@@ -552,12 +654,6 @@ function Icon({ name, size = 18 }) {
       <>
         <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
         <path d="M3 3v5h5" />
-      </>
-    ),
-    file: (
-      <>
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <path d="M14 2v6h6M8 13h8M8 17h8" />
       </>
     ),
     edit: (
@@ -591,6 +687,12 @@ function Icon({ name, size = 18 }) {
         <path d="M12 9v4m0 4h.01" />
       </>
     ),
+    history: (
+      <>
+        <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+        <path d="M3 3v5h5M12 7v5l3 2" />
+      </>
+    ),
   };
 
   return (
@@ -605,7 +707,7 @@ function Icon({ name, size = 18 }) {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      {paths[name] || paths.file}
+      {paths[name] || paths.list}
     </svg>
   );
 }
@@ -614,7 +716,6 @@ export default function ClaimHistory({ refreshKey = 0 }) {
   const navigate = useNavigate();
 
   const [claims, setClaims] = useState([]);
-  const [rcmUsers, setRcmUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(currentUserFromStorage);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -622,22 +723,26 @@ export default function ClaimHistory({ refreshKey = 0 }) {
   const [actionError, setActionError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+
   const [expandedClaim, setExpandedClaim] = useState(null);
+  const [historyByClaim, setHistoryByClaim] = useState({});
+  const [historyLoadingId, setHistoryLoadingId] = useState(null);
+  const [historyErrors, setHistoryErrors] = useState({});
+  const [historyCountByClaim, setHistoryCountByClaim] = useState({});
 
   const [search, setSearch] = useState("");
   const [createdByFilter, setCreatedByFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [selectedMonth, setSelectedMonth] = useState(localMonthString());
+
+  const [dateMode, setDateMode] = useState("day");
   const [selectedDate, setSelectedDate] = useState(localDateString());
+  const [selectedMonth, setSelectedMonth] = useState(localMonthString());
 
   const userId = String(userIdOf(currentUser) || "");
 
   const loadClaims = useCallback(async (showLoader = true) => {
-    if (showLoader) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
+    if (showLoader) setLoading(true);
+    else setRefreshing(true);
 
     setError("");
     setActionError("");
@@ -645,21 +750,35 @@ export default function ClaimHistory({ refreshKey = 0 }) {
 
     try {
       const response = await api.get("rcm/claims/");
+      const loadedClaims = listFromResponse(response.data, [
+        "claims",
+        "results",
+        "data",
+        "items",
+      ]);
 
-      setClaims(
-        listFromResponse(response.data, [
-          "claims",
-          "results",
-          "data",
-          "items",
-        ])
-      );
+      setClaims(loadedClaims);
+
+      setHistoryCountByClaim((current) => {
+        const next = { ...current };
+
+        loadedClaims.forEach((claim) => {
+          const id = String(claimDatabaseId(claim) || "");
+          const embedded = embeddedHistoryOf(claim);
+
+          if (id && embedded !== null) {
+            next[id] = embedded.length;
+          }
+        });
+
+        return next;
+      });
     } catch (err) {
       setError(
         err.response?.data?.detail ||
           err.response?.data?.message ||
           err.response?.data?.error ||
-          "Unable to load claim history. Please try again."
+          "Unable to load claim records. Please try again."
       );
     } finally {
       setLoading(false);
@@ -673,39 +792,19 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       const data = response.data;
       const user = data?.user || data?.data?.user || data?.data || data;
 
-      if (user && typeof user === "object") {
-        setCurrentUser(user);
-      }
+      if (user && typeof user === "object") setCurrentUser(user);
     } catch {
-      // Keep the local-storage user if the current-user endpoint fails.
+      // Keep local user information if the endpoint is unavailable.
     }
-  }, []);
-
-  const loadRcmUsers = useCallback(async () => {
-    // The users/ endpoint is not available in this project, so do not call it.
-    // Build creator filter choices from the claims returned by the working API.
-    setRcmUsers([]);
   }, []);
 
   useEffect(() => {
     loadClaims();
     loadCurrentUser();
-    loadRcmUsers();
-  }, [loadClaims, loadCurrentUser, loadRcmUsers, refreshKey]);
+  }, [loadClaims, loadCurrentUser, refreshKey]);
 
   const creatorOptions = useMemo(() => {
     const map = new Map();
-
-    rcmUsers.forEach((user) => {
-      const id = userIdOf(user);
-
-      if (id !== "") {
-        map.set(String(id), {
-          key: String(id),
-          name: userDisplayName(user),
-        });
-      }
-    });
 
     claims.forEach((claim) => {
       const id = creatorIdOf(claim);
@@ -714,42 +813,53 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       if (name === "Not recorded") return;
 
       const key = id !== "" ? String(id) : name;
-
-      if (!map.has(key)) {
-        map.set(key, { key, name });
-      }
+      if (!map.has(key)) map.set(key, { key, name });
     });
 
-    return [...map.values()].sort((a, b) =>
-      a.name.localeCompare(b.name)
-    );
-  }, [claims, rcmUsers]);
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [claims]);
 
+  const periodClaims = useMemo(() => {
+    return claims.filter((claim) => {
+      const created = dateParts(createdDateOf(claim));
+
+      if (!created?.day) return false;
+
+      if (dateMode === "day") {
+        return created.day === selectedDate;
+      }
+
+      return created.day.startsWith(`${selectedMonth}-`);
+    });
+  }, [claims, dateMode, selectedDate, selectedMonth]);
+
+  // Summary cards count each status category independently.
   const stats = useMemo(
     () => ({
-      total: claims.length,
-      approved: claims.filter(
+      total: periodClaims.length,
+      approved: periodClaims.filter(
         (claim) => statusCategory(claim) === "Approved"
       ).length,
-      pending: claims.filter(
+      submitted: periodClaims.filter(
+        (claim) => statusCategory(claim) === "Submitted"
+      ).length,
+      pending: periodClaims.filter(
         (claim) => statusCategory(claim) === "Pending"
       ).length,
-      rejected: claims.filter(
+      rejected: periodClaims.filter(
         (claim) => statusCategory(claim) === "Rejected"
       ).length,
     }),
-    [claims]
+    [periodClaims]
   );
 
   const filteredClaims = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return claims.filter((claim) => {
-      const parts = dateParts(createdDateOf(claim));
+    return periodClaims.filter((claim) => {
       const creatorId = creatorIdOf(claim);
       const creatorName = creatorNameOf(claim);
-      const creatorKey =
-        creatorId !== "" ? String(creatorId) : creatorName;
+      const creatorKey = creatorId !== "" ? creatorId : creatorName;
 
       const searchText = [
         patientName(claim),
@@ -757,9 +867,19 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         claimIdOf(claim),
         statusOf(claim),
         creatorName,
-      ].join(" ").toLowerCase();
+      ]
+        .join(" ")
+        .toLowerCase();
 
       if (query && !searchText.includes(query)) return false;
+
+      if (createdByFilter !== "All") {
+        if (createdByFilter === "Not recorded") {
+          if (creatorName !== "Not recorded") return false;
+        } else if (String(creatorKey) !== createdByFilter) {
+          return false;
+        }
+      }
 
       if (
         statusFilter !== "All" &&
@@ -768,52 +888,24 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         return false;
       }
 
-      if (createdByFilter !== "All") {
-        if (createdByFilter === "Not recorded") {
-          if (creatorName !== "Not recorded") return false;
-        } else if (creatorKey !== createdByFilter) {
-          return false;
-        }
-      }
-
-      if (selectedDate) {
-        if (parts?.day !== selectedDate) return false;
-      } else if (
-        selectedMonth &&
-        !parts?.day?.startsWith(`${selectedMonth}-`)
-      ) {
-        return false;
-      }
-
       return true;
     });
-  }, [
-    claims,
-    search,
-    statusFilter,
-    createdByFilter,
-    selectedDate,
-    selectedMonth,
-  ]);
+  }, [periodClaims, search, createdByFilter, statusFilter]);
 
   const hasFilters =
     Boolean(search.trim()) ||
     createdByFilter !== "All" ||
-    statusFilter !== "All" ||
-    selectedDate !== localDateString() ||
-    selectedMonth !== localMonthString();
+    statusFilter !== "All";
 
   function resetFilters() {
     setSearch("");
     setCreatedByFilter("All");
     setStatusFilter("All");
-    setSelectedMonth(localMonthString());
-    setSelectedDate(localDateString());
   }
 
-  function selectStatus(status) {
+  function handleCardClick(category) {
     setStatusFilter((current) =>
-      current === status ? "All" : status
+      category === "All" || current === category ? "All" : category
     );
   }
 
@@ -821,9 +913,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     const id = claimDatabaseId(claim);
 
     if (id === "" || id === "—") {
-      setActionError(
-        "This claim has no database ID. Check the claim API response."
-      );
+      setActionError("This claim has no database ID.");
       return;
     }
 
@@ -839,53 +929,176 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     });
   }
 
+  function historyCountOf(claim) {
+    const id = String(claimDatabaseId(claim) || "");
+    const embedded = embeddedHistoryOf(claim);
+
+    if (embedded !== null) return embedded.length;
+
+    if (typeof historyCountByClaim[id] === "number") {
+      return historyCountByClaim[id];
+    }
+
+    return null;
+  }
+
+  function canDeleteClaim(claim) {
+    if (!userId) return false;
+
+    const createdDay = dateParts(createdDateOf(claim))?.day;
+    if (createdDay !== localDateString()) return false;
+
+    const creatorId = creatorIdOf(claim);
+    if (!creatorId || String(creatorId) !== userId) return false;
+
+    const count = historyCountOf(claim);
+
+    // History must be verified before deletion is allowed.
+    if (count === null) return false;
+
+    return count <= 1;
+  }
+
+  async function loadClaimHistory(claim, forceRefresh = false) {
+    const id = String(claimDatabaseId(claim) || "");
+
+    if (!id || id === "—") {
+      setHistoryErrors((current) => ({
+        ...current,
+        [id]: "This claim has no database ID.",
+      }));
+      return;
+    }
+
+    setExpandedClaim(id);
+    setHistoryErrors((current) => ({ ...current, [id]: "" }));
+
+    if (!forceRefresh && Array.isArray(historyByClaim[id])) return;
+
+    setHistoryLoadingId(id);
+
+    try {
+      const response = await api.get(`rcm/claims/${id}/history/`);
+
+      const events = listFromResponse(response.data, [
+        "history",
+        "claim_history",
+        "claimHistory",
+        "results",
+        "items",
+        "data",
+      ]);
+
+      setHistoryByClaim((current) => ({
+        ...current,
+        [id]: events,
+      }));
+
+      setHistoryCountByClaim((current) => ({
+        ...current,
+        [id]: events.length,
+      }));
+    } catch (err) {
+      setHistoryErrors((current) => ({
+        ...current,
+        [id]:
+          err.response?.data?.detail ||
+          err.response?.data?.message ||
+          "Unable to load history. Please check the claim-history API endpoint.",
+      }));
+    } finally {
+      setHistoryLoadingId(null);
+    }
+  }
+
   async function deleteClaim(claim) {
     setActionError("");
     setSuccessMessage("");
 
-    if (!isCreatedTodayByCurrentUser(claim, userId)) {
+    const id = String(claimDatabaseId(claim) || "");
+    const count = historyCountOf(claim);
+
+    if (count === null) {
       setActionError(
-        "You can delete only claims you created today."
+        "Claim history has not been verified. Open History and refresh it before deleting this claim."
       );
       return;
     }
 
-    const id = claimDatabaseId(claim);
+    if (count > 1) {
+      setActionError(
+        "This claim cannot be deleted because it has more than one history record."
+      );
+      return;
+    }
 
-    if (id === "" || id === "—") {
-      setActionError("The claim database ID is missing. Unable to delete.");
+    if (!canDeleteClaim(claim)) {
+      setActionError(
+        "Only a claim created by your account today can be deleted."
+      );
+      return;
+    }
+
+    if (!id || id === "—") {
+      setActionError("The claim database ID is missing.");
       return;
     }
 
     const confirmed = window.confirm(
-      `Delete claim ${claimIdOf(claim)} for ${patientName(claim)}?\n\nThis action cannot be undone.`
+      `Delete claim ${claimIdOf(claim)} for ${patientName(claim)}?`
     );
 
     if (!confirmed) return;
 
-    setDeletingId(String(id));
+    setDeletingId(id);
 
     try {
       await api.delete(`rcm/claims/${id}/`);
 
       setClaims((current) =>
-        current.filter(
-          (item) => String(claimDatabaseId(item)) !== String(id)
-        )
+        current.filter((item) => String(claimDatabaseId(item)) !== id)
       );
 
+      setHistoryByClaim((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+
+      setHistoryCountByClaim((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+
+      setHistoryErrors((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+
       setExpandedClaim((current) =>
-        String(current) === String(id) ? null : current
+        String(current) === id ? null : current
       );
 
       setSuccessMessage("Claim deleted successfully.");
     } catch (err) {
+      const data = err.response?.data;
+
       setActionError(
-        err.response?.data?.detail ||
-          err.response?.data?.message ||
-          err.response?.data?.error ||
-          "Unable to delete the claim. Check the backend delete endpoint and permissions."
+        data?.detail ||
+          data?.message ||
+          data?.error ||
+          (err.response?.status === 403
+            ? "The server denied deletion. Check the backend delete permissions."
+            : err.response?.status === 404
+              ? "The claim was not found. Refresh the list and try again."
+              : err.response?.status === 409
+                ? "This claim cannot be deleted because it has more than one history record."
+                : "The server could not delete this claim. Check the backend response and delete rules.")
       );
+
+      loadClaims(false);
     } finally {
       setDeletingId(null);
     }
@@ -897,45 +1110,60 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     }
   }
 
+  const periodLabel =
+    dateMode === "day"
+      ? formatDate(selectedDate)
+      : formatMonth(selectedMonth);
+
   const cards = [
     {
       label: "Total Claims",
       value: stats.total,
-      description: "All recorded claims",
-      status: "All",
+      category: "All",
+      description: "Claims in selected period",
       color: C.blue,
-      bg: "#f1f7ff",
-      border: "#c9e0ff",
+      bg: "#eff6ff",
+      border: "#bfdbfe",
       icon: "list",
     },
     {
       label: "Approved Claims",
       value: stats.approved,
+      category: "Approved",
       description: "Approved, completed, or paid",
-      status: "Approved",
       color: C.green,
-      bg: "#effbf6",
-      border: "#c2f0df",
+      bg: "#ecfdf5",
+      border: "#a7f3d0",
       icon: "check",
+    },
+    {
+      label: "Submitted Claims",
+      value: stats.submitted,
+      category: "Submitted",
+      description: "Submitted or awaiting a decision",
+      color: C.teal,
+      bg: "#f0fdfa",
+      border: "#99f6e4",
+      icon: "history",
     },
     {
       label: "Pending Claims",
       value: stats.pending,
-      description: "Awaiting processing or review",
-      status: "Pending",
-      color: C.purple,
-      bg: "#f6f3ff",
-      border: "#e0d7ff",
+      category: "Pending",
+      description: "Awaiting action or processing",
+      color: C.orange,
+      bg: "#fff7ed",
+      border: "#fed7aa",
       icon: "clock",
     },
     {
       label: "Rejected Claims",
       value: stats.rejected,
-      description: "Requiring review",
-      status: "Rejected",
+      category: "Rejected",
+      description: "Rejected or denied claims",
       color: C.red,
-      bg: "#fff3f4",
-      border: "#ffd4dc",
+      bg: "#fff1f2",
+      border: "#fecdd3",
       icon: "alert",
     },
   ];
@@ -943,356 +1171,432 @@ export default function ClaimHistory({ refreshKey = 0 }) {
   return (
     <div className="claim-history-page">
       <style>{`
-        .claim-history-page { width:100%; color:${C.navy}; font-family:inherit; font-size:14px; }
-        .claim-history-page * { box-sizing:border-box; }
-        .ch-cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:15px; margin-bottom:22px; }
-        .ch-card { display:flex; align-items:flex-start; gap:13px; padding:18px; border:1px solid; border-radius:13px; text-align:left; cursor:pointer; font-family:inherit; transition:box-shadow .18s,transform .18s; min-width:0; }
-        .ch-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px #172b4d12; }
-        .ch-card.ch-selected { outline:2px solid #93baff; outline-offset:1px; }
-        .ch-card-icon { display:grid; place-items:center; width:42px; height:42px; border-radius:50%; flex-shrink:0; }
-        .ch-card-content { min-width:0; }
-        .ch-card-label { font-size:13px; font-weight:800; line-height:1.5; }
-        .ch-card-value { font-size:27px; font-weight:900; margin:5px 0; }
-        .ch-card-description { color:${C.muted}; font-size:12px; line-height:1.5; }
-        .ch-panel { border:1px solid ${C.border}; border-radius:15px; background:#fff; box-shadow:0 4px 18px #172b4d08; overflow:hidden; }
-        .ch-content { padding:22px; }
-        .ch-header,.ch-heading,.ch-footer,.ch-table-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-        .ch-header { margin-bottom:20px; }
-        .ch-title { font-size:24px; font-weight:900; margin:0 0 6px; color:${C.navy}; }
-        .ch-subtitle { margin:0; color:${C.muted}; font-size:13px; line-height:1.6; }
-        .ch-count { display:inline-flex; padding:7px 11px; border:1px solid #d2e3fc; border-radius:20px; background:#eff6ff; color:#2455a0; font-size:12px; font-weight:800; white-space:nowrap; }
-        .ch-button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:40px; padding:9px 13px; border:1px solid #1557b0; border-radius:9px; background:#1557b0; color:#fff; font-family:inherit; font-size:13px; font-weight:750; cursor:pointer; }
-        .ch-button:hover:not(:disabled) { filter:brightness(.96); }
-        .ch-button:focus-visible,.ch-card:focus-visible,.ch-link:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
-        .ch-button:disabled { opacity:.55; cursor:not-allowed; }
-        .ch-secondary { border-color:#cbdcf3; background:#fff; color:#174b91; }
-        .ch-danger { border-color:#fecdd3; background:#fff5f5; color:#be123c; }
-        .ch-edit { border-color:#c9ddfc; background:#f0f6ff; color:#1d4ed8; }
-        .ch-filter { padding:0; border:1px solid #dbe7f7; border-radius:13px; background:#fff; overflow:hidden; box-shadow:0 3px 12px #1e40af08; }
-        .ch-heading { padding:16px 19px; border-bottom:1px solid #e5edf8; background:linear-gradient(110deg,#f5f9ff,#fff); }
-        .ch-heading-title { display:flex; align-items:center; gap:10px; color:#173b73; font-size:17px; font-weight:850; }
-        .ch-filter-grid { display:grid; grid-template-columns:minmax(230px,1.5fr) repeat(2,minmax(150px,1fr)); gap:16px; align-items:end; padding:20px; }
-        .ch-label { display:block; min-width:0; color:#526781; font-size:14px; font-weight:750; }
-        .ch-control-wrap { position:relative; margin-top:8px; }
-        .ch-control { width:100%; min-width:0; height:46px; padding:0 12px; border:1px solid #d4dfed; border-radius:9px; background:#fff; color:${C.navy}; font-family:inherit; font-size:14px; outline:none; }
-        .ch-control:focus { border-color:#3b82f6; box-shadow:0 0 0 3px #3b82f61a; }
-        .ch-search-icon { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#64748b; pointer-events:none; }
-        .ch-search { padding-left:39px; }
-        .ch-date-box { grid-column:1/-1; padding:17px; border:1px solid #e0eaf7; border-radius:11px; background:#f8fbff; }
-        .ch-date-title { display:flex; align-items:center; gap:9px; margin-bottom:14px; color:#244b83; font-size:15px; font-weight:800; }
-        .ch-date-title-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:9px; background:#e2edff; color:#2563eb; }
-        .ch-date-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
-        .ch-date-hint { margin-top:13px; padding:11px 13px; border-radius:8px; background:#edf4ff; color:#526781; font-size:13px; line-height:1.8; }
-        .ch-date-hint strong { color:#1d4ed8; }
-        .ch-chips { display:flex; gap:8px; flex-wrap:wrap; padding:0 19px; margin-top:-3px; }
-        .ch-chip { padding:7px 11px; border:1px solid #cfe0fb; border-radius:20px; background:#eff6ff; color:#1d4ed8; font-size:13px; font-weight:750; overflow-wrap:anywhere; }
-        .ch-footer { padding:14px 19px; border-top:1px solid #e7edf6; background:#fbfdff; }
-        .ch-muted { color:${C.muted}; font-size:13px; }
-        .ch-table-section { margin-top:25px; }
-        .ch-table-heading { margin-bottom:13px; }
-        .ch-table-title { margin:0 0 5px; color:${C.navy}; font-size:18px; font-weight:850; }
-        .ch-table-wrap { width:100%; overflow:auto; border:1px solid #dce7f5; border-radius:11px; background:#fff; }
-        .ch-table { width:100%; min-width:1150px; border-collapse:separate; border-spacing:0; text-align:left; }
-        .ch-table th { padding:14px; border-bottom:1px solid #dce7f5; background:#eff5fd; color:#31527f; font-size:12px; font-weight:850; text-transform:uppercase; letter-spacing:.035em; white-space:nowrap; }
-        .ch-table td { padding:13px; border-bottom:1px solid #eaf0f8; color:#526781; font-size:13px; vertical-align:middle; }
-        .ch-row:hover { background:#f5f9ff; }
-        .ch-claim-id { display:inline-block; padding:7px 10px; border:1px solid #d8e8ff; border-radius:20px; background:#eaf3ff; color:#1554a5; font-size:12px; font-weight:850; white-space:nowrap; }
-        .ch-link { padding:0; border:0; background:transparent; color:#17365f; font-family:inherit; font-size:13px; font-weight:800; text-align:left; cursor:pointer; }
-        .ch-link:hover { color:${C.blue}; text-decoration:underline; }
-        .ch-status { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border:1px solid; border-radius:20px; font-size:12px; font-weight:800; white-space:nowrap; }
-        .ch-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
-        .ch-creator { display:inline-block; max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#49617f; font-weight:650; }
-        .ch-table .ch-button { min-height:36px; padding:7px 11px; border-radius:8px; font-size:12px; }
-        .ch-detail-row td { padding:0; background:#f4f8ff; }
-        .ch-detail-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; padding:15px; }
-        .ch-detail-item { min-width:0; padding:12px; border:1px solid #dce8f8; border-radius:9px; background:#fff; }
-        .ch-detail-label { margin-bottom:7px; color:#71839d; font-size:11px; font-weight:800; text-transform:uppercase; }
-        .ch-detail-value { color:#203c63; font-size:13px; font-weight:700; overflow-wrap:anywhere; white-space:pre-wrap; }
-        .ch-detail-actions { grid-column:1/-1; display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
-        .ch-empty { padding:38px 16px; text-align:center; color:#71839d; font-size:14px; }
-        .ch-empty strong { display:block; margin-bottom:8px; color:#203c63; font-size:17px; }
-        .ch-alert { margin:14px 0; padding:12px 14px; border:1px solid; border-radius:10px; font-size:14px; line-height:1.6; }
-        .ch-error { border-color:#fecaca; background:#fef2f2; color:${C.red}; }
-        .ch-success { border-color:#bbf7d0; background:#f0fdf4; color:${C.green}; }
-        @media (max-width:1100px) { .ch-cards { grid-template-columns:repeat(2,minmax(0,1fr)); } .ch-detail-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-        @media (max-width:850px) { .ch-filter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ch-filter-grid>.ch-label:first-child { grid-column:1/-1; } }
-        @media (max-width:650px) { .ch-content { padding:13px; } .ch-cards { gap:9px; } .ch-card { padding:12px; gap:9px; } .ch-card-value { font-size:23px; } .ch-card-icon { width:34px; height:34px; } .ch-detail-grid,.ch-filter-grid,.ch-date-grid { grid-template-columns:1fr; } .ch-filter-grid>.ch-label:first-child,.ch-date-box { grid-column:auto; } .ch-heading,.ch-filter-grid { padding:14px; } .ch-chips { padding:0 14px; } .ch-footer { padding:12px 14px; } .ch-title { font-size:21px; } }
+        .claim-history-page{width:100%;color:${C.navy};font-family:inherit;font-size:14px}
+        .claim-history-page *{box-sizing:border-box}
+        .ch-page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+        .ch-title{font-size:25px;font-weight:900;margin:0 0 7px;color:${C.navy};letter-spacing:-.45px}
+        .ch-subtitle{margin:0;color:${C.muted};font-size:13px;line-height:1.65}
+        .ch-count{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #d4e4fa;border-radius:20px;background:#f1f7ff;color:#2455a0;font-size:12px;font-weight:800;white-space:nowrap}
+        .ch-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:9px 13px;border:1px solid #1557b0;border-radius:9px;background:#1557b0;color:#fff;font-family:inherit;font-size:13px;font-weight:750;cursor:pointer;transition:background .15s,border .15s}
+        .ch-button:hover:not(:disabled){filter:brightness(.97)}
+        .ch-button:disabled{opacity:.5;cursor:not-allowed}
+        .ch-secondary{border-color:#cbdcf3;background:#fff;color:#174b91}
+        .ch-danger{border-color:#fecdd3;background:#fff5f5;color:#be123c}
+        .ch-edit{border-color:#c9ddfc;background:#f0f6ff;color:#1d4ed8}
+        .ch-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:13px;margin-bottom:22px}
+        .ch-card{position:relative;display:flex;align-items:flex-start;gap:11px;min-width:0;width:100%;padding:16px 13px;border:1px solid;border-radius:14px;text-align:left;font-family:inherit;cursor:pointer;transition:transform .18s,box-shadow .18s,outline-color .18s;appearance:none;color:inherit}
+        .ch-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px #172b4d12}
+        .ch-card:focus-visible{outline:3px solid #60a5fa;outline-offset:3px}
+        .ch-card.ch-card-active{box-shadow:0 0 0 2px #2563eb,0 8px 24px #172b4d12}
+        .ch-card-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;flex-shrink:0}
+        .ch-card-content{min-width:0}
+        .ch-card-label{display:block;font-size:12px;font-weight:800;line-height:1.5;color:#334155}
+        .ch-card-value{display:block;font-size:27px;font-weight:900;margin:6px 0 4px;line-height:1.2}
+        .ch-card-description{display:block;color:${C.muted};font-size:10px;line-height:1.5}
+        .ch-card-active-label{display:block;margin-top:7px;color:#1d4ed8;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.04em}
+        .ch-panel{border:1px solid ${C.border};border-radius:15px;background:#fff;box-shadow:0 4px 18px #172b4d08;overflow:hidden}
+        .ch-content{padding:22px}
+        .ch-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+        .ch-filter{border:1px solid #dce7f5;border-radius:14px;background:#fff;overflow:hidden}
+        .ch-filter-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:17px 20px;border-bottom:1px solid #e5edf8;background:linear-gradient(120deg,#f3f8ff,#fbfdff)}
+        .ch-filter-title{display:flex;align-items:center;gap:10px;color:#173b73;font-size:16px;font-weight:850}
+        .ch-filter-subtitle{margin:4px 0 0 29px;color:${C.muted};font-size:12px}
+        .ch-filter-body{padding:20px}
+        .ch-mode-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:19px;padding:15px;border:1px solid #e1eaf7;border-radius:12px;background:#f8fbff}
+        .ch-mode-label{display:flex;align-items:center;gap:10px;color:#244b83;font-size:13px;font-weight:850}
+        .ch-mode-label small{display:block;margin-top:4px;color:${C.muted};font-size:11px;font-weight:500}
+        .ch-segment{display:inline-flex;gap:4px;padding:4px;border:1px solid #d4e1f2;border-radius:10px;background:#edf3fb}
+        .ch-segment button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:8px 15px;border:0;border-radius:7px;background:transparent;color:#506782;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer}
+        .ch-segment button.active{background:#fff;color:#174b91;box-shadow:0 1px 4px #172b4d18}
+        .ch-filter-grid{display:grid;grid-template-columns:minmax(240px,1.5fr) repeat(2,minmax(170px,1fr));gap:16px;align-items:end}
+        .ch-label{display:block;min-width:0;color:#526781;font-size:12px;font-weight:800}
+        .ch-control-wrap{position:relative;margin-top:8px}
+        .ch-control{width:100%;min-width:0;height:45px;padding:0 12px;border:1px solid #d4dfed;border-radius:9px;background:#fff;color:${C.navy};font-family:inherit;font-size:13px;outline:none}
+        .ch-control:focus{border-color:#3b82f6;box-shadow:0 0 0 3px #3b82f61a}
+        .ch-search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#64748b;pointer-events:none}
+        .ch-search{padding-left:39px}
+        .ch-date-description{margin-top:8px;color:#64748b;font-size:11px;font-weight:500;line-height:1.6}
+        .ch-period-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:18px;padding:12px 14px;border:1px solid #dbeafe;border-radius:9px;background:#eff6ff;color:#244b83;font-size:12px}
+        .ch-period-summary strong{font-weight:850}
+        .ch-filter-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 20px;border-top:1px solid #e7edf6;background:#fbfdff}
+        .ch-muted{color:${C.muted};font-size:12px}
+        .ch-table-section{margin-top:27px}
+        .ch-table-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+        .ch-table-title{margin:0 0 5px;color:${C.navy};font-size:18px;font-weight:850}
+        .ch-table-wrap{width:100%;overflow:auto;border:1px solid #dce7f5;border-radius:11px;background:#fff}
+        .ch-table{width:100%;min-width:1120px;border-collapse:separate;border-spacing:0;text-align:left}
+        .ch-table th{padding:14px;border-bottom:1px solid #dce7f5;background:#eff5fd;color:#31527f;font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}
+        .ch-table td{padding:13px;border-bottom:1px solid #eaf0f8;color:#526781;font-size:13px;vertical-align:middle}
+        .ch-row:hover{background:#f7faff}
+        .ch-claim-id{display:inline-block;padding:7px 10px;border:1px solid #d8e8ff;border-radius:20px;background:#eaf3ff;color:#1554a5;font-size:12px;font-weight:850;white-space:nowrap}
+        .ch-link{padding:0;border:0;background:transparent;color:#17365f;font-family:inherit;font-size:13px;font-weight:800;text-align:left;cursor:pointer}
+        .ch-link:hover{color:${C.blue};text-decoration:underline}
+        .ch-status{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid;border-radius:20px;font-size:12px;font-weight:800;white-space:nowrap}
+        .ch-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+        .ch-creator{display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#49617f;font-weight:650}
+        .ch-table .ch-button{min-height:35px;padding:7px 10px;border-radius:8px;font-size:12px}
+        .ch-detail-row td{padding:0;background:#f4f8ff}
+        .ch-history-wrap{padding:18px}
+        .ch-history-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:15px}
+        .ch-history-heading{margin:0 0 5px;color:#173b73;font-size:16px;font-weight:850}
+        .ch-history-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #dce8f8}
+        .ch-history-table th,.ch-history-table td{padding:13px 15px;border-bottom:1px solid #e8eff8;text-align:left;vertical-align:middle}
+        .ch-history-table th{background:#edf4ff;color:#31527f;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+        .ch-history-table td{color:#334e70;font-size:13px;overflow-wrap:anywhere}
+        .ch-history-table tr:last-child td{border-bottom:0}
+        .ch-history-event{display:inline-flex;padding:6px 10px;border-radius:20px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:800}
+        .ch-history-empty{padding:24px;border:1px dashed #cbdcf0;border-radius:10px;background:#fff;text-align:center;color:#71839d;line-height:1.7}
+        .ch-empty{padding:38px 16px;text-align:center;color:#71839d;font-size:13px;line-height:1.7}
+        .ch-empty strong{display:block;margin-bottom:8px;color:#203c63;font-size:17px}
+        .ch-alert{margin:14px 0;padding:12px 14px;border:1px solid;border-radius:10px;font-size:13px;line-height:1.6}
+        .ch-error{border-color:#fecaca;background:#fef2f2;color:${C.red}}
+        .ch-success{border-color:#bbf7d0;background:#f0fdf4;color:${C.green}}
+        @media(max-width:1250px){.ch-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+        @media(max-width:850px){.ch-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-filter-grid>.ch-label:first-child{grid-column:1/-1}}
+        @media(max-width:650px){.ch-content{padding:13px}.ch-cards{gap:9px}.ch-card{padding:12px;gap:9px}.ch-card-value{font-size:24px}.ch-card-icon{width:35px;height:35px}.ch-filter-grid{grid-template-columns:1fr}.ch-filter-grid>.ch-label:first-child{grid-column:auto}.ch-filter-heading,.ch-filter-body{padding:14px}.ch-filter-footer{padding:12px 14px}.ch-title{font-size:22px}.ch-mode-row{align-items:flex-start}.ch-segment{width:100%}.ch-segment button{flex:1}}
       `}</style>
 
-      <div className="ch-cards">
-        {cards.map((card) => (
+      <div className="ch-page-header">
+        <div>
+          <h2 className="ch-title">Claim Records</h2>
+          <p className="ch-subtitle">
+            Search, review, edit, and track claims by day or month.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+          <span className="ch-count">
+            <Icon name="calendar" size={15} />
+            {periodLabel}
+          </span>
+
           <button
             type="button"
-            key={card.label}
-            className={`ch-card ${statusFilter === card.status ? "ch-selected" : ""}`}
-            style={{ background: card.bg, borderColor: card.border }}
-            onClick={() => selectStatus(card.status)}
-            aria-pressed={statusFilter === card.status}
-            title={`Filter by ${card.label}`}
+            className="ch-button"
+            onClick={() => {
+              loadClaims(false);
+              loadCurrentUser();
+            }}
+            disabled={refreshing}
           >
-            <span
-              className="ch-card-icon"
-              style={{ background: card.border, color: card.color }}
-            >
-              <Icon name={card.icon} size={21} />
-            </span>
-
-            <span className="ch-card-content">
-              <span className="ch-card-label">{card.label}</span>
-              <span
-                className="ch-card-value"
-                style={{ color: card.color, display: "block" }}
-              >
-                {card.value}
-              </span>
-              <span className="ch-card-description">{card.description}</span>
-            </span>
+            <Icon name="refresh" size={16} />
+            {refreshing ? "Refreshing..." : "Refresh"}
           </button>
-        ))}
+        </div>
+      </div>
+
+      {actionError && (
+        <div className="ch-alert ch-error" role="alert">
+          {actionError}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="ch-alert ch-success" role="status">
+          {successMessage}
+        </div>
+      )}
+
+      {error && (
+        <div className="ch-alert ch-error" role="alert">
+          {error}
+          <button
+            type="button"
+            className="ch-button ch-secondary"
+            onClick={() => loadClaims()}
+            disabled={loading}
+            style={{ marginLeft: 10 }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {/* Clickable summary cards */}
+      <div className="ch-cards">
+        {cards.map((card) => {
+          const active = statusFilter === card.category;
+
+          return (
+            <button
+              key={card.label}
+              type="button"
+              className={`ch-card${active ? " ch-card-active" : ""}`}
+              style={{
+                background: card.bg,
+                borderColor: active ? card.color : card.border,
+              }}
+              onClick={() => handleCardClick(card.category)}
+              aria-pressed={active}
+              aria-label={`${card.label}: ${card.value}. ${
+                active
+                  ? "Currently selected. Click to clear the status filter."
+                  : "Click to filter claims."
+              }`}
+              title={
+                active
+                  ? "Click to clear this status filter"
+                  : `Filter table by ${card.category.toLowerCase()} claims`
+              }
+            >
+              <span
+                className="ch-card-icon"
+                style={{
+                  background: card.border,
+                  color: card.color,
+                }}
+              >
+                <Icon name={card.icon} size={21} />
+              </span>
+
+              <span className="ch-card-content">
+                <span className="ch-card-label">{card.label}</span>
+                <span
+                  className="ch-card-value"
+                  style={{ color: card.color }}
+                >
+                  {card.value}
+                </span>
+                <span className="ch-card-description">
+                  {card.description}
+                </span>
+                {active && (
+                  <span className="ch-card-active-label">
+                    {card.category === "All"
+                      ? "All claims selected"
+                      : "Filter active"}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <section className="ch-panel">
         <div className="ch-content">
-          <div className="ch-header">
+          <div className="ch-toolbar">
             <div>
-              <h2 className="ch-title">Claim Records</h2>
+              <h3 className="ch-table-title">Find a claim</h3>
               <p className="ch-subtitle">
-                Search, filter, and manage your claim history.
+                Select a period first, then narrow the results using search,
+                creator, or the summary cards.
               </p>
             </div>
 
-            <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-              <span className="ch-count">
-                {filteredClaims.length} of {claims.length} claims
-              </span>
-
-              <button
-                type="button"
-                className="ch-button"
-                onClick={() => {
-                  loadClaims(false);
-                  loadCurrentUser();
-                }}
-                disabled={refreshing}
-              >
-                <Icon name="refresh" size={16} />
-                {refreshing ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
+            <span className="ch-count">
+              {filteredClaims.length} matching claims
+            </span>
           </div>
 
-          {actionError && (
-            <div className="ch-alert ch-error" role="alert">
-              {actionError}
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="ch-alert ch-success" role="status">
-              {successMessage}
-            </div>
-          )}
-
           <div className="ch-filter">
-            <div className="ch-heading">
-              <div className="ch-heading-title">
-                <Icon name="filter" size={20} />
-                Filters &amp; Search
+            <div className="ch-filter-heading">
+              <div>
+                <div className="ch-filter-title">
+                  <Icon name="filter" size={19} />
+                  Filters &amp; Date Selection
+                </div>
+                <p className="ch-filter-subtitle">
+                  Choose whether to view claims for one day or an entire month.
+                </p>
               </div>
-              {hasFilters && <span className="ch-count">Filters active</span>}
             </div>
 
-            <div className="ch-filter-grid">
-              <label className="ch-label">
-                Search claims
-                <div className="ch-control-wrap">
-                  <span className="ch-search-icon">
-                    <Icon name="search" size={18} />
-                  </span>
-                  <input
-                    className="ch-control ch-search"
-                    type="search"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search patient, file number, claim ID..."
-                  />
+            <div className="ch-filter-body">
+              <div className="ch-mode-row">
+                <div className="ch-mode-label">
+                  <Icon name="calendar" size={21} />
+                  <div>
+                    View claims by
+                    <small>
+                      {dateMode === "day"
+                        ? "Daily summary and records"
+                        : "Monthly summary and records"}
+                    </small>
+                  </div>
                 </div>
-              </label>
 
-              <label className="ch-label">
-                Status
-                <div className="ch-control-wrap">
-                  <select
-                    className="ch-control"
-                    value={statusFilter}
-                    onChange={(event) => setStatusFilter(event.target.value)}
+                <div
+                  className="ch-segment"
+                  role="group"
+                  aria-label="Date filter mode"
+                >
+                  <button
+                    type="button"
+                    className={dateMode === "day" ? "active" : ""}
+                    aria-pressed={dateMode === "day"}
+                    onClick={() => setDateMode("day")}
                   >
-                    <option value="All">All statuses</option>
-                    <option value="Approved">Approved</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Rejected">Rejected</option>
-                  </select>
-                </div>
-              </label>
+                    <Icon name="calendar" size={15} />
+                    Day
+                  </button>
 
-              <label className="ch-label">
-                Created by (RCM user)
-                <div className="ch-control-wrap">
-                  <select
-                    className="ch-control"
-                    value={createdByFilter}
-                    onChange={(event) => setCreatedByFilter(event.target.value)}
+                  <button
+                    type="button"
+                    className={dateMode === "month" ? "active" : ""}
+                    aria-pressed={dateMode === "month"}
+                    onClick={() => setDateMode("month")}
                   >
-                    <option value="All">All RCM creators</option>
-                    {creatorOptions.map((user) => (
-                      <option key={user.key} value={user.key}>
-                        {user.name}
-                      </option>
-                    ))}
-                    <option value="Not recorded">Not recorded</option>
-                  </select>
-                </div>
-              </label>
-
-              <div className="ch-date-box">
-                <div className="ch-date-title">
-                  <span className="ch-date-title-icon">
-                    <Icon name="calendar" size={18} />
-                  </span>
-                  Filter by date
-                </div>
-
-                <div className="ch-date-grid">
-                  <label className="ch-label">
+                    <Icon name="list" size={15} />
                     Month
-                    <div className="ch-control-wrap">
-                      <input
-                        className="ch-control"
-                        type="month"
-                        value={selectedMonth}
-                        onChange={(event) => {
-                          setSelectedMonth(event.target.value);
-                          setSelectedDate("");
-                        }}
-                      />
-                    </div>
-                  </label>
+                  </button>
+                </div>
+              </div>
 
+              <div className="ch-filter-grid">
+                <label className="ch-label">
+                  Search claims
+                  <div className="ch-control-wrap">
+                    <span className="ch-search-icon">
+                      <Icon name="search" size={18} />
+                    </span>
+                    <input
+                      className="ch-control ch-search"
+                      type="search"
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Patient, file number, claim ID..."
+                    />
+                  </div>
+                  <div className="ch-date-description">
+                    Search by patient name, file number, claim ID, status, or
+                    creator.
+                  </div>
+                </label>
+
+                <label className="ch-label">
+                  Created by
+                  <div className="ch-control-wrap">
+                    <select
+                      className="ch-control"
+                      value={createdByFilter}
+                      onChange={(event) =>
+                        setCreatedByFilter(event.target.value)
+                      }
+                    >
+                      <option value="All">All creators</option>
+                      {creatorOptions.map((user) => (
+                        <option key={user.key} value={user.key}>
+                          {user.name}
+                        </option>
+                      ))}
+                      <option value="Not recorded">Not recorded</option>
+                    </select>
+                  </div>
+                  <div className="ch-date-description">
+                    Show claims created by a particular user.
+                  </div>
+                </label>
+
+                {dateMode === "day" ? (
                   <label className="ch-label">
-                    Specific date
+                    Select day
                     <div className="ch-control-wrap">
                       <input
                         className="ch-control"
                         type="date"
                         value={selectedDate}
-                        onChange={(event) => {
-                          const day = event.target.value;
-                          setSelectedDate(day);
-                          if (day) setSelectedMonth(day.slice(0, 7));
-                        }}
+                        onChange={(event) =>
+                          setSelectedDate(event.target.value)
+                        }
                       />
                     </div>
+                    <div className="ch-date-description">
+                      Summary cards and records will reflect this date.
+                    </div>
                   </label>
-                </div>
+                ) : (
+                  <label className="ch-label">
+                    Select month
+                    <div className="ch-control-wrap">
+                      <input
+                        className="ch-control"
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(event) =>
+                          setSelectedMonth(event.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="ch-date-description">
+                      Summary cards and records will reflect the whole month.
+                    </div>
+                  </label>
+                )}
+              </div>
 
-                <div className="ch-date-hint">
-                  <strong>Current selection:</strong>{" "}
-                  {selectedDate ? formatDate(selectedDate) : formatMonth(selectedMonth)}
-                  <br />
-                  Select a specific date or clear that field to view the entire selected month.
-                </div>
-
-                <div style={{ marginTop: 12 }}>
-                  <button
-                    type="button"
-                    className="ch-button ch-secondary"
-                    onClick={() => {
-                      setSelectedDate("");
-                      setSelectedMonth(localMonthString());
-                    }}
-                  >
-                    View Entire Month
-                  </button>
-
-                  <button
-                    type="button"
-                    className="ch-button ch-secondary"
-                    style={{ marginLeft: 8 }}
-                    onClick={() => {
-                      setSelectedMonth(localMonthString());
-                      setSelectedDate(localDateString());
-                    }}
-                  >
-                    Today
-                  </button>
-                </div>
+              <div className="ch-period-summary">
+                <span>
+                  <strong>Current period:</strong> {periodLabel}
+                </span>
+                <span>
+                  <strong>{periodClaims.length}</strong> claims in this period
+                </span>
               </div>
             </div>
 
-            {hasFilters && (
-              <div className="ch-chips">
-                {statusFilter !== "All" && (
-                  <span className="ch-chip">Status: {statusFilter}</span>
-                )}
-                {search.trim() && (
-                  <span className="ch-chip">Search: {search.trim()}</span>
-                )}
-                {createdByFilter !== "All" && (
-                  <span className="ch-chip">
-                    Created by:{" "}
-                    {creatorOptions.find((user) => user.key === createdByFilter)?.name ||
-                      createdByFilter}
-                  </span>
-                )}
-                <span className="ch-chip">
-                  Date: {selectedDate ? formatDate(selectedDate) : formatMonth(selectedMonth)}
-                </span>
-              </div>
-            )}
-
-            <div className="ch-footer">
+            <div className="ch-filter-footer">
               <span className="ch-muted">
-                Showing <strong>{filteredClaims.length}</strong> matching claims
+                Showing {filteredClaims.length} of {periodClaims.length} claims
+                for the selected period.
+                {statusFilter !== "All" && <> Status: {statusFilter}.</>}
               </span>
 
-              {hasFilters && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {hasFilters && (
+                  <button
+                    type="button"
+                    className="ch-button ch-secondary"
+                    onClick={resetFilters}
+                  >
+                    <Icon name="reset" size={15} />
+                    Clear filters
+                  </button>
+                )}
+
                 <button
                   type="button"
                   className="ch-button ch-secondary"
-                  onClick={resetFilters}
+                  onClick={() => {
+                    setDateMode("day");
+                    setSelectedDate(localDateString());
+                    setSelectedMonth(localMonthString());
+                    resetFilters();
+                  }}
                 >
-                  <Icon name="reset" size={16} />
-                  Reset filters
+                  Today
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  className="ch-button ch-secondary"
+                  onClick={() => {
+                    setDateMode("month");
+                    setSelectedMonth(localMonthString());
+                    resetFilters();
+                  }}
+                >
+                  Current month
+                </button>
+              </div>
             </div>
           </div>
-
-          {error && (
-            <div className="ch-alert ch-error" role="alert">
-              {error}
-              <button
-                type="button"
-                className="ch-button ch-secondary"
-                onClick={() => loadClaims()}
-                disabled={loading}
-                style={{ marginLeft: 10 }}
-              >
-                Try again
-              </button>
-            </div>
-          )}
 
           <div className="ch-table-section">
             <div className="ch-table-heading">
               <div>
                 <h3 className="ch-table-title">Claim Records</h3>
                 <p className="ch-subtitle">
-                  Review claim details, status, creator, and submission date.
+                  {dateMode === "day"
+                    ? `Claims created on ${periodLabel}.`
+                    : `Claims created during ${periodLabel}.`}
+                  {statusFilter !== "All" &&
+                    ` Showing ${statusFilter.toLowerCase()} claims.`}
                 </p>
               </div>
+
               <span className="ch-count">
-                {filteredClaims.length} of {claims.length} claims
+                {filteredClaims.length} of {periodClaims.length} claims
               </span>
             </div>
 
@@ -1319,16 +1623,48 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                       const badge = statusColors(status);
                       const patientId = patientIdOf(claim);
                       const id = claimDatabaseId(claim);
-                      const claimKey = String(id || `${claimIdOf(claim)}-${index}`);
+                      const claimKey = String(
+                        id || `${claimIdOf(claim)}-${index}`
+                      );
                       const isExpanded = String(expandedClaim) === claimKey;
-                      const canDelete = isCreatedTodayByCurrentUser(claim, userId);
+                      const count = historyCountOf(claim);
+                      const canDelete = canDeleteClaim(claim);
+                      const hasMultipleHistory =
+                        typeof count === "number" && count > 1;
                       const isDeleting = deletingId === String(id);
 
+                      const historyEvents = Array.isArray(
+                        historyByClaim[claimKey]
+                      )
+                        ? [...historyByClaim[claimKey]].sort((a, b) => {
+                            const aTime = new Date(
+                              eventDate(a) || 0
+                            ).getTime();
+                            const bTime = new Date(
+                              eventDate(b) || 0
+                            ).getTime();
+                            return aTime - bTime;
+                          })
+                        : [];
+
+                      const deleteDisabled =
+                        isDeleting || !canDelete || hasMultipleHistory;
+
+                      const deleteTitle = hasMultipleHistory
+                        ? "Cannot delete: this claim has more than one history record"
+                        : count === null
+                          ? "Open claim history to verify whether deletion is allowed"
+                          : canDelete
+                            ? "Delete your claim created today"
+                            : "Only your own claims created today with no more than one history record are eligible";
+
                       return (
-                        <React.Fragment key={claimKey}>
+                        <Fragment key={claimKey}>
                           <tr className="ch-row">
                             <td>
-                              <span className="ch-claim-id">{claimIdOf(claim)}</span>
+                              <span className="ch-claim-id">
+                                {claimIdOf(claim)}
+                              </span>
                             </td>
 
                             <td>
@@ -1358,7 +1694,9 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                                 >
                                   {fileNumberOf(claim)}
                                 </button>
-                              ) : fileNumberOf(claim)}
+                              ) : (
+                                fileNumberOf(claim)
+                              )}
                             </td>
 
                             <td>
@@ -1370,13 +1708,19 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                                   borderColor: badge.border,
                                 }}
                               >
-                                <span className="ch-dot" style={{ background: badge.dot }} />
+                                <span
+                                  className="ch-dot"
+                                  style={{ background: badge.dot }}
+                                />
                                 {status}
                               </span>
                             </td>
 
                             <td>
-                              <span className="ch-creator" title={creatorNameOf(claim)}>
+                              <span
+                                className="ch-creator"
+                                title={creatorNameOf(claim)}
+                              >
                                 {creatorNameOf(claim)}
                               </span>
                             </td>
@@ -1386,20 +1730,34 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                             </td>
 
                             <td>
-                              <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 7,
+                                  flexWrap: "wrap",
+                                  alignItems: "center",
+                                }}
+                              >
                                 <button
                                   type="button"
                                   className="ch-button ch-secondary"
-                                  onClick={() => setExpandedClaim(isExpanded ? null : claimKey)}
+                                  onClick={() => {
+                                    if (isExpanded) {
+                                      setExpandedClaim(null);
+                                    } else {
+                                      loadClaimHistory(claim);
+                                    }
+                                  }}
+                                  aria-expanded={isExpanded}
                                 >
-                                  {isExpanded ? "Hide details" : "Details"}
+                                  <Icon name="history" size={15} />
+                                  {isExpanded ? "Hide history" : "History"}
                                 </button>
 
                                 <button
                                   type="button"
                                   className="ch-button ch-edit"
                                   onClick={() => startEditing(claim)}
-                                  aria-label={`Edit claim ${claimIdOf(claim)}`}
                                   title="Edit claim"
                                 >
                                   <Icon name="edit" size={15} />
@@ -1410,84 +1768,131 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                                   type="button"
                                   className="ch-button ch-danger"
                                   onClick={() => deleteClaim(claim)}
-                                  disabled={isDeleting || !canDelete}
-                                  aria-label={`Delete claim ${claimIdOf(claim)}`}
-                                  title={
-                                    canDelete
-                                      ? "Delete today's claim"
-                                      : "Only the creator can delete a claim created today"
-                                  }
+                                  disabled={deleteDisabled}
+                                  title={deleteTitle}
                                 >
                                   <Icon name="trash" size={15} />
                                   {isDeleting ? "Deleting..." : "Delete"}
                                 </button>
                               </div>
-
-                              {!canDelete && (
-                                <div style={{ marginTop: 5, color: C.muted, fontSize: 11 }}>
-                                  Delete is available only for your claims created today.
-                                </div>
-                              )}
                             </td>
                           </tr>
 
                           {isExpanded && (
                             <tr className="ch-detail-row">
                               <td colSpan={7}>
-                                <div className="ch-detail-grid">
-                                  {[
-                                    ["Claim ID", claimIdOf(claim)],
-                                    ["Patient", patientName(claim)],
-                                    ["File Number", fileNumberOf(claim)],
-                                    ["Created By", creatorNameOf(claim)],
-                                    ["Status", status],
-                                    ["Date Created", formatDate(createdDateOf(claim))],
-                                    ["Rejection Reason", rejectionReasonOf(claim) || "No rejection reason recorded."],
-                                  ].map(([label, value]) => (
-                                    <div className="ch-detail-item" key={label}>
-                                      <div className="ch-detail-label">{label}</div>
-                                      <div className="ch-detail-value">{value}</div>
+                                <div className="ch-history-wrap">
+                                  <div className="ch-history-header">
+                                    <div>
+                                      <h4 className="ch-history-heading">
+                                        Claim History
+                                      </h4>
+                                      <p className="ch-subtitle">
+                                        Claim {claimIdOf(claim)} ·{" "}
+                                        {patientName(claim)}
+                                      </p>
                                     </div>
-                                  ))}
-
-                                  <div className="ch-detail-actions">
-                                    {patientId !== "" && patientId != null && (
-                                      <button
-                                        type="button"
-                                        className="ch-button"
-                                        onClick={() => openPatientFile(patientId)}
-                                      >
-                                        <Icon name="file" size={15} />
-                                        Open Patient File
-                                      </button>
-                                    )}
 
                                     <button
                                       type="button"
-                                      className="ch-button ch-edit"
-                                      onClick={() => startEditing(claim)}
+                                      className="ch-button ch-secondary"
+                                      onClick={() =>
+                                        loadClaimHistory(claim, true)
+                                      }
+                                      disabled={historyLoadingId === claimKey}
                                     >
-                                      <Icon name="edit" size={15} />
-                                      Edit Claim
+                                      <Icon name="refresh" size={15} />
+                                      Refresh history
                                     </button>
-
-                                    {canDelete && (
-                                      <button
-                                        type="button"
-                                        className="ch-button ch-danger"
-                                        onClick={() => deleteClaim(claim)}
-                                        disabled={isDeleting}
-                                      >
-                                        <Icon name="trash" size={15} />
-                                        {isDeleting ? "Deleting..." : "Delete Claim"}
-                                      </button>
-                                    )}
                                   </div>
+
+                                  {historyLoadingId === claimKey ? (
+                                    <div className="ch-history-empty">
+                                      Loading history...
+                                    </div>
+                                  ) : historyErrors[claimKey] ? (
+                                    <div className="ch-alert ch-error">
+                                      {historyErrors[claimKey]}
+                                    </div>
+                                  ) : historyEvents.length === 0 ? (
+                                    <div className="ch-history-empty">
+                                      No history records are available for
+                                      this claim.
+                                    </div>
+                                  ) : (
+                                    <div style={{ overflowX: "auto" }}>
+                                      <table className="ch-history-table">
+                                        <thead>
+                                          <tr>
+                                            <th>Date</th>
+                                            <th>Status</th>
+                                            <th>Created by / Edited by</th>
+                                          </tr>
+                                        </thead>
+
+                                        <tbody>
+                                          {historyEvents.map(
+                                            (event, eventIndex) => {
+                                              const creation =
+                                                isCreationEvent(event);
+
+                                              const creatorName =
+                                                creatorNameOf(claim);
+
+                                              const actorName = creation
+                                                ? creatorName !== "Not recorded"
+                                                  ? creatorName
+                                                  : eventUserName(event)
+                                                : eventUserName(event);
+
+                                              return (
+                                                <tr
+                                                  key={eventKey(
+                                                    event,
+                                                    eventIndex
+                                                  )}
+                                                >
+                                                  <td
+                                                    style={{
+                                                      whiteSpace: "nowrap",
+                                                    }}
+                                                  >
+                                                    {formatDateTime(
+                                                      eventDate(event)
+                                                    )}
+                                                  </td>
+
+                                                  <td>
+                                                    <span className="ch-history-event">
+                                                      {eventStatus(
+                                                        event,
+                                                        claim
+                                                      )}
+                                                    </span>
+                                                  </td>
+
+                                                  <td>
+                                                    <strong>
+                                                      {historyActorLabel(
+                                                        event
+                                                      )}
+                                                      :{" "}
+                                                    </strong>
+                                                    {actorName}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            }
+                                          )}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
                                 </div>
                               </td>
                             </tr>
                           )}
-                        </React.Fragment>
+                        </Fragment>
                       );
                     })}
 
@@ -1496,22 +1901,59 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                         <td colSpan={7}>
                           <div className="ch-empty">
                             <strong>
-                              {claims.length
+                              {periodClaims.length
                                 ? "No matching claims found"
-                                : "No claims recorded yet"}
+                                : "No claims for this period"}
                             </strong>
-                            {claims.length
-                              ? "Try changing the search, status, creator, or date filter."
-                              : "Submitted claims will appear here."}
 
-                            {hasFilters && (
-                              <div style={{ marginTop: 14 }}>
+                            {periodClaims.length
+                              ? "Try changing the search, creator, or selected summary card."
+                              : `No claims were found for ${periodLabel}. Choose another day or month.`}
+
+                            {(hasFilters || periodClaims.length === 0) && (
+                              <div
+                                style={{
+                                  marginTop: 14,
+                                  display: "flex",
+                                  justifyContent: "center",
+                                  gap: 8,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                {hasFilters && (
+                                  <button
+                                    type="button"
+                                    className="ch-button ch-secondary"
+                                    onClick={resetFilters}
+                                  >
+                                    <Icon name="reset" size={15} />
+                                    Clear filters
+                                  </button>
+                                )}
+
                                 <button
                                   type="button"
                                   className="ch-button ch-secondary"
-                                  onClick={resetFilters}
+                                  onClick={() => {
+                                    setDateMode("day");
+                                    setSelectedDate(localDateString());
+                                    setSelectedMonth(localMonthString());
+                                    resetFilters();
+                                  }}
                                 >
-                                  Reset filters
+                                  View today
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="ch-button ch-secondary"
+                                  onClick={() => {
+                                    setDateMode("month");
+                                    setSelectedMonth(localMonthString());
+                                    resetFilters();
+                                  }}
+                                >
+                                  View current month
                                 </button>
                               </div>
                             )}

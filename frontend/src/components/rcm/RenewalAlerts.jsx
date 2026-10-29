@@ -12,10 +12,10 @@ const C = {
   white: "#ffffff",
   green: "#15803d",
   greenBg: "#dcfce7",
-  amber: "#b45309",
-  amberBg: "#fef3c7",
   red: "#b91c1c",
   redBg: "#fee2e2",
+  orange: "#c2410c",
+  orangeBg: "#fff7ed",
 };
 
 const todayISO = () => {
@@ -38,12 +38,35 @@ const formatDate = (value) => {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 };
 
-const getErrorMessage = (error) =>
-  error?.response?.data?.error ||
-  error?.response?.data?.detail ||
-  error?.response?.data?.message ||
-  error?.message ||
-  "Something went wrong. Please try again.";
+const getErrorMessage = (error) => {
+  const data = error?.response?.data;
+
+  if (typeof data === "string" && data.trim()) {
+    return data;
+  }
+
+  if (data && typeof data === "object") {
+    if (data.error) return data.error;
+    if (data.detail) return data.detail;
+    if (data.message) return data.message;
+
+    const messages = Object.entries(data)
+      .map(([key, value]) => {
+        const description = Array.isArray(value)
+          ? value.join(", ")
+          : typeof value === "object" && value !== null
+          ? JSON.stringify(value)
+          : String(value);
+
+        return `${key}: ${description}`;
+      })
+      .join(" · ");
+
+    if (messages) return messages;
+  }
+
+  return error?.message || "Something went wrong. Please try again.";
+};
 
 const getResults = (response) => {
   const data = response?.data;
@@ -64,6 +87,7 @@ const getPatientName = (alert) =>
   "—";
 
 const getFileNumber = (alert) =>
+  alert.patientFileNumber ||
   alert.fileNumber ||
   alert.file_number ||
   alert.patient?.file_number ||
@@ -80,46 +104,72 @@ const getClaimId = (alert) =>
 const getRenewalDate = (alert) =>
   String(alert.renewalDate || alert.renewal_date || "").slice(0, 10);
 
-// Actual status of the underlying claim.
+const normalizeStatus = (value) =>
+  String(value || "").trim().toLowerCase();
+
 const getClaimStatus = (alert) =>
   alert.claim_status ||
   alert.claimStatus ||
   alert.claim?.status ||
-  alert.status ||
-  "Pending";
+  "";
 
-// Status of this specific renewal alert.
-// Prefer the dedicated renewal status returned by the backend.
 const getRenewalStatus = (alert) =>
   alert.renewal_status ||
   alert.renewalStatus ||
-  (String(alert.status || "").toLowerCase() === "submitted"
-    ? alert.status
-    : "Pending");
+  "";
 
-// Display the actual claim status until the renewal is submitted.
-// Once submission is confirmed, display Submitted.
+const isSubmitted = (alert) =>
+  [
+    getRenewalStatus(alert),
+    getClaimStatus(alert),
+    alert.status,
+  ].some((status) => {
+    const normalized = normalizeStatus(status);
+    return (
+      normalized === "submitted" ||
+      normalized === "submitted for review" ||
+      normalized === "submitted for processing"
+    );
+  });
+
+const isRejected = (alert) =>
+  [
+    getRenewalStatus(alert),
+    getClaimStatus(alert),
+    alert.status,
+  ].some((status) =>
+    ["rejected", "denied", "declined"].includes(
+      normalizeStatus(status)
+    )
+  );
+
 const getDisplayStatus = (alert) => {
-  const renewalStatus = getRenewalStatus(alert).toLowerCase();
-
-  if (renewalStatus === "submitted") {
-    return "Submitted";
-  }
-
-  return getClaimStatus(alert);
+  if (isSubmitted(alert)) return "Submitted";
+  if (isRejected(alert)) return "Rejected";
+  return "Pending";
 };
+
+const isPastDate = (date) => Boolean(date) && date < todayISO();
 
 export default function RenewalAlerts({ onRenewal }) {
   const [filterType, setFilterType] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
   const [searchClaimId, setSearchClaimId] = useState("");
+
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+
   const [openingAlertId, setOpeningAlertId] = useState(null);
+  const [editingAlert, setEditingAlert] = useState(null);
+  const [editedRenewalDate, setEditedRenewalDate] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingAlertId, setDeletingAlertId] = useState(null);
+
+  const today = todayISO();
 
   const loadAlerts = useCallback(async () => {
     setLoading(true);
@@ -170,10 +220,12 @@ export default function RenewalAlerts({ onRenewal }) {
 
       if (alertType !== "renewal") return false;
 
+      const renewalDate = getRenewalDate(alert);
+
       if (
         filterType === "daily" &&
         selectedDate &&
-        getRenewalDate(alert) !== selectedDate
+        renewalDate !== selectedDate
       ) {
         return false;
       }
@@ -181,16 +233,19 @@ export default function RenewalAlerts({ onRenewal }) {
       if (
         filterType === "monthly" &&
         selectedMonth &&
-        !getRenewalDate(alert).startsWith(selectedMonth)
+        !renewalDate.startsWith(selectedMonth)
       ) {
         return false;
       }
 
       if (searchClaimId.trim()) {
         const claimId = String(getClaimId(alert)).toLowerCase();
-        const search = searchClaimId.trim().toLowerCase();
 
-        if (!claimId.includes(search)) return false;
+        if (
+          !claimId.includes(searchClaimId.trim().toLowerCase())
+        ) {
+          return false;
+        }
       }
 
       return true;
@@ -205,53 +260,47 @@ export default function RenewalAlerts({ onRenewal }) {
 
   const handleRenewal = async (alert) => {
     const renewalDate = getRenewalDate(alert);
-    const today = todayISO();
-    const renewalStatus = getRenewalStatus(alert).toLowerCase();
 
-    if (renewalDate !== today) {
-      setNotice(
-        "Renewal is available only on the scheduled renewal date."
-      );
+    if (!renewalDate) {
+      setNotice("This renewal alert does not have a valid renewal date.");
       return;
     }
 
-    if (renewalStatus === "submitted") {
+    if (isSubmitted(alert)) {
       setNotice("This renewal has already been submitted.");
       return;
     }
 
+    if (openingAlertId !== null) return;
+
+    if (isRejected(alert)) {
+      setNotice(
+        "This claim is rejected. You can use Renew to resubmit the existing claim."
+      );
+    } else {
+      setNotice("");
+    }
+
     if (typeof onRenewal !== "function") {
       setNotice(
-        "The renewal form is not connected. Please connect this button to Create Claim."
+        "The renewal form is not connected to Create Claim."
       );
       return;
     }
 
-    setNotice("");
     setError("");
     setOpeningAlertId(alert.id);
 
     try {
-      // Pass the alert ID so Create Claim can associate the submission
-      // with the correct renewal alert.
-      const result = await onRenewal({
+      await onRenewal({
         ...alert,
         alertId: alert.id,
         renewalAlertId: alert.id,
+        claimPk: alert.claimPk || alert.claim_pk || alert.claim?.id,
+        claimId: getClaimId(alert),
       });
 
-      // Only refresh automatically if the parent confirms successful
-      // submission by returning true or { success: true }.
-      if (result === true || result?.success === true) {
-        setNotice("Renewal submitted successfully.");
-        setRefreshKey((value) => value + 1);
-      } else {
-        // Do not mark the renewal Submitted just because the button
-        // was clicked or the form was opened.
-        setNotice(
-          "Renewal form opened. The status will change to Submitted after the renewal is saved successfully."
-        );
-      }
+      setRefreshKey((value) => value + 1);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -259,29 +308,142 @@ export default function RenewalAlerts({ onRenewal }) {
     }
   };
 
+  const handleEdit = (alert) => {
+    const renewalDate = getRenewalDate(alert);
+
+    if (isPastDate(renewalDate)) {
+      setNotice("Past renewal alerts cannot be edited.");
+      return;
+    }
+
+    if (isSubmitted(alert)) {
+      setNotice("Submitted renewals cannot be edited.");
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    setEditingAlert(alert);
+    setEditedRenewalDate(renewalDate || today);
+  };
+
+  const handleSaveEdit = async (event) => {
+    event.preventDefault();
+
+    if (!editingAlert || savingEdit) return;
+
+    const currentDate = getRenewalDate(editingAlert);
+
+    if (isPastDate(currentDate)) {
+      setError("Past renewal alerts cannot be edited.");
+      setEditingAlert(null);
+      return;
+    }
+
+    if (isSubmitted(editingAlert)) {
+      setError("Submitted renewals cannot be edited.");
+      setEditingAlert(null);
+      return;
+    }
+
+    if (!editedRenewalDate) {
+      setError("Please select a renewal date.");
+      return;
+    }
+
+    if (editedRenewalDate < today) {
+      setError("The renewal date cannot be in the past.");
+      return;
+    }
+
+    setSavingEdit(true);
+    setError("");
+    setNotice("");
+
+    try {
+      await api.patch(
+        `rcm/renewal-alerts/${editingAlert.id}/`,
+        { renewal_date: editedRenewalDate },
+        { withCredentials: true }
+      );
+
+      setEditingAlert(null);
+      setEditedRenewalDate("");
+      setNotice("Renewal alert updated successfully.");
+      setRefreshKey((value) => value + 1);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDelete = async (alert) => {
+    if (isSubmitted(alert)) {
+      setNotice("Submitted renewals cannot be deleted.");
+      return;
+    }
+
+    const renewalDate = getRenewalDate(alert);
+
+    if (isPastDate(renewalDate)) {
+      setNotice("Past renewal alerts cannot be deleted.");
+      return;
+    }
+
+    if (deletingAlertId !== null) return;
+
+    const confirmed = window.confirm(
+      `Delete the renewal alert for Claim ID ${getClaimId(alert)}? The claim history will be preserved.`
+    );
+
+    if (!confirmed) return;
+
+    setDeletingAlertId(alert.id);
+    setError("");
+    setNotice("");
+
+    try {
+      await api.delete(
+        `rcm/renewal-alerts/${alert.id}/`,
+        { withCredentials: true }
+      );
+
+      setAlerts((current) =>
+        current.filter((item) => item.id !== alert.id)
+      );
+
+      if (editingAlert?.id === alert.id) {
+        setEditingAlert(null);
+      }
+
+      setNotice("Renewal alert deleted successfully.");
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setDeletingAlertId(null);
+    }
+  };
+
   const statusStyle = (status) => {
-    const normalized = String(status || "Pending").toLowerCase();
-
-    if (normalized === "submitted") {
-      return { color: C.green, background: C.greenBg };
+    if (status === "Submitted") {
+      return {
+        color: C.green,
+        background: C.greenBg,
+      };
     }
 
-    if (
-      normalized === "rejected" ||
-      normalized === "denied" ||
-      normalized === "declined"
-    ) {
-      return { color: C.red, background: C.redBg };
+    if (status === "Rejected") {
+      return {
+        color: C.red,
+        background: C.redBg,
+      };
     }
 
-    if (
-      normalized === "approved" ||
-      normalized === "accepted"
-    ) {
-      return { color: C.green, background: C.greenBg };
-    }
-
-    return { color: C.amber, background: C.amberBg };
+    return {
+      color: C.orange,
+      background: C.orangeBg,
+    };
   };
 
   const inputStyle = {
@@ -295,7 +457,15 @@ export default function RenewalAlerts({ onRenewal }) {
     boxSizing: "border-box",
   };
 
-  const today = todayISO();
+  const buttonStyle = {
+    padding: "8px 11px",
+    border: "none",
+    borderRadius: 7,
+    fontWeight: 600,
+    fontSize: 12,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
 
   return (
     <div
@@ -318,7 +488,13 @@ export default function RenewalAlerts({ onRenewal }) {
         }}
       >
         <div>
-          <h2 style={{ margin: 0, color: C.navy, fontSize: 22 }}>
+          <h2
+            style={{
+              margin: 0,
+              color: C.navy,
+              fontSize: 22,
+            }}
+          >
             Renewal Alerts
           </h2>
 
@@ -329,7 +505,7 @@ export default function RenewalAlerts({ onRenewal }) {
               fontSize: 13,
             }}
           >
-            Review scheduled renewals and submit eligible renewals.
+            Review, edit, delete, and submit eligible renewal alerts.
           </p>
         </div>
 
@@ -383,7 +559,7 @@ export default function RenewalAlerts({ onRenewal }) {
           >
             <option value="daily">Daily</option>
             <option value="monthly">Monthly</option>
-            <option value="all">All dates</option>
+            <option value="all">All Dates</option>
           </select>
         </div>
 
@@ -462,8 +638,8 @@ export default function RenewalAlerts({ onRenewal }) {
           style={{
             padding: 12,
             marginBottom: 12,
-            background: C.amberBg,
-            color: C.amber,
+            background: "#eef2ff",
+            color: C.primary,
             borderRadius: 8,
             fontSize: 13,
           }}
@@ -482,6 +658,7 @@ export default function RenewalAlerts({ onRenewal }) {
             color: C.red,
             borderRadius: 8,
             fontSize: 13,
+            overflowWrap: "anywhere",
           }}
         >
           {error}
@@ -515,7 +692,7 @@ export default function RenewalAlerts({ onRenewal }) {
           style={{
             width: "100%",
             borderCollapse: "collapse",
-            minWidth: 850,
+            minWidth: 1050,
             fontSize: 13,
           }}
         >
@@ -527,7 +704,9 @@ export default function RenewalAlerts({ onRenewal }) {
                 "File Number",
                 "Renewal Date",
                 "Status",
-                "Action",
+                "Renewal Action",
+                "Edit",
+                "Delete",
               ].map((heading) => (
                 <th
                   key={heading}
@@ -548,7 +727,7 @@ export default function RenewalAlerts({ onRenewal }) {
             {!loading && visibleAlerts.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={8}
                   style={{
                     padding: 24,
                     textAlign: "center",
@@ -562,16 +741,31 @@ export default function RenewalAlerts({ onRenewal }) {
 
             {visibleAlerts.map((alert) => {
               const renewalDate = getRenewalDate(alert);
-              const renewalStatus = getRenewalStatus(alert);
               const displayStatus = getDisplayStatus(alert);
-
-              const submitted =
-                renewalStatus.toLowerCase() === "submitted";
-
-              const isRenewalDay = renewalDate === today;
+              const submitted = isSubmitted(alert);
+              const rejected = isRejected(alert);
+              const pastDate = isPastDate(renewalDate);
               const isOpening = openingAlertId === alert.id;
+              const isDeleting = deletingAlertId === alert.id;
+
+              // Past-due alerts remain renewable if not submitted.
               const canRenew =
-                isRenewalDay && !submitted && !isOpening;
+                Boolean(renewalDate) &&
+                !submitted &&
+                !isOpening &&
+                !isDeleting;
+
+              const canEdit =
+                !pastDate &&
+                !savingEdit &&
+                !isDeleting &&
+                !submitted;
+
+              const canDelete =
+                !submitted &&
+                !pastDate &&
+                !isDeleting &&
+                !savingEdit;
 
               return (
                 <tr key={alert.id}>
@@ -611,6 +805,18 @@ export default function RenewalAlerts({ onRenewal }) {
                     }}
                   >
                     {formatDate(renewalDate)}
+                    {pastDate && !submitted && (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          color: C.orange,
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Overdue
+                      </div>
+                    )}
                   </td>
 
                   <td
@@ -643,30 +849,97 @@ export default function RenewalAlerts({ onRenewal }) {
                       type="button"
                       disabled={!canRenew}
                       onClick={() => handleRenewal(alert)}
-                      title={
-                        submitted
-                          ? "Already submitted"
-                          : !isRenewalDay
-                          ? "Available only on the renewal date"
-                          : "Open renewal form"
-                      }
                       style={{
-                        padding: "8px 12px",
-                        border: "none",
-                        borderRadius: 7,
-                        background: canRenew ? C.primary : "#e2e8f0",
+                        ...buttonStyle,
+                        background: canRenew
+                          ? C.primary
+                          : "#e2e8f0",
                         color: canRenew ? C.white : "#64748b",
-                        fontWeight: 600,
                         cursor: canRenew ? "pointer" : "not-allowed",
-                        whiteSpace: "nowrap",
                       }}
                     >
                       {submitted
                         ? "Submitted"
                         : isOpening
                         ? "Opening..."
-                        : "Renewal"}
+                        : pastDate
+                        ? "Renew Overdue"
+                        : "Renew"}
                     </button>
+
+                    {rejected && !submitted && (
+                      <div
+                        style={{
+                          marginTop: 5,
+                          fontSize: 11,
+                          color: C.muted,
+                        }}
+                      >
+                        Ready for resubmission
+                      </div>
+                    )}
+                  </td>
+
+                  <td
+                    style={{
+                      padding: 12,
+                      borderBottom: `1px solid ${C.border}`,
+                    }}
+                  >
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        disabled={!canEdit}
+                        onClick={() => handleEdit(alert)}
+                        style={{
+                          ...buttonStyle,
+                          background: "#dbeafe",
+                          color: "#1d4ed8",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Edit
+                      </button>
+                    ) : (
+                      <span style={{ color: C.muted }}>—</span>
+                    )}
+                  </td>
+
+                  <td
+                    style={{
+                      padding: 12,
+                      borderBottom: `1px solid ${C.border}`,
+                    }}
+                  >
+                    {submitted ? (
+                      <span
+                        title="Submitted renewals cannot be deleted"
+                        style={{
+                          color: C.muted,
+                          fontSize: 12,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Cannot delete
+                      </span>
+                    ) : canDelete ? (
+                      <button
+                        type="button"
+                        disabled={!canDelete}
+                        onClick={() => handleDelete(alert)}
+                        title="Delete renewal alert"
+                        style={{
+                          ...buttonStyle,
+                          background: C.redBg,
+                          color: C.red,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {isDeleting ? "Deleting..." : "Delete"}
+                      </button>
+                    ) : (
+                      <span style={{ color: C.muted }}>—</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -674,6 +947,155 @@ export default function RenewalAlerts({ onRenewal }) {
           </tbody>
         </table>
       </div>
+
+      {loading && (
+        <div
+          style={{
+            padding: 16,
+            textAlign: "center",
+            color: C.muted,
+            fontSize: 13,
+          }}
+        >
+          Loading renewal alerts...
+        </div>
+      )}
+
+      {editingAlert && (
+        <div
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !savingEdit
+            ) {
+              setEditingAlert(null);
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(15, 23, 42, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <form
+            onSubmit={handleSaveEdit}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-renewal-title"
+            style={{
+              width: "100%",
+              maxWidth: 440,
+              background: C.white,
+              borderRadius: 12,
+              padding: 24,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+            }}
+          >
+            <h3
+              id="edit-renewal-title"
+              style={{
+                margin: "0 0 8px",
+                color: C.navy,
+              }}
+            >
+              Edit Renewal Alert
+            </h3>
+
+            <p
+              style={{
+                margin: "0 0 18px",
+                fontSize: 13,
+                color: C.muted,
+              }}
+            >
+              Claim ID: {getClaimId(editingAlert)}
+              <br />
+              Patient: {getPatientName(editingAlert)}
+            </p>
+
+            <label
+              htmlFor="edit-renewal-date"
+              style={{
+                display: "block",
+                marginBottom: 6,
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              Renewal date
+            </label>
+
+            <input
+              id="edit-renewal-date"
+              type="date"
+              min={today}
+              value={editedRenewalDate}
+              onChange={(event) =>
+                setEditedRenewalDate(event.target.value)
+              }
+              required
+              style={inputStyle}
+            />
+
+            <p
+              style={{
+                fontSize: 12,
+                color: C.muted,
+                margin: "10px 0 20px",
+              }}
+            >
+              Alerts dated today or in the future can be edited.
+              Past alerts cannot be changed. Submitted alerts cannot
+              be edited.
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+              }}
+            >
+              <button
+                type="button"
+                disabled={savingEdit}
+                onClick={() => setEditingAlert(null)}
+                style={{
+                  ...buttonStyle,
+                  padding: "10px 14px",
+                  background: "#e2e8f0",
+                  color: C.text,
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={
+                  savingEdit ||
+                  !editedRenewalDate ||
+                  editedRenewalDate < today
+                }
+                style={{
+                  ...buttonStyle,
+                  padding: "10px 14px",
+                  background: C.primary,
+                  color: C.white,
+                  cursor: savingEdit ? "wait" : "pointer",
+                }}
+              >
+                {savingEdit ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

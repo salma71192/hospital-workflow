@@ -1,6 +1,5 @@
-
-import React, { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api/api";
 
 import CreateClaim from "../components/rcm/CreateClaim";
@@ -51,19 +50,112 @@ const styles = `
 .claim-management-content .claim-container{max-width:none}
 .claim-management-content .claim-title,.claim-management-content .claim-subtitle{display:none}
 .claim-management-alert-error{margin:0 0 18px;padding:14px 16px;border:1px solid #fecaca;border-radius:11px;background:#fef2f2;color:#b91c1c;font-size:14px;line-height:1.6}
+.claim-management-loading{padding:35px;text-align:center;color:#64748b}
 @media(min-width:1200px){.claim-management{padding:32px}.claim-management-content{padding:30px}}
 @media(max-width:900px){.claim-tab{gap:8px;padding:12px 9px;font-size:14px}.claim-tab-label small{font-size:12px}}
 @media(max-width:750px){.claim-management{padding:15px}.claim-management-header{padding:24px 21px;border-radius:15px}.claim-management-header h1{font-size:28px}.claim-management-header p{font-size:15px}.claim-management-header-bottom{align-items:flex-start;flex-direction:column}.claim-back-button{width:100%}.claim-tab{min-height:65px;gap:8px;padding:11px 8px;font-size:14px}.claim-tab-icon{width:32px;height:32px;font-size:18px}.claim-tab-label small{font-size:12px}.claim-management-content{padding:17px;border-radius:14px}.claim-management-content-heading h2{font-size:22px}}
 @media(max-width:520px){.claim-tab-bar{grid-template-columns:minmax(0,1fr)}.claim-tab{justify-content:flex-start;padding:12px 15px}.claim-management-content{padding:13px}.claim-management-content-heading{align-items:flex-start;flex-direction:column}}
 `;
 
+function getApiError(error) {
+  const data = error?.response?.data;
+
+  if (typeof data === "string") return data;
+  if (data?.detail) return String(data.detail);
+  if (data?.message) return String(data.message);
+
+  if (data && typeof data === "object") {
+    return Object.entries(data)
+      .map(([key, value]) => {
+        const message = Array.isArray(value)
+          ? value.map(String).join(", ")
+          : typeof value === "object"
+            ? JSON.stringify(value)
+            : String(value);
+
+        return `${key}: ${message}`;
+      })
+      .join(" · ");
+  }
+
+  if (error?.message === "Network Error") {
+    return "Network error: the server could not be reached. Check the backend and CORS settings.";
+  }
+
+  return error?.message || "Unable to complete the request.";
+}
+
+function getClaimDatabaseId(claim) {
+  const id =
+    claim?.id ??
+    claim?.pk ??
+    claim?.claim_pk ??
+    claim?.claimPk ??
+    claim?.database_id ??
+    claim?.databaseId;
+
+  return id === undefined || id === null || id === "" ? null : id;
+}
+
+function getClaimReference(details) {
+  return String(
+    details?.claimId ??
+      details?.claim_id_value ??
+      details?.claim?.claimId ??
+      details?.claim?.claim_id_value ??
+      details?.claim?.claim_id ??
+      details?.claim?.claim_number ??
+      details?.claim_id ??
+      ""
+  );
+}
+
+function getPatientId(details) {
+  return (
+    details?.patient?.id ??
+    details?.patientId ??
+    details?.patient_id ??
+    details?.claim?.patientId ??
+    details?.claim?.patient_id ??
+    details?.claim?.patient?.id ??
+    null
+  );
+}
+
 export default function ClaimsManagement() {
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const [activeTab, setActiveTab] = useState("create");
+  // Keep the edit navigation state available until CreateClaim reads it.
+  const routeState = location.state;
+
+  const editClaim =
+    routeState?.mode === "edit" &&
+    routeState?.editClaim &&
+    typeof routeState.editClaim === "object"
+      ? routeState.editClaim
+      : null;
+
+  const editClaimId =
+    routeState?.claimId ?? getClaimDatabaseId(editClaim);
+
+  const isEditMode = Boolean(editClaim && editClaimId);
+
+  const [activeTab, setActiveTab] = useState(
+    isEditMode ? "create" : "create"
+  );
   const [refreshKey, setRefreshKey] = useState(0);
   const [alertError, setAlertError] = useState("");
   const [selectedRenewalAlert, setSelectedRenewalAlert] = useState(null);
+
+  // If Claim History navigates here for editing, show the form immediately.
+  useEffect(() => {
+    if (isEditMode) {
+      setSelectedRenewalAlert(null);
+      setActiveTab("create");
+      setAlertError("");
+    }
+  }, [isEditMode, editClaimId]);
 
   function handleBack() {
     if (window.history.length > 1) {
@@ -88,15 +180,10 @@ export default function ClaimsManagement() {
     async (alertDetails) => {
       setAlertError("");
 
-      const patientId =
-        alertDetails?.patient?.id ??
-        alertDetails?.claim?.patientId ??
-        alertDetails?.claim?.patient_id ??
-        alertDetails?.patientId ??
-        alertDetails?.patient_id;
-
-      const alertType =
-        alertDetails?.alertType || alertDetails?.alert_type;
+      const patientId = getPatientId(alertDetails);
+      const alertType = String(
+        alertDetails?.alertType || alertDetails?.alert_type || ""
+      ).toLowerCase();
 
       if (!patientId) {
         throw new Error(
@@ -105,26 +192,34 @@ export default function ClaimsManagement() {
       }
 
       const claimPk =
-        alertDetails.claimPk ??
-        alertDetails.claim_pk ??
-        alertDetails.claim?.id ??
-        null;
+        alertDetails?.claimPk ??
+        alertDetails?.claim_pk ??
+        getClaimDatabaseId(alertDetails?.claim);
 
-      const claimId =
-        alertDetails.claimId ??
-        alertDetails.claim_id ??
-        alertDetails.claim?.claim_id ??
-        "";
+      const claimId = getClaimReference(alertDetails);
+
+      if (!claimPk) {
+        throw new Error(
+          "Cannot create an alert because the saved claim database ID is missing."
+        );
+      }
+
+      if (!claimId) {
+        throw new Error(
+          "Cannot create an alert because the claim reference is missing."
+        );
+      }
 
       let payload;
 
       if (alertType === "renewal") {
-        const renewalDate =
-          alertDetails.renewalDate || alertDetails.renewal_date;
+        const renewalDate = String(
+          alertDetails?.renewalDate || alertDetails?.renewal_date || ""
+        ).slice(0, 10);
 
         if (!renewalDate) {
           throw new Error(
-            "Choose a renewal date before creating the alert."
+            "Choose a renewal date before creating a renewal reminder."
           );
         }
 
@@ -134,6 +229,9 @@ export default function ClaimsManagement() {
           claimId,
           alertType: "renewal",
           renewalDate,
+          status: "Rejected",
+          renewalStatus: "Rejected",
+          renewal_status: "Rejected",
           message: `Claim ${claimId} renewal reminder`,
         };
       } else if (alertType === "rejection") {
@@ -143,13 +241,9 @@ export default function ClaimsManagement() {
           claimId,
           alertType: "rejection",
           rejectionReason:
-            alertDetails.rejectionReason ??
-            alertDetails.rejection_reason ??
+            alertDetails?.rejectionReason ??
+            alertDetails?.rejection_reason ??
             "",
-          renewalDate:
-            alertDetails.renewalDate ??
-            alertDetails.renewal_date ??
-            null,
           message: `Claim ${claimId} was rejected`,
         };
       } else {
@@ -174,31 +268,11 @@ export default function ClaimsManagement() {
         );
 
         refreshData();
-        return response.data;
+        return response?.data;
       } catch (error) {
-        const data = error?.response?.data;
-
-        const message =
-          data?.detail ||
-          data?.message ||
-          (data && typeof data === "object"
-            ? Object.entries(data)
-                .map(([key, value]) =>
-                  `${key}: ${
-                    Array.isArray(value)
-                      ? value.join(", ")
-                      : typeof value === "object"
-                      ? JSON.stringify(value)
-                      : String(value)
-                  }`
-                )
-                .join(" · ")
-            : "") ||
-          error?.message ||
-          "Unable to create the alert.";
-
-        setAlertError(String(message));
-        throw new Error(String(message));
+        const message = getApiError(error);
+        setAlertError(message);
+        throw new Error(message);
       }
     },
     [refreshData]
@@ -219,6 +293,7 @@ export default function ClaimsManagement() {
 
   const getPageHeading = () => {
     if (activeTab === "create") {
+      if (isEditMode) return "Edit Claim";
       return selectedRenewalAlert
         ? "Renew Existing Claim"
         : "New Claim Registration";
@@ -231,6 +306,10 @@ export default function ClaimsManagement() {
 
   const getPageDescription = () => {
     if (activeTab === "create") {
+      if (isEditMode) {
+        return "Update the selected claim record and save your changes.";
+      }
+
       return selectedRenewalAlert
         ? "Review the existing claim details before submitting its renewal."
         : "Select a patient and complete the claim information.";
@@ -240,7 +319,7 @@ export default function ClaimsManagement() {
       return "Search and review existing claim records.";
     }
 
-    return "Review daily or monthly renewals and search claims by Claim ID.";
+    return "Review scheduled renewals and search claims by Claim ID.";
   };
 
   return (
@@ -290,9 +369,7 @@ export default function ClaimsManagement() {
             id="create-claim-tab"
             aria-controls="claim-management-panel"
             aria-selected={activeTab === "create"}
-            className={`claim-tab ${
-              activeTab === "create" ? "active" : ""
-            }`}
+            className={`claim-tab ${activeTab === "create" ? "active" : ""}`}
             onClick={() => {
               setSelectedRenewalAlert(null);
               setActiveTab("create");
@@ -314,9 +391,7 @@ export default function ClaimsManagement() {
             id="claim-history-tab"
             aria-controls="claim-management-panel"
             aria-selected={activeTab === "history"}
-            className={`claim-tab ${
-              activeTab === "history" ? "active" : ""
-            }`}
+            className={`claim-tab ${activeTab === "history" ? "active" : ""}`}
             onClick={() => {
               setSelectedRenewalAlert(null);
               setActiveTab("history");
@@ -338,9 +413,7 @@ export default function ClaimsManagement() {
             id="renewal-alerts-tab"
             aria-controls="claim-management-panel"
             aria-selected={activeTab === "alerts"}
-            className={`claim-tab ${
-              activeTab === "alerts" ? "active" : ""
-            }`}
+            className={`claim-tab ${activeTab === "alerts" ? "active" : ""}`}
             onClick={() => {
               setSelectedRenewalAlert(null);
               setActiveTab("alerts");
@@ -366,8 +439,8 @@ export default function ClaimsManagement() {
           activeTab === "create"
             ? "create-claim-tab"
             : activeTab === "history"
-            ? "claim-history-tab"
-            : "renewal-alerts-tab"
+              ? "claim-history-tab"
+              : "renewal-alerts-tab"
         }
       >
         <div className="claim-management-content-heading">
@@ -378,12 +451,14 @@ export default function ClaimsManagement() {
 
           <span className="claim-management-section-tag">
             {activeTab === "create"
-              ? selectedRenewalAlert
-                ? "↻ RENEW CLAIM"
-                : "＋ CREATE CLAIM"
+              ? isEditMode
+                ? "✎ EDIT CLAIM"
+                : selectedRenewalAlert
+                  ? "↻ RENEW CLAIM"
+                  : "＋ CREATE CLAIM"
               : activeTab === "history"
-              ? "☷ CLAIM RECORDS"
-              : "◷ RENEWAL ALERTS"}
+                ? "☷ CLAIM RECORDS"
+                : "◷ RENEWAL ALERTS"}
           </span>
         </div>
 
@@ -396,10 +471,14 @@ export default function ClaimsManagement() {
         {activeTab === "create" ? (
           <CreateClaim
             key={
-              selectedRenewalAlert
-                ? `renewal-${selectedRenewalAlert.id}`
-                : "new-claim"
+              isEditMode
+                ? `edit-${editClaimId}`
+                : selectedRenewalAlert
+                  ? `renewal-${selectedRenewalAlert.id}`
+                  : "new-claim"
             }
+            editClaim={editClaim}
+            editClaimId={editClaimId}
             renewalAlert={selectedRenewalAlert}
             onClaimCreated={handleClaimCreated}
             onRenewalUpdated={handleRenewalUpdated}

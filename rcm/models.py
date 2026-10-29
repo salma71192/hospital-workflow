@@ -26,7 +26,10 @@ class Claim(models.Model):
         default="Pending",
     )
 
-    rejection_reason = models.TextField(blank=True, default="")
+    rejection_reason = models.TextField(
+        blank=True,
+        default="",
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -40,7 +43,7 @@ class Claim(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-created_at", "-pk"]
         constraints = [
             models.UniqueConstraint(
                 fields=["patient", "claim_id"],
@@ -50,6 +53,83 @@ class Claim(models.Model):
 
     def __str__(self):
         return f"{self.claim_id} - {self.patient_id}"
+
+
+class ClaimHistory(models.Model):
+    """
+    Permanent audit record for claim creation, rejection,
+    resubmission, approval, status changes, and renewals.
+
+    Each history record stores the event, the previous and new
+    statuses, the user responsible, and the event timestamp.
+    """
+
+    EVENT_CHOICES = [
+        ("Created", "Created"),
+        ("Rejected", "Rejected"),
+        ("Resubmitted", "Resubmitted"),
+        ("Submitted", "Submitted"),
+        ("Approved", "Approved"),
+        ("Status Changed", "Status Changed"),
+        ("Renewal Scheduled", "Renewal Scheduled"),
+    ]
+
+    claim = models.ForeignKey(
+        Claim,
+        on_delete=models.PROTECT,
+        related_name="history_records",
+    )
+
+    event = models.CharField(
+        max_length=30,
+        choices=EVENT_CHOICES,
+    )
+
+    previous_status = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+    )
+
+    new_status = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+    )
+
+    rejection_reason = models.TextField(
+        blank=True,
+        default="",
+    )
+
+    notes = models.TextField(
+        blank=True,
+        default="",
+    )
+
+    renewal_date = models.DateField(
+        null=True,
+        blank=True,
+    )
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rcm_claim_history_created",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+
+    def __str__(self):
+        return (
+            f"{self.claim.claim_id} - "
+            f"{self.event} - {self.created_at}"
+        )
 
 
 class RenewalAlert(models.Model):
@@ -93,8 +173,15 @@ class RenewalAlert(models.Model):
 
     renewal_date = models.DateField()
 
-    rejection_reason = models.TextField(blank=True, default="")
-    message = models.TextField(blank=True, default="")
+    rejection_reason = models.TextField(
+        blank=True,
+        default="",
+    )
+
+    message = models.TextField(
+        blank=True,
+        default="",
+    )
 
     status = models.CharField(
         max_length=20,
@@ -111,7 +198,7 @@ class RenewalAlert(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["renewal_date", "-created_at"]
+        ordering = ["renewal_date", "-created_at", "-pk"]
 
     def __str__(self):
         return (
