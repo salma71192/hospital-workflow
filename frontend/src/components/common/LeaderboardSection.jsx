@@ -8,59 +8,144 @@ export default function LeaderboardSection({
   loading = false,
   error = "",
   onReload,
-  target = 400,
+  target = 0,
   showTarget = true,
   todayLabel = "TODAY",
   monthlyLabel = "THIS MONTH",
-  countLabel = "items",
+  countLabel = "used sessions",
   emptyMessage = "No leaderboard data available for this month.",
-
-  // Customize these fields for each dashboard's existing API response.
   getName,
   getToday,
   getMonthly,
   getId,
   getRole,
+  getTarget,
 }) {
-  const monthlyTarget =
-    Number(target) > 0 ? Number(target) : 400;
-
   const safeRows = Array.isArray(rows) ? rows : [];
+
+  const toNumber = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, number) : 0;
+  };
+
+  const firstNumber = (...values) => {
+    for (const value of values) {
+      if (value !== undefined && value !== null && value !== "") {
+        return toNumber(value);
+      }
+    }
+    return 0;
+  };
+
+  const getStaffTarget = (row) => {
+    const value = getTarget
+      ? getTarget(row)
+      : row?.target ?? row?.monthly_target ?? target;
+
+    return toNumber(value);
+  };
 
   const displayName = (row) =>
     getName?.(row) ||
-    row.name ||
-    row.full_name ||
-    row.display_name ||
-    row.username ||
+    row?.name ||
+    row?.full_name ||
+    row?.display_name ||
+    row?.username ||
     "-";
 
-  const todayCount = (row) =>
-    Math.max(
-      0,
-      Number(
-        getToday
-          ? getToday(row)
-          : row.today ?? row.today_count ?? 0
-      ) || 0
+  const todayCount = (row) => {
+    const value = getToday
+      ? getToday(row)
+      : row?.today_sessions ??
+        row?.today_count ??
+        row?.today ??
+        0;
+
+    return toNumber(value);
+  };
+
+  // Calculate eligible sessions from registration categories.
+  // Initial evaluations, cash, and tasks without eligibility
+  // must not be included in used sessions.
+  const monthlyCount = (row) => {
+    if (getMonthly) {
+      return toNumber(getMonthly(row));
+    }
+
+    const totalRegistrations = firstNumber(
+      row?.total_registrations,
+      row?.total_registration,
+      row?.registrations,
+      row?.total_sessions,
+      row?.monthly_registrations,
+      row?.monthly_count,
+      row?.count
     );
 
-  const monthlyCount = (row) =>
-    Math.max(
-      0,
-      Number(
-        getMonthly
-          ? getMonthly(row)
-          : row.monthly ??
-              row.count ??
-              row.registration_count ??
-              0
-      ) || 0
+    const initialEvaluations = firstNumber(
+      row?.initial_evaluations,
+      row?.initial_evaluation_count,
+      row?.evaluation_count
     );
+
+    const tasksWithoutEligibility = firstNumber(
+      row?.tasks_without_eligibility,
+      row?.task_without_eligibility,
+      row?.tasks_without_eligibility_count,
+      row?.ineligible_tasks
+    );
+
+    const cashRegistrations = firstNumber(
+      row?.cash_registrations,
+      row?.cash_count,
+      row?.cash
+    );
+
+    // If category totals are available, calculate eligible sessions.
+    const hasCategoryBreakdown =
+      row?.initial_evaluations !== undefined ||
+      row?.initial_evaluation_count !== undefined ||
+      row?.evaluation_count !== undefined ||
+      row?.tasks_without_eligibility !== undefined ||
+      row?.task_without_eligibility !== undefined ||
+      row?.tasks_without_eligibility_count !== undefined ||
+      row?.ineligible_tasks !== undefined ||
+      row?.cash_registrations !== undefined ||
+      row?.cash_count !== undefined ||
+      row?.cash !== undefined;
+
+    if (hasCategoryBreakdown) {
+      return Math.max(
+        0,
+        totalRegistrations -
+          initialEvaluations -
+          tasksWithoutEligibility -
+          cashRegistrations
+      );
+    }
+
+    return firstNumber(
+      row?.monthly_sessions,
+      row?.used_sessions,
+      row?.total_used_sessions,
+      row?.utilized_sessions,
+      row?.sessions_used,
+      row?.sessions_taken,
+      row?.monthly
+    );
+  };
 
   const sortedRows = [...safeRows].sort(
     (a, b) => monthlyCount(b) - monthlyCount(a)
   );
+
+  const hasIndividualTargets = Boolean(getTarget);
+  const fixedTarget = toNumber(target);
+  const monthlyTarget = hasIndividualTargets ? null : fixedTarget;
+
+  const targetDescription = hasIndividualTargets
+    ? "Individual target calculated for each staff member"
+    : `${monthlyTarget} ${countLabel} per staff member`;
 
   return (
     <div style={styles.page}>
@@ -77,7 +162,10 @@ export default function LeaderboardSection({
             type="button"
             onClick={onReload}
             disabled={loading}
-            style={styles.refreshButton}
+            style={{
+              ...styles.refreshButton,
+              ...(loading ? styles.disabledButton : {}),
+            }}
           >
             ↻ Refresh
           </button>
@@ -89,19 +177,25 @@ export default function LeaderboardSection({
           <div style={styles.targetIcon}>★</div>
 
           <div style={styles.targetContent}>
-            <div style={styles.targetLabel}>
-              MONTHLY TARGET
-            </div>
+            <div style={styles.targetLabel}>MONTHLY TARGET</div>
 
             <div style={styles.targetValue}>
-              {monthlyTarget}
-              <span> {countLabel} per staff member</span>
+              {hasIndividualTargets
+                ? "Individual targets"
+                : monthlyTarget}
+              {!hasIndividualTargets && (
+                <span> {countLabel} per staff member</span>
+              )}
             </div>
+
+            {hasIndividualTargets && (
+              <div style={styles.targetDescription}>
+                {targetDescription}
+              </div>
+            )}
           </div>
 
-          <span style={styles.targetBadge}>
-            Monthly goal
-          </span>
+          <span style={styles.targetBadge}>Monthly goal</span>
         </div>
       )}
 
@@ -130,16 +224,21 @@ export default function LeaderboardSection({
           {sortedRows.map((row, index) => {
             const monthly = monthlyCount(row);
             const today = todayCount(row);
-            const percent = Math.round(
-              (monthly / monthlyTarget) * 100
-            );
-            const achieved = monthly >= monthlyTarget;
+            const staffTarget = getStaffTarget(row);
+
+            const hasTarget = staffTarget > 0;
+
+            const percent = hasTarget
+              ? Math.round((monthly / staffTarget) * 100)
+              : 0;
+
+            const achieved = hasTarget && monthly >= staffTarget;
             const nearTarget =
-              !achieved && percent >= 90;
-            const remaining = Math.max(
-              0,
-              monthlyTarget - monthly
-            );
+              hasTarget && !achieved && percent >= 90;
+
+            const remaining = hasTarget
+              ? Math.max(0, staffTarget - monthly)
+              : 0;
 
             const rankStyle =
               index === 0
@@ -151,11 +250,11 @@ export default function LeaderboardSection({
                 : styles.normalRank;
 
             const progressColor =
-              achieved || nearTarget
-                ? "#dc2626"
-                : "#6366f1";
+              achieved || nearTarget ? "#dc2626" : "#6366f1";
 
-            const statusText = achieved
+            const statusText = !hasTarget
+              ? "No target set"
+              : achieved
               ? "Target achieved"
               : nearTarget
               ? "Near target"
@@ -165,24 +264,28 @@ export default function LeaderboardSection({
               ? "In progress"
               : "Getting started";
 
-            const statusStyle =
-              achieved || nearTarget
-                ? styles.redBadge
-                : percent >= 75
-                ? styles.nearTargetBadge
-                : percent >= 40
-                ? styles.inProgressBadge
-                : styles.startBadge;
+            const statusStyle = !hasTarget
+              ? styles.noTargetBadge
+              : achieved || nearTarget
+              ? styles.redBadge
+              : percent >= 75
+              ? styles.nearTargetBadge
+              : percent >= 40
+              ? styles.inProgressBadge
+              : styles.startBadge;
+
+            const rowKey =
+              getId?.(row) ??
+              row?.user_id ??
+              row?.therapist_id ??
+              row?.physio_id ??
+              row?.id ??
+              row?.username ??
+              `${displayName(row)}-${index}`;
 
             return (
               <div
-                key={
-                  getId?.(row) ??
-                  row.user_id ??
-                  row.id ??
-                  row.username ??
-                  `${displayName(row)}-${index}`
-                }
+                key={rowKey}
                 style={{
                   ...styles.tableRow,
                   gridTemplateColumns: showTarget
@@ -204,13 +307,11 @@ export default function LeaderboardSection({
                       </span>
 
                       {index === 0 && (
-                        <span style={styles.topBadge}>
-                          TOP
-                        </span>
+                        <span style={styles.topBadge}>TOP</span>
                       )}
                     </div>
 
-                    {getRole?.(row) || row.role ? (
+                    {getRole?.(row) || row?.role ? (
                       <div style={styles.staffRole}>
                         {getRole?.(row) || row.role}
                       </div>
@@ -219,9 +320,7 @@ export default function LeaderboardSection({
                 </div>
 
                 <div style={styles.todayCell}>
-                  <span style={styles.todayBadge}>
-                    {today}
-                  </span>
+                  <span style={styles.todayBadge}>{today}</span>
                 </div>
 
                 <div style={styles.monthCell}>
@@ -234,8 +333,9 @@ export default function LeaderboardSection({
                   >
                     {monthly}
                   </strong>
+
                   <span style={styles.monthTotal}>
-                    {" "}/ {monthlyTarget}
+                    {" "}/ {staffTarget}
                   </span>
 
                   {showTarget && (
@@ -258,14 +358,18 @@ export default function LeaderboardSection({
                       <strong
                         style={{
                           ...styles.percent,
-                          color: progressColor,
+                          color: hasTarget
+                            ? progressColor
+                            : "#94a3b8",
                         }}
                       >
-                        {percent}%
+                        {hasTarget ? `${percent}%` : "0%"}
                       </strong>
 
                       <span style={styles.remaining}>
-                        {achieved
+                        {!hasTarget
+                          ? "No target"
+                          : achieved
                           ? "Complete"
                           : `${remaining} left`}
                       </span>
@@ -290,7 +394,7 @@ export default function LeaderboardSection({
             <span style={styles.footerDot} />
             {sortedRows.length} staff member
             {sortedRows.length === 1 ? "" : "s"} ranked by{" "}
-            {monthlyLabel.toLowerCase()}
+            {monthlyLabel.toLowerCase()} {countLabel}
           </div>
         </div>
       )}
@@ -308,7 +412,6 @@ const styles = {
     boxSizing: "border-box",
     minWidth: 0,
   },
-
   heading: {
     display: "flex",
     justifyContent: "space-between",
@@ -316,7 +419,6 @@ const styles = {
     flexWrap: "wrap",
     gap: "16px",
   },
-
   title: {
     margin: 0,
     color: "#172b4d",
@@ -324,14 +426,12 @@ const styles = {
     lineHeight: 1.3,
     fontWeight: 800,
   },
-
   subtitle: {
     margin: "7px 0 0",
     color: "#718096",
     fontSize: "14px",
     lineHeight: 1.6,
   },
-
   refreshButton: {
     background: "#eef2ff",
     color: "#4338ca",
@@ -342,7 +442,10 @@ const styles = {
     fontWeight: 800,
     cursor: "pointer",
   },
-
+  disabledButton: {
+    opacity: 0.6,
+    cursor: "not-allowed",
+  },
   targetCard: {
     display: "flex",
     alignItems: "center",
@@ -353,7 +456,6 @@ const styles = {
     borderRadius: "14px",
     padding: "18px",
   },
-
   targetIcon: {
     width: "44px",
     height: "44px",
@@ -366,12 +468,10 @@ const styles = {
     fontSize: "23px",
     fontWeight: 900,
   },
-
   targetContent: {
     flex: 1,
     minWidth: "160px",
   },
-
   targetLabel: {
     fontSize: "10px",
     letterSpacing: "1px",
@@ -379,14 +479,17 @@ const styles = {
     fontWeight: 900,
     marginBottom: "5px",
   },
-
   targetValue: {
     color: "#27356d",
     fontSize: "20px",
     fontWeight: 900,
     lineHeight: 1.5,
   },
-
+  targetDescription: {
+    color: "#64748b",
+    fontSize: "12px",
+    marginTop: "3px",
+  },
   targetBadge: {
     background: "#fff",
     border: "1px solid #c7d2fe",
@@ -396,7 +499,6 @@ const styles = {
     fontSize: "11px",
     fontWeight: 800,
   },
-
   tableCard: {
     background: "#fff",
     border: "1px solid #e2e8f0",
@@ -405,13 +507,9 @@ const styles = {
     minWidth: 0,
     boxShadow: "0 6px 20px rgba(30, 41, 59, 0.04)",
   },
-
   columns:
     "minmax(180px, 1.5fr) 70px 130px minmax(140px, 1fr)",
-
-  columnsWithoutTarget:
-    "minmax(180px, 1.5fr) 70px 130px",
-
+  columnsWithoutTarget: "minmax(180px, 1.5fr) 70px 130px",
   tableHeader: {
     display: "grid",
     gap: "12px",
@@ -425,7 +523,6 @@ const styles = {
     letterSpacing: "0.6px",
     minWidth: "540px",
   },
-
   tableRow: {
     display: "grid",
     gap: "12px",
@@ -434,14 +531,12 @@ const styles = {
     borderBottom: "1px solid #edf1f7",
     minWidth: "540px",
   },
-
   staffCell: {
     display: "flex",
     alignItems: "center",
     gap: "12px",
     minWidth: 0,
   },
-
   rank: {
     width: "38px",
     height: "38px",
@@ -452,46 +547,36 @@ const styles = {
     fontSize: "16px",
     fontWeight: 900,
   },
-
   goldRank: {
     background: "#fef3c7",
     border: "1px solid #fcd34d",
   },
-
   silverRank: {
     background: "#f1f5f9",
     border: "1px solid #cbd5e1",
   },
-
   bronzeRank: {
     background: "#ffedd5",
     border: "1px solid #fdba74",
   },
-
   normalRank: {
     background: "#eef2ff",
     color: "#4f46e5",
     fontSize: "12px",
   },
-
-  staffDetails: {
-    minWidth: 0,
-  },
-
+  staffDetails: { minWidth: 0 },
   nameLine: {
     display: "flex",
     alignItems: "center",
     flexWrap: "wrap",
     gap: "7px",
   },
-
   staffName: {
     color: "#1e293b",
     fontSize: "13px",
     fontWeight: 800,
     overflowWrap: "anywhere",
   },
-
   topBadge: {
     background: "#fef3c7",
     color: "#92400e",
@@ -500,17 +585,12 @@ const styles = {
     fontSize: "9px",
     fontWeight: 900,
   },
-
   staffRole: {
     marginTop: "5px",
     color: "#94a3b8",
     fontSize: "11px",
   },
-
-  todayCell: {
-    textAlign: "center",
-  },
-
+  todayCell: { textAlign: "center" },
   todayBadge: {
     display: "inline-block",
     minWidth: "28px",
@@ -521,24 +601,18 @@ const styles = {
     fontSize: "13px",
     fontWeight: 900,
   },
-
   monthCell: {
     color: "#1e293b",
     fontSize: "17px",
     fontWeight: 900,
     whiteSpace: "nowrap",
   },
-
   monthTotal: {
     color: "#94a3b8",
     fontSize: "11px",
     fontWeight: 600,
   },
-
-  statusLine: {
-    marginTop: "7px",
-  },
-
+  statusLine: { marginTop: "7px" },
   statusBadge: {
     display: "inline-block",
     borderRadius: "999px",
@@ -547,33 +621,22 @@ const styles = {
     fontWeight: 800,
     whiteSpace: "nowrap",
   },
-
-  redBadge: {
-    background: "#fee2e2",
-    color: "#b91c1c",
-  },
-
+  redBadge: { background: "#fee2e2", color: "#b91c1c" },
   nearTargetBadge: {
     background: "#fef3c7",
     color: "#92400e",
   },
-
   inProgressBadge: {
     background: "#dbeafe",
     color: "#1d4ed8",
   },
-
-  startBadge: {
-    background: "#f3e8ff",
-    color: "#7e22ce",
-  },
-
+  startBadge: { background: "#f3e8ff", color: "#7e22ce" },
+  noTargetBadge: { background: "#f1f5f9", color: "#64748b" },
   progressCell: {
     display: "grid",
     gap: "8px",
     minWidth: 0,
   },
-
   progressTop: {
     display: "flex",
     justifyContent: "space-between",
@@ -581,18 +644,12 @@ const styles = {
     gap: "6px",
     flexWrap: "wrap",
   },
-
-  percent: {
-    fontSize: "14px",
-    fontWeight: 900,
-  },
-
+  percent: { fontSize: "14px", fontWeight: 900 },
   remaining: {
     color: "#94a3b8",
     fontSize: "10px",
     fontWeight: 700,
   },
-
   track: {
     width: "100%",
     height: "8px",
@@ -600,13 +657,11 @@ const styles = {
     borderRadius: "999px",
     overflow: "hidden",
   },
-
   fill: {
     height: "100%",
     borderRadius: "999px",
     transition: "width 0.3s ease",
   },
-
   footer: {
     display: "flex",
     alignItems: "center",
@@ -618,7 +673,6 @@ const styles = {
     fontWeight: 600,
     minWidth: "540px",
   },
-
   footerDot: {
     width: "7px",
     height: "7px",
@@ -626,7 +680,6 @@ const styles = {
     borderRadius: "50%",
     background: "#8b5cf6",
   },
-
   empty: {
     padding: "28px 18px",
     textAlign: "center",
@@ -636,7 +689,6 @@ const styles = {
     color: "#64748b",
     fontSize: "13px",
   },
-
   error: {
     background: "#fff1f2",
     color: "#be123c",

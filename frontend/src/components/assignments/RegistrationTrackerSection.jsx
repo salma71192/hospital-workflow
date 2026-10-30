@@ -1,7 +1,6 @@
 
 import React, { useMemo } from "react";
 import RegistrationTrackerFilters from "./RegistrationTrackerFilters";
-import RegistrationMixSection from "./RegistrationMixSection";
 import RegistrationListSection from "./RegistrationListSection";
 
 function formatLocalDate(date) {
@@ -19,9 +18,7 @@ function getTodayString() {
 function getPercent(value, total) {
   if (!total) return 0;
 
-  return Math.round(
-    (Number(value || 0) / Number(total)) * 100
-  );
+  return Math.round((Number(value || 0) / Number(total)) * 100);
 }
 
 function normalizeRole(value) {
@@ -57,7 +54,6 @@ export default function RegistrationTrackerSection({
   const today = getTodayString();
   const normalizedRole = normalizeRole(userRole);
 
-  // Keep permission handling based on the existing props and role.
   const isAdmin =
     Boolean(adminProp) || normalizedRole === "admin";
 
@@ -215,7 +211,7 @@ export default function RegistrationTrackerSection({
       <section style={styles.headerCard}>
         <div style={styles.headerText}>
           <div style={styles.eyebrow}>
-            🏥 RECEPTION WORKSPACE
+            RECEPTION WORKSPACE
           </div>
 
           <h2 style={styles.heading}>{title}</h2>
@@ -228,7 +224,7 @@ export default function RegistrationTrackerSection({
 
           <div style={styles.dateBadgeContent}>
             <span style={styles.dateLabel}>
-              Selected Period
+              SELECTED PERIOD
             </span>
 
             <strong style={styles.dateValue}>
@@ -238,7 +234,7 @@ export default function RegistrationTrackerSection({
         </div>
       </section>
 
-      {/* Filters */}
+      {/* Filters - preserved */}
       <section style={styles.filtersCard}>
         <div style={styles.sectionHeading}>
           <div style={styles.sectionIcon}>🔎</div>
@@ -268,12 +264,12 @@ export default function RegistrationTrackerSection({
         />
       </section>
 
-      {/* Summary */}
+      {/* Summary - preserved */}
       <section style={styles.summaryCard}>
         <div style={styles.summaryTop}>
           <div style={styles.summaryHeading}>
             <div style={styles.summaryEyebrow}>
-              📊 REGISTRATION OVERVIEW
+              REGISTRATION OVERVIEW
             </div>
 
             <h3 style={styles.summaryTitle}>
@@ -323,7 +319,11 @@ export default function RegistrationTrackerSection({
 
               <div
                 style={styles.progressTrack}
+                role="progressbar"
                 aria-label={`${card.label}: ${card.percentage}%`}
+                aria-valuenow={card.percentage}
+                aria-valuemin={0}
+                aria-valuemax={100}
               >
                 <div
                   style={{
@@ -340,34 +340,15 @@ export default function RegistrationTrackerSection({
           <span style={styles.footerIcon}>💙</span>
 
           <span>
-            Use these figures to monitor registration activity
-            and support a smooth reception workflow.
+            Monitor registration activity and support a smooth
+            reception workflow.
           </span>
         </div>
       </section>
 
-      {/* Registration mix */}
-      {stats.total > 0 && (
-        <section style={styles.contentCard}>
-          <div style={styles.sectionHeading}>
-            <div style={styles.sectionIcon}>📈</div>
+      {/* Registration Mix section removed */}
 
-            <div style={styles.sectionHeadingText}>
-              <h3 style={styles.sectionTitle}>
-                Registration Mix
-              </h3>
-
-              <p style={styles.sectionDescription}>
-                Review how registrations are distributed by category.
-              </p>
-            </div>
-          </div>
-
-          <RegistrationMixSection stats={stats} />
-        </section>
-      )}
-
-      {/* Registration records */}
+      {/* Registration records - preserved */}
       <section style={styles.contentCard}>
         <div style={styles.sectionHeading}>
           <div style={styles.sectionIcon}>🗂️</div>
@@ -413,6 +394,7 @@ const styles = {
     color: "#0f172a",
     boxSizing: "border-box",
   },
+
   headerCard: {
     display: "flex",
     alignItems: "center",
@@ -421,41 +403,46 @@ const styles = {
     gap: "22px",
     padding: "clamp(20px, 3vw, 30px)",
     background:
-      "linear-gradient(135deg, #eff6ff 0%, #ffffff 58%, #f0fdfa 100%)",
+      "linear-gradient(125deg, #eff6ff 0%, #ffffff 55%, #f0fdfa 100%)",
     border: "1px solid #dbeafe",
-    borderRadius: "24px",
-    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+    borderRadius: "22px",
+    boxShadow: "0 8px 28px rgba(15,23,42,0.04)",
     boxSizing: "border-box",
     minWidth: 0,
   },
+
   headerText: {
     display: "grid",
     gap: "9px",
     flex: "1 1 280px",
     minWidth: 0,
   },
+
   eyebrow: {
     fontSize: "10px",
-    fontWeight: "800",
+    fontWeight: 800,
     letterSpacing: "1.5px",
     color: "#0d9488",
   },
+
   heading: {
     margin: 0,
     fontSize: "clamp(23px, 3vw, 30px)",
     lineHeight: 1.3,
-    fontWeight: "800",
+    fontWeight: 800,
     letterSpacing: "-0.6px",
     color: "#0f172a",
     overflowWrap: "anywhere",
   },
+
   subtitle: {
     margin: 0,
     fontSize: "13px",
     lineHeight: 1.8,
     color: "#64748b",
-    fontWeight: "500",
+    fontWeight: 500,
   },
+
   dateBadge: {
     display: "flex",
     alignItems: "center",
@@ -463,17 +450,18 @@ const styles = {
     flex: "0 1 auto",
     minWidth: 0,
     maxWidth: "100%",
-    padding: "15px 17px",
-    background: "rgba(255, 255, 255, 0.92)",
+    padding: "14px 17px",
+    background: "#ffffff",
     border: "1px solid #dbeafe",
-    borderRadius: "16px",
-    boxShadow: "0 4px 14px rgba(37, 99, 235, 0.04)",
+    borderRadius: "15px",
+    boxShadow: "0 3px 12px rgba(37,99,235,0.04)",
     boxSizing: "border-box",
   },
+
   dateBadgeIcon: {
     width: "42px",
     height: "42px",
-    borderRadius: "13px",
+    borderRadius: "12px",
     background: "#eff6ff",
     display: "flex",
     alignItems: "center",
@@ -481,35 +469,39 @@ const styles = {
     fontSize: "21px",
     flexShrink: 0,
   },
+
   dateBadgeContent: {
     display: "grid",
     gap: "6px",
     minWidth: 0,
   },
+
   dateLabel: {
     color: "#64748b",
     fontSize: "10px",
-    fontWeight: "800",
-    textTransform: "uppercase",
+    fontWeight: 800,
     letterSpacing: "0.7px",
   },
+
   dateValue: {
     color: "#1e3a8a",
     fontSize: "12px",
     lineHeight: 1.6,
     overflowWrap: "anywhere",
   },
+
   filtersCard: {
     display: "grid",
     gap: "20px",
     padding: "clamp(18px, 2.5vw, 26px)",
     background: "#ffffff",
     border: "1px solid #e2e8f0",
-    borderRadius: "22px",
-    boxShadow: "0 8px 26px rgba(15, 23, 42, 0.035)",
+    borderRadius: "20px",
+    boxShadow: "0 6px 22px rgba(15,23,42,0.025)",
     minWidth: 0,
     boxSizing: "border-box",
   },
+
   sectionHeading: {
     display: "flex",
     alignItems: "center",
@@ -517,13 +509,15 @@ const styles = {
     marginBottom: "4px",
     minWidth: 0,
   },
+
   sectionHeadingText: {
     minWidth: 0,
   },
+
   sectionIcon: {
     width: "43px",
     height: "43px",
-    borderRadius: "14px",
+    borderRadius: "13px",
     background: "#eff6ff",
     display: "flex",
     alignItems: "center",
@@ -531,30 +525,34 @@ const styles = {
     fontSize: "20px",
     flexShrink: 0,
   },
+
   sectionTitle: {
     margin: 0,
     fontSize: "16px",
-    fontWeight: "800",
+    fontWeight: 800,
     color: "#0f172a",
     lineHeight: 1.4,
   },
+
   sectionDescription: {
     margin: "4px 0 0",
     fontSize: "12px",
     lineHeight: 1.7,
     color: "#64748b",
   },
+
   summaryCard: {
     display: "grid",
-    gap: "25px",
+    gap: "24px",
     padding: "clamp(18px, 2.5vw, 28px)",
     background: "#ffffff",
     border: "1px solid #e2e8f0",
-    borderRadius: "24px",
-    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.045)",
+    borderRadius: "22px",
+    boxShadow: "0 8px 26px rgba(15,23,42,0.035)",
     minWidth: 0,
     boxSizing: "border-box",
   },
+
   summaryTop: {
     display: "flex",
     justifyContent: "space-between",
@@ -563,47 +561,52 @@ const styles = {
     gap: "18px",
     minWidth: 0,
   },
+
   summaryHeading: {
     flex: "1 1 240px",
     minWidth: 0,
   },
+
   summaryEyebrow: {
     marginBottom: "7px",
     fontSize: "10px",
-    fontWeight: "800",
+    fontWeight: 800,
     letterSpacing: "1.3px",
     color: "#0d9488",
   },
+
   summaryTitle: {
     margin: 0,
     fontSize: "21px",
-    fontWeight: "800",
+    fontWeight: 800,
     color: "#0f172a",
     lineHeight: 1.4,
   },
+
   summarySubtitle: {
     margin: "5px 0 0",
     fontSize: "12px",
     color: "#64748b",
     lineHeight: 1.7,
   },
+
   totalCard: {
     display: "flex",
     alignItems: "center",
     gap: "13px",
     padding: "15px 18px",
-    background:
-      "linear-gradient(135deg, #eff6ff 0%, #f0fdfa 100%)",
+    background: "linear-gradient(135deg, #eff6ff, #f0fdfa)",
     border: "1px solid #dbeafe",
-    borderRadius: "17px",
+    borderRadius: "16px",
     flex: "0 1 auto",
     minWidth: 0,
     boxSizing: "border-box",
   },
+
   totalIcon: {
     width: "45px",
     height: "45px",
-    borderRadius: "14px",
+    borderRadius: "13px",
     background: "#ffffff",
     display: "flex",
     alignItems: "center",
@@ -611,21 +614,25 @@ const styles = {
     fontSize: "22px",
     flexShrink: 0,
   },
+
   totalContent: {
     minWidth: 0,
   },
+
   totalLabel: {
     fontSize: "11px",
     color: "#64748b",
-    fontWeight: "700",
+    fontWeight: 700,
   },
+
   totalNumber: {
     marginTop: "4px",
     fontSize: "29px",
     lineHeight: 1.2,
-    fontWeight: "900",
+    fontWeight: 900,
     color: "#1e3a8a",
   },
+
   summaryDetails: {
     display: "grid",
     gridTemplateColumns:
@@ -633,52 +640,58 @@ const styles = {
     gap: "14px",
     minWidth: 0,
   },
+
   statCardBlue: {
     display: "grid",
     gap: "12px",
     padding: "18px",
     background: "#f5f9ff",
     border: "1px solid #dbeafe",
-    borderRadius: "18px",
+    borderRadius: "17px",
     minWidth: 0,
     boxSizing: "border-box",
   },
+
   statCardGreen: {
     display: "grid",
     gap: "12px",
     padding: "18px",
     background: "#f0fdf4",
     border: "1px solid #bbf7d0",
-    borderRadius: "18px",
+    borderRadius: "17px",
     minWidth: 0,
     boxSizing: "border-box",
   },
+
   statCardPurple: {
     display: "grid",
     gap: "12px",
     padding: "18px",
     background: "#faf5ff",
     border: "1px solid #e9d5ff",
-    borderRadius: "18px",
+    borderRadius: "17px",
     minWidth: 0,
     boxSizing: "border-box",
   },
+
   statCardOrange: {
     display: "grid",
     gap: "12px",
     padding: "18px",
     background: "#fff7ed",
     border: "1px solid #fed7aa",
-    borderRadius: "18px",
+    borderRadius: "17px",
     minWidth: 0,
     boxSizing: "border-box",
   },
+
   statCardHeader: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: "8px",
   },
+
   statIconBlue: {
     width: "39px",
     height: "39px",
@@ -690,6 +703,7 @@ const styles = {
     fontSize: "19px",
     flexShrink: 0,
   },
+
   statIconGreen: {
     width: "39px",
     height: "39px",
@@ -701,6 +715,7 @@ const styles = {
     fontSize: "19px",
     flexShrink: 0,
   },
+
   statIconPurple: {
     width: "39px",
     height: "39px",
@@ -712,6 +727,7 @@ const styles = {
     fontSize: "19px",
     flexShrink: 0,
   },
+
   statIconOrange: {
     width: "39px",
     height: "39px",
@@ -723,71 +739,83 @@ const styles = {
     fontSize: "19px",
     flexShrink: 0,
   },
+
   statPercentBlue: {
     fontSize: "11px",
-    fontWeight: "800",
+    fontWeight: 800,
     color: "#2563eb",
   },
+
   statPercentGreen: {
     fontSize: "11px",
-    fontWeight: "800",
+    fontWeight: 800,
     color: "#15803d",
   },
+
   statPercentPurple: {
     fontSize: "11px",
-    fontWeight: "800",
+    fontWeight: 800,
     color: "#7e22ce",
   },
+
   statPercentOrange: {
     fontSize: "11px",
-    fontWeight: "800",
+    fontWeight: 800,
     color: "#c2410c",
   },
+
   statLabel: {
     fontSize: "12px",
-    fontWeight: "700",
+    fontWeight: 700,
     lineHeight: 1.5,
     color: "#475569",
     overflowWrap: "anywhere",
   },
+
   statNumber: {
     marginTop: "-5px",
     fontSize: "31px",
     lineHeight: 1.2,
-    fontWeight: "900",
+    fontWeight: 900,
     color: "#0f172a",
   },
+
   progressTrack: {
     height: "5px",
     borderRadius: "999px",
-    background: "rgba(148, 163, 184, 0.2)",
+    background: "rgba(148,163,184,0.2)",
     overflow: "hidden",
     marginTop: "2px",
   },
+
   progressBlue: {
     height: "100%",
     borderRadius: "999px",
     background: "#2563eb",
     transition: "width 0.3s ease",
   },
+
   progressGreen: {
     height: "100%",
     borderRadius: "999px",
     background: "#16a34a",
     transition: "width 0.3s ease",
   },
+
   progressPurple: {
     height: "100%",
     borderRadius: "999px",
     background: "#9333ea",
     transition: "width 0.3s ease",
   },
+
   progressOrange: {
     height: "100%",
     borderRadius: "999px",
     background: "#ea580c",
     transition: "width 0.3s ease",
   },
+
   summaryFooter: {
     display: "flex",
     alignItems: "flex-start",
@@ -798,17 +826,19 @@ const styles = {
     fontSize: "12px",
     lineHeight: 1.8,
   },
+
   footerIcon: {
     flexShrink: 0,
   },
+
   contentCard: {
     display: "grid",
     gap: "20px",
     padding: "clamp(18px, 2.5vw, 26px)",
     background: "#ffffff",
     border: "1px solid #e2e8f0",
-    borderRadius: "22px",
-    boxShadow: "0 8px 26px rgba(15, 23, 42, 0.035)",
+    borderRadius: "20px",
+    boxShadow: "0 6px 22px rgba(15,23,42,0.025)",
     minWidth: 0,
     boxSizing: "border-box",
   },

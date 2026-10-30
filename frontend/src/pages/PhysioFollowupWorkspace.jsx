@@ -83,6 +83,12 @@ function getLocalMonthString(date = new Date()) {
   ].join("-");
 }
 
+function shiftMonth(month, amount) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(year, monthNumber - 1 + amount, 1);
+  return getLocalMonthString(date);
+}
+
 function getMonthDateRange(month) {
   const [year, monthNumber] = month.split("-").map(Number);
   const lastDay = new Date(year, monthNumber, 0).getDate();
@@ -108,6 +114,8 @@ function getTherapistId(item) {
     item?.assigned_therapist_id ??
     item?.physio_id ??
     item?.physiotherapist_id ??
+    item?.user_id ??
+    item?.assigned_to?.id ??
     null
   );
 }
@@ -121,7 +129,14 @@ function belongsToTherapist(item, therapistId) {
 }
 
 function getCategory(item) {
-  return String(item?.category ?? item?.category_label ?? "")
+  return String(
+    item?.category ??
+      item?.category_label ??
+      item?.visit_type ??
+      item?.registration_type ??
+      item?.appointment_type ??
+      ""
+  )
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
@@ -142,6 +157,11 @@ const CATEGORIES = {
     "evaluation",
     "eval",
   ],
+  taskWithoutEligibility: [
+    "task_without_eligibility",
+    "no_eligibility",
+    "without_eligibility",
+  ],
   cash: [
     "cash",
     "cash_patient",
@@ -154,6 +174,21 @@ const CATEGORIES = {
 
 function matchesCategory(item, categories) {
   return categories.includes(getCategory(item));
+}
+
+function isEvaluation(item) {
+  const category = getCategory(item);
+
+  return (
+    CATEGORIES.evaluation.includes(category) ||
+    item?.is_evaluation === true ||
+    item?.initial_evaluation === true ||
+    item?.is_initial_evaluation === true
+  );
+}
+
+function isTaskWithoutEligibility(item) {
+  return CATEGORIES.taskWithoutEligibility.includes(getCategory(item));
 }
 
 function isNoShow(item) {
@@ -260,20 +295,6 @@ function getLeaderboardName(item) {
   );
 }
 
-function getLeaderboardPatientCount(item) {
-  const value =
-    item?.monthly_patients_seen ??
-    item?.patients_seen ??
-    item?.monthly_count ??
-    item?.monthly ??
-    item?.count ??
-    0;
-
-  const count = Number(value);
-
-  return Number.isFinite(count) && count >= 0 ? count : 0;
-}
-
 function getLeaderboardId(item) {
   return (
     item?.therapist_id ??
@@ -286,10 +307,141 @@ function getLeaderboardId(item) {
   );
 }
 
+function toCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
 /*
- * Extract useful backend validation messages, including Django REST
- * Framework responses that use "detail", field errors, or "details".
+ * Get total registrations from the EXISTING monthly leaderboard API.
+ * No new leaderboard or therapist-users endpoint is used.
  */
+function getLeaderboardTotalRegistrations(item) {
+  const value =
+    item?.total_registrations ??
+    item?.total_registration ??
+    item?.total_sessions ??
+    item?.registrations ??
+    item?.used_sessions ??
+    item?.total_used_sessions ??
+    item?.utilized_sessions ??
+    item?.sessions_used ??
+    item?.sessions_taken ??
+    item?.monthly_count ??
+    item?.count ??
+    0;
+
+  return toCount(value);
+}
+
+/*
+ * Count initial evaluations by therapist.
+ * These counts are used to:
+ * 1. Exclude current-month evaluations from used sessions.
+ * 2. Calculate individual targets.
+ */
+function buildEvaluationCounts(assignments) {
+  const counts = new Map();
+
+  assignments.forEach((item) => {
+    if (!isEvaluation(item)) return;
+
+    const therapistId = getTherapistId(item);
+
+    if (therapistId == null) return;
+
+    const key = String(therapistId);
+
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  return counts;
+}
+
+/*
+ * Return the adjusted used-session count.
+ * Tasks without eligibility are NOT calculated or subtracted.
+ */
+function getLeaderboardUsedSessions(item) {
+  if (item?.used_sessions_calculated === true) {
+    return toCount(item?.used_sessions);
+  }
+
+  const total = getLeaderboardTotalRegistrations(item);
+
+  const evaluations = toCount(
+    item?.initial_evaluations ??
+      item?.initial_evaluation_count ??
+      item?.evaluation_count
+  );
+
+  return Math.max(0, total - evaluations);
+}
+
+/*
+ * Leaderboard calculations:
+ *
+ * Used sessions =
+ * Total registrations - Current-month initial evaluations
+ *
+ * Target =
+ * (Current-month initial evaluations +
+ * Previous-month initial evaluations) * 6
+ *
+ * Tasks without eligibility are completely excluded
+ * from these calculations.
+ */
+function attachIndividualTargets(
+  leaderboardRows,
+  currentEvaluationCounts,
+  previousEvaluationCounts
+) {
+  return leaderboardRows.map((row) => {
+    const therapistId = getLeaderboardId(row);
+    const key = String(therapistId);
+
+    const currentMonthInitialEvaluations =
+      currentEvaluationCounts.get(key) || 0;
+
+    const previousMonthInitialEvaluations =
+      previousEvaluationCounts.get(key) || 0;
+
+    const totalRegistrations =
+      getLeaderboardTotalRegistrations(row);
+
+    const usedSessions = Math.max(
+      0,
+      totalRegistrations - currentMonthInitialEvaluations
+    );
+
+    const target =
+      (
+        currentMonthInitialEvaluations +
+        previousMonthInitialEvaluations
+      ) * 6;
+
+    const progress =
+      target > 0
+        ? Math.min((usedSessions / target) * 100, 100)
+        : 0;
+
+    return {
+      ...row,
+      total_registrations: totalRegistrations,
+      initial_evaluations: currentMonthInitialEvaluations,
+      used_sessions: usedSessions,
+      total_used_sessions: usedSessions,
+      current_evaluations: currentMonthInitialEvaluations,
+      previous_evaluations: previousMonthInitialEvaluations,
+      target,
+      monthly_target: target,
+      progress,
+      progress_percentage: progress,
+      used_sessions_calculated: true,
+    };
+  });
+}
+
 function getApiError(err, fallback) {
   const data = err?.response?.data;
 
@@ -384,11 +536,6 @@ function extractList(data, keys = []) {
   return [];
 }
 
-/*
- * Keep the ID supplied by users/physicians/.
- * The backend should translate this user ID into the corresponding
- * reception.Physician record before saving a referral.
- */
 function normalizePhysicians(data) {
   const rows = extractList(data, [
     "physicians",
@@ -676,6 +823,16 @@ export default function PhysioFollowupWorkspace({
     }
   }, [evaluationMonth]);
 
+  /*
+   * Monthly leaderboard:
+   *
+   * 1. Load the existing monthly leaderboard registration totals.
+   * 2. Load current-month assignments for initial evaluations.
+   * 3. Load previous-month assignments for initial evaluations.
+   * 4. Calculate used sessions and individual targets.
+   *
+   * Tasks without eligibility are not used in this calculation.
+   */
   const loadMonthlyLeaderboard = useCallback(async () => {
     if (!leaderboardMonth) return;
 
@@ -683,33 +840,99 @@ export default function PhysioFollowupWorkspace({
     setMonthlyLeaderboardError("");
 
     try {
-      const params = new URLSearchParams({
+      const previousMonth = shiftMonth(leaderboardMonth, -1);
+
+      const leaderboardParams = new URLSearchParams({
         month: leaderboardMonth,
       });
 
-      const res = await api.get(
-        `physio/leaderboard/monthly/?${params.toString()}`
+      const currentAssignmentParams = new URLSearchParams(
+        getMonthDateRange(leaderboardMonth)
       );
 
-      const results = getArray(res.data, "results");
+      const previousAssignmentParams = new URLSearchParams(
+        getMonthDateRange(previousMonth)
+      );
 
-      const rows = results.length
-        ? results
-        : getArray(res.data, "rows").length
-          ? getArray(res.data, "rows")
-          : getArray(res.data, "leaderboard");
+      const [
+        leaderboardResponse,
+        currentAssignmentsResponse,
+        previousAssignmentsResponse,
+      ] = await Promise.all([
+        api.get(
+          `physio/leaderboard/monthly/?${leaderboardParams.toString()}`
+        ),
+        api.get(
+          `reception/assignments/?${currentAssignmentParams.toString()}`
+        ),
+        api.get(
+          `reception/assignments/?${previousAssignmentParams.toString()}`
+        ),
+      ]);
 
-      setMonthlyLeaderboardRows(rows);
+      const leaderboardData = leaderboardResponse.data;
+
+      const rows =
+        getArray(leaderboardData, "results").length
+          ? getArray(leaderboardData, "results")
+          : getArray(leaderboardData, "rows").length
+            ? getArray(leaderboardData, "rows")
+            : getArray(leaderboardData, "leaderboard").length
+              ? getArray(leaderboardData, "leaderboard")
+              : getArray(leaderboardData, "data");
+
+      const currentAssignments = getArray(
+        currentAssignmentsResponse.data,
+        "assignments"
+      );
+
+      const previousAssignments = getArray(
+        previousAssignmentsResponse.data,
+        "assignments"
+      );
+
+      const currentEvaluationCounts =
+        buildEvaluationCounts(currentAssignments);
+
+      const previousEvaluationCounts =
+        buildEvaluationCounts(previousAssignments);
+
+      const rowsWithTargets = attachIndividualTargets(
+        rows,
+        currentEvaluationCounts,
+        previousEvaluationCounts
+      );
+
+      setMonthlyLeaderboardRows(rowsWithTargets);
+
+      console.log("Monthly leaderboard calculation:", {
+        month: leaderboardMonth,
+        totalTherapists: rowsWithTargets.length,
+        therapists: rowsWithTargets.map((row) => ({
+          therapist: getLeaderboardName(row),
+          totalRegistrations: row.total_registrations,
+          initialEvaluations: row.initial_evaluations,
+          usedSessions: row.used_sessions,
+          currentEvaluations: row.current_evaluations,
+          previousEvaluations: row.previous_evaluations,
+          target: row.target,
+        })),
+      });
     } catch (err) {
       console.error("Failed to load monthly leaderboard:", err);
+      console.error(
+        "Leaderboard calculation error:",
+        err?.response?.data
+      );
+
       setMonthlyLeaderboardRows([]);
 
       setMonthlyLeaderboardError(
         err?.response?.status === 404
-          ? "The monthly physiotherapy leaderboard API is not configured yet."
+          ? "The monthly leaderboard or assignment API is not configured."
           : getApiError(
               err,
-              "Failed to load the monthly leaderboard. Please try refreshing."
+              "Failed to load the monthly leaderboard and evaluation targets. Please try refreshing."
             )
       );
     } finally {
@@ -758,7 +981,6 @@ export default function PhysioFollowupWorkspace({
       let physicianData = null;
       let physicianError = null;
 
-      // Use the physician USER endpoint because the form selects user IDs.
       try {
         const response = await api.get("users/physicians/");
         physicianData = response.data;
@@ -885,7 +1107,6 @@ export default function PhysioFollowupWorkspace({
           );
         }
 
-        // Send the USER ID; the Django backend resolves the Physician model.
         const payload = {
           patient: patientId,
           physician_user_id: physicianId,
@@ -1041,7 +1262,6 @@ export default function PhysioFollowupWorkspace({
         return;
       }
 
-      // Use the physician USER ID consistently for edits as well.
       const payload = {
         patient: patientId,
         physician_user_id: physicianId,
@@ -1346,11 +1566,7 @@ export default function PhysioFollowupWorkspace({
   const taskWithoutEligibilityAssignments = useMemo(
     () =>
       physioDailyAssignments.filter((item) =>
-        [
-          "task_without_eligibility",
-          "no_eligibility",
-          "without_eligibility",
-        ].includes(getCategory(item))
+        isTaskWithoutEligibility(item)
       ),
     [physioDailyAssignments]
   );
@@ -1501,17 +1717,19 @@ export default function PhysioFollowupWorkspace({
             loading={monthlyLeaderboardLoading}
             error={monthlyLeaderboardError}
             onReload={loadMonthlyLeaderboard}
-            target={400}
             showTarget
             todayLabel="TODAY"
             monthlyLabel="THIS MONTH"
-            countLabel="patients"
+            countLabel="used sessions"
             emptyMessage={`No leaderboard data is available for ${getMonthLabel(
               leaderboardMonth
             )}.`}
             getName={getLeaderboardName}
-            getMonthly={getLeaderboardPatientCount}
+            getMonthly={getLeaderboardUsedSessions}
             getId={getLeaderboardId}
+            getTarget={(row) =>
+              row?.target ?? row?.monthly_target ?? 0
+            }
           />
         </div>
       )}
