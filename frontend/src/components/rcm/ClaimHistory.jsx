@@ -167,10 +167,111 @@ function claimIdOf(claim) {
   );
 }
 
+/* ---------------- Approval fields ---------------- */
+
+function requestingClinicianOf(claim) {
+  return valueOf(claim, [
+    "requesting_clinician",
+    "requestingClinician",
+    "clinician",
+    "physician",
+    "doctor_name",
+    "doctorName",
+  ], "—");
+}
+
+function authorizationNumberOf(claim) {
+  return valueOf(claim, [
+    "authorization_number",
+    "authorizationNumber",
+    "auth_number",
+    "authNumber",
+    "authorization_no",
+    "authorizationNo",
+  ], "—");
+}
+
+function approvalDateOf(claim) {
+  return valueOf(claim, [
+    "approval_date",
+    "approvalDate",
+    "approved_date",
+    "approvedDate",
+  ]);
+}
+
+function expirationDateOf(claim) {
+  return valueOf(claim, [
+    "expiration_date",
+    "expirationDate",
+    "expiry_date",
+    "expiryDate",
+    "authorization_expiry",
+    "authorizationExpiry",
+  ]);
+}
+
+function approvedVisitsOf(claim) {
+  return valueOf(claim, [
+    "approved_visits",
+    "approvedVisits",
+    "visits_approved",
+    "visitsApproved",
+  ], "—");
+}
+
+function approvedUnitsOf(claim) {
+  return valueOf(claim, [
+    "approved_units",
+    "approvedUnits",
+    "units_approved",
+    "unitsApproved",
+  ], "—");
+}
+
+function approvedServiceOf(claim) {
+  return valueOf(claim, [
+    "approved_service",
+    "approvedService",
+    "approved_procedure",
+    "approvedProcedure",
+    "service",
+    "procedure",
+  ], "—");
+}
+
+function payerOf(claim) {
+  return valueOf(claim, [
+    "payer",
+    "insurance",
+    "insurance_company",
+    "insuranceCompany",
+    "insurance_name",
+    "insuranceName",
+  ], "—");
+}
+
 function statusOf(claim) {
   return String(
-    valueOf(claim, ["status", "claim_status", "claimStatus"], "Pending")
+    valueOf(claim, [
+      "status",
+      "approval_status",
+      "approvalStatus",
+      "claim_status",
+      "claimStatus",
+    ], "Pending")
   );
+}
+
+function rejectionReasonOf(claim) {
+  return valueOf(claim, [
+    "rejection_reason",
+    "rejectionReason",
+    "denial_reason",
+    "denialReason",
+    "reason_for_rejection",
+    "reasonForRejection",
+  ], "—");
 }
 
 function statusCategory(input) {
@@ -625,19 +726,6 @@ function embeddedHistoryOf(claim) {
   return null;
 }
 
-/*
- * Remove duplicate history entries before displaying them.
- *
- * First, remove repeated records with the same database ID.
- * Next, remove exact duplicate events based on their event type,
- * timestamp, status and actor.
- * Finally, if a creation event exists, suppress a non-creation event
- * that has the same timestamp and status as that creation event.
- *
- * This is a display-layer safeguard. If the backend creates two
- * different records with different timestamps, the backend should
- * also be corrected so the stored history remains accurate.
- */
 function deduplicateHistoryEvents(events, claim) {
   if (!Array.isArray(events)) return [];
 
@@ -942,6 +1030,11 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         claimIdOf(claim),
         statusOf(claim),
         creatorName,
+        requestingClinicianOf(claim),
+        authorizationNumberOf(claim),
+        approvedServiceOf(claim),
+        payerOf(claim),
+        rejectionReasonOf(claim),
       ]
         .join(" ")
         .toLowerCase();
@@ -1068,8 +1161,6 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         [id]: events,
       }));
 
-      // Keep the stored record count for deletion protection.
-      // Do not use the deduplicated display count for this rule.
       setHistoryCountByClaim((current) => ({
         ...current,
         [id]: events.length,
@@ -1300,8 +1391,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         .ch-table-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
         .ch-table-title{margin:0 0 5px;color:${C.navy};font-size:18px;font-weight:850}
         .ch-table-wrap{width:100%;overflow:auto;border:1px solid #dce7f5;border-radius:11px;background:#fff}
-        .ch-table{width:100%;min-width:1120px;border-collapse:separate;border-spacing:0;text-align:left}
-        .ch-table th{padding:14px;border-bottom:1px solid #dce7f5;background:#eff5fd;color:#31527f;font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}
+        .ch-table{width:100%;min-width:1900px;border-collapse:separate;border-spacing:0;text-align:left}
+        .ch-table th{position:sticky;top:0;z-index:1;padding:14px;border-bottom:1px solid #dce7f5;background:#eff5fd;color:#31527f;font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}
         .ch-table td{padding:13px;border-bottom:1px solid #eaf0f8;color:#526781;font-size:13px;vertical-align:middle}
         .ch-row:hover{background:#f7faff}
         .ch-claim-id{display:inline-block;padding:7px 10px;border:1px solid #d8e8ff;border-radius:20px;background:#eaf3ff;color:#1554a5;font-size:12px;font-weight:850;white-space:nowrap}
@@ -1310,6 +1401,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         .ch-status{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid;border-radius:20px;font-size:12px;font-weight:800;white-space:nowrap}
         .ch-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
         .ch-creator{display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#49617f;font-weight:650}
+        .ch-cell-text{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+        .ch-rejection{display:inline-block;max-width:240px;color:#9f1239;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
         .ch-table .ch-button{min-height:35px;padding:7px 10px;border-radius:8px;font-size:12px}
         .ch-detail-row td{padding:0;background:#f4f8ff}
         .ch-history-wrap{padding:18px}
@@ -1336,7 +1429,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         <div>
           <h2 className="ch-title">Claim Records</h2>
           <p className="ch-subtitle">
-            Search, review, edit, and track claims by day or month.
+            Search, review, edit, and track claim approvals by day or month.
           </p>
         </div>
 
@@ -1530,12 +1623,12 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                       type="search"
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Patient, file number, claim ID..."
+                      placeholder="Patient, file number, claim ID, authorization..."
                     />
                   </div>
                   <div className="ch-date-description">
-                    Search by patient name, file number, claim ID, status, or
-                    creator.
+                    Search by patient, file number, claim ID, clinician,
+                    authorization, service, payer, status, or rejection reason.
                   </div>
                 </label>
 
@@ -1660,13 +1753,14 @@ export default function ClaimHistory({ refreshKey = 0 }) {
           <div className="ch-table-section">
             <div className="ch-table-heading">
               <div>
-                <h3 className="ch-table-title">Claim Records</h3>
+                <h3 className="ch-table-title">Claim Approval Records</h3>
                 <p className="ch-subtitle">
                   {dateMode === "day"
                     ? `Claims created on ${periodLabel}.`
                     : `Claims created during ${periodLabel}.`}
                   {statusFilter !== "All" &&
                     ` Showing ${statusFilter.toLowerCase()} claims.`}
+                  {" "}Scroll horizontally to view all approval columns.
                 </p>
               </div>
 
@@ -1682,12 +1776,18 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                 <table className="ch-table">
                   <thead>
                     <tr>
+                      <th>Patient File Number</th>
                       <th>Claim ID</th>
-                      <th>Patient</th>
-                      <th>File Number</th>
-                      <th>Status</th>
-                      <th>Created By</th>
-                      <th>Date Created</th>
+                      <th>Requesting Clinician</th>
+                      <th>Authorization Number</th>
+                      <th>Approval Date</th>
+                      <th>Expiration Date</th>
+                      <th>Approved Visits</th>
+                      <th>Approved Units</th>
+                      <th>Approved Service</th>
+                      <th>Insurance / Payer</th>
+                      <th>Approval Status</th>
+                      <th>Rejection Reason</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -1728,41 +1828,75 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                         <Fragment key={claimKey}>
                           <tr className="ch-row">
                             <td>
+                              {patientId !== "" && patientId != null ? (
+                                <button
+                                  type="button"
+                                  className="ch-link"
+                                  onClick={() => openPatientFile(patientId)}
+                                  title={`Open ${patientName(claim)} patient file`}
+                                >
+                                  {fileNumberOf(claim)}
+                                </button>
+                              ) : (
+                                <span>{fileNumberOf(claim)}</span>
+                              )}
+                              <div className="ch-date-description">
+                                {patientName(claim)}
+                              </div>
+                            </td>
+
+                            <td>
                               <span className="ch-claim-id">
                                 {claimIdOf(claim)}
                               </span>
                             </td>
 
                             <td>
-                              {patientId !== "" && patientId != null ? (
-                                <button
-                                  type="button"
-                                  className="ch-link"
-                                  onClick={() => openPatientFile(patientId)}
-                                >
-                                  {patientName(claim)}
-                                </button>
-                              ) : (
-                                <strong style={{ color: C.navy }}>
-                                  {patientName(claim)}
-                                </strong>
-                              )}
+                              <span
+                                className="ch-cell-text"
+                                title={requestingClinicianOf(claim)}
+                              >
+                                {requestingClinicianOf(claim)}
+                              </span>
                             </td>
 
                             <td>
-                              {patientId !== "" && patientId != null ? (
-                                <button
-                                  type="button"
-                                  className="ch-link"
-                                  style={{ color: C.blue }}
-                                  onClick={() => openPatientFile(patientId)}
-                                  title="Open patient file"
-                                >
-                                  {fileNumberOf(claim)}
-                                </button>
-                              ) : (
-                                fileNumberOf(claim)
-                              )}
+                              <span
+                                className="ch-cell-text"
+                                title={authorizationNumberOf(claim)}
+                              >
+                                {authorizationNumberOf(claim)}
+                              </span>
+                            </td>
+
+                            <td style={{ whiteSpace: "nowrap" }}>
+                              {formatDate(approvalDateOf(claim))}
+                            </td>
+
+                            <td style={{ whiteSpace: "nowrap" }}>
+                              {formatDate(expirationDateOf(claim))}
+                            </td>
+
+                            <td>{approvedVisitsOf(claim)}</td>
+
+                            <td>{approvedUnitsOf(claim)}</td>
+
+                            <td>
+                              <span
+                                className="ch-cell-text"
+                                title={approvedServiceOf(claim)}
+                              >
+                                {approvedServiceOf(claim)}
+                              </span>
+                            </td>
+
+                            <td>
+                              <span
+                                className="ch-cell-text"
+                                title={payerOf(claim)}
+                              >
+                                {payerOf(claim)}
+                              </span>
                             </td>
 
                             <td>
@@ -1783,16 +1917,16 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                             </td>
 
                             <td>
-                              <span
-                                className="ch-creator"
-                                title={creatorNameOf(claim)}
-                              >
-                                {creatorNameOf(claim)}
-                              </span>
-                            </td>
-
-                            <td style={{ whiteSpace: "nowrap" }}>
-                              {formatDate(createdDateOf(claim))}
+                              {rejectionReasonOf(claim) !== "—" ? (
+                                <span
+                                  className="ch-rejection"
+                                  title={rejectionReasonOf(claim)}
+                                >
+                                  {rejectionReasonOf(claim)}
+                                </span>
+                              ) : (
+                                "—"
+                              )}
                             </td>
 
                             <td>
@@ -1846,7 +1980,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
 
                           {isExpanded && (
                             <tr className="ch-detail-row">
-                              <td colSpan={7}>
+                              <td colSpan={13}>
                                 <div className="ch-history-wrap">
                                   <div className="ch-history-header">
                                     <div>
@@ -1964,7 +2098,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
 
                     {!filteredClaims.length && !error && (
                       <tr>
-                        <td colSpan={7}>
+                        <td colSpan={13}>
                           <div className="ch-empty">
                             <strong>
                               {periodClaims.length
