@@ -20,6 +20,51 @@ class Claim(models.Model):
 
     claim_id = models.CharField(max_length=100)
 
+    # Approval information
+    requesting_clinician = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+    )
+
+    authorization_number = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+    )
+
+    approval_date = models.DateField(
+        null=True,
+        blank=True,
+    )
+
+    expiration_date = models.DateField(
+        null=True,
+        blank=True,
+    )
+
+    approved_visits = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+    )
+
+    approved_units = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+    )
+
+    approved_service = models.CharField(
+        max_length=250,
+        blank=True,
+        default="",
+    )
+
+    payer = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+    )
+
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -148,7 +193,6 @@ class RenewalAlert(models.Model):
         related_name="rcm_renewal_alerts",
     )
 
-    # Link to the existing claim when available.
     claim = models.ForeignKey(
         Claim,
         on_delete=models.SET_NULL,
@@ -157,7 +201,6 @@ class RenewalAlert(models.Model):
         related_name="renewal_alerts",
     )
 
-    # Preserve the Claim ID for display and history.
     claim_id_value = models.CharField(
         max_length=100,
         blank=True,
@@ -200,36 +243,31 @@ class RenewalAlert(models.Model):
         ordering = ["renewal_date", "-created_at", "-pk"]
 
     def save(self, *args, **kwargs):
-        """
-        Keep the renewal alert's status aligned with its linked claim.
-
-        The claim is authoritative when a linked claim exists.
-        The alert's own status is retained when no claim is linked.
-        """
         if self.claim_id:
-            # Use the linked claim's current database status so that
-            # an outdated in-memory claim object does not override it.
             claim_status = (
                 Claim.objects.filter(pk=self.claim_id)
                 .values_list("status", flat=True)
                 .first()
             )
 
-            if claim_status in {"Pending", "Submitted", "Approved", "Rejected"}:
+            if claim_status in {
+                "Pending",
+                "Submitted",
+                "Approved",
+                "Rejected",
+            }:
                 self.status = claim_status
 
             if not self.claim_id_value:
-                claim = Claim.objects.filter(pk=self.claim_id).only(
-                    "claim_id"
-                ).first()
+                claim = Claim.objects.filter(
+                    pk=self.claim_id
+                ).only("claim_id").first()
 
                 if claim:
                     self.claim_id_value = claim.claim_id
 
         update_fields = kwargs.get("update_fields")
 
-        # If the caller uses update_fields, include synchronized fields
-        # so that the status and preserved Claim ID are actually saved.
         if update_fields is not None:
             update_fields = set(update_fields)
             update_fields.update({"status", "claim_id_value"})

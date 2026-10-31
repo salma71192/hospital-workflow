@@ -1,4 +1,3 @@
-
 import json
 from datetime import date
 
@@ -20,6 +19,46 @@ VALID_CLAIM_STATUSES = {
     "Rejected",
     "Pending",
     "Submitted",
+}
+
+APPROVAL_FIELDS = {
+    "requesting_clinician": (
+        "requestingClinician",
+        "requesting_clinician",
+    ),
+    "authorization_number": (
+        "authorizationNumber",
+        "authorization_number",
+        "approvalNumber",
+        "approval_number",
+    ),
+    "approval_date": (
+        "approvalDate",
+        "approval_date",
+    ),
+    "expiration_date": (
+        "expirationDate",
+        "expiration_date",
+    ),
+    "approved_visits": (
+        "approvedVisits",
+        "approved_visits",
+    ),
+    "approved_units": (
+        "approvedUnits",
+        "approved_units",
+    ),
+    "approved_service": (
+        "approvedService",
+        "approved_service",
+        "service",
+    ),
+    "payer": (
+        "payer",
+        "insurance",
+        "insuranceCompany",
+        "insurance_company",
+    ),
 }
 
 
@@ -69,6 +108,61 @@ def patient_file_number_of(patient):
             return str(value)
 
     return "—"
+
+
+def patient_file_number_field():
+    """
+    Identify the actual patient file-number field on the Patient model.
+    The database primary key is deliberately excluded.
+    """
+    candidates = (
+        "file_number",
+        "patient_file_number",
+        "patient_number",
+        "medical_record_number",
+        "medical_record_no",
+        "mrn",
+        "file_no",
+    )
+
+    available_fields = {
+        field.name
+        for field in Patient._meta.get_fields()
+        if getattr(field, "concrete", False)
+    }
+
+    for candidate in candidates:
+        if candidate in available_fields:
+            return candidate
+
+    return None
+
+
+def find_patient_by_file_number(file_number):
+    file_number = str(file_number or "").strip()
+
+    if not file_number:
+        return None, "Patient file number is required."
+
+    field_name = patient_file_number_field()
+
+    if not field_name:
+        return None, (
+            "The Patient model does not have a recognized file-number "
+            "field. Please configure patient_file_number_field()."
+        )
+
+    try:
+        patient = Patient.objects.filter(
+            **{f"{field_name}__iexact": file_number}
+        ).first()
+    except Exception:
+        return None, "Could not search for this patient file number."
+
+    if not patient:
+        return None, f"No patient found with file number {file_number}."
+
+    return patient, None
 
 
 def user_name_of(user):
@@ -146,6 +240,71 @@ def record_claim_history(
         renewal_date=renewal_date,
         created_by=user if is_authenticated_user(user) else None,
     )
+
+
+def get_value(data, *keys, default=None):
+    for key in keys:
+        if key in data:
+            return data.get(key)
+    return default
+
+
+def approval_values_from_data(data, existing=None, importing=False):
+    """
+    Validate and return Claim approval fields.
+
+    For imports, blank Excel cells do not overwrite existing values.
+    For normal edits, supplied blank values can clear text fields.
+    """
+    values = {}
+    errors = []
+
+    for model_field, aliases in APPROVAL_FIELDS.items():
+        supplied = any(alias in data for alias in aliases)
+
+        if not supplied:
+            continue
+
+        raw_value = get_value(data, *aliases)
+
+        if importing and raw_value in (None, ""):
+            continue
+
+        if model_field in {"approval_date", "expiration_date"}:
+            parsed = parse_date(raw_value)
+
+            if raw_value not in (None, "") and not parsed:
+                errors.append(
+                    f"{model_field.replace('_', ' ').title()} "
+                    "must use YYYY-MM-DD format."
+                )
+                continue
+
+            values[model_field] = parsed
+
+        elif model_field in {"approved_visits", "approved_units"}:
+            if raw_value in (None, ""):
+                values[model_field] = None
+                continue
+
+            try:
+                number = int(float(str(raw_value).strip()))
+
+                if number < 0:
+                    raise ValueError
+
+                values[model_field] = number
+
+            except (ValueError, TypeError):
+                errors.append(
+                    f"{model_field.replace('_', ' ').title()} "
+                    "must be a non-negative whole number."
+                )
+
+        else:
+            values[model_field] = str(raw_value or "").strip()
+
+    return values, errors
 
 
 def renewal_alert_permission_error(request):
@@ -301,6 +460,18 @@ def claim_to_dict(claim):
         else None
     )
 
+    approval_date = (
+        claim.approval_date.isoformat()
+        if claim.approval_date
+        else None
+    )
+
+    expiration_date = (
+        claim.expiration_date.isoformat()
+        if claim.expiration_date
+        else None
+    )
+
     history_records = (
         ClaimHistory.objects
         .filter(claim_id=claim.pk)
@@ -333,6 +504,30 @@ def claim_to_dict(claim):
         "status": claim.status,
         "rejectionReason": claim.rejection_reason,
         "rejection_reason": claim.rejection_reason,
+
+        "requestingClinician": claim.requesting_clinician,
+        "requesting_clinician": claim.requesting_clinician,
+
+        "authorizationNumber": claim.authorization_number,
+        "authorization_number": claim.authorization_number,
+
+        "approvalDate": approval_date,
+        "approval_date": approval_date,
+
+        "expirationDate": expiration_date,
+        "expiration_date": expiration_date,
+
+        "approvedVisits": claim.approved_visits,
+        "approved_visits": claim.approved_visits,
+
+        "approvedUnits": claim.approved_units,
+        "approved_units": claim.approved_units,
+
+        "approvedService": claim.approved_service,
+        "approved_service": claim.approved_service,
+
+        "payer": claim.payer,
+        "insurance": claim.payer,
 
         "created_by": creator_data,
         "created_by_id": claim.created_by_id,
@@ -394,8 +589,6 @@ def alert_to_dict(alert):
         else None
     )
 
-    # The linked Claim is the source of truth for the latest status.
-    # Fall back to the alert's own status if no claim is linked.
     effective_status = claim_status or alert.status
 
     return {
@@ -425,7 +618,6 @@ def alert_to_dict(alert):
             ),
         } if claim else None,
 
-        # All status fields return the effective latest status.
         "renewal_status": effective_status,
         "renewalStatus": effective_status,
         "status": effective_status,
@@ -473,11 +665,7 @@ def claim_permission_error(request, claim):
 
     if claim.created_by_id != user.pk:
         return JsonResponse(
-            {
-                "error": (
-                    "You can only manage claims that you created."
-                )
-            },
+            {"error": "You can only manage claims that you created."},
             status=403,
         )
 
@@ -571,6 +759,14 @@ def claims_list_create(request):
         data.get("renewal_alert_id"),
     )
 
+    approval_values, approval_errors = approval_values_from_data(data)
+
+    if approval_errors:
+        return JsonResponse(
+            {"error": " ".join(approval_errors)},
+            status=400,
+        )
+
     if not patient_id:
         return JsonResponse(
             {"error": "Patient is required."},
@@ -607,7 +803,6 @@ def claims_list_create(request):
         with transaction.atomic():
             renewal_alert = None
 
-            # RESUBMIT THROUGH AN EXISTING RENEWAL REMINDER
             if renewal_alert_id:
                 try:
                     renewal_alert = (
@@ -672,9 +867,7 @@ def claims_list_create(request):
                         .select_for_update(of=("self",))
                         .filter(
                             patient_id=patient.pk,
-                            claim_id__iexact=(
-                                renewal_alert.claim_id_value
-                            ),
+                            claim_id__iexact=renewal_alert.claim_id_value,
                         )
                         .first()
                     )
@@ -693,11 +886,7 @@ def claims_list_create(request):
 
                 if existing_claim.patient_id != patient.pk:
                     return JsonResponse(
-                        {
-                            "error": (
-                                "The claim belongs to another patient."
-                            )
-                        },
+                        {"error": "The claim belongs to another patient."},
                         status=400,
                     )
 
@@ -709,13 +898,10 @@ def claims_list_create(request):
                 existing_claim.status = "Submitted"
                 existing_claim.rejection_reason = ""
 
-                existing_claim.save(
-                    update_fields=[
-                        "status",
-                        "rejection_reason",
-                        "updated_at",
-                    ]
-                )
+                for field, value in approval_values.items():
+                    setattr(existing_claim, field, value)
+
+                existing_claim.save()
 
                 record_claim_history(
                     claim=existing_claim,
@@ -748,7 +934,6 @@ def claims_list_create(request):
 
                 claim = existing_claim
 
-            # CREATE A NEW CLAIM
             else:
                 existing_claim = (
                     Claim.objects
@@ -777,11 +962,10 @@ def claims_list_create(request):
                     claim_id=claim_id,
                     status=status,
                     rejection_reason=(
-                        rejection_reason
-                        if status == "Rejected"
-                        else ""
+                        rejection_reason if status == "Rejected" else ""
                     ),
                     created_by=request.user,
+                    **approval_values,
                 )
 
                 record_claim_history(
@@ -790,9 +974,7 @@ def claims_list_create(request):
                     previous_status="",
                     new_status=status,
                     rejection_reason=(
-                        rejection_reason
-                        if status == "Rejected"
-                        else ""
+                        rejection_reason if status == "Rejected" else ""
                     ),
                     notes="Claim created.",
                     user=request.user,
@@ -838,6 +1020,252 @@ def claims_list_create(request):
         response_data,
         status=200 if renewal_alert_id else 201,
     )
+
+
+# =========================================================
+# BULK IMPORT CLAIMS FROM EXCEL APPROVAL SHEET
+# POST /api/rcm/claims/bulk-import/
+# =========================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def claims_bulk_import(request):
+    if not is_authenticated_user(request.user):
+        return JsonResponse(
+            {"error": "Please log in to import claims."},
+            status=401,
+        )
+
+    if not user_can_manage_claims(request.user):
+        return JsonResponse(
+            {
+                "error": (
+                    "Only RCM users and administrators can "
+                    "import claims in bulk."
+                )
+            },
+            status=403,
+        )
+
+    data, error = read_json(request)
+
+    if error:
+        return error
+
+    rows = data.get("claims")
+
+    if not isinstance(rows, list) or not rows:
+        return JsonResponse(
+            {"error": "Please provide a non-empty claims list."},
+            status=400,
+        )
+
+    created_count = 0
+    updated_count = 0
+    failed_count = 0
+    results = []
+
+    for index, row in enumerate(rows, start=1):
+        excel_row_number = row.get("rowNumber", index + 1) if isinstance(row, dict) else index + 1
+
+        if not isinstance(row, dict):
+            failed_count += 1
+            results.append({
+                "row": excel_row_number,
+                "status": "failed",
+                "message": "Invalid row format.",
+            })
+            continue
+
+        try:
+            with transaction.atomic():
+                file_number = get_value(
+                    row,
+                    "patientFileNumber",
+                    "patient_file_number",
+                    "fileNumber",
+                    "file_number",
+                    "mrn",
+                    "medicalRecordNumber",
+                    "medical_record_number",
+                )
+
+                patient, patient_error = find_patient_by_file_number(
+                    file_number
+                )
+
+                if patient_error:
+                    raise ValueError(patient_error)
+
+                claim_id = str(
+                    get_value(row, "claimId", "claim_id", default="") or ""
+                ).strip()
+
+                if not claim_id:
+                    raise ValueError("Claim ID is required.")
+
+                status = str(
+                    get_value(row, "status", "approvalStatus", "approval_status", default="Pending")
+                    or "Pending"
+                ).strip().title()
+
+                if status not in VALID_CLAIM_STATUSES:
+                    raise ValueError(
+                        f"Invalid approval status: {status}."
+                    )
+
+                rejection_reason = str(
+                    get_value(
+                        row,
+                        "rejectionReason",
+                        "rejection_reason",
+                        default="",
+                    ) or ""
+                ).strip()
+
+                if status == "Rejected" and not rejection_reason:
+                    raise ValueError(
+                        "Rejection reason is required for rejected claims."
+                    )
+
+                approval_values, approval_errors = (
+                    approval_values_from_data(row, importing=True)
+                )
+
+                if approval_errors:
+                    raise ValueError(" ".join(approval_errors))
+
+                claim = (
+                    Claim.objects
+                    .select_for_update()
+                    .filter(
+                        patient=patient,
+                        claim_id__iexact=claim_id,
+                    )
+                    .first()
+                )
+
+                if claim:
+                    previous_status = claim.status
+                    previous_rejection_reason = claim.rejection_reason or ""
+
+                    claim.status = status
+                    claim.rejection_reason = (
+                        rejection_reason if status == "Rejected" else ""
+                    )
+
+                    for field, value in approval_values.items():
+                        setattr(claim, field, value)
+
+                    claim.save()
+
+                    if previous_status != status:
+                        if status == "Approved":
+                            event = "Approved"
+                        elif status == "Rejected":
+                            event = "Rejected"
+                        elif status == "Submitted":
+                            event = "Submitted"
+                        else:
+                            event = "Status Changed"
+
+                        record_claim_history(
+                            claim=claim,
+                            event=event,
+                            previous_status=previous_status,
+                            new_status=status,
+                            rejection_reason=(
+                                rejection_reason
+                                if status == "Rejected"
+                                else previous_rejection_reason
+                            ),
+                            notes="Claim updated from Excel approval import.",
+                            user=request.user,
+                        )
+
+                    elif (
+                        status == "Rejected"
+                        and previous_rejection_reason != rejection_reason
+                    ):
+                        record_claim_history(
+                            claim=claim,
+                            event="Rejected",
+                            previous_status=previous_status,
+                            new_status=status,
+                            rejection_reason=rejection_reason,
+                            notes="Rejection details updated from Excel import.",
+                            user=request.user,
+                        )
+
+                    updated_count += 1
+                    result_status = "updated"
+                    result_message = "Existing claim updated."
+
+                else:
+                    claim = Claim.objects.create(
+                        patient=patient,
+                        claim_id=claim_id,
+                        status=status,
+                        rejection_reason=(
+                            rejection_reason if status == "Rejected" else ""
+                        ),
+                        created_by=request.user,
+                        **approval_values,
+                    )
+
+                    record_claim_history(
+                        claim=claim,
+                        event="Created",
+                        previous_status="",
+                        new_status=status,
+                        rejection_reason=(
+                            rejection_reason if status == "Rejected" else ""
+                        ),
+                        notes="Claim created from Excel approval import.",
+                        user=request.user,
+                    )
+
+                    created_count += 1
+                    result_status = "created"
+                    result_message = "Claim imported successfully."
+
+                claim = (
+                    Claim.objects
+                    .select_related("patient", "created_by")
+                    .get(pk=claim.pk)
+                )
+
+                results.append({
+                    "row": excel_row_number,
+                    "status": result_status,
+                    "message": result_message,
+                    "claim": claim_to_dict(claim),
+                })
+
+        except (ValueError, IntegrityError) as exc:
+            failed_count += 1
+            results.append({
+                "row": excel_row_number,
+                "status": "failed",
+                "message": str(exc),
+            })
+
+        except Exception as exc:
+            failed_count += 1
+            results.append({
+                "row": excel_row_number,
+                "status": "failed",
+                "message": f"Could not import this row: {str(exc)}",
+            })
+
+    return JsonResponse({
+        "message": "Excel claim import completed.",
+        "created": created_count,
+        "updated": updated_count,
+        "failed": failed_count,
+        "total": len(rows),
+        "results": results,
+    })
 
 
 # =========================================================
@@ -916,6 +1344,14 @@ def claim_detail(request, claim_pk):
         ) or ""
     ).strip()
 
+    approval_values, approval_errors = approval_values_from_data(data)
+
+    if approval_errors:
+        return JsonResponse(
+            {"error": " ".join(approval_errors)},
+            status=400,
+        )
+
     alert_id = data.get(
         "alertId",
         data.get(
@@ -949,9 +1385,7 @@ def claim_detail(request, claim_pk):
             )
 
             previous_status = claim.status
-            previous_rejection_reason = (
-                claim.rejection_reason or ""
-            )
+            previous_rejection_reason = claim.rejection_reason or ""
 
             renewal_alert = None
 
@@ -981,11 +1415,7 @@ def claim_detail(request, claim_pk):
                     and renewal_alert.claim_id != claim.pk
                 ):
                     return JsonResponse(
-                        {
-                            "error": (
-                                "This alert belongs to another claim."
-                            )
-                        },
+                        {"error": "This alert belongs to another claim."},
                         status=400,
                     )
 
@@ -1000,22 +1430,18 @@ def claim_detail(request, claim_pk):
                         status=409,
                     )
 
-                if renewal_alert.status == "Submitted" and status == "Submitted":
-                    # Re-saving Submitted is harmless, but do not
-                    # permit a duplicate submission action.
+                if (
+                    renewal_alert.status == "Submitted"
+                    and status == "Submitted"
+                ):
                     return JsonResponse(
-                        {
-                            "error": (
-                                "This renewal has already been submitted."
-                            )
-                        },
+                        {"error": "This renewal has already been submitted."},
                         status=409,
                     )
 
                 if (
                     status == "Submitted"
-                    and renewal_alert.renewal_date
-                    != timezone.localdate()
+                    and renewal_alert.renewal_date != timezone.localdate()
                 ):
                     return JsonResponse(
                         {
@@ -1032,21 +1458,15 @@ def claim_detail(request, claim_pk):
                 rejection_reason if status == "Rejected" else ""
             )
 
-            claim.save(
-                update_fields=[
-                    "status",
-                    "rejection_reason",
-                    "updated_at",
-                ]
-            )
+            for field, value in approval_values.items():
+                setattr(claim, field, value)
+
+            claim.save()
 
             if previous_status != status:
                 if status == "Rejected":
                     event = "Rejected"
-                elif (
-                    status == "Submitted"
-                    and previous_status == "Rejected"
-                ):
+                elif status == "Submitted" and previous_status == "Rejected":
                     event = "Resubmitted"
                 elif status == "Submitted":
                     event = "Submitted"
@@ -1092,7 +1512,6 @@ def claim_detail(request, claim_pk):
                     user=request.user,
                 )
 
-            # Keep the linked renewal alert in sync with the claim.
             if renewal_alert:
                 renewal_alert.claim = claim
                 renewal_alert.claim_id_value = claim.claim_id
@@ -1147,7 +1566,6 @@ def claim_detail(request, claim_pk):
 
 # =========================================================
 # APPROVE RENEWAL ALERT
-# POST /api/rcm/renewal-alerts/<alert_pk>/approve/
 # =========================================================
 
 @csrf_exempt
@@ -1171,7 +1589,6 @@ def approve_renewal_alert(request, alert_pk):
             )
 
             if not alert.claim_id:
-                # Try to find the original claim by patient and Claim ID.
                 if alert.claim_id_value:
                     claim = (
                         Claim.objects
@@ -1210,8 +1627,6 @@ def approve_renewal_alert(request, alert_pk):
                 )
 
             if claim.status == "Approved":
-                # Repair the alert status if the claim was approved
-                # through another workflow.
                 alert.claim = claim
                 alert.claim_id_value = claim.claim_id
                 alert.status = "Approved"
@@ -1225,9 +1640,7 @@ def approve_renewal_alert(request, alert_pk):
                 )
             else:
                 previous_status = claim.status
-                previous_rejection_reason = (
-                    claim.rejection_reason or ""
-                )
+                previous_rejection_reason = claim.rejection_reason or ""
 
                 claim.status = "Approved"
                 claim.rejection_reason = ""
@@ -1420,11 +1833,7 @@ def renewal_alerts_list_create(request):
                 )
 
             if month_start.month == 12:
-                month_end = date(
-                    month_start.year + 1,
-                    1,
-                    1,
-                )
+                month_end = date(month_start.year + 1, 1, 1)
             else:
                 month_end = date(
                     month_start.year,
@@ -1609,10 +2018,7 @@ def renewal_alerts_list_create(request):
                 rejection_reason=(
                     rejection_reason or claim.rejection_reason
                 ),
-                notes=(
-                    message
-                    or "A renewal reminder was scheduled."
-                ),
+                notes=message or "A renewal reminder was scheduled.",
                 renewal_date=parsed_date,
                 user=request.user,
             )
@@ -1683,7 +2089,6 @@ def renewal_alert_detail(request, alert_pk):
                 status=404,
             )
 
-        # Approved alerts are locked against editing and deletion.
         if alert.status == "Approved" or (
             alert.claim_id and alert.claim.status == "Approved"
         ):
@@ -1763,9 +2168,7 @@ def renewal_alert_detail(request, alert_pk):
             alert.renewal_date = parsed_date
 
         if "message" in data:
-            alert.message = str(
-                data.get("message") or ""
-            ).strip()
+            alert.message = str(data.get("message") or "").strip()
 
         alert.save()
 
@@ -1788,8 +2191,7 @@ def renewal_alert_detail(request, alert_pk):
                 previous_status=claim.status,
                 new_status=claim.status,
                 rejection_reason=(
-                    alert.rejection_reason
-                    or claim.rejection_reason
+                    alert.rejection_reason or claim.rejection_reason
                 ),
                 notes=(
                     alert.message

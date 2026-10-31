@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
@@ -66,6 +67,8 @@ const styles = `
 .claim-upload-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:43px;padding:11px 19px;border:0;border-radius:10px;background:#4057cf;color:#fff;font-size:14px;font-weight:800;cursor:pointer}
 .claim-upload-button:hover{background:#3047bd}
 .claim-upload-button:disabled{opacity:.6;cursor:not-allowed}
+.claim-upload-secondary{background:#eef2ff;color:#344db5;border:1px solid #dbe4ff}
+.claim-upload-secondary:hover{background:#e2e9ff}
 .claim-upload-file-input{display:none}
 .claim-upload-file-info{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:18px;padding:14px 16px;border:1px solid #dce5f2;border-radius:11px;background:#fff}
 .claim-upload-file-name{display:flex;align-items:center;gap:10px;min-width:0;color:#334155;font-size:14px;font-weight:700;overflow-wrap:anywhere}
@@ -89,6 +92,11 @@ const styles = `
 .claim-upload-note{margin-top:17px;padding:13px 15px;border-radius:10px;background:#f8faff;color:#64748b;font-size:13px;line-height:1.7}
 .claim-upload-empty{padding:25px;text-align:center;color:#94a3b8;font-size:14px}
 .claim-upload-pagination{margin-top:12px;color:#64748b;font-size:13px;text-align:right}
+.claim-upload-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.claim-upload-result{margin-top:18px;padding:16px;border:1px solid #dbe4f0;border-radius:11px;background:#f8faff;color:#334155;font-size:14px;line-height:1.7}
+.claim-upload-result strong{color:#172b4d}
+.claim-upload-result ul{margin:9px 0 0;padding-left:20px}
+.claim-upload-warning{margin-top:12px;padding:12px 14px;border:1px solid #fde68a;border-radius:10px;background:#fffbeb;color:#92400e;font-size:13px;line-height:1.6}
 
 @media(min-width:1200px){.claim-management{padding:32px}.claim-management-content{padding:30px}}
 @media(max-width:1050px){.claim-tab{gap:7px;padding:12px 8px;font-size:13px}.claim-tab-icon{width:33px;height:33px;font-size:18px}}
@@ -96,6 +104,10 @@ const styles = `
 @media(max-width:750px){.claim-management{padding:15px}.claim-management-header{padding:24px 21px;border-radius:15px}.claim-management-header h1{font-size:28px}.claim-management-header p{font-size:15px}.claim-management-header-bottom{align-items:flex-start;flex-direction:column}.claim-back-button{width:100%}.claim-tab{min-height:65px;gap:8px;padding:11px 8px;font-size:14px}.claim-tab-icon{width:32px;height:32px;font-size:18px}.claim-tab-label small{font-size:12px}.claim-management-content{padding:17px;border-radius:14px}.claim-management-content-heading h2{font-size:22px}}
 @media(max-width:520px){.claim-tab-bar{grid-template-columns:minmax(0,1fr)}.claim-tab{justify-content:flex-start;padding:12px 15px}.claim-management-content{padding:13px}.claim-management-content-heading{align-items:flex-start;flex-direction:column}.claim-upload-summary{grid-template-columns:1fr}.claim-upload-dropzone{padding:22px 15px}}
 `;
+
+/* -----------------------------------------------------
+   GENERAL HELPERS
+----------------------------------------------------- */
 
 function getApiError(error) {
   const data = error?.response?.data;
@@ -162,23 +174,341 @@ function getPatientId(details) {
   );
 }
 
-function UploadClaims() {
+/* -----------------------------------------------------
+   EXCEL IMPORT HELPERS
+----------------------------------------------------- */
+
+function normalizeHeader(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_\-./\\()[\]]+/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+const EXCEL_FIELD_ALIASES = {
+  patientFileNumber: [
+    "patientfilenumber",
+    "filenumber",
+    "patientfile",
+    "patientmrn",
+    "mrn",
+    "medicalrecordnumber",
+    "patientnumber",
+    "patientidnumber",
+  ],
+  claimId: [
+    "claimid",
+    "claimnumber",
+    "claimreference",
+    "claimref",
+    "claimno",
+  ],
+  requestingClinician: [
+    "requestingclinician",
+    "requestingdoctor",
+    "clinician",
+    "doctor",
+    "physician",
+    "referringdoctor",
+  ],
+  authorizationNumber: [
+    "authorizationnumber",
+    "authorizationno",
+    "authorization",
+    "authnumber",
+    "authno",
+    "approvalnumber",
+    "approvalno",
+  ],
+  approvalDate: [
+    "approvaldate",
+    "dateofapproval",
+    "authorizationdate",
+    "authdate",
+  ],
+  expirationDate: [
+    "expirationdate",
+    "expirydate",
+    "validuntil",
+    "authorizationexpiry",
+    "authorizationexpirationdate",
+    "enddate",
+  ],
+  approvedVisits: [
+    "approvedvisits",
+    "numberofapprovedvisits",
+    "approvedvisit",
+    "visitsapproved",
+    "visitunits",
+  ],
+  approvedUnits: [
+    "approvedunits",
+    "numberofapprovedunits",
+    "unitsapproved",
+    "approvedquantity",
+  ],
+  approvedService: [
+    "approvedservice",
+    "approvedprocedure",
+    "service",
+    "procedure",
+    "servicetype",
+    "treatment",
+  ],
+  payer: [
+    "insurance",
+    "payer",
+    "insurancecompany",
+    "insuranceprovider",
+    "insurancepayer",
+    "payor",
+  ],
+  status: [
+    "approvalstatus",
+    "claimstatus",
+    "status",
+    "authorizationstatus",
+  ],
+  rejectionReason: [
+    "rejectionreason",
+    "reasonforrejection",
+    "denialreason",
+    "rejectionremarks",
+  ],
+};
+
+function getRowValue(row, aliases) {
+  const rowKeys = Object.keys(row);
+
+  for (const alias of aliases) {
+    const normalizedAlias = normalizeHeader(alias);
+
+    const matchingKey = rowKeys.find(
+      (key) => normalizeHeader(key) === normalizedAlias
+    );
+
+    if (matchingKey !== undefined) {
+      return row[matchingKey];
+    }
+  }
+
+  return "";
+}
+
+function cleanExcelValue(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function excelDateToISO(value) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  // Excel serial date.
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+
+    if (parsed) {
+      const year = String(parsed.y).padStart(4, "0");
+      const month = String(parsed.m).padStart(2, "0");
+      const day = String(parsed.d).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  const text = String(value).trim();
+
+  if (!text) return "";
+
+  // Already in ISO format.
+  const isoMatch = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+
+  if (isoMatch) {
+    return `${isoMatch[1]}-${String(isoMatch[2]).padStart(2, "0")}-${String(
+      isoMatch[3]
+    ).padStart(2, "0")}`;
+  }
+
+  // Handle common day/month/year and month/day/year formats.
+  const slashMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+
+  if (slashMatch) {
+    const first = Number(slashMatch[1]);
+    const second = Number(slashMatch[2]);
+    let year = Number(slashMatch[3]);
+
+    if (year < 100) year += year < 50 ? 2000 : 1900;
+
+    // If the first value cannot be a month, treat it as day/month/year.
+    // Otherwise, use month/day/year for Excel's common US date display.
+    let month;
+    let day;
+
+    if (first > 12) {
+      day = first;
+      month = second;
+    } else {
+      month = first;
+      day = second;
+    }
+
+    const date = new Date(year, month - 1, day);
+
+    if (
+      date.getFullYear() === year &&
+      date.getMonth() === month - 1 &&
+      date.getDate() === day
+    ) {
+      return `${year}-${String(month).padStart(2, "0")}-${String(
+        day
+      ).padStart(2, "0")}`;
+    }
+  }
+
+  return text;
+}
+
+function parseExcelNumber(value, fieldName, rowNumber) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const number = Number(String(value).replace(/,/g, "").trim());
+
+  if (!Number.isFinite(number) || number < 0 || !Number.isInteger(number)) {
+    throw new Error(
+      `Excel row ${rowNumber}: ${fieldName} must be a non-negative whole number.`
+    );
+  }
+
+  return number;
+}
+
+function normalizeClaimStatus(value) {
+  const status = cleanExcelValue(value).toLowerCase();
+
+  if (!status) return "Pending";
+
+  if (["approved", "approve", "authorized", "authorised"].includes(status)) {
+    return "Approved";
+  }
+
+  if (["rejected", "reject", "denied", "declined"].includes(status)) {
+    return "Rejected";
+  }
+
+  if (["submitted", "sent", "in review", "under review"].includes(status)) {
+    return "Submitted";
+  }
+
+  if (["pending", "waiting"].includes(status)) {
+    return "Pending";
+  }
+
+  return cleanExcelValue(value);
+}
+
+function convertExcelRowsToClaims(rows) {
+  return rows.map((row) => {
+    const rowNumber = row.__rowNumber || "?";
+
+    const patientFileNumber = cleanExcelValue(
+      getRowValue(row, EXCEL_FIELD_ALIASES.patientFileNumber)
+    );
+
+    const claimId = cleanExcelValue(
+      getRowValue(row, EXCEL_FIELD_ALIASES.claimId)
+    );
+
+    if (!patientFileNumber) {
+      throw new Error(
+        `Excel row ${rowNumber}: Patient File Number is missing.`
+      );
+    }
+
+    if (!claimId) {
+      throw new Error(`Excel row ${rowNumber}: Claim ID is missing.`);
+    }
+
+    const approvedVisits = parseExcelNumber(
+      getRowValue(row, EXCEL_FIELD_ALIASES.approvedVisits),
+      "Approved Visits",
+      rowNumber
+    );
+
+    const approvedUnits = parseExcelNumber(
+      getRowValue(row, EXCEL_FIELD_ALIASES.approvedUnits),
+      "Approved Units",
+      rowNumber
+    );
+
+    return {
+      rowNumber,
+      patientFileNumber,
+      claimId,
+      requestingClinician: cleanExcelValue(
+        getRowValue(row, EXCEL_FIELD_ALIASES.requestingClinician)
+      ),
+      authorizationNumber: cleanExcelValue(
+        getRowValue(row, EXCEL_FIELD_ALIASES.authorizationNumber)
+      ),
+      approvalDate: excelDateToISO(
+        getRowValue(row, EXCEL_FIELD_ALIASES.approvalDate)
+      ),
+      expirationDate: excelDateToISO(
+        getRowValue(row, EXCEL_FIELD_ALIASES.expirationDate)
+      ),
+      approvedVisits,
+      approvedUnits,
+      approvedService: cleanExcelValue(
+        getRowValue(row, EXCEL_FIELD_ALIASES.approvedService)
+      ),
+      payer: cleanExcelValue(
+        getRowValue(row, EXCEL_FIELD_ALIASES.payer)
+      ),
+      status: normalizeClaimStatus(
+        getRowValue(row, EXCEL_FIELD_ALIASES.status)
+      ),
+      rejectionReason: cleanExcelValue(
+        getRowValue(row, EXCEL_FIELD_ALIASES.rejectionReason)
+      ),
+    };
+  });
+}
+
+/* -----------------------------------------------------
+   EXCEL UPLOAD COMPONENT
+----------------------------------------------------- */
+
+function UploadClaims({ onImportComplete }) {
   const [fileName, setFileName] = useState("");
   const [sheetName, setSheetName] = useState("");
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   const MAX_PREVIEW_ROWS = 100;
 
   const clearUpload = () => {
+    if (importing) return;
+
     setFileName("");
     setSheetName("");
     setHeaders([]);
     setRows([]);
     setError("");
     setSuccess("");
+    setImportResult(null);
   };
 
   const handleFileUpload = (event) => {
@@ -186,6 +516,7 @@ function UploadClaims() {
 
     setError("");
     setSuccess("");
+    setImportResult(null);
 
     if (!file) return;
 
@@ -220,7 +551,7 @@ function UploadClaims() {
         const extractedData = XLSX.utils.sheet_to_json(worksheet, {
           header: 1,
           defval: "",
-          raw: false,
+          raw: true,
           blankrows: false,
         });
 
@@ -236,7 +567,12 @@ function UploadClaims() {
         const extractedRows = extractedData
           .slice(1)
           .filter((row) =>
-            row.some((cell) => String(cell ?? "").trim() !== "")
+            row.some(
+              (cell) =>
+                cell !== null &&
+                cell !== undefined &&
+                String(cell).trim() !== ""
+            )
           )
           .map((row, index) => {
             const record = {
@@ -256,15 +592,38 @@ function UploadClaims() {
           );
         }
 
+        // Check that the spreadsheet contains the two essential columns.
+        const normalizedHeaders = extractedHeaders.map(normalizeHeader);
+
+        const hasPatientFileNumber =
+          EXCEL_FIELD_ALIASES.patientFileNumber.some((alias) =>
+            normalizedHeaders.includes(normalizeHeader(alias))
+          );
+
+        const hasClaimId = EXCEL_FIELD_ALIASES.claimId.some((alias) =>
+          normalizedHeaders.includes(normalizeHeader(alias))
+        );
+
+        if (!hasPatientFileNumber || !hasClaimId) {
+          throw new Error(
+            "The Excel file must contain Patient File Number and Claim ID columns. Please check the column headings."
+          );
+        }
+
+        // Validate every row before allowing import.
+        const convertedRows = convertExcelRowsToClaims(extractedRows);
+
         setSheetName(firstSheetName);
         setHeaders(extractedHeaders);
         setRows(extractedRows);
-
         setSuccess(
-          `Successfully extracted ${extractedRows.length} records from worksheet "${firstSheetName}".`
+          `Successfully extracted ${convertedRows.length} records from worksheet "${firstSheetName}". Review the records before importing.`
         );
       } catch (uploadError) {
-        clearUpload();
+        setFileName("");
+        setSheetName("");
+        setHeaders([]);
+        setRows([]);
         setError(
           uploadError.message ||
             "Unable to read this Excel file. Please check its format."
@@ -301,13 +660,104 @@ function UploadClaims() {
     XLSX.writeFile(workbook, "extracted_claims.xlsx");
   };
 
+  const handleImport = async () => {
+    setError("");
+    setSuccess("");
+    setImportResult(null);
+
+    if (!rows.length) {
+      setError("Please upload an Excel file before importing.");
+      return;
+    }
+
+    let claims;
+
+    try {
+      claims = convertExcelRowsToClaims(rows);
+    } catch (validationError) {
+      setError(validationError.message);
+      return;
+    }
+
+    setImporting(true);
+
+    try {
+      const response = await api.post(
+        "rcm/claims/bulk-import/",
+        { claims },
+        { withCredentials: true }
+      );
+
+      const result = response?.data || {};
+
+      setImportResult(result);
+
+      const imported =
+        result.imported ??
+        result.created ??
+        result.successful ??
+        result.created_count ??
+        0;
+
+      const updated =
+        result.updated ??
+        result.updated_count ??
+        0;
+
+      const failed =
+        result.failed ??
+        result.errors_count ??
+        result.failed_count ??
+        0;
+
+      setSuccess(
+        result.message ||
+          `Import completed. Imported: ${imported}, Updated: ${updated}, Failed: ${failed}.`
+      );
+
+      if (typeof onImportComplete === "function") {
+        onImportComplete();
+      }
+    } catch (importError) {
+      setError(getApiError(importError));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const getImportErrors = () => {
+    if (!importResult) return [];
+
+    const possibleErrors =
+      importResult.errors ??
+      importResult.results?.filter(
+        (item) => item.success === false || item.error
+      ) ??
+      [];
+
+    return Array.isArray(possibleErrors) ? possibleErrors : [];
+  };
+
+  const getResultCount = (keys) => {
+    if (!importResult) return 0;
+
+    for (const key of keys) {
+      if (importResult[key] !== undefined) {
+        return Number(importResult[key]) || 0;
+      }
+    }
+
+    return 0;
+  };
+
   return (
     <div className="claim-upload-page">
       <div className="claim-upload-intro">
         <h3>Upload Claims from Excel</h3>
         <p>
-          Upload an Excel spreadsheet containing your claims. The system will
-          extract the worksheet columns and records and display them for review.
+          Upload your Excel spreadsheet containing patient claim and approval
+          information. Review the extracted records, then import them into
+          Claims Management.
         </p>
       </div>
 
@@ -334,6 +784,7 @@ function UploadClaims() {
           type="file"
           accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={handleFileUpload}
+          disabled={importing}
         />
       </label>
 
@@ -348,6 +799,7 @@ function UploadClaims() {
             type="button"
             className="claim-upload-clear"
             onClick={clearUpload}
+            disabled={importing}
           >
             Remove file
           </button>
@@ -398,8 +850,9 @@ function UploadClaims() {
 
               <button
                 type="button"
-                className="claim-upload-button"
+                className="claim-upload-button claim-upload-secondary"
                 onClick={downloadExtractedData}
+                disabled={importing}
               >
                 ↓ Download Extracted Data
               </button>
@@ -422,14 +875,23 @@ function UploadClaims() {
                     <tr key={`${row.__rowNumber}-${index}`}>
                       <td>{row.__rowNumber}</td>
 
-                      {headers.map((header, columnIndex) => (
-                        <td
-                          key={`${header}-${columnIndex}`}
-                          title={String(row[header] ?? "")}
-                        >
-                          {String(row[header] ?? "") || "—"}
-                        </td>
-                      ))}
+                      {headers.map((header, columnIndex) => {
+                        const value = row[header];
+
+                        const displayValue =
+                          value instanceof Date
+                            ? excelDateToISO(value)
+                            : String(value ?? "");
+
+                        return (
+                          <td
+                            key={`${header}-${columnIndex}`}
+                            title={displayValue}
+                          >
+                            {displayValue || "—"}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -443,16 +905,87 @@ function UploadClaims() {
           </div>
 
           <div className="claim-upload-note">
-            <strong>Note:</strong> Your Excel data has been extracted and is
-            available for review. No claims have been saved to the database.
-            The import process can be connected once the required claim fields
-            and Django bulk-import API are confirmed.
+            <strong>Important:</strong> Each row must contain a Patient File
+            Number and Claim ID. The patient must already exist in your
+            hospital patient database. Existing matching claims may be updated
+            by the backend.
+          </div>
+
+          <div className="claim-upload-actions">
+            <button
+              type="button"
+              className="claim-upload-button"
+              onClick={handleImport}
+              disabled={importing || !rows.length}
+            >
+              {importing ? "Importing Claims..." : "Import Claims to Database"}
+            </button>
+
+            <button
+              type="button"
+              className="claim-upload-button claim-upload-secondary"
+              onClick={clearUpload}
+              disabled={importing}
+            >
+              Clear Upload
+            </button>
           </div>
         </>
+      )}
+
+      {importResult && (
+        <div className="claim-upload-result" role="status">
+          <strong>Import Results</strong>
+
+          <ul>
+            <li>
+              Imported:{" "}
+              {getResultCount([
+                "imported",
+                "created",
+                "successful",
+                "created_count",
+              ])}
+            </li>
+            <li>
+              Updated:{" "}
+              {getResultCount(["updated", "updated_count"])}
+            </li>
+            <li>
+              Failed:{" "}
+              {getResultCount([
+                "failed",
+                "errors_count",
+                "failed_count",
+              ])}
+            </li>
+          </ul>
+
+          {getImportErrors().length > 0 && (
+            <div className="claim-upload-warning">
+              <strong>Rows requiring attention:</strong>
+              <ul>
+                {getImportErrors().slice(0, 20).map((item, index) => (
+                  <li key={index}>
+                    {typeof item === "string"
+                      ? item
+                      : `Row ${item.rowNumber ?? item.row ?? "?"}: ${
+                          item.error ?? item.message ?? JSON.stringify(item)
+                        }`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
 }
+
+/* -----------------------------------------------------
+   CLAIMS MANAGEMENT MAIN PAGE
+----------------------------------------------------- */
 
 export default function ClaimsManagement() {
   const navigate = useNavigate();
@@ -503,6 +1036,10 @@ export default function ClaimsManagement() {
     setSelectedRenewalAlert(null);
     setActiveTab("history");
     setAlertError("");
+  }, [refreshData]);
+
+  const handleImportComplete = useCallback(() => {
+    refreshData();
   }, [refreshData]);
 
   const handleCreateAlert = useCallback(
@@ -648,7 +1185,7 @@ export default function ClaimsManagement() {
     }
 
     if (activeTab === "upload") {
-      return "Extract claims information from an Excel spreadsheet and review the records.";
+      return "Upload, preview, and import claim approval details from Excel.";
     }
 
     if (activeTab === "history") {
@@ -758,7 +1295,7 @@ export default function ClaimsManagement() {
 
             <span className="claim-tab-label">
               <span>Upload Claims</span>
-              <small>Extract Excel data</small>
+              <small>Import Excel data</small>
             </span>
           </button>
 
@@ -858,7 +1395,7 @@ export default function ClaimsManagement() {
             onCreateAlert={handleCreateAlert}
           />
         ) : activeTab === "upload" ? (
-          <UploadClaims />
+          <UploadClaims onImportComplete={handleImportComplete} />
         ) : activeTab === "history" ? (
           <ClaimHistory refreshKey={refreshKey} />
         ) : (

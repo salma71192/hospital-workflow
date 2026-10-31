@@ -16,6 +16,16 @@ urlpatterns = [
     ),
 
     # -----------------------------------------------------
+    # Bulk Import Claims from Excel
+    # POST: import multiple claims and approval details
+    # -----------------------------------------------------
+    path(
+        "claims/bulk-import/",
+        views.claims_bulk_import,
+        name="rcm-claims-bulk-import",
+    ),
+
+    # -----------------------------------------------------
     # Claim Details
     # GET: retrieve one claim
     # PUT / PATCH: update a claim
