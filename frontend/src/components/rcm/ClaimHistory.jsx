@@ -1,4 +1,3 @@
-
 import React, {
   Fragment,
   useCallback,
@@ -170,25 +169,33 @@ function claimIdOf(claim) {
 /* ---------------- Approval fields ---------------- */
 
 function requestingClinicianOf(claim) {
-  return valueOf(claim, [
-    "requesting_clinician",
-    "requestingClinician",
-    "clinician",
-    "physician",
-    "doctor_name",
-    "doctorName",
-  ], "—");
+  return valueOf(
+    claim,
+    [
+      "requesting_clinician",
+      "requestingClinician",
+      "clinician",
+      "physician",
+      "doctor_name",
+      "doctorName",
+    ],
+    "—"
+  );
 }
 
 function authorizationNumberOf(claim) {
-  return valueOf(claim, [
-    "authorization_number",
-    "authorizationNumber",
-    "auth_number",
-    "authNumber",
-    "authorization_no",
-    "authorizationNo",
-  ], "—");
+  return valueOf(
+    claim,
+    [
+      "authorization_number",
+      "authorizationNumber",
+      "auth_number",
+      "authNumber",
+      "authorization_no",
+      "authorizationNo",
+    ],
+    "—"
+  );
 }
 
 function approvalDateOf(claim) {
@@ -212,66 +219,90 @@ function expirationDateOf(claim) {
 }
 
 function approvedVisitsOf(claim) {
-  return valueOf(claim, [
-    "approved_visits",
-    "approvedVisits",
-    "visits_approved",
-    "visitsApproved",
-  ], "—");
+  return valueOf(
+    claim,
+    [
+      "approved_visits",
+      "approvedVisits",
+      "visits_approved",
+      "visitsApproved",
+    ],
+    "—"
+  );
 }
 
 function approvedUnitsOf(claim) {
-  return valueOf(claim, [
-    "approved_units",
-    "approvedUnits",
-    "units_approved",
-    "unitsApproved",
-  ], "—");
+  return valueOf(
+    claim,
+    [
+      "approved_units",
+      "approvedUnits",
+      "units_approved",
+      "unitsApproved",
+    ],
+    "—"
+  );
 }
 
 function approvedServiceOf(claim) {
-  return valueOf(claim, [
-    "approved_service",
-    "approvedService",
-    "approved_procedure",
-    "approvedProcedure",
-    "service",
-    "procedure",
-  ], "—");
+  return valueOf(
+    claim,
+    [
+      "approved_service",
+      "approvedService",
+      "approved_procedure",
+      "approvedProcedure",
+      "service",
+      "procedure",
+    ],
+    "—"
+  );
 }
 
 function payerOf(claim) {
-  return valueOf(claim, [
-    "payer",
-    "insurance",
-    "insurance_company",
-    "insuranceCompany",
-    "insurance_name",
-    "insuranceName",
-  ], "—");
+  return valueOf(
+    claim,
+    [
+      "payer",
+      "insurance",
+      "insurance_company",
+      "insuranceCompany",
+      "insurance_name",
+      "insuranceName",
+    ],
+    "—"
+  );
 }
 
 function statusOf(claim) {
   return String(
-    valueOf(claim, [
-      "status",
-      "approval_status",
-      "approvalStatus",
-      "claim_status",
-      "claimStatus",
-    ], "Pending")
+    valueOf(
+      claim,
+      [
+        "status",
+        "approval_status",
+        "approvalStatus",
+        "claim_status",
+        "claimStatus",
+      ],
+      "Pending"
+    )
   );
 }
 
 function rejectionReasonOf(claim) {
-  return valueOf(claim, [
-    "rejection_reason",
-    "rejectionReason",
-    "denial_reason",
-    "denialReason",
-    "reason_for_rejection",
-    "reasonForRejection",
-  ], "—");
+  return valueOf(
+    claim,
+    [
+      "rejection_reason",
+      "rejectionReason",
+      "denial_reason",
+      "denialReason",
+      "reason_for_rejection",
+      "reasonForRejection",
+    ],
+    "—"
+  );
 }
 
 function statusCategory(input) {
@@ -857,6 +888,20 @@ function Icon({ name, size = 18 }) {
         <path d="M3 3v5h5M12 7v5l3 2" />
       </>
     ),
+    more: (
+      <>
+        <circle cx="5" cy="12" r="1" />
+        <circle cx="12" cy="12" r="1" />
+        <circle cx="19" cy="12" r="1" />
+      </>
+    ),
+    renewal: (
+      <>
+        <path d="M20 7v5h-5" />
+        <path d="M4 17v-5h5" />
+        <path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3" />
+      </>
+    ),
   };
 
   return (
@@ -893,6 +938,9 @@ export default function ClaimHistory({ refreshKey = 0 }) {
   const [historyLoadingId, setHistoryLoadingId] = useState(null);
   const [historyErrors, setHistoryErrors] = useState({});
   const [historyCountByClaim, setHistoryCountByClaim] = useState({});
+
+  // Three-dot action menu
+  const [openMenuId, setOpenMenuId] = useState(null);
 
   const [search, setSearch] = useState("");
   const [createdByFilter, setCreatedByFilter] = useState("All");
@@ -966,6 +1014,31 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     loadClaims();
     loadCurrentUser();
   }, [loadClaims, loadCurrentUser, refreshKey]);
+
+  // Close the dropdown when clicking outside or pressing Escape.
+  useEffect(() => {
+    if (!openMenuId) return undefined;
+
+    function handleOutsideClick(event) {
+      if (!event.target.closest(".ch-action-menu")) {
+        setOpenMenuId(null);
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === "Escape") {
+        setOpenMenuId(null);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [openMenuId]);
 
   const creatorOptions = useMemo(() => {
     const map = new Map();
@@ -1082,17 +1155,61 @@ export default function ClaimHistory({ refreshKey = 0 }) {
 
     if (id === "" || id === "—") {
       setActionError("This claim has no database ID.");
+      setOpenMenuId(null);
       return;
     }
 
     setActionError("");
     setSuccessMessage("");
+    setOpenMenuId(null);
 
     navigate("/rcm/claims", {
       state: {
         editClaim: claim,
         claimId: id,
         mode: "edit",
+      },
+    });
+  }
+
+  // Send rejected claims to the renewal/rejection alert workflow.
+  function createRenewalAlert(claim) {
+    const id = claimDatabaseId(claim);
+
+    if (id === "" || id === "—") {
+      setActionError("This claim has no database ID.");
+      setOpenMenuId(null);
+      return;
+    }
+
+    if (statusCategory(claim) !== "Rejected") {
+      setActionError(
+        "A rejection alert can only be created for a rejected claim."
+      );
+      setOpenMenuId(null);
+      return;
+    }
+
+    const reason = rejectionReasonOf(claim);
+
+    const renewalAlert = {
+      id,
+      claimPk: id,
+      claimId: claimIdOf(claim),
+      patientId: patientIdOf(claim),
+      patientName: patientName(claim),
+      alertType: "rejection",
+      rejectionReason: reason === "—" ? "" : reason,
+    };
+
+    setActionError("");
+    setSuccessMessage("");
+    setOpenMenuId(null);
+
+    navigate("/rcm/claims", {
+      state: {
+        mode: "renewal",
+        renewalAlert,
       },
     });
   }
@@ -1138,6 +1255,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     }
 
     setExpandedClaim(id);
+    setOpenMenuId(null);
     setHistoryErrors((current) => ({ ...current, [id]: "" }));
 
     if (!forceRefresh && Array.isArray(historyByClaim[id])) return;
@@ -1181,6 +1299,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
   async function deleteClaim(claim) {
     setActionError("");
     setSuccessMessage("");
+    setOpenMenuId(null);
 
     const id = String(claimDatabaseId(claim) || "");
     const count = historyCountOf(claim);
@@ -1390,7 +1509,7 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         .ch-table-section{margin-top:27px}
         .ch-table-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
         .ch-table-title{margin:0 0 5px;color:${C.navy};font-size:18px;font-weight:850}
-        .ch-table-wrap{width:100%;overflow:auto;border:1px solid #dce7f5;border-radius:11px;background:#fff}
+        .ch-table-wrap{width:100%;overflow:auto;border:1px solid #dce7f5;border-radius:11px;background:#fff;min-height:650px;}
         .ch-table{width:100%;min-width:1900px;border-collapse:separate;border-spacing:0;text-align:left}
         .ch-table th{position:sticky;top:0;z-index:1;padding:14px;border-bottom:1px solid #dce7f5;background:#eff5fd;color:#31527f;font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}
         .ch-table td{padding:13px;border-bottom:1px solid #eaf0f8;color:#526781;font-size:13px;vertical-align:middle}
@@ -1400,10 +1519,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         .ch-link:hover{color:${C.blue};text-decoration:underline}
         .ch-status{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid;border-radius:20px;font-size:12px;font-weight:800;white-space:nowrap}
         .ch-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-        .ch-creator{display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#49617f;font-weight:650}
         .ch-cell-text{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
         .ch-rejection{display:inline-block;max-width:240px;color:#9f1239;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
-        .ch-table .ch-button{min-height:35px;padding:7px 10px;border-radius:8px;font-size:12px}
         .ch-detail-row td{padding:0;background:#f4f8ff}
         .ch-history-wrap{padding:18px}
         .ch-history-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:15px}
@@ -1420,9 +1537,26 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         .ch-alert{margin:14px 0;padding:12px 14px;border:1px solid;border-radius:10px;font-size:13px;line-height:1.6}
         .ch-error{border-color:#fecaca;background:#fef2f2;color:${C.red}}
         .ch-success{border-color:#bbf7d0;background:#f0fdf4;color:${C.green}}
+
+        /* Three-dot action menu */
+        .ch-action-menu{position:relative;display:inline-flex;justify-content:center}
+        .ch-dots-button{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border:1px solid #d5e1ef;border-radius:9px;background:#fff;color:#334e70;cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
+        .ch-dots-button:hover,.ch-dots-button[aria-expanded="true"]{border-color:#93b4e5;background:#eff6ff;color:#174b91;box-shadow:0 2px 8px #172b4d12}
+        .ch-dots-button:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+        .ch-action-dropdown{position:absolute;right:0;top:calc(100% + 7px);z-index:20;width:220px;padding:6px;border:1px solid #dbe4f0;border-radius:11px;background:#fff;box-shadow:0 12px 30px #172b4d20}
+        .ch-action-dropdown button{display:flex;align-items:center;gap:10px;width:100%;min-height:39px;padding:9px 10px;border:0;border-radius:7px;background:transparent;color:#334e70;font-family:inherit;font-size:12px;font-weight:700;text-align:left;cursor:pointer}
+        .ch-action-dropdown button:hover:not(:disabled){background:#eff6ff;color:#174b91}
+        .ch-action-dropdown button:disabled{opacity:.45;cursor:not-allowed}
+        .ch-action-dropdown button.ch-menu-danger{color:#be123c}
+        .ch-action-dropdown button.ch-menu-danger:hover:not(:disabled){background:#fff1f2;color:#9f1239}
+        .ch-action-dropdown button.ch-menu-renewal{color:#0f766e}
+        .ch-action-dropdown button.ch-menu-renewal:hover{background:#f0fdfa;color:#115e59}
+        .ch-menu-divider{height:1px;margin:5px 4px;background:#e8eef6}
+        .ch-menu-hint{padding:6px 10px 4px;color:#8493a8;font-size:10px;line-height:1.5}
+
         @media(max-width:1250px){.ch-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
         @media(max-width:850px){.ch-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-filter-grid>.ch-label:first-child{grid-column:1/-1}}
-        @media(max-width:650px){.ch-content{padding:13px}.ch-cards{gap:9px}.ch-card{padding:12px;gap:9px}.ch-card-value{font-size:24px}.ch-card-icon{width:35px;height:35px}.ch-filter-grid{grid-template-columns:1fr}.ch-filter-grid>.ch-label:first-child{grid-column:auto}.ch-filter-heading,.ch-filter-body{padding:14px}.ch-filter-footer{padding:12px 14px}.ch-title{font-size:22px}.ch-mode-row{align-items:flex-start}.ch-segment{width:100%}.ch-segment button{flex:1}}
+        @media(max-width:650px){.ch-content{padding:13px}.ch-cards{gap:9px}.ch-card{padding:12px;gap:9px}.ch-card-value{font-size:24px}.ch-card-icon{width:35px;height:35px}.ch-filter-grid{grid-template-columns:1fr}.ch-filter-grid>.ch-label:first-child{grid-column:auto}.ch-filter-heading,.ch-filter-body{padding:14px}.ch-filter-footer{padding:12px 14px}.ch-title{font-size:22px}.ch-mode-row{align-items:flex-start}.ch-segment{width:100%}.ch-segment button{flex:1}.ch-action-dropdown{right:0;position:fixed;top:auto;margin-top:0}}
       `}</style>
 
       <div className="ch-page-header">
@@ -1807,6 +1941,9 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                       const hasMultipleHistory =
                         typeof count === "number" && count > 1;
                       const isDeleting = deletingId === String(id);
+                      const isMenuOpen = openMenuId === claimKey;
+                      const isRejected =
+                        statusCategory(claim) === "Rejected";
 
                       const historyEvents = deduplicateHistoryEvents(
                         historyByClaim[claimKey],
@@ -1929,51 +2066,98 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                               )}
                             </td>
 
+                            {/* All actions are inside the three-dot menu */}
                             <td>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: 7,
-                                  flexWrap: "wrap",
-                                  alignItems: "center",
-                                }}
-                              >
+                              <div className="ch-action-menu">
                                 <button
                                   type="button"
-                                  className="ch-button ch-secondary"
+                                  className="ch-dots-button"
+                                  aria-label={`Actions for claim ${claimIdOf(
+                                    claim
+                                  )}`}
+                                  aria-haspopup="menu"
+                                  aria-expanded={isMenuOpen}
+                                  title="Claim actions"
                                   onClick={() => {
-                                    if (isExpanded) {
-                                      setExpandedClaim(null);
-                                    } else {
-                                      loadClaimHistory(claim);
-                                    }
+                                    setOpenMenuId((current) =>
+                                      current === claimKey ? null : claimKey
+                                    );
                                   }}
-                                  aria-expanded={isExpanded}
                                 >
-                                  <Icon name="history" size={15} />
-                                  {isExpanded ? "Hide history" : "History"}
+                                  <Icon name="more" size={21} />
                                 </button>
 
-                                <button
-                                  type="button"
-                                  className="ch-button ch-edit"
-                                  onClick={() => startEditing(claim)}
-                                  title="Edit claim"
-                                >
-                                  <Icon name="edit" size={15} />
-                                  Edit
-                                </button>
+                                {isMenuOpen && (
+                                  <div
+                                    className="ch-action-dropdown"
+                                    role="menu"
+                                  >
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() =>
+                                        loadClaimHistory(claim)
+                                      }
+                                    >
+                                      <Icon name="history" size={16} />
+                                      {isExpanded
+                                        ? "Hide claim history"
+                                        : "View claim history"}
+                                    </button>
 
-                                <button
-                                  type="button"
-                                  className="ch-button ch-danger"
-                                  onClick={() => deleteClaim(claim)}
-                                  disabled={deleteDisabled}
-                                  title={deleteTitle}
-                                >
-                                  <Icon name="trash" size={15} />
-                                  {isDeleting ? "Deleting..." : "Delete"}
-                                </button>
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => startEditing(claim)}
+                                    >
+                                      <Icon name="edit" size={16} />
+                                      Edit claim
+                                    </button>
+
+                                    {isRejected && (
+                                      <>
+                                        <div className="ch-menu-divider" />
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          className="ch-menu-renewal"
+                                          onClick={() =>
+                                            createRenewalAlert(claim)
+                                          }
+                                        >
+                                          <Icon name="renewal" size={16} />
+                                          Create renewal alert
+                                        </button>
+                                        <div className="ch-menu-hint">
+                                          Opens the rejection alert workflow
+                                          with the patient and claim details.
+                                        </div>
+                                      </>
+                                    )}
+
+                                    <div className="ch-menu-divider" />
+
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      className="ch-menu-danger"
+                                      onClick={() => deleteClaim(claim)}
+                                      disabled={deleteDisabled}
+                                      title={deleteTitle}
+                                    >
+                                      <Icon name="trash" size={16} />
+                                      {isDeleting
+                                        ? "Deleting..."
+                                        : "Delete claim"}
+                                    </button>
+
+                                    {deleteDisabled && (
+                                      <div className="ch-menu-hint">
+                                        {deleteTitle}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </td>
                           </tr>
