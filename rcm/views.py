@@ -1,5 +1,6 @@
 import json
-from datetime import date
+import re
+from datetime import date, datetime, timedelta
 
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
@@ -8,7 +9,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from patients.models import Patient
+from patients.models import Patient, normalize_patient_id
 from .models import Claim, ClaimHistory, RenewalAlert
 
 
@@ -63,6 +64,76 @@ APPROVAL_FIELDS = {
 
 
 # =========================================================
+# EXCEL IMPORT COLUMN NORMALIZATION
+# =========================================================
+
+def normalize_column_name(value):
+    """
+    Convert Excel headings into a consistent key.
+    """
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+IMPORT_COLUMN_ALIASES = {
+    "patientfilenumber": "patient_file_number",
+    "filenumber": "patient_file_number",
+    "mrn": "patient_file_number",
+    "medicalrecordnumber": "patient_file_number",
+    "medicalrecordno": "patient_file_number",
+    "patientnumber": "patient_file_number",
+    "fileno": "patient_file_number",
+
+    "claimid": "claim_id",
+
+    "requestingclinician": "requesting_clinician",
+
+    "authorizationnumber": "authorization_number",
+    "approvalnumber": "authorization_number",
+
+    "approvaldate": "approval_date",
+    "expirationdate": "expiration_date",
+
+    "approvedvisits": "approved_visits",
+    "approvedunits": "approved_units",
+
+    "approvedservice": "approved_service",
+    "service": "approved_service",
+
+    "insurancepayer": "payer",
+    "insurancecompany": "payer",
+    "insurance": "payer",
+    "payer": "payer",
+
+    "approvalstatus": "status",
+    "status": "status",
+
+    "rejectionreason": "rejection_reason",
+}
+
+
+def normalize_import_row(row):
+    """
+    Convert Excel headings and frontend keys into the keys
+    expected by the claims import process.
+    """
+    normalized = dict(row)
+
+    for original_key, value in row.items():
+        normalized_key = normalize_column_name(original_key)
+        canonical_key = IMPORT_COLUMN_ALIASES.get(normalized_key)
+
+        if canonical_key:
+            normalized[canonical_key] = value
+
+    if "rowNumber" in row:
+        normalized["rowNumber"] = row["rowNumber"]
+    elif "row_number" in row:
+        normalized["rowNumber"] = row["row_number"]
+
+    return normalized
+
+
+# =========================================================
 # GENERAL HELPERS
 # =========================================================
 
@@ -93,29 +164,11 @@ def patient_name_of(patient):
 
 
 def patient_file_number_of(patient):
-    for field in (
-        "file_number",
-        "patient_file_number",
-        "patient_id",
-        "patient_number",
-        "medical_record_number",
-        "medical_record_no",
-        "mrn",
-        "file_no",
-    ):
-        value = getattr(patient, field, None)
-        if value not in (None, ""):
-            return str(value)
-
-    return "—"
-
-
-def patient_file_number_field():
     """
-    Identify the actual patient file-number field on the Patient model.
-    The database primary key is deliberately excluded.
+    The actual patient file number in this project is patient_id.
     """
     candidates = (
+        "patient_id",
         "file_number",
         "patient_file_number",
         "patient_number",
@@ -125,11 +178,38 @@ def patient_file_number_field():
         "file_no",
     )
 
+    for field in candidates:
+        value = getattr(patient, field, None)
+
+        if value not in (None, ""):
+            return str(value)
+
+    return "—"
+
+
+def patient_file_number_field():
+    """
+    Identify the actual patient file-number field.
+
+    In this project, Patient.patient_id is the file number.
+    It is a model field, not the database primary key.
+    """
     available_fields = {
         field.name
         for field in Patient._meta.get_fields()
         if getattr(field, "concrete", False)
     }
+
+    candidates = (
+        "patient_id",
+        "file_number",
+        "patient_file_number",
+        "patient_number",
+        "medical_record_number",
+        "medical_record_no",
+        "mrn",
+        "file_no",
+    )
 
     for candidate in candidates:
         if candidate in available_fields:
@@ -139,7 +219,10 @@ def patient_file_number_field():
 
 
 def find_patient_by_file_number(file_number):
-    file_number = str(file_number or "").strip()
+    """
+    Find a patient using the normalized patient file number.
+    """
+    file_number = normalize_patient_id(file_number)
 
     if not file_number:
         return None, "Patient file number is required."
@@ -156,11 +239,14 @@ def find_patient_by_file_number(file_number):
         patient = Patient.objects.filter(
             **{f"{field_name}__iexact": file_number}
         ).first()
+
     except Exception:
         return None, "Could not search for this patient file number."
 
     if not patient:
-        return None, f"No patient found with file number {file_number}."
+        return None, (
+            f"No patient found with file number {file_number}."
+        )
 
     return patient, None
 
@@ -196,13 +282,76 @@ def user_data_of(user):
 
 
 def parse_date(value):
+    """
+    Parse common date formats and Excel date serial numbers.
+    """
+    if value in (None, ""):
+        return None
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    if isinstance(value, (int, float)):
+        try:
+            if value <= 0:
+                return None
+
+            return date(1899, 12, 30) + timedelta(days=float(value))
+
+        except (ValueError, TypeError, OverflowError):
+            return None
+
+    value = str(value).strip()
+
     if not value:
         return None
 
+    if re.fullmatch(r"\d+(\.\d+)?", value):
+        try:
+            serial_number = float(value)
+
+            if serial_number > 0:
+                return (
+                    date(1899, 12, 30)
+                    + timedelta(days=serial_number)
+                )
+
+        except (ValueError, TypeError, OverflowError):
+            pass
+
     try:
-        return date.fromisoformat(str(value)[:10])
+        return date.fromisoformat(value[:10])
     except (ValueError, TypeError):
-        return None
+        pass
+
+    try:
+        return datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        ).date()
+    except (ValueError, TypeError):
+        pass
+
+    supported_formats = (
+        "%d/%m/%Y",
+        "%m/%d/%Y",
+        "%d-%m-%Y",
+        "%Y/%m/%d",
+        "%d.%m.%Y",
+        "%Y-%m-%d",
+        "%d/%m/%y",
+        "%m/%d/%y",
+    )
+
+    for date_format in supported_formats:
+        try:
+            return datetime.strptime(value, date_format).date()
+        except (ValueError, TypeError):
+            continue
+
+    return None
 
 
 def is_authenticated_user(user):
@@ -217,6 +366,7 @@ def user_can_manage_claims(user):
         return True
 
     role = str(getattr(user, "role", "") or "").strip().lower()
+
     return role in CLAIM_MANAGEMENT_ROLES
 
 
@@ -246,6 +396,7 @@ def get_value(data, *keys, default=None):
     for key in keys:
         if key in data:
             return data.get(key)
+
     return default
 
 
@@ -276,7 +427,7 @@ def approval_values_from_data(data, existing=None, importing=False):
             if raw_value not in (None, "") and not parsed:
                 errors.append(
                     f"{model_field.replace('_', ' ').title()} "
-                    "must use YYYY-MM-DD format."
+                    "contains an invalid date."
                 )
                 continue
 
@@ -1065,24 +1216,28 @@ def claims_bulk_import(request):
     failed_count = 0
     results = []
 
-    for index, row in enumerate(rows, start=1):
-        excel_row_number = row.get("rowNumber", index + 1) if isinstance(row, dict) else index + 1
-
-        if not isinstance(row, dict):
+    for index, original_row in enumerate(rows, start=1):
+        if not isinstance(original_row, dict):
             failed_count += 1
+
             results.append({
-                "row": excel_row_number,
+                "row": index + 1,
                 "status": "failed",
                 "message": "Invalid row format.",
             })
+
             continue
+
+        row = normalize_import_row(original_row)
+
+        excel_row_number = row.get("rowNumber", index + 1)
 
         try:
             with transaction.atomic():
                 file_number = get_value(
                     row,
-                    "patientFileNumber",
                     "patient_file_number",
+                    "patientFileNumber",
                     "fileNumber",
                     "file_number",
                     "mrn",
@@ -1098,27 +1253,39 @@ def claims_bulk_import(request):
                     raise ValueError(patient_error)
 
                 claim_id = str(
-                    get_value(row, "claimId", "claim_id", default="") or ""
+                    get_value(
+                        row,
+                        "claim_id",
+                        "claimId",
+                        default="",
+                    ) or ""
                 ).strip()
 
                 if not claim_id:
                     raise ValueError("Claim ID is required.")
 
-                status = str(
-                    get_value(row, "status", "approvalStatus", "approval_status", default="Pending")
-                    or "Pending"
-                ).strip().title()
+                raw_status = get_value(
+                    row,
+                    "status",
+                    "approvalStatus",
+                    "approval_status",
+                    default="Pending",
+                )
+
+                status = str(raw_status or "Pending").strip().title()
 
                 if status not in VALID_CLAIM_STATUSES:
                     raise ValueError(
-                        f"Invalid approval status: {status}."
+                        f"Invalid approval status: {status}. "
+                        "Allowed statuses are Approved, Rejected, "
+                        "Pending, and Submitted."
                     )
 
                 rejection_reason = str(
                     get_value(
                         row,
-                        "rejectionReason",
                         "rejection_reason",
+                        "rejectionReason",
                         default="",
                     ) or ""
                 ).strip()
@@ -1129,7 +1296,10 @@ def claims_bulk_import(request):
                     )
 
                 approval_values, approval_errors = (
-                    approval_values_from_data(row, importing=True)
+                    approval_values_from_data(
+                        row,
+                        importing=True,
+                    )
                 )
 
                 if approval_errors:
@@ -1147,7 +1317,9 @@ def claims_bulk_import(request):
 
                 if claim:
                     previous_status = claim.status
-                    previous_rejection_reason = claim.rejection_reason or ""
+                    previous_rejection_reason = (
+                        claim.rejection_reason or ""
+                    )
 
                     claim.status = status
                     claim.rejection_reason = (
@@ -1179,7 +1351,9 @@ def claims_bulk_import(request):
                                 if status == "Rejected"
                                 else previous_rejection_reason
                             ),
-                            notes="Claim updated from Excel approval import.",
+                            notes=(
+                                "Claim updated from Excel approval import."
+                            ),
                             user=request.user,
                         )
 
@@ -1193,7 +1367,9 @@ def claims_bulk_import(request):
                             previous_status=previous_status,
                             new_status=status,
                             rejection_reason=rejection_reason,
-                            notes="Rejection details updated from Excel import.",
+                            notes=(
+                                "Rejection details updated from Excel import."
+                            ),
                             user=request.user,
                         )
 
@@ -1244,6 +1420,7 @@ def claims_bulk_import(request):
 
         except (ValueError, IntegrityError) as exc:
             failed_count += 1
+
             results.append({
                 "row": excel_row_number,
                 "status": "failed",
@@ -1252,14 +1429,24 @@ def claims_bulk_import(request):
 
         except Exception as exc:
             failed_count += 1
+
             results.append({
                 "row": excel_row_number,
                 "status": "failed",
                 "message": f"Could not import this row: {str(exc)}",
             })
 
+    if failed_count == 0:
+        message = "All claims imported successfully."
+    else:
+        message = (
+            "Import completed with errors. "
+            "Please review the failed rows."
+        )
+
     return JsonResponse({
-        "message": "Excel claim import completed.",
+        "success": failed_count == 0,
+        "message": message,
         "created": created_count,
         "updated": updated_count,
         "failed": failed_count,
@@ -1293,6 +1480,7 @@ def claim_detail(request, claim_pk):
 
     if request.method == "GET":
         claim_data = claim_to_dict(claim)
+
         return JsonResponse({
             "claim": claim_data,
             **claim_data,
@@ -1630,6 +1818,7 @@ def approve_renewal_alert(request, alert_pk):
                 alert.claim = claim
                 alert.claim_id_value = claim.claim_id
                 alert.status = "Approved"
+
                 alert.save(
                     update_fields=[
                         "claim",
@@ -1638,6 +1827,7 @@ def approve_renewal_alert(request, alert_pk):
                         "updated_at",
                     ]
                 )
+
             else:
                 previous_status = claim.status
                 previous_rejection_reason = claim.rejection_reason or ""
