@@ -2318,43 +2318,43 @@ export default function PhysioFollowupWorkspace({
         }
 
         .pfw-navigation {
-          display: flex;
-          align-items: stretch;
-          gap: 8px;
-          width: 100%;
-          min-width: 0;
-          overflow-x: auto;
-          padding: 9px;
-          border: 1px solid var(--pfw-border);
-          border-radius: 17px;
-          background: white;
-          box-shadow:
-            0 5px 19px rgba(31,56,89,.035);
-          scrollbar-width: thin;
-        }
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 9px;
+  border: 1px solid var(--pfw-border);
+  border-radius: 17px;
+  background: white;
+  box-shadow:
+    0 5px 19px rgba(31,56,89,.035);
+}
 
-        .pfw-tab {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 9px;
-          flex: 1 0 auto;
-          min-height: 46px;
-          padding: 12px 14px;
-          border: 1px solid transparent;
-          border-radius: 11px;
-          background: transparent;
-          color: #657994;
-          font: inherit;
-          font-size: 12px;
-          font-weight: 800;
-          white-space: nowrap;
-          cursor: pointer;
-          transition:
-            background 160ms ease,
-            color 160ms ease,
-            box-shadow 160ms ease;
-        }
+.pfw-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  flex: 1 1 155px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: #657994;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: normal;
+  text-align: center;
+  cursor: pointer;
+}
+  
+      
 
         .pfw-tab:hover {
           background: #eef3ff;
