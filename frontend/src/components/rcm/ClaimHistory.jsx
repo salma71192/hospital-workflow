@@ -360,19 +360,52 @@ function approvedServiceOf(claim) {
 }
 
 function payerOf(claim) {
-  return valueOf(
-    claim,
-    [
-      "payer",
-      "insurance",
-      "insurance_company",
-      "insuranceCompany",
-      "insurance_name",
-      "insuranceName",
-    ],
-    "—"
-  );
+  if (!claim) return "—";
+
+  const keys = [
+    "insurance_payer",
+    "insurancePayer",
+    "payer",
+    "payer_name",
+    "payerName",
+    "insurance",
+    "insurance_company",
+    "insuranceCompany",
+    "insurance_name",
+    "insuranceName",
+  ];
+
+  const direct = valueOf(claim, keys);
+
+  if (direct) {
+    return String(direct).trim();
+  }
+
+  const insuranceDetails = objectOf(claim, [
+    "insurance_details",
+    "insuranceDetails",
+    "insurance",
+    "payer_details",
+    "payerDetails",
+  ]);
+
+  const nested = valueOf(insuranceDetails, [
+    "name",
+    "payer_name",
+    "payerName",
+    "company_name",
+    "companyName",
+    "insurance_payer",
+    "insurancePayer",
+  ]);
+
+  if (nested) {
+    return String(nested).trim();
+  }
+
+  return "—";
 }
+      
 
 function statusOf(claim) {
   return String(

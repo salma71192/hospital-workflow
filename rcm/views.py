@@ -1,11 +1,12 @@
 
 import json
+import math
 import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from django.db import IntegrityError, transaction
-from django.db.models import ProtectedError, Q
+from django.db.models import ProtectedError, Q, Prefetch
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -20,29 +21,53 @@ from .models import Claim, ClaimHistory, RenewalAlert
 # =========================================================
 
 HOSPITAL_TIMEZONE = ZoneInfo("Asia/Dubai")
+
 CLAIM_MANAGEMENT_ROLES = {"admin", "rcm"}
+
 VALID_CLAIM_STATUSES = {
-    "Approved", "Rejected", "Pending", "Submitted"
+    "Approved",
+    "Rejected",
+    "Pending",
+    "Submitted",
 }
 
 APPROVAL_FIELDS = {
     "requesting_clinician": (
-        "requestingClinician", "requesting_clinician"
+        "requestingClinician",
+        "requesting_clinician",
     ),
     "authorization_number": (
-        "authorizationNumber", "authorization_number",
-        "approvalNumber", "approval_number"
+        "authorizationNumber",
+        "authorization_number",
+        "approvalNumber",
+        "approval_number",
     ),
-    "approval_date": ("approvalDate", "approval_date"),
-    "expiration_date": ("expirationDate", "expiration_date"),
-    "approved_visits": ("approvedVisits", "approved_visits"),
-    "approved_units": ("approvedUnits", "approved_units"),
+    "approval_date": (
+        "approvalDate",
+        "approval_date",
+    ),
+    "expiration_date": (
+        "expirationDate",
+        "expiration_date",
+    ),
+    "approved_visits": (
+        "approvedVisits",
+        "approved_visits",
+    ),
+    "approved_units": (
+        "approvedUnits",
+        "approved_units",
+    ),
     "approved_service": (
-        "approvedService", "approved_service", "service"
+        "approvedService",
+        "approved_service",
+        "service",
     ),
     "payer": (
-        "payer", "insurance", "insuranceCompany",
-        "insurance_company"
+        "payer",
+        "insurance",
+        "insuranceCompany",
+        "insurance_company",
     ),
 }
 
@@ -80,7 +105,10 @@ IMPORT_COLUMN_ALIASES = {
 
 def json_error(message, status=400, **extra):
     return JsonResponse(
-        {"error": message, **extra},
+        {
+            "error": str(message),
+            **extra,
+        },
         status=status,
     )
 
@@ -89,7 +117,9 @@ def read_json(request):
     try:
         data = json.loads(request.body or b"{}")
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return None, json_error("Invalid JSON request body.")
+        return None, json_error(
+            "Invalid JSON request body."
+        )
 
     if not isinstance(data, dict):
         return None, json_error(
@@ -101,7 +131,9 @@ def read_json(request):
 
 def normalize_column_name(value):
     return re.sub(
-        r"[^a-z0-9]", "", str(value or "").lower()
+        r"[^a-z0-9]",
+        "",
+        str(value or "").lower(),
     )
 
 
@@ -126,12 +158,19 @@ def normalize_import_row(row):
 def get_value(data, *keys, default=None):
     for key in keys:
         if key in data:
-            return data.get(key)
+            return data[key]
+
     return default
 
 
+def has_any_key(data, *keys):
+    return any(key in data for key in keys)
+
+
 def hospital_today():
-    return timezone.localdate(timezone=HOSPITAL_TIMEZONE)
+    return timezone.localdate(
+        timezone=HOSPITAL_TIMEZONE
+    )
 
 
 def hospital_date(value):
@@ -141,8 +180,10 @@ def hospital_date(value):
     if isinstance(value, datetime):
         if timezone.is_aware(value):
             return timezone.localtime(
-                value, HOSPITAL_TIMEZONE
+                value,
+                HOSPITAL_TIMEZONE,
             ).date()
+
         return value.date()
 
     if isinstance(value, date):
@@ -158,8 +199,10 @@ def hospital_datetime_iso(value):
     if isinstance(value, datetime):
         if timezone.is_aware(value):
             return timezone.localtime(
-                value, HOSPITAL_TIMEZONE
+                value,
+                HOSPITAL_TIMEZONE,
             ).isoformat()
+
         return value.isoformat()
 
     if isinstance(value, date):
@@ -172,12 +215,18 @@ def get_patient(patient_pk):
     try:
         return Patient.objects.get(pk=patient_pk)
     except (
-        Patient.DoesNotExist, ValueError, TypeError
+        Patient.DoesNotExist,
+        ValueError,
+        TypeError,
+        OverflowError,
     ):
         return None
 
 
 def patient_name_of(patient):
+    if patient is None:
+        return ""
+
     return (
         getattr(patient, "name", None)
         or getattr(patient, "full_name", None)
@@ -194,9 +243,14 @@ def patient_file_number_field():
     }
 
     for name in (
-        "patient_id", "file_number", "patient_file_number",
-        "patient_number", "medical_record_number",
-        "medical_record_no", "mrn", "file_no"
+        "patient_id",
+        "file_number",
+        "patient_file_number",
+        "patient_number",
+        "medical_record_number",
+        "medical_record_no",
+        "mrn",
+        "file_no",
     ):
         if name in available:
             return name
@@ -205,10 +259,14 @@ def patient_file_number_field():
 
 
 def patient_file_number_of(patient):
+    if patient is None:
+        return "—"
+
     field = patient_file_number_field()
 
     if field:
         value = getattr(patient, field, None)
+
         if value not in (None, ""):
             return str(value)
 
@@ -219,13 +277,16 @@ def find_patient_by_file_number(file_number):
     file_number = normalize_patient_id(file_number)
 
     if not file_number:
-        return None, "Patient file number is required."
+        return None, (
+            "Patient file number is required."
+        )
 
     field = patient_file_number_field()
 
     if not field:
         return None, (
-            "Patient file-number field could not be identified."
+            "Patient file-number field could not "
+            "be identified."
         )
 
     patient = Patient.objects.filter(
@@ -234,7 +295,8 @@ def find_patient_by_file_number(file_number):
 
     if not patient:
         return None, (
-            f"No patient found with file number {file_number}."
+            f"No patient found with file number "
+            f"{file_number}."
         )
 
     return patient, None
@@ -262,7 +324,9 @@ def user_data_of(user):
 
     return {
         "id": user.pk,
-        "username": getattr(user, "username", "") or "",
+        "username": (
+            getattr(user, "username", "") or ""
+        ),
         "name": name,
         "display_name": name,
         "full_name": name,
@@ -271,14 +335,20 @@ def user_data_of(user):
 
 
 def is_authenticated_user(user):
-    return bool(user and user.is_authenticated)
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+    )
 
 
 def user_can_manage_claims(user):
     if not is_authenticated_user(user):
         return False
 
-    if user.is_superuser or user.is_staff:
+    if (
+        getattr(user, "is_superuser", False)
+        or getattr(user, "is_staff", False)
+    ):
         return True
 
     role = str(
@@ -289,22 +359,26 @@ def user_can_manage_claims(user):
 
 
 def require_login(
-    request, message="Please log in to continue."
+    request,
+    message="Please log in to continue.",
 ):
     if not is_authenticated_user(request.user):
         return json_error(message, 401)
+
     return None
 
 
 def require_claim_manager(request):
     if not is_authenticated_user(request.user):
         return json_error(
-            "Please log in to continue.", 401
+            "Please log in to continue.",
+            401,
         )
 
     if not user_can_manage_claims(request.user):
         return json_error(
-            "You do not have permission to perform this action.",
+            "You do not have permission "
+            "to perform this action.",
             403,
         )
 
@@ -312,10 +386,27 @@ def require_claim_manager(request):
 
 
 # =========================================================
-# DATE AND FIELD VALIDATION
+# DATE VALIDATION
 # =========================================================
 
-def parse_date(value):
+def parse_date(value, allow_excel_serial=False):
+    """
+    Accept:
+      YYYY-MM-DD
+      ISO datetime
+      DD/MM/YYYY
+      MM/DD/YYYY
+      DD-MM-YYYY
+      YYYY/MM/DD
+      DD.MM.YYYY
+
+    Excel serial numbers are accepted only when
+    allow_excel_serial=True.
+
+    Ambiguous slash dates retain the original
+    day-first parsing priority.
+    """
+
     if value in (None, ""):
         return None
 
@@ -325,15 +416,27 @@ def parse_date(value):
     if isinstance(value, date):
         return value
 
+    if isinstance(value, bool):
+        return None
+
     if isinstance(value, (int, float)):
+        if not allow_excel_serial:
+            return None
+
         try:
             serial = float(value)
-            if serial <= 0:
+
+            if not math.isfinite(serial) or serial <= 0:
                 return None
+
             return date(1899, 12, 30) + timedelta(
                 days=int(serial)
             )
-        except (ValueError, TypeError, OverflowError):
+        except (
+            ValueError,
+            TypeError,
+            OverflowError,
+        ):
             return None
 
     value = str(value).strip()
@@ -341,40 +444,52 @@ def parse_date(value):
     if not value:
         return None
 
-    if re.fullmatch(r"\d+(\.\d+)?", value):
+    if allow_excel_serial and re.fullmatch(
+        r"\d+(?:\.\d+)?",
+        value,
+    ):
         try:
             serial = float(value)
-            if serial > 0:
+
+            if math.isfinite(serial) and serial > 0:
                 return date(1899, 12, 30) + timedelta(
                     days=int(serial)
                 )
-        except (ValueError, TypeError, OverflowError):
-            pass
+        except (
+            ValueError,
+            TypeError,
+            OverflowError,
+        ):
+            return None
 
     try:
-        return date.fromisoformat(value[:10])
+        return date.fromisoformat(value)
     except (ValueError, TypeError):
         pass
 
     try:
-        return hospital_date(
-            datetime.fromisoformat(
-                value.replace("Z", "+00:00")
-            )
+        parsed = datetime.fromisoformat(
+            value.replace("Z", "+00:00")
         )
+        return hospital_date(parsed)
     except (ValueError, TypeError):
         pass
 
     formats = (
-        "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y",
-        "%Y/%m/%d", "%d.%m.%Y", "%d/%m/%y",
+        "%d/%m/%Y",
+        "%m/%d/%Y",
+        "%d-%m-%Y",
+        "%Y/%m/%d",
+        "%d.%m.%Y",
+        "%d/%m/%y",
         "%m/%d/%y",
     )
 
     for date_format in formats:
         try:
             return datetime.strptime(
-                value, date_format
+                value,
+                date_format,
             ).date()
         except (ValueError, TypeError):
             continue
@@ -382,12 +497,19 @@ def parse_date(value):
     return None
 
 
-def approval_values_from_data(data, importing=False):
+# =========================================================
+# FIELD VALIDATION
+# =========================================================
+
+def approval_values_from_data(
+    data,
+    importing=False,
+):
     values = {}
     errors = []
 
     for model_field, aliases in APPROVAL_FIELDS.items():
-        supplied = any(alias in data for alias in aliases)
+        supplied = has_any_key(data, *aliases)
 
         if not supplied:
             continue
@@ -398,9 +520,13 @@ def approval_values_from_data(data, importing=False):
             continue
 
         if model_field in {
-            "approval_date", "expiration_date"
+            "approval_date",
+            "expiration_date",
         }:
-            parsed = parse_date(raw)
+            parsed = parse_date(
+                raw,
+                allow_excel_serial=importing,
+            )
 
             if raw not in (None, "") and parsed is None:
                 errors.append(
@@ -412,7 +538,8 @@ def approval_values_from_data(data, importing=False):
             values[model_field] = parsed
 
         elif model_field in {
-            "approved_visits", "approved_units"
+            "approved_visits",
+            "approved_units",
         }:
             if raw in (None, ""):
                 values[model_field] = None
@@ -421,7 +548,11 @@ def approval_values_from_data(data, importing=False):
             try:
                 number = float(str(raw).strip())
 
-                if not number.is_integer() or number < 0:
+                if (
+                    not math.isfinite(number)
+                    or not number.is_integer()
+                    or number < 0
+                ):
                     raise ValueError
 
                 values[model_field] = int(number)
@@ -433,14 +564,46 @@ def approval_values_from_data(data, importing=False):
                 )
 
         else:
-            values[model_field] = str(raw or "").strip()
+            values[model_field] = str(
+                raw or ""
+            ).strip()
 
     return values, errors
 
 
+def validate_approval_dates(values, claim=None):
+    approval_date = values.get(
+        "approval_date",
+        getattr(claim, "approval_date", None),
+    )
+
+    expiration_date = values.get(
+        "expiration_date",
+        getattr(claim, "expiration_date", None),
+    )
+
+    if (
+        approval_date
+        and expiration_date
+        and expiration_date < approval_date
+    ):
+        return (
+            "Expiration date cannot be earlier "
+            "than approval date."
+        )
+
+    return None
+
+
 def get_status(data, default="Pending"):
     raw = str(
-        data.get("status", default) or default
+        get_value(
+            data,
+            "status",
+            "approval_status",
+            "approvalStatus",
+            default=default,
+        ) or default
     ).strip()
 
     for valid in VALID_CLAIM_STATUSES:
@@ -458,6 +621,20 @@ def validate_status(status, rejection_reason):
         return "A rejection reason is required."
 
     return None
+
+
+def approval_changes(claim, values):
+    changes = []
+
+    for field, new_value in values.items():
+        old_value = getattr(claim, field, None)
+
+        if old_value != new_value:
+            changes.append(
+                field.replace("_", " ").title()
+            )
+
+    return changes
 
 
 # =========================================================
@@ -483,7 +660,8 @@ def record_claim_history(
         notes=notes or "",
         renewal_date=renewal_date,
         created_by=(
-            user if is_authenticated_user(user) else None
+            user if is_authenticated_user(user)
+            else None
         ),
     )
 
@@ -497,20 +675,27 @@ def history_to_dict(record):
 
     renewal_date = (
         record.renewal_date.isoformat()
-        if record.renewal_date else None
+        if record.renewal_date
+        else None
     )
 
-    created_at = hospital_datetime_iso(record.created_at)
+    created_at = hospital_datetime_iso(
+        record.created_at
+    )
 
     return {
         "id": record.pk,
+
         "claimPk": claim.pk,
         "claim_pk": claim.pk,
         "claimId": claim.claim_id,
         "claim_id": claim.claim_id,
+
         "patientId": claim.patient_id,
         "patient_id": claim.patient_id,
-        "patientName": patient_name_of(claim.patient),
+        "patientName": patient_name_of(
+            claim.patient
+        ),
 
         "event": record.event,
         "eventType": record.event,
@@ -565,13 +750,17 @@ def history_to_dict(record):
         "original_creator": creator_name,
         "originalCreatorId": claim.created_by_id,
         "original_creator_id": claim.created_by_id,
-        "claimCreatorData": user_data_of(claim.created_by),
+        "claimCreatorData": user_data_of(
+            claim.created_by
+        ),
 
         "rejectionReason": record.rejection_reason,
         "rejection_reason": record.rejection_reason,
         "notes": record.notes,
+
         "renewalDate": renewal_date,
         "renewal_date": renewal_date,
+
         "createdAt": created_at,
         "created_at": created_at,
         "date": created_at,
@@ -579,17 +768,85 @@ def history_to_dict(record):
 
 
 def get_claim_history(claim):
+    prefetched = getattr(
+        claim,
+        "_prefetched_objects_cache",
+        {},
+    )
+
+    if "history_records" in prefetched:
+        records = prefetched["history_records"]
+    else:
+        records = (
+            ClaimHistory.objects
+            .filter(claim_id=claim.pk)
+            .select_related(
+                "claim",
+                "claim__patient",
+                "claim__created_by",
+                "created_by",
+            )
+            .order_by("created_at", "pk")
+        )
+
+    return [
+        history_to_dict(record)
+        for record in records
+    ]
+
+
+def claim_queryset():
+    history_queryset = (
+        ClaimHistory.objects
+        .select_related("created_by")
+        .order_by("created_at", "pk")
+    )
+
+    return (
+        Claim.objects
+        .select_related("patient", "created_by")
+        .prefetch_related(
+            Prefetch(
+                "history_records",
+                queryset=history_queryset,
+                to_attr="_cached_claim_history",
+            )
+        )
+    )
+
+
+def get_claim_history(claim):
+    cached = getattr(
+        claim,
+        "_cached_claim_history",
+        None,
+    )
+
+    if cached is not None:
+        for record in cached:
+            record.claim = claim
+
+        return [
+            history_to_dict(record)
+            for record in cached
+        ]
+
     records = (
         ClaimHistory.objects
         .filter(claim_id=claim.pk)
         .select_related(
-            "claim", "claim__patient",
-            "claim__created_by", "created_by"
+            "claim",
+            "claim__patient",
+            "claim__created_by",
+            "created_by",
         )
         .order_by("created_at", "pk")
     )
 
-    return [history_to_dict(record) for record in records]
+    return [
+        history_to_dict(record)
+        for record in records
+    ]
 
 
 # =========================================================
@@ -602,16 +859,23 @@ def claim_to_dict(claim):
 
     approval_date = (
         claim.approval_date.isoformat()
-        if claim.approval_date else None
+        if claim.approval_date
+        else None
     )
 
     expiration_date = (
         claim.expiration_date.isoformat()
-        if claim.expiration_date else None
+        if claim.expiration_date
+        else None
     )
 
-    created_at = hospital_datetime_iso(claim.created_at)
-    updated_at = hospital_datetime_iso(claim.updated_at)
+    created_at = hospital_datetime_iso(
+        claim.created_at
+    )
+
+    updated_at = hospital_datetime_iso(
+        claim.updated_at
+    )
 
     file_number = patient_file_number_of(patient)
     creator_name = user_name_of(creator)
@@ -620,6 +884,7 @@ def claim_to_dict(claim):
     return {
         "id": claim.pk,
         "pk": claim.pk,
+
         "patientId": claim.patient_id,
         "patient_id": claim.patient_id,
         "patientName": patient_name_of(patient),
@@ -629,23 +894,39 @@ def claim_to_dict(claim):
         "claimId": claim.claim_id,
         "claim_id": claim.claim_id,
         "status": claim.status,
+
         "rejectionReason": claim.rejection_reason,
         "rejection_reason": claim.rejection_reason,
 
-        "requestingClinician": claim.requesting_clinician,
-        "requesting_clinician": claim.requesting_clinician,
-        "authorizationNumber": claim.authorization_number,
-        "authorization_number": claim.authorization_number,
+        "requestingClinician": (
+            claim.requesting_clinician
+        ),
+        "requesting_clinician": (
+            claim.requesting_clinician
+        ),
+
+        "authorizationNumber": (
+            claim.authorization_number
+        ),
+        "authorization_number": (
+            claim.authorization_number
+        ),
+
         "approvalDate": approval_date,
         "approval_date": approval_date,
+
         "expirationDate": expiration_date,
         "expiration_date": expiration_date,
+
         "approvedVisits": claim.approved_visits,
         "approved_visits": claim.approved_visits,
+
         "approvedUnits": claim.approved_units,
         "approved_units": claim.approved_units,
+
         "approvedService": claim.approved_service,
         "approved_service": claim.approved_service,
+
         "payer": claim.payer,
         "insurance": claim.payer,
 
@@ -673,29 +954,47 @@ def alert_to_dict(alert):
     claim = alert.claim
 
     file_number = patient_file_number_of(patient)
-    linked_claim_id = claim.claim_id if claim else ""
-    claim_status = claim.status if claim else None
+
+    linked_claim_id = (
+        claim.claim_id if claim else ""
+    )
+
+    claim_status = (
+        claim.status if claim else None
+    )
 
     renewal_date = (
         alert.renewal_date.isoformat()
-        if alert.renewal_date else None
+        if alert.renewal_date
+        else None
     )
 
     submission_date = hospital_datetime_iso(
         alert.submission_date
     )
-    created_at = hospital_datetime_iso(alert.created_at)
-    updated_at = hospital_datetime_iso(alert.updated_at)
 
-    rejection_reason = alert.rejection_reason or ""
+    created_at = hospital_datetime_iso(
+        alert.created_at
+    )
+
+    updated_at = hospital_datetime_iso(
+        alert.updated_at
+    )
+
+    rejection_reason = (
+        alert.rejection_reason or ""
+    )
 
     if claim and claim.rejection_reason:
         rejection_reason = claim.rejection_reason
 
-    effective_status = claim_status or alert.status
+    effective_status = (
+        claim_status or alert.status
+    )
 
     return {
         "id": alert.pk,
+
         "patientId": alert.patient_id,
         "patient_id": alert.patient_id,
         "patientName": patient_name_of(patient),
@@ -704,7 +1003,10 @@ def alert_to_dict(alert):
 
         "claimPk": claim.pk if claim else None,
         "claim_pk": claim.pk if claim else None,
-        "claimId": alert.claim_id_value or linked_claim_id,
+
+        "claimId": (
+            alert.claim_id_value or linked_claim_id
+        ),
         "claim_id_value": (
             alert.claim_id_value or linked_claim_id
         ),
@@ -718,7 +1020,9 @@ def alert_to_dict(alert):
             "claim_id": linked_claim_id,
             "claimId": linked_claim_id,
             "status": claim_status,
-            "rejection_reason": claim.rejection_reason,
+            "rejection_reason": (
+                claim.rejection_reason
+            ),
         } if claim else None,
 
         "renewal_status": effective_status,
@@ -727,13 +1031,18 @@ def alert_to_dict(alert):
 
         "alertType": alert.alert_type,
         "alert_type": alert.alert_type,
+
         "renewalDate": renewal_date,
         "renewal_date": renewal_date,
+
         "message": alert.message,
+
         "rejectionReason": rejection_reason,
         "rejection_reason": rejection_reason,
+
         "submissionDate": submission_date,
         "submission_date": submission_date,
+
         "createdAt": created_at,
         "updatedAt": updated_at,
     }
@@ -748,7 +1057,8 @@ def claim_permission_error(request, claim):
 
     if not is_authenticated_user(user):
         return json_error(
-            "Please log in to manage claims.", 401
+            "Please log in to manage claims.",
+            401,
         )
 
     if user_can_manage_claims(user):
@@ -763,19 +1073,24 @@ def claim_permission_error(request, claim):
 
     if claim.created_by_id != user.pk:
         return json_error(
-            "You can only manage claims that you created.",
+            "You can only manage claims "
+            "that you created.",
             403,
         )
 
     if not claim.created_at:
         return json_error(
-            "The claim creation date is unavailable.", 403
+            "The claim creation date "
+            "is unavailable.",
+            403,
         )
 
-    if hospital_date(claim.created_at) != hospital_today():
+    if hospital_date(
+        claim.created_at
+    ) != hospital_today():
         return json_error(
-            "Claims can only be edited on the day "
-            "they were created.",
+            "Claims can only be edited "
+            "on the day they were created.",
             403,
         )
 
@@ -786,15 +1101,22 @@ def renewal_alert_permission_error(request):
     return require_claim_manager(request)
 
 
-def claim_deletion_permission_error(request, claim):
+def claim_deletion_permission_error(
+    request,
+    claim,
+):
     """
-    Unlike editing, deletion has no administrator bypass.
-    Only the original creator may delete on the UAE
-    calendar day of creation.
+    Only the original creator can delete a claim,
+    and only on its creation day.
+
+    Admin and RCM permissions do not override
+    this restriction.
     """
+
     if not is_authenticated_user(request.user):
         return json_error(
-            "Please log in to delete claims.", 401
+            "Please log in to delete claims.",
+            401,
         )
 
     if (
@@ -802,16 +1124,20 @@ def claim_deletion_permission_error(request, claim):
         or claim.created_by_id != request.user.pk
     ):
         return json_error(
-            "Only the original creator can delete this claim.",
+            "Only the original creator "
+            "can delete this claim.",
             403,
         )
 
     if (
         not claim.created_at
-        or hospital_date(claim.created_at) != hospital_today()
+        or hospital_date(
+            claim.created_at
+        ) != hospital_today()
     ):
         return json_error(
-            "Only claims created today can be deleted.",
+            "Only claims created today "
+            "can be deleted.",
             403,
         )
 
@@ -819,10 +1145,6 @@ def claim_deletion_permission_error(request, claim):
 
 
 def claim_has_renewal_alerts(claim):
-    """
-    Check both direct foreign-key links and alerts that
-    identify the claim by patient and claim ID.
-    """
     return RenewalAlert.objects.filter(
         Q(claim_id=claim.pk)
         | Q(
@@ -830,6 +1152,72 @@ def claim_has_renewal_alerts(claim):
             claim_id_value__iexact=claim.claim_id,
         )
     ).exists()
+
+
+# =========================================================
+# RENEWAL SYNCHRONIZATION
+# =========================================================
+
+def sync_claim_renewal_alerts(
+    claim,
+    status=None,
+    submission_date=None,
+):
+    """
+    Synchronize alerts linked by FK or by
+    patient + claim ID.
+
+    Returns the number of alerts updated.
+    """
+
+    target_status = status or claim.status
+
+    alerts = RenewalAlert.objects.filter(
+        Q(claim_id=claim.pk)
+        | Q(
+            patient_id=claim.patient_id,
+            claim_id_value__iexact=claim.claim_id,
+        )
+    ).filter(
+        alert_type="renewal"
+    )
+
+    count = 0
+
+    for alert in alerts:
+        changed_fields = []
+
+        if alert.claim_id != claim.pk:
+            alert.claim = claim
+            changed_fields.append("claim")
+
+        if alert.claim_id_value != claim.claim_id:
+            alert.claim_id_value = claim.claim_id
+            changed_fields.append("claim_id_value")
+
+        if alert.status != target_status:
+            alert.status = target_status
+            changed_fields.append("status")
+
+        if target_status == "Submitted":
+            if alert.submission_date is None:
+                alert.submission_date = (
+                    submission_date or timezone.now()
+                )
+                changed_fields.append(
+                    "submission_date"
+                )
+
+        if changed_fields:
+            alert.save(
+                update_fields=[
+                    *changed_fields,
+                    "updated_at",
+                ]
+            )
+            count += 1
+
+    return count
 
 
 # =========================================================
@@ -841,18 +1229,22 @@ def claim_has_renewal_alerts(claim):
 def claims_list_create(request):
     if request.method == "GET":
         login_error = require_login(
-            request, "Please log in to view claims."
+            request,
+            "Please log in to view claims.",
         )
+
         if login_error:
             return login_error
 
-        queryset = (
-            Claim.objects
-            .select_related("patient", "created_by")
-            .order_by("-created_at", "-pk")
+        queryset = claim_queryset().order_by(
+            "-created_at",
+            "-pk",
         )
 
-        patient_id = request.GET.get("patient_id")
+        patient_id = request.GET.get(
+            "patient_id"
+        )
+
         claim_id = (
             request.GET.get("claim_id")
             or request.GET.get("claimId")
@@ -860,7 +1252,9 @@ def claims_list_create(request):
         ).strip()
 
         if patient_id:
-            queryset = queryset.filter(patient_id=patient_id)
+            queryset = queryset.filter(
+                patient_id=patient_id
+            )
 
         if claim_id:
             queryset = queryset.filter(
@@ -869,27 +1263,36 @@ def claims_list_create(request):
 
         return JsonResponse({
             "results": [
-                claim_to_dict(claim) for claim in queryset
+                claim_to_dict(claim)
+                for claim in queryset
             ]
         })
 
     login_error = require_login(
-        request, "Please log in to create claims."
+        request,
+        "Please log in to create claims.",
     )
+
     if login_error:
         return login_error
 
     data, error = read_json(request)
+
     if error:
         return error
 
     patient_pk = get_value(
-        data, "patientId", "patient_id"
+        data,
+        "patientId",
+        "patient_id",
     )
 
     claim_id = str(
         get_value(
-            data, "claimId", "claim_id", default=""
+            data,
+            "claimId",
+            "claim_id",
+            default="",
         ) or ""
     ).strip()
 
@@ -897,13 +1300,17 @@ def claims_list_create(request):
 
     rejection_reason = str(
         get_value(
-            data, "rejectionReason", "rejection_reason",
-            default=""
+            data,
+            "rejectionReason",
+            "rejection_reason",
+            default="",
         ) or ""
     ).strip()
 
     renewal_alert_id = get_value(
-        data, "renewalAlertId", "renewal_alert_id"
+        data,
+        "renewalAlertId",
+        "renewal_alert_id",
     )
 
     approval_values, approval_errors = (
@@ -911,22 +1318,33 @@ def claims_list_create(request):
     )
 
     if approval_errors:
-        return json_error(" ".join(approval_errors))
+        return json_error(
+            " ".join(approval_errors)
+        )
 
     if not patient_pk:
-        return json_error("Patient is required.")
+        return json_error(
+            "Patient is required."
+        )
 
     patient = get_patient(patient_pk)
 
     if not patient:
-        return json_error("Patient was not found.", 404)
+        return json_error(
+            "Patient was not found.",
+            404,
+        )
 
     if not claim_id and not renewal_alert_id:
-        return json_error("Claim ID is required.")
+        return json_error(
+            "Claim ID is required."
+        )
 
     status_error = validate_status(
-        status, rejection_reason
+        status,
+        rejection_reason,
     )
+
     if status_error:
         return json_error(status_error)
 
@@ -938,7 +1356,9 @@ def claims_list_create(request):
                 try:
                     renewal_alert = (
                         RenewalAlert.objects
-                        .select_for_update()
+                        .select_for_update(
+                            of=("self",)
+                        )
                         .get(
                             pk=renewal_alert_id,
                             patient_id=patient.pk,
@@ -951,11 +1371,13 @@ def claims_list_create(request):
                     TypeError,
                 ):
                     return json_error(
-                        "Renewal alert was not found.", 404
+                        "Renewal alert was not found.",
+                        404,
                     )
 
                 if renewal_alert.status in {
-                    "Submitted", "Approved"
+                    "Submitted",
+                    "Approved",
                 }:
                     return json_error(
                         "This renewal has already been "
@@ -963,7 +1385,10 @@ def claims_list_create(request):
                         409,
                     )
 
-                if renewal_alert.renewal_date != hospital_today():
+                if (
+                    renewal_alert.renewal_date
+                    != hospital_today()
+                ):
                     return json_error(
                         "This renewal can only be submitted "
                         "on its scheduled renewal date."
@@ -974,8 +1399,12 @@ def claims_list_create(request):
                 if renewal_alert.claim_id:
                     claim = (
                         Claim.objects
-                        .select_for_update()
-                        .filter(pk=renewal_alert.claim_id)
+                        .select_for_update(
+                            of=("self",)
+                        )
+                        .filter(
+                            pk=renewal_alert.claim_id
+                        )
                         .first()
                     )
 
@@ -985,7 +1414,9 @@ def claims_list_create(request):
                 ):
                     claim = (
                         Claim.objects
-                        .select_for_update()
+                        .select_for_update(
+                            of=("self",)
+                        )
                         .filter(
                             patient_id=patient.pk,
                             claim_id__iexact=(
@@ -997,22 +1428,46 @@ def claims_list_create(request):
 
                 if not claim:
                     return json_error(
-                        "No existing claim is linked to this renewal. "
-                        "Link the original claim before resubmitting."
+                        "No existing claim is linked to "
+                        "this renewal. Link the original "
+                        "claim before resubmitting."
                     )
 
                 if claim.patient_id != patient.pk:
                     return json_error(
-                        "The claim belongs to another patient."
+                        "The claim belongs to "
+                        "another patient."
                     )
 
+                if (
+                    claim_id
+                    and claim_id.lower()
+                    != claim.claim_id.lower()
+                ):
+                    return json_error(
+                        "The supplied Claim ID does not "
+                        "match the original claim."
+                    )
+
+                date_error = validate_approval_dates(
+                    approval_values,
+                    claim,
+                )
+
+                if date_error:
+                    return json_error(date_error)
+
                 previous_status = claim.status
-                previous_reason = claim.rejection_reason or ""
+                previous_reason = (
+                    claim.rejection_reason or ""
+                )
 
                 claim.status = "Submitted"
                 claim.rejection_reason = ""
 
-                for field, value in approval_values.items():
+                for field, value in (
+                    approval_values.items()
+                ):
                     setattr(claim, field, value)
 
                 claim.save()
@@ -1027,20 +1482,38 @@ def claims_list_create(request):
                         or previous_reason
                     ),
                     notes=(
-                        "Claim resubmitted from the "
-                        "renewal reminder."
+                        "Claim resubmitted from "
+                        "the renewal reminder."
                     ),
-                    renewal_date=renewal_alert.renewal_date,
+                    renewal_date=(
+                        renewal_alert.renewal_date
+                    ),
                     user=request.user,
                 )
 
                 renewal_alert.claim = claim
-                renewal_alert.claim_id_value = claim.claim_id
+                renewal_alert.claim_id_value = (
+                    claim.claim_id
+                )
                 renewal_alert.status = "Submitted"
-                renewal_alert.submission_date = timezone.now()
+                renewal_alert.submission_date = (
+                    timezone.now()
+                )
                 renewal_alert.save()
 
+                sync_claim_renewal_alerts(
+                    claim,
+                    status="Submitted",
+                )
+
             else:
+                date_error = validate_approval_dates(
+                    approval_values
+                )
+
+                if date_error:
+                    return json_error(date_error)
+
                 existing = Claim.objects.filter(
                     patient=patient,
                     claim_id__iexact=claim_id,
@@ -1048,8 +1521,9 @@ def claims_list_create(request):
 
                 if existing:
                     return json_error(
-                        "This Claim ID already exists for this patient. "
-                        "Use the existing claim's renewal reminder "
+                        "This Claim ID already exists "
+                        "for this patient. Use the "
+                        "existing claim's renewal reminder "
                         "to resubmit it.",
                         409,
                         existingClaimPk=existing.pk,
@@ -1061,7 +1535,8 @@ def claims_list_create(request):
                     status=status,
                     rejection_reason=(
                         rejection_reason
-                        if status == "Rejected" else ""
+                        if status == "Rejected"
+                        else ""
                     ),
                     created_by=request.user,
                     **approval_values,
@@ -1073,7 +1548,8 @@ def claims_list_create(request):
                     new_status=status,
                     rejection_reason=(
                         rejection_reason
-                        if status == "Rejected" else ""
+                        if status == "Rejected"
+                        else ""
                     ),
                     notes="Claim created.",
                     user=request.user,
@@ -1081,14 +1557,13 @@ def claims_list_create(request):
 
     except IntegrityError:
         return json_error(
-            "This Claim ID already exists for this patient.",
+            "This Claim ID already exists "
+            "for this patient.",
             409,
         )
 
-    claim = (
-        Claim.objects
-        .select_related("patient", "created_by")
-        .get(pk=claim.pk)
+    claim = claim_queryset().get(
+        pk=claim.pk
     )
 
     response = {
@@ -1103,14 +1578,22 @@ def claims_list_create(request):
     if renewal_alert_id:
         alert = (
             RenewalAlert.objects
-            .select_related("patient", "claim")
+            .select_related(
+                "patient",
+                "claim",
+            )
             .get(pk=renewal_alert_id)
         )
-        response["alert"] = alert_to_dict(alert)
+
+        response["alert"] = alert_to_dict(
+            alert
+        )
 
     return JsonResponse(
         response,
-        status=200 if renewal_alert_id else 201,
+        status=(
+            200 if renewal_alert_id else 201
+        ),
     )
 
 
@@ -1121,11 +1604,15 @@ def claims_list_create(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def claims_bulk_import(request):
-    permission_error = require_claim_manager(request)
+    permission_error = require_claim_manager(
+        request
+    )
+
     if permission_error:
         return permission_error
 
     data, error = read_json(request)
+
     if error:
         return error
 
@@ -1141,9 +1628,13 @@ def claims_bulk_import(request):
     failed_count = 0
     results = []
 
-    for index, original_row in enumerate(rows, start=1):
+    for index, original_row in enumerate(
+        rows,
+        start=1,
+    ):
         if not isinstance(original_row, dict):
             failed_count += 1
+
             results.append({
                 "row": index + 1,
                 "status": "failed",
@@ -1151,8 +1642,14 @@ def claims_bulk_import(request):
             })
             continue
 
-        row = normalize_import_row(original_row)
-        excel_row = row.get("rowNumber", index + 1)
+        row = normalize_import_row(
+            original_row
+        )
+
+        excel_row = row.get(
+            "rowNumber",
+            index + 1,
+        )
 
         try:
             with transaction.atomic():
@@ -1168,20 +1665,29 @@ def claims_bulk_import(request):
                 )
 
                 patient, patient_error = (
-                    find_patient_by_file_number(file_number)
+                    find_patient_by_file_number(
+                        file_number
+                    )
                 )
 
                 if patient_error:
-                    raise ValueError(patient_error)
+                    raise ValueError(
+                        patient_error
+                    )
 
                 claim_id = str(
                     get_value(
-                        row, "claim_id", "claimId", default=""
+                        row,
+                        "claim_id",
+                        "claimId",
+                        default="",
                     ) or ""
                 ).strip()
 
                 if not claim_id:
-                    raise ValueError("Claim ID is required.")
+                    raise ValueError(
+                        "Claim ID is required."
+                    )
 
                 status = get_status(row)
 
@@ -1195,15 +1701,19 @@ def claims_bulk_import(request):
                 ).strip()
 
                 status_error = validate_status(
-                    status, rejection_reason
+                    status,
+                    rejection_reason,
                 )
 
                 if status_error:
-                    raise ValueError(status_error)
+                    raise ValueError(
+                        status_error
+                    )
 
                 approval_values, approval_errors = (
                     approval_values_from_data(
-                        row, importing=True
+                        row,
+                        importing=True,
                     )
                 )
 
@@ -1214,7 +1724,9 @@ def claims_bulk_import(request):
 
                 claim = (
                     Claim.objects
-                    .select_for_update()
+                    .select_for_update(
+                        of=("self",)
+                    )
                     .filter(
                         patient=patient,
                         claim_id__iexact=claim_id,
@@ -1222,20 +1734,44 @@ def claims_bulk_import(request):
                     .first()
                 )
 
+                date_error = validate_approval_dates(
+                    approval_values,
+                    claim,
+                )
+
+                if date_error:
+                    raise ValueError(
+                        date_error
+                    )
+
                 if claim:
                     previous_status = claim.status
                     previous_reason = (
                         claim.rejection_reason or ""
                     )
 
+                    changed_fields = (
+                        approval_changes(
+                            claim,
+                            approval_values,
+                        )
+                    )
+
                     claim.status = status
                     claim.rejection_reason = (
                         rejection_reason
-                        if status == "Rejected" else ""
+                        if status == "Rejected"
+                        else ""
                     )
 
-                    for field, value in approval_values.items():
-                        setattr(claim, field, value)
+                    for field, value in (
+                        approval_values.items()
+                    ):
+                        setattr(
+                            claim,
+                            field,
+                            value,
+                        )
 
                     claim.save()
 
@@ -1258,22 +1794,25 @@ def claims_bulk_import(request):
                                 else previous_reason
                             ),
                             notes=(
-                                "Claim updated from Excel "
-                                "approval import."
+                                "Claim updated from "
+                                "Excel approval import."
                             ),
                             user=request.user,
                         )
 
                     elif (
                         status == "Rejected"
-                        and previous_reason != rejection_reason
+                        and previous_reason
+                        != rejection_reason
                     ):
                         record_claim_history(
                             claim=claim,
                             event="Rejected",
                             previous_status=previous_status,
                             new_status=status,
-                            rejection_reason=rejection_reason,
+                            rejection_reason=(
+                                rejection_reason
+                            ),
                             notes=(
                                 "Rejection details updated "
                                 "from Excel import."
@@ -1281,9 +1820,31 @@ def claims_bulk_import(request):
                             user=request.user,
                         )
 
+                    elif changed_fields:
+                        record_claim_history(
+                            claim=claim,
+                            event="Updated",
+                            previous_status=status,
+                            new_status=status,
+                            notes=(
+                                "Excel import updated: "
+                                + ", ".join(
+                                    changed_fields
+                                )
+                                + "."
+                            ),
+                            user=request.user,
+                        )
+
+                    sync_claim_renewal_alerts(
+                        claim
+                    )
+
                     updated_count += 1
                     result_status = "updated"
-                    result_message = "Existing claim updated."
+                    result_message = (
+                        "Existing claim updated."
+                    )
 
                 else:
                     claim = Claim.objects.create(
@@ -1292,7 +1853,8 @@ def claims_bulk_import(request):
                         status=status,
                         rejection_reason=(
                             rejection_reason
-                            if status == "Rejected" else ""
+                            if status == "Rejected"
+                            else ""
                         ),
                         created_by=request.user,
                         **approval_values,
@@ -1304,11 +1866,12 @@ def claims_bulk_import(request):
                         new_status=status,
                         rejection_reason=(
                             rejection_reason
-                            if status == "Rejected" else ""
+                            if status == "Rejected"
+                            else ""
                         ),
                         notes=(
-                            "Claim created from Excel "
-                            "approval import."
+                            "Claim created from "
+                            "Excel approval import."
                         ),
                         user=request.user,
                     )
@@ -1319,29 +1882,25 @@ def claims_bulk_import(request):
                         "Claim imported successfully."
                     )
 
-                linked_alerts = RenewalAlert.objects.filter(
-                    claim=claim
-                )
-
-                for alert in linked_alerts:
-                    alert.status = claim.status
-                    alert.save()
-
-                claim = (
-                    Claim.objects
-                    .select_related("patient", "created_by")
-                    .get(pk=claim.pk)
+                claim = claim_queryset().get(
+                    pk=claim.pk
                 )
 
                 results.append({
                     "row": excel_row,
                     "status": result_status,
                     "message": result_message,
-                    "claim": claim_to_dict(claim),
+                    "claim": claim_to_dict(
+                        claim
+                    ),
                 })
 
-        except (ValueError, IntegrityError) as exc:
+        except (
+            ValueError,
+            IntegrityError,
+        ) as exc:
             failed_count += 1
+
             results.append({
                 "row": excel_row,
                 "status": "failed",
@@ -1350,13 +1909,15 @@ def claims_bulk_import(request):
 
         except Exception:
             failed_count += 1
+
             results.append({
                 "row": excel_row,
                 "status": "failed",
                 "message": (
-                    "Could not import this row. Check the "
-                    "patient number, claim ID, dates, "
-                    "and approval values."
+                    "Could not import this row. "
+                    "Check the patient number, "
+                    "claim ID, dates, and "
+                    "approval values."
                 ),
             })
 
@@ -1385,27 +1946,41 @@ def claims_bulk_import(request):
 # =========================================================
 
 @csrf_exempt
-@require_http_methods(["GET", "PUT", "PATCH", "DELETE"])
+@require_http_methods([
+    "GET",
+    "PUT",
+    "PATCH",
+    "DELETE",
+])
 def claim_detail(request, claim_pk):
     login_error = require_login(
-        request, "Please log in to view claims."
+        request,
+        "Please log in to view claims.",
     )
+
     if login_error:
         return login_error
 
     try:
-        claim = (
-            Claim.objects
-            .select_related("patient", "created_by")
-            .get(pk=claim_pk)
+        claim = claim_queryset().get(
+            pk=claim_pk
         )
     except (
-        Claim.DoesNotExist, ValueError, TypeError
+        Claim.DoesNotExist,
+        ValueError,
+        TypeError,
+        OverflowError,
     ):
-        return json_error("Claim was not found.", 404)
+        return json_error(
+            "Claim was not found.",
+            404,
+        )
 
     if request.method == "GET":
-        claim_data = claim_to_dict(claim)
+        claim_data = claim_to_dict(
+            claim
+        )
+
         return JsonResponse({
             "claim": claim_data,
             **claim_data,
@@ -1414,85 +1989,97 @@ def claim_detail(request, claim_pk):
     # =====================================================
     # DELETE CLAIM
     # =====================================================
-    # Do not use the general editing permission here.
-    # Admin and RCM privileges do not bypass the
-    # original-creator restriction.
 
     if request.method == "DELETE":
         try:
             with transaction.atomic():
-                # Lock only the Claim table row.
-                # This avoids PostgreSQL errors involving
-                # nullable joins and SELECT FOR UPDATE.
                 claim = (
                     Claim.objects
-                    .select_for_update(of=("self",))
+                    .select_for_update(
+                        of=("self",)
+                    )
                     .get(pk=claim_pk)
                 )
 
                 permission_error = (
                     claim_deletion_permission_error(
-                        request, claim
+                        request,
+                        claim,
                     )
                 )
 
                 if permission_error:
                     return permission_error
 
-                # Lock the history records for inspection.
                 history_records = list(
                     ClaimHistory.objects
                     .select_for_update()
-                    .filter(claim_id=claim.pk)
-                    .order_by("created_at", "pk")
+                    .filter(
+                        claim_id=claim.pk
+                    )
+                    .order_by(
+                        "created_at",
+                        "pk",
+                    )
                 )
 
                 if (
                     len(history_records) != 1
-                    or history_records[0].event != "Created"
+                    or history_records[0].event
+                    != "Created"
                 ):
                     return json_error(
-                        "This claim has additional history "
-                        "and cannot be deleted. Only newly "
-                        "created claims with one initial "
-                        "Created history record can be deleted.",
+                        "This claim has additional "
+                        "history and cannot be deleted. "
+                        "Only newly created claims "
+                        "with one initial Created "
+                        "history record can be deleted.",
                         409,
                     )
 
-                # Block deletion if there is a linked
-                # reminder, including one referencing the
-                # claim by patient and Claim ID only.
-                if claim_has_renewal_alerts(claim):
+                if claim_has_renewal_alerts(
+                    claim
+                ):
                     return json_error(
-                        "This claim is linked to renewal "
-                        "reminders and cannot be deleted.",
+                        "This claim is linked to "
+                        "renewal reminders and "
+                        "cannot be deleted.",
                         409,
                     )
 
                 deleted_claim_pk = claim.pk
 
-                # Delete history first to accommodate
-                # protected foreign-key relationships.
                 history_records[0].delete()
                 claim.delete()
 
         except (
-            Claim.DoesNotExist, ValueError, TypeError
+            Claim.DoesNotExist,
+            ValueError,
+            TypeError,
         ):
             return json_error(
-                "Claim was not found.", 404
+                "Claim was not found.",
+                404,
             )
 
-        except (ProtectedError, IntegrityError):
+        except (
+            ProtectedError,
+            IntegrityError,
+        ):
             return json_error(
-                "This claim is linked to protected "
-                "records and cannot be deleted.",
+                "This claim is linked to "
+                "protected records and "
+                "cannot be deleted.",
                 409,
             )
 
         return JsonResponse({
-            "message": "Claim deleted successfully.",
-            "deletedClaimPk": deleted_claim_pk,
+            "message": (
+                "Claim deleted successfully."
+            ),
+            "deletedClaimPk": (
+                deleted_claim_pk
+            ),
         })
 
     # =====================================================
@@ -1500,16 +2087,22 @@ def claim_detail(request, claim_pk):
     # =====================================================
 
     permission_error = claim_permission_error(
-        request, claim
+        request,
+        claim,
     )
+
     if permission_error:
         return permission_error
 
     data, error = read_json(request)
+
     if error:
         return error
 
-    status = get_status(data, claim.status)
+    status = get_status(
+        data,
+        claim.status,
+    )
 
     rejection_reason = str(
         get_value(
@@ -1525,13 +2118,19 @@ def claim_detail(request, claim_pk):
     )
 
     if approval_errors:
-        return json_error(" ".join(approval_errors))
+        return json_error(
+            " ".join(approval_errors)
+        )
 
     status_error = validate_status(
-        status, rejection_reason
+        status,
+        rejection_reason,
     )
+
     if status_error:
-        return json_error(status_error)
+        return json_error(
+            status_error
+        )
 
     alert_id = get_value(
         data,
@@ -1545,29 +2144,56 @@ def claim_detail(request, claim_pk):
         with transaction.atomic():
             claim = (
                 Claim.objects
-                .select_for_update(of=("self",))
-                .select_related("patient", "created_by")
+                .select_for_update(
+                    of=("self",)
+                )
                 .get(pk=claim_pk)
             )
 
-            permission_error = claim_permission_error(
-                request, claim
+            permission_error = (
+                claim_permission_error(
+                    request,
+                    claim,
+                )
             )
+
             if permission_error:
                 return permission_error
 
+            date_error = validate_approval_dates(
+                approval_values,
+                claim,
+            )
+
+            if date_error:
+                return json_error(
+                    date_error
+                )
+
             previous_status = claim.status
-            previous_reason = claim.rejection_reason or ""
+            previous_reason = (
+                claim.rejection_reason or ""
+            )
+
+            changed_fields = approval_changes(
+                claim,
+                approval_values,
+            )
+
             alert = None
 
             if alert_id:
                 try:
                     alert = (
                         RenewalAlert.objects
-                        .select_for_update(of=("self",))
+                        .select_for_update(
+                            of=("self",)
+                        )
                         .get(
                             pk=alert_id,
-                            patient_id=claim.patient_id,
+                            patient_id=(
+                                claim.patient_id
+                            ),
                             alert_type="renewal",
                         )
                     )
@@ -1577,7 +2203,8 @@ def claim_detail(request, claim_pk):
                     TypeError,
                 ):
                     return json_error(
-                        "Renewal alert was not found.", 404
+                        "Renewal alert was not found.",
+                        404,
                     )
 
                 if (
@@ -1585,12 +2212,14 @@ def claim_detail(request, claim_pk):
                     and alert.claim_id != claim.pk
                 ):
                     return json_error(
-                        "This alert belongs to another claim."
+                        "This alert belongs "
+                        "to another claim."
                     )
 
                 if alert.status == "Approved":
                     return json_error(
-                        "This renewal has already been approved.",
+                        "This renewal has already "
+                        "been approved.",
                         409,
                     )
 
@@ -1599,42 +2228,58 @@ def claim_detail(request, claim_pk):
                     and status == "Submitted"
                 ):
                     return json_error(
-                        "This renewal has already been submitted.",
+                        "This renewal has already "
+                        "been submitted.",
                         409,
                     )
 
                 if (
                     status == "Submitted"
-                    and alert.renewal_date != hospital_today()
+                    and alert.renewal_date
+                    != hospital_today()
                 ):
                     return json_error(
-                        "This renewal can only be submitted "
-                        "on its scheduled renewal date."
+                        "This renewal can only "
+                        "be submitted on its "
+                        "scheduled renewal date."
                     )
 
             claim.status = status
+
             claim.rejection_reason = (
                 rejection_reason
-                if status == "Rejected" else ""
+                if status == "Rejected"
+                else ""
             )
 
-            for field, value in approval_values.items():
-                setattr(claim, field, value)
+            for field, value in (
+                approval_values.items()
+            ):
+                setattr(
+                    claim,
+                    field,
+                    value,
+                )
 
             claim.save()
 
             if previous_status != status:
                 if status == "Rejected":
                     event = "Rejected"
+
                 elif (
                     status == "Submitted"
-                    and previous_status == "Rejected"
+                    and previous_status
+                    == "Rejected"
                 ):
                     event = "Resubmitted"
+
                 elif status == "Submitted":
                     event = "Submitted"
+
                 elif status == "Approved":
                     event = "Approved"
+
                 else:
                     event = "Status Changed"
 
@@ -1651,81 +2296,125 @@ def claim_detail(request, claim_pk):
                     notes=(
                         "Claim resubmitted."
                         if event == "Resubmitted"
-                        else "Claim status updated."
+                        else (
+                            "Claim status updated."
+                            + (
+                                " Updated fields: "
+                                + ", ".join(
+                                    changed_fields
+                                )
+                                + "."
+                                if changed_fields
+                                else ""
+                            )
+                        )
                     ),
                     renewal_date=(
-                        alert.renewal_date if alert else None
+                        alert.renewal_date
+                        if alert
+                        else None
                     ),
                     user=request.user,
                 )
 
             elif (
                 status == "Rejected"
-                and previous_reason != rejection_reason
+                and previous_reason
+                != rejection_reason
             ):
                 record_claim_history(
                     claim=claim,
                     event="Rejected",
-                    previous_status=previous_status,
+                    previous_status=(
+                        previous_status
+                    ),
                     new_status=status,
-                    rejection_reason=rejection_reason,
-                    notes="Claim rejection reason updated.",
+                    rejection_reason=(
+                        rejection_reason
+                    ),
+                    notes=(
+                        "Claim rejection "
+                        "reason updated."
+                    ),
                     user=request.user,
                 )
 
-            # Synchronize linked renewal alerts.
-            alerts_to_update = RenewalAlert.objects.filter(
-                claim=claim
-            )
+            elif changed_fields:
+                record_claim_history(
+                    claim=claim,
+                    event="Updated",
+                    previous_status=status,
+                    new_status=status,
+                    notes=(
+                        "Updated approval details: "
+                        + ", ".join(
+                            changed_fields
+                        )
+                        + "."
+                    ),
+                    user=request.user,
+                )
 
             if alert:
                 alert.claim = claim
-                alert.claim_id_value = claim.claim_id
-
-                # Save the newly linked alert explicitly.
-                if status == "Submitted":
-                    alert.submission_date = timezone.now()
-
-                alert.save()
-
-                alerts_to_update = (
-                    RenewalAlert.objects
-                    .filter(pk=alert.pk)
+                alert.claim_id_value = (
+                    claim.claim_id
                 )
 
-            for linked_alert in alerts_to_update:
                 if status == "Submitted":
-                    linked_alert.submission_date = (
+                    alert.submission_date = (
                         timezone.now()
                     )
-                linked_alert.save()
+
+                alert.status = status
+                alert.save()
+
+            sync_claim_renewal_alerts(
+                claim,
+                status=status,
+            )
 
     except Claim.DoesNotExist:
-        return json_error("Claim was not found.", 404)
+        return json_error(
+            "Claim was not found.",
+            404,
+        )
 
-    claim = (
-        Claim.objects
-        .select_related("patient", "created_by")
-        .get(pk=claim.pk)
+    claim = claim_queryset().get(
+        pk=claim_pk
     )
 
-    claim_data = claim_to_dict(claim)
+    claim_data = claim_to_dict(
+        claim
+    )
 
     response = {
         "claim": claim_data,
         **claim_data,
-        "message": "Claim updated successfully.",
+        "message": (
+            "Claim updated successfully."
+        ),
     }
 
     if alert_id:
         updated_alert = (
             RenewalAlert.objects
-            .select_related("patient", "claim")
+            .select_related(
+                "patient",
+                "claim",
+            )
             .get(pk=alert_id)
         )
-        response["alert"] = alert_to_dict(updated_alert)
 
-    return JsonResponse(response)
+        response["alert"] = (
+            alert_to_dict(
+                updated_alert
+            )
+        )
+
+    return JsonResponse(
+        response
+    )
 
 
 # =========================================================
@@ -1734,10 +2423,16 @@ def claim_detail(request, claim_pk):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def approve_renewal_alert(request, alert_pk):
-    permission_error = renewal_alert_permission_error(
-        request
+def approve_renewal_alert(
+    request,
+    alert_pk,
+):
+    permission_error = (
+        renewal_alert_permission_error(
+            request
+        )
     )
+
     if permission_error:
         return permission_error
 
@@ -1745,8 +2440,9 @@ def approve_renewal_alert(request, alert_pk):
         with transaction.atomic():
             alert = (
                 RenewalAlert.objects
-                .select_for_update(of=("self",))
-                .select_related("patient", "claim")
+                .select_for_update(
+                    of=("self",)
+                )
                 .get(
                     pk=alert_pk,
                     alert_type="renewal",
@@ -1758,35 +2454,55 @@ def approve_renewal_alert(request, alert_pk):
             if alert.claim_id:
                 claim = (
                     Claim.objects
-                    .select_for_update()
-                    .filter(pk=alert.claim_id)
+                    .select_for_update(
+                        of=("self",)
+                    )
+                    .filter(
+                        pk=alert.claim_id
+                    )
                     .first()
                 )
 
-            if not claim and alert.claim_id_value:
+            if (
+                not claim
+                and alert.claim_id_value
+            ):
                 claim = (
                     Claim.objects
-                    .select_for_update()
+                    .select_for_update(
+                        of=("self",)
+                    )
                     .filter(
-                        patient_id=alert.patient_id,
-                        claim_id__iexact=alert.claim_id_value,
+                        patient_id=(
+                            alert.patient_id
+                        ),
+                        claim_id__iexact=(
+                            alert.claim_id_value
+                        ),
                     )
                     .first()
                 )
 
             if not claim:
                 return json_error(
-                    "This renewal has no linked claim. "
-                    "Link the original claim before approving."
+                    "This renewal has no linked "
+                    "claim. Link the original "
+                    "claim before approving."
                 )
 
-            if claim.patient_id != alert.patient_id:
+            if (
+                claim.patient_id
+                != alert.patient_id
+            ):
                 return json_error(
-                    "The claim belongs to another patient."
+                    "The claim belongs "
+                    "to another patient."
                 )
 
             previous_status = claim.status
-            previous_reason = claim.rejection_reason or ""
+            previous_reason = (
+                claim.rejection_reason or ""
+            )
 
             if claim.status != "Approved":
                 claim.status = "Approved"
@@ -1796,40 +2512,58 @@ def approve_renewal_alert(request, alert_pk):
                 record_claim_history(
                     claim=claim,
                     event="Approved",
-                    previous_status=previous_status,
-                    new_status="Approved",
-                    rejection_reason=previous_reason,
-                    notes=(
-                        "Claim approved from Renewal Alerts."
+                    previous_status=(
+                        previous_status
                     ),
-                    renewal_date=alert.renewal_date,
+                    new_status="Approved",
+                    rejection_reason=(
+                        previous_reason
+                    ),
+                    notes=(
+                        "Claim approved from "
+                        "Renewal Alerts."
+                    ),
+                    renewal_date=(
+                        alert.renewal_date
+                    ),
                     user=request.user,
                 )
 
             alert.claim = claim
-            alert.claim_id_value = claim.claim_id
+            alert.claim_id_value = (
+                claim.claim_id
+            )
             alert.status = "Approved"
             alert.save()
 
-            alert = (
-                RenewalAlert.objects
-                .select_related("patient", "claim")
-                .get(pk=alert.pk)
-            )
-
-            claim = (
-                Claim.objects
-                .select_related("patient", "created_by")
-                .get(pk=claim.pk)
+            sync_claim_renewal_alerts(
+                claim,
+                status="Approved",
             )
 
     except RenewalAlert.DoesNotExist:
         return json_error(
-            "Renewal reminder was not found.", 404
+            "Renewal reminder was not found.",
+            404,
         )
 
+    alert = (
+        RenewalAlert.objects
+        .select_related(
+            "patient",
+            "claim",
+        )
+        .get(pk=alert_pk)
+    )
+
+    claim = claim_queryset().get(
+        pk=claim.pk
+    )
+
     return JsonResponse({
-        "message": "Renewal approved successfully.",
+        "message": (
+            "Renewal approved successfully."
+        ),
         "alert": alert_to_dict(alert),
         "claim": claim_to_dict(claim),
     })
@@ -1841,10 +2575,15 @@ def approve_renewal_alert(request, alert_pk):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-def claim_history_list(request, claim_pk=None):
+def claim_history_list(
+    request,
+    claim_pk=None,
+):
     login_error = require_login(
-        request, "Please log in to view claim history."
+        request,
+        "Please log in to view claim history.",
     )
+
     if login_error:
         return login_error
 
@@ -1856,17 +2595,28 @@ def claim_history_list(request, claim_pk=None):
             "claim__created_by",
             "created_by",
         )
-        .order_by("created_at", "pk")
+        .order_by(
+            "created_at",
+            "pk",
+        )
     )
 
     if claim_pk is not None:
-        if not Claim.objects.filter(pk=claim_pk).exists():
+        if not Claim.objects.filter(
+            pk=claim_pk
+        ).exists():
             return json_error(
-                "Claim was not found.", 404
+                "Claim was not found.",
+                404,
             )
-        queryset = queryset.filter(claim_id=claim_pk)
 
-    query_claim_pk = request.GET.get("claim_pk")
+        queryset = queryset.filter(
+            claim_id=claim_pk
+        )
+
+    query_claim_pk = request.GET.get(
+        "claim_pk"
+    )
 
     claim_id = (
         request.GET.get("claim_id")
@@ -1874,22 +2624,35 @@ def claim_history_list(request, claim_pk=None):
         or ""
     ).strip()
 
-    patient_id = request.GET.get("patient_id")
-    event = request.GET.get("event", "").strip()
+    patient_id = request.GET.get(
+        "patient_id"
+    )
 
-    if query_claim_pk and claim_pk is None:
+    event = request.GET.get(
+        "event",
+        "",
+    ).strip()
+
+    if (
+        query_claim_pk
+        and claim_pk is None
+    ):
         queryset = queryset.filter(
             claim_id=query_claim_pk
         )
 
     if claim_id:
         queryset = queryset.filter(
-            claim__claim_id__iexact=claim_id
+            claim__claim_id__iexact=(
+                claim_id
+            )
         )
 
     if patient_id:
         queryset = queryset.filter(
-            claim__patient_id=patient_id
+            claim__patient_id=(
+                patient_id
+            )
         )
 
     if event:
@@ -1911,23 +2674,37 @@ def claim_history_list(request, claim_pk=None):
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
-def renewal_alerts_list_create(request):
+def renewal_alerts_list_create(
+    request,
+):
     if request.method == "GET":
         login_error = require_login(
             request,
-            "Please log in to view renewal reminders.",
+            "Please log in to view "
+            "renewal reminders.",
         )
+
         if login_error:
             return login_error
 
         queryset = (
             RenewalAlert.objects
-            .select_related("patient", "claim")
-            .filter(alert_type="renewal")
-            .order_by("renewal_date", "pk")
+            .select_related(
+                "patient",
+                "claim",
+            )
+            .filter(
+                alert_type="renewal"
+            )
+            .order_by(
+                "renewal_date",
+                "pk",
+            )
         )
 
-        patient_id = request.GET.get("patient_id")
+        patient_id = request.GET.get(
+            "patient_id"
+        )
 
         claim_id = (
             request.GET.get("claim_id")
@@ -1936,16 +2713,22 @@ def renewal_alerts_list_create(request):
         ).strip()
 
         selected_date = request.GET.get(
-            "date", ""
+            "date",
+            "",
         ).strip()
 
         selected_month = request.GET.get(
-            "month", ""
+            "month",
+            "",
         ).strip()
 
-        include_all = request.GET.get(
-            "all", ""
-        ).lower() in {"1", "true", "yes"}
+        include_all = (
+            request.GET.get(
+                "all",
+                "",
+            ).lower()
+            in {"1", "true", "yes"}
+        )
 
         if patient_id:
             queryset = queryset.filter(
@@ -1954,15 +2737,20 @@ def renewal_alerts_list_create(request):
 
         if claim_id:
             queryset = queryset.filter(
-                claim_id_value__iexact=claim_id
+                claim_id_value__iexact=(
+                    claim_id
+                )
             )
 
         if selected_date:
-            parsed = parse_date(selected_date)
+            parsed = parse_date(
+                selected_date
+            )
 
             if not parsed:
                 return json_error(
-                    "date must use YYYY-MM-DD format."
+                    "date must use "
+                    "YYYY-MM-DD format."
                 )
 
             queryset = queryset.filter(
@@ -1971,17 +2759,25 @@ def renewal_alerts_list_create(request):
 
         elif selected_month:
             try:
-                month_start = date.fromisoformat(
-                    f"{selected_month}-01"
+                month_start = (
+                    date.fromisoformat(
+                        f"{selected_month}-01"
+                    )
                 )
-            except (ValueError, TypeError):
+            except (
+                ValueError,
+                TypeError,
+            ):
                 return json_error(
-                    "month must use YYYY-MM format."
+                    "month must use "
+                    "YYYY-MM format."
                 )
 
             if month_start.month == 12:
                 month_end = date(
-                    month_start.year + 1, 1, 1
+                    month_start.year + 1,
+                    1,
+                    1,
                 )
             else:
                 month_end = date(
@@ -1991,13 +2787,19 @@ def renewal_alerts_list_create(request):
                 )
 
             queryset = queryset.filter(
-                renewal_date__gte=month_start,
-                renewal_date__lt=month_end,
+                renewal_date__gte=(
+                    month_start
+                ),
+                renewal_date__lt=(
+                    month_end
+                ),
             )
 
         elif not include_all:
             queryset = queryset.filter(
-                renewal_date=hospital_today()
+                renewal_date=(
+                    hospital_today()
+                )
             )
 
         return JsonResponse({
@@ -2009,35 +2811,52 @@ def renewal_alerts_list_create(request):
 
     login_error = require_login(
         request,
-        "Please log in to create renewal reminders.",
+        "Please log in to create "
+        "renewal reminders.",
     )
+
     if login_error:
         return login_error
 
-    data, error = read_json(request)
+    data, error = read_json(
+        request
+    )
+
     if error:
         return error
 
     patient_pk = get_value(
-        data, "patientId", "patient_id"
+        data,
+        "patientId",
+        "patient_id",
     )
 
     claim_pk = get_value(
-        data, "claimPk", "claim_pk"
+        data,
+        "claimPk",
+        "claim_pk",
     )
 
     claim_id_value = str(
         get_value(
-            data, "claimId", "claim_id", default=""
+            data,
+            "claimId",
+            "claim_id",
+            default="",
         ) or ""
     ).strip()
 
     renewal_date_value = get_value(
-        data, "renewalDate", "renewal_date"
+        data,
+        "renewalDate",
+        "renewal_date",
     )
 
     message = str(
-        data.get("message", "") or ""
+        data.get(
+            "message",
+            "",
+        ) or ""
     ).strip()
 
     rejection_reason = str(
@@ -2060,29 +2879,39 @@ def renewal_alerts_list_create(request):
 
     if alert_type != "renewal":
         return json_error(
-            "Only renewal reminders are supported."
+            "Only renewal reminders "
+            "are supported."
         )
 
     if not patient_pk:
-        return json_error("Patient is required.")
+        return json_error(
+            "Patient is required."
+        )
 
-    patient = get_patient(patient_pk)
+    patient = get_patient(
+        patient_pk
+    )
 
     if not patient:
         return json_error(
-            "Patient was not found.", 404
+            "Patient was not found.",
+            404,
         )
 
-    parsed_date = parse_date(renewal_date_value)
+    parsed_date = parse_date(
+        renewal_date_value
+    )
 
     if not parsed_date:
         return json_error(
-            "Renewal date must use YYYY-MM-DD format."
+            "Renewal date must use "
+            "YYYY-MM-DD format."
         )
 
     if parsed_date < hospital_today():
         return json_error(
-            "The renewal date cannot be in the past."
+            "The renewal date "
+            "cannot be in the past."
         )
 
     claim = None
@@ -2094,23 +2923,28 @@ def renewal_alerts_list_create(request):
                 patient_id=patient.pk,
             )
         except (
-            Claim.DoesNotExist, ValueError, TypeError
+            Claim.DoesNotExist,
+            ValueError,
+            TypeError,
         ):
             return json_error(
-                "The linked claim was not found "
-                "for this patient.",
+                "The linked claim was not "
+                "found for this patient.",
                 404,
             )
 
     elif claim_id_value:
         claim = Claim.objects.filter(
             patient_id=patient.pk,
-            claim_id__iexact=claim_id_value,
+            claim_id__iexact=(
+                claim_id_value
+            ),
         ).first()
 
         if not claim:
             return json_error(
-                "No claim was found with this Claim ID "
+                "No claim was found "
+                "with this Claim ID "
                 "for the patient.",
                 404,
             )
@@ -2118,71 +2952,100 @@ def renewal_alerts_list_create(request):
     if claim:
         claim_id_value = claim.claim_id
 
-    if claim_id_value:
-        duplicate = RenewalAlert.objects.filter(
+    if not claim:
+        return json_error(
+            "A renewal reminder must "
+            "be linked to an existing claim."
+        )
+
+    duplicate = (
+        RenewalAlert.objects
+        .filter(
             patient=patient,
-            claim_id_value__iexact=claim_id_value,
+            claim_id_value__iexact=(
+                claim_id_value
+            ),
             alert_type="renewal",
             renewal_date=parsed_date,
             status="Pending",
-        ).first()
+        )
+        .first()
+    )
 
-        if duplicate:
-            duplicate = (
-                RenewalAlert.objects
-                .select_related("patient", "claim")
-                .get(pk=duplicate.pk)
+    if duplicate:
+        duplicate = (
+            RenewalAlert.objects
+            .select_related(
+                "patient",
+                "claim",
             )
+            .get(pk=duplicate.pk)
+        )
 
-            return JsonResponse({
-                "alert": alert_to_dict(duplicate),
-                "duplicate": True,
-                "message": (
-                    "A matching pending renewal reminder "
-                    "already exists."
-                ),
-            })
+        return JsonResponse({
+            "alert": alert_to_dict(
+                duplicate
+            ),
+            "duplicate": True,
+            "message": (
+                "A matching pending "
+                "renewal reminder "
+                "already exists."
+            ),
+        })
 
     with transaction.atomic():
         alert = RenewalAlert.objects.create(
             patient=patient,
             claim=claim,
-            claim_id_value=claim_id_value,
-            alert_type=alert_type,
+            claim_id_value=(
+                claim_id_value
+            ),
+            alert_type="renewal",
             renewal_date=parsed_date,
-            rejection_reason=rejection_reason,
+            rejection_reason=(
+                rejection_reason
+            ),
             message=message,
         )
 
-        if claim:
-            record_claim_history(
-                claim=claim,
-                event="Renewal Scheduled",
-                previous_status=claim.status,
-                new_status=claim.status,
-                rejection_reason=(
-                    rejection_reason
-                    or claim.rejection_reason
-                ),
-                notes=(
-                    message
-                    or "A renewal reminder was scheduled."
-                ),
-                renewal_date=parsed_date,
-                user=request.user,
-            )
+        record_claim_history(
+            claim=claim,
+            event="Renewal Scheduled",
+            previous_status=claim.status,
+            new_status=claim.status,
+            rejection_reason=(
+                rejection_reason
+                or claim.rejection_reason
+            ),
+            notes=(
+                message
+                or (
+                    "A renewal reminder "
+                    "was scheduled."
+                )
+            ),
+            renewal_date=parsed_date,
+            user=request.user,
+        )
 
     alert = (
         RenewalAlert.objects
-        .select_related("patient", "claim")
+        .select_related(
+            "patient",
+            "claim",
+        )
         .get(pk=alert.pk)
     )
 
     return JsonResponse(
         {
-            "alert": alert_to_dict(alert),
+            "alert": alert_to_dict(
+                alert
+            ),
             "message": (
-                "Renewal reminder created successfully."
+                "Renewal reminder "
+                "created successfully."
             ),
         },
         status=201,
@@ -2194,39 +3057,61 @@ def renewal_alerts_list_create(request):
 # =========================================================
 
 @csrf_exempt
-@require_http_methods(["GET", "PATCH", "PUT", "DELETE"])
-def renewal_alert_detail(request, alert_pk):
+@require_http_methods([
+    "GET",
+    "PATCH",
+    "PUT",
+    "DELETE",
+])
+def renewal_alert_detail(
+    request,
+    alert_pk,
+):
     login_error = require_login(
         request,
-        "Please log in to view renewal reminders.",
+        "Please log in to view "
+        "renewal reminders.",
     )
+
     if login_error:
         return login_error
 
     try:
         alert = (
             RenewalAlert.objects
-            .select_related("patient", "claim")
+            .select_related(
+                "patient",
+                "claim",
+            )
             .get(
                 pk=alert_pk,
                 alert_type="renewal",
             )
         )
     except (
-        RenewalAlert.DoesNotExist, ValueError, TypeError
+        RenewalAlert.DoesNotExist,
+        ValueError,
+        TypeError,
     ):
         return json_error(
-            "Renewal reminder was not found.", 404
+            "Renewal reminder "
+            "was not found.",
+            404,
         )
 
     if request.method == "GET":
         return JsonResponse({
-            "alert": alert_to_dict(alert)
+            "alert": alert_to_dict(
+                alert
+            )
         })
 
-    permission_error = renewal_alert_permission_error(
-        request
+    permission_error = (
+        renewal_alert_permission_error(
+            request
+        )
     )
+
     if permission_error:
         return permission_error
 
@@ -2234,8 +3119,9 @@ def renewal_alert_detail(request, alert_pk):
         try:
             alert = (
                 RenewalAlert.objects
-                .select_for_update(of=("self",))
-                .select_related("patient", "claim")
+                .select_for_update(
+                    of=("self",)
+                )
                 .get(
                     pk=alert_pk,
                     alert_type="renewal",
@@ -2243,19 +3129,31 @@ def renewal_alert_detail(request, alert_pk):
             )
         except RenewalAlert.DoesNotExist:
             return json_error(
-                "Renewal reminder was not found.", 404
+                "Renewal reminder "
+                "was not found.",
+                404,
             )
+
+        linked_claim = (
+            Claim.objects.filter(
+                pk=alert.claim_id
+            ).first()
+            if alert.claim_id
+            else None
+        )
 
         if (
             alert.status == "Approved"
             or (
-                alert.claim_id
-                and alert.claim.status == "Approved"
+                linked_claim
+                and linked_claim.status
+                == "Approved"
             )
         ):
             return json_error(
-                "An approved renewal reminder "
-                "cannot be edited or deleted.",
+                "An approved renewal "
+                "reminder cannot be "
+                "edited or deleted.",
                 403,
             )
 
@@ -2266,54 +3164,70 @@ def renewal_alert_detail(request, alert_pk):
             and alert.renewal_date < today
         ):
             return json_error(
-                "Past renewal reminders cannot "
-                "be edited or deleted.",
+                "Past renewal reminders "
+                "cannot be edited "
+                "or deleted.",
                 403,
             )
 
         if alert.status == "Submitted":
             return json_error(
-                "A submitted renewal reminder "
-                "cannot be edited or deleted.",
+                "A submitted renewal "
+                "reminder cannot be "
+                "edited or deleted.",
                 403,
             )
 
         if request.method == "DELETE":
             alert.delete()
+
             return JsonResponse({
                 "message": (
-                    "Renewal reminder deleted successfully."
+                    "Renewal reminder "
+                    "deleted successfully."
                 )
             })
 
-        data, error = read_json(request)
+        data, error = read_json(
+            request
+        )
+
         if error:
             return error
 
         old_date = alert.renewal_date
         old_message = alert.message
 
-        if (
-            "renewal_date" in data
-            or "renewalDate" in data
+        if has_any_key(
+            data,
+            "renewal_date",
+            "renewalDate",
         ):
             raw_date = get_value(
-                data, "renewal_date", "renewalDate"
+                data,
+                "renewal_date",
+                "renewalDate",
             )
 
-            parsed_date = parse_date(raw_date)
+            parsed_date = parse_date(
+                raw_date
+            )
 
             if not parsed_date:
                 return json_error(
-                    "Renewal date must use YYYY-MM-DD format."
+                    "Renewal date must use "
+                    "YYYY-MM-DD format."
                 )
 
             if parsed_date < today:
                 return json_error(
-                    "The renewal date cannot be in the past."
+                    "The renewal date "
+                    "cannot be in the past."
                 )
 
-            alert.renewal_date = parsed_date
+            alert.renewal_date = (
+                parsed_date
+            )
 
         if "message" in data:
             alert.message = str(
@@ -2323,44 +3237,55 @@ def renewal_alert_detail(request, alert_pk):
         alert.save()
 
         if (
-            alert.claim_id
+            linked_claim
             and (
-                old_date != alert.renewal_date
-                or old_message != alert.message
+                old_date
+                != alert.renewal_date
+                or old_message
+                != alert.message
             )
         ):
-            claim = (
-                Claim.objects
-                .select_related("patient", "created_by")
-                .get(pk=alert.claim_id)
-            )
-
             record_claim_history(
-                claim=claim,
+                claim=linked_claim,
                 event="Renewal Scheduled",
-                previous_status=claim.status,
-                new_status=claim.status,
+                previous_status=(
+                    linked_claim.status
+                ),
+                new_status=(
+                    linked_claim.status
+                ),
                 rejection_reason=(
                     alert.rejection_reason
-                    or claim.rejection_reason
+                    or linked_claim.rejection_reason
                 ),
                 notes=(
                     alert.message
-                    or "The renewal reminder was updated."
+                    or (
+                        "The renewal reminder "
+                        "was updated."
+                    )
                 ),
-                renewal_date=alert.renewal_date,
+                renewal_date=(
+                    alert.renewal_date
+                ),
                 user=request.user,
             )
 
-        alert = (
-            RenewalAlert.objects
-            .select_related("patient", "claim")
-            .get(pk=alert.pk)
+    alert = (
+        RenewalAlert.objects
+        .select_related(
+            "patient",
+            "claim",
         )
+        .get(pk=alert_pk)
+    )
 
-        return JsonResponse({
-            "alert": alert_to_dict(alert),
-            "message": (
-                "Renewal reminder updated successfully."
-            ),
-        })
+    return JsonResponse({
+        "alert": alert_to_dict(
+            alert
+        ),
+        "message": (
+            "Renewal reminder "
+            "updated successfully."
+        ),
+    })
