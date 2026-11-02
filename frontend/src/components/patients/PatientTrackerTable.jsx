@@ -1126,6 +1126,7 @@ export default function PatientTrackerTable({
   selectedMonth = "",
   onMonthChange,
   onRefresh,
+  readOnly = false,
 }) {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
@@ -1730,7 +1731,7 @@ export default function PatientTrackerTable({
               the latest RCM claim status.
             </p>
           </div>
-
+          {!readOnly && (
           <div style={styles.headingActions}>
             <label style={styles.importTypeField}>
               <span style={styles.fieldLabel}>IMPORT AS</span>
@@ -1791,7 +1792,8 @@ export default function PatientTrackerTable({
                 ? "Processing..."
                 : "Monthly Rollover"}
             </button>
-          </div>
+          </div> 
+        )}
         </section>
 
         {importSummary && (

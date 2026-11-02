@@ -2,6 +2,7 @@
 import json
 from datetime import date, timedelta
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q, Count
 from django.http import JsonResponse
@@ -35,6 +36,116 @@ SESSION_INSURANCE_TYPES = {
     "cash": "cash",
 }
 
+# NEW: Permission required to view another therapist's tracker.
+# This permission must be registered in Django and assigned
+# only to authorized Call Center, Rehab Manager, and CEO users.
+MANAGEMENT_TRACKER_PERMISSION = (
+    "patients.view_all_therapist_trackers"
+)
+
+
+# ============================================================
+# NEW: MANAGEMENT ACCESS HELPERS
+# ============================================================
+
+def _tracker_can_view_others(user):
+    """
+    Check permission to view another therapist's tracker.
+    """
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+        and user.has_perm(MANAGEMENT_TRACKER_PERMISSION)
+    )
+
+
+def _tracker_can_access(user):
+    """
+    Preserve existing access and additionally allow
+    explicitly authorized management users.
+    """
+    if not user or not getattr(
+        user, "is_authenticated", False
+    ):
+        return False
+
+    return (
+        _can_view_patient_tracker(user)
+        or _tracker_can_view_others(user)
+    )
+
+
+def _tracker_selected_therapist(request):
+    """
+    Resolve the therapist selected in a GET request.
+
+    - Existing physiotherapists can view their own tracker.
+    - Viewing another therapist requires management permission.
+    - Management users must select a therapist.
+    """
+    requested_id = request.GET.get("therapist_id")
+
+    if requested_id is None or requested_id == "":
+        if not _can_view_patient_tracker(request.user):
+            raise PermissionError(
+                "Please select a therapist."
+            )
+
+        return request.user
+
+    try:
+        therapist_id = int(str(requested_id).strip())
+
+        if therapist_id <= 0:
+            raise ValueError
+
+    except (TypeError, ValueError):
+        raise ValueError(
+            "Invalid therapist_id. Use a positive integer."
+        )
+
+    if therapist_id == request.user.pk:
+        if not _can_view_patient_tracker(request.user):
+            raise PermissionError(
+                "You are not authorized to view this tracker."
+            )
+
+        return request.user
+
+    if not _tracker_can_view_others(request.user):
+        raise PermissionError(
+            "You are not authorized to view another "
+            "therapist's patient tracker."
+        )
+
+    User = get_user_model()
+
+    therapist = User.objects.filter(
+        pk=therapist_id,
+        is_active=True,
+    ).first()
+
+    if therapist is None:
+        raise ValueError(
+            "Selected therapist not found or inactive."
+        )
+
+    # Check that the account has therapist assignments.
+    # This is preliminary validation; the actual therapist
+    # role should also be checked using your user model.
+    if not PatientAssignment.objects.filter(
+        therapist_id=therapist.pk
+    ).exists():
+        raise ValueError(
+            "The selected account has no therapist assignments."
+        )
+
+    return therapist
+
+
+# ============================================================
+# EXISTING DATE AND STATUS HELPERS
+# ============================================================
 
 def _tracker_month(value=None):
     """Return the first day of the requested month."""
@@ -372,26 +483,39 @@ def _tracker_get_rcm_approval(patient):
     return "Approved"
 
 
-def _tracker_row(patient, month, user):
-    """Build one patient tracker row."""
+# ============================================================
+# UPDATED: PATIENT TRACKER ROW
+# ============================================================
+
+def _tracker_row(
+    patient,
+    month,
+    user,
+    management_view=False,
+):
+    """
+    Build one patient tracker row.
+
+    Existing physiotherapist behavior remains unchanged.
+
+    Management views use the selected therapist's
+    assignments instead of attributing shared monthly
+    tracker totals to that therapist.
+    """
     record = PatientMonthlyTracker.objects.filter(
         patient=patient,
         month=month,
     ).first()
 
-    if record:
-        sessions = int(record.utilized_sessions or 0)
-        status = record.status
-        last_seen = record.last_seen_date
-        category_counts = _tracker_session_counts(record)
-
-    else:
+    if management_view:
         sessions = _tracker_assignment_session_count(
             patient,
             month,
             user,
         )
+
         status = _tracker_status(sessions)
+
         last_seen = _tracker_last_assignment_date(
             patient,
             month,
@@ -403,6 +527,38 @@ def _tracker_row(patient, month, user):
             "daman_sessions": 0,
             "cash_sessions": 0,
         }
+
+        count_source = "eligible_assignments"
+
+    elif record:
+        sessions = int(record.utilized_sessions or 0)
+        status = record.status
+        last_seen = record.last_seen_date
+        category_counts = _tracker_session_counts(record)
+        count_source = "monthly_tracker"
+
+    else:
+        sessions = _tracker_assignment_session_count(
+            patient,
+            month,
+            user,
+        )
+
+        status = _tracker_status(sessions)
+
+        last_seen = _tracker_last_assignment_date(
+            patient,
+            month,
+            user,
+        )
+
+        category_counts = {
+            "thiqa_sessions": 0,
+            "daman_sessions": 0,
+            "cash_sessions": 0,
+        }
+
+        count_source = "eligible_assignments"
 
     status_labels = dict(
         PatientMonthlyTracker.STATUS_CHOICES
@@ -442,6 +598,10 @@ def _tracker_row(patient, month, user):
         "sessions_taken": sessions,
         "session_count": sessions,
         "sessions_count": sessions,
+        "count_source": count_source,
+        "counts_are_completed_visits": (
+            count_source == "monthly_tracker"
+        ),
         **category_counts,
         "status": status,
         "status_label": status_labels.get(
@@ -641,13 +801,23 @@ def _tracker_record_session(request, data, month):
     )
 
 
+# ============================================================
+# UPDATED: MAIN PATIENT TRACKER API
+# ============================================================
+
 @csrf_exempt
 def patient_tracker_api(request):
     """
     Monthly physiotherapy tracker.
 
-    GET:
-        /patients/tracker/?month=YYYY-MM&search=...
+    GET own tracker:
+        /patients/tracker/?month=YYYY-MM
+
+    GET selected therapist:
+        /patients/tracker/?month=YYYY-MM&therapist_id=123
+
+    Optional search:
+        &search=patient_name_or_file_number
 
     POST record_session:
         {
@@ -665,7 +835,7 @@ def patient_tracker_api(request):
             "month": "2026-10"
         }
     """
-    if not _can_view_patient_tracker(request.user):
+    if not _tracker_can_access(request.user):
         return JsonResponse(
             {"error": "Not authorized"},
             status=403,
@@ -677,10 +847,14 @@ def patient_tracker_api(request):
                 request.GET.get("month")
             )
 
+            selected_therapist = (
+                _tracker_selected_therapist(request)
+            )
+
             eligible_patient_ids = (
                 _tracker_eligible_patient_ids(
                     month,
-                    request.user,
+                    selected_therapist,
                 )
             )
 
@@ -690,19 +864,32 @@ def patient_tracker_api(request):
                 status=400,
             )
 
+        except PermissionError as exc:
+            return JsonResponse(
+                {"error": str(exc)},
+                status=403,
+            )
+
         except Exception:
             return JsonResponse(
                 {
                     "error": (
                         "Unable to load the tracker. "
-                        "Please check the therapist assignment "
+                        "Please check therapist assignments "
                         "and patient registration records."
                     )
                 },
                 status=500,
             )
 
-        _tracker_update_weekly_status(month)
+        management_view = (
+            selected_therapist.pk != request.user.pk
+        )
+
+        # Preserve existing behavior for own tracker.
+        # Management GET requests do not update statuses.
+        if not management_view:
+            _tracker_update_weekly_status(month)
 
         search = (
             request.GET.get("search") or ""
@@ -741,7 +928,8 @@ def patient_tracker_api(request):
             _tracker_row(
                 patient,
                 month,
-                request.user,
+                selected_therapist,
+                management_view=management_view,
             )
             for patient in patients_qs
         ]
@@ -749,12 +937,31 @@ def patient_tracker_api(request):
         return JsonResponse({
             "patients": patient_rows,
             "month": month.strftime("%Y-%m"),
+            "therapist_id": selected_therapist.pk,
+            "count_source": (
+                "eligible_assignments"
+                if management_view
+                else "existing_tracker"
+            ),
         })
 
     if request.method != "POST":
         return JsonResponse(
             {"error": "Method not allowed"},
             status=405,
+        )
+
+    # Management-only accounts cannot record sessions
+    # or run rollover through this endpoint.
+    if not _can_view_patient_tracker(request.user):
+        return JsonResponse(
+            {
+                "error": (
+                    "You are not authorized to modify "
+                    "patient tracker records."
+                )
+            },
+            status=403,
         )
 
     data = _tracker_json_body(request)
