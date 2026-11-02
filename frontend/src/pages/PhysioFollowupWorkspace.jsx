@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
-import DashboardLayout from "../components/DashboardLayout";
 import DashboardNotice from "../components/common/DashboardNotice";
 import PatientTrackerTable from "../components/patients/PatientTrackerTable";
 import PhysioStatisticsSection from "../components/physio/PhysioStatisticsSection";
@@ -64,9 +63,23 @@ const styles = {
     fontWeight: 600,
     color: "#203650",
     background: "#ffffff",
-    outlineColor: "#059669",
+    outlineColor: "#2864e8",
   },
 };
+
+const WORKSPACE_TABS = [
+  { key: "home", label: "Home", icon: "⌂" },
+  { key: "statistics", label: "Statistics", icon: "▥" },
+  { key: "tracker", label: "Patient Tracker", icon: "▤" },
+  {
+    key: "evaluation-tracker",
+    label: "Evaluation Tracker",
+    icon: "◈",
+  },
+  { key: "performance", label: "Performance", icon: "◉" },
+  { key: "referrals", label: "Physio Referrals", icon: "↗" },
+  { key: "leaderboard", label: "Leaderboard", icon: "★" },
+];
 
 function getLocalDateString(date = new Date()) {
   return [
@@ -714,6 +727,15 @@ export default function PhysioFollowupWorkspace({
   const [referralSuccess, setReferralSuccess] = useState("");
 
   const selectedTherapistId = actingAs?.id ?? user?.id ?? null;
+
+  const displayName =
+    actingAs?.name ||
+    actingAs?.display_name ||
+    actingAs?.username ||
+    user?.name ||
+    user?.display_name ||
+    user?.username ||
+    "Physio User";
 
   const loadPatientTracker = useCallback(async () => {
     if (!trackerMonth) return;
@@ -1493,7 +1515,7 @@ export default function PhysioFollowupWorkspace({
     navigate("/admin");
   }, [onStopImpersonation, navigate]);
 
-  const handleSidebarSectionChange = useCallback(
+  const handleSectionChange = useCallback(
     (key) => {
       if (key === "home") {
         navigate("/physio");
@@ -1574,165 +1596,1049 @@ export default function PhysioFollowupWorkspace({
   const statisticsCount = dailyStatistics.rows.length;
 
   return (
-    <DashboardLayout
-      title="Patient Workflow"
-      subtitle={`Welcome, ${
-        actingAs?.name ||
-        actingAs?.username ||
-        user?.name ||
-        user?.username ||
-        "Physio User"
-      }`}
-      accent="#059669"
-      sidebarTitle="Patient Workflow"
-      sidebarItems={[
-        { key: "home", label: "Home" },
-        { key: "statistics", label: `Statistics (${statisticsCount})` },
-        { key: "tracker", label: "Patient Tracker" },
-        { key: "evaluation-tracker", label: "Evaluation Tracker" },
-        { key: "performance", label: "Performance" },
-        { key: "referrals", label: "Physio Referrals" },
-        { key: "leaderboard", label: "Leaderboard" },
-      ]}
-      activeSection={activeSection}
-      setActiveSection={handleSidebarSectionChange}
-      onLogout={onLogout}
-      actingAs={actingAs}
-      actingAsName={actingAs?.name || actingAs?.username}
-      onBackToAdmin={handleBackToAdmin}
-    >
-      {error ? (
-        <DashboardNotice type="error">{error}</DashboardNotice>
-      ) : null}
+    <div className="pfw-page">
+      <div className="pfw-container">
+        {actingAs && (
+          <section className="pfw-admin-banner">
+            <div className="pfw-admin-info">
+              <div className="pfw-admin-icon">↗</div>
 
-      {activeSection === "statistics" && (
-        <PhysioStatisticsSection
-          statisticsDate={statisticsDate}
-          setStatisticsDate={setStatisticsDate}
-          statisticsMonth={statisticsMonth}
-          setStatisticsMonth={setStatisticsMonth}
-          dailyStatistics={dailyStatistics}
-          monthlyStatistics={monthlyStatistics}
-          dailyStatisticsLoading={dailyStatisticsLoading}
-          monthlyStatisticsLoading={monthlyStatisticsLoading}
-          monthlyLabel={getMonthLabel(statisticsMonth)}
-          walkInAssignments={walkInAssignments}
-          appointmentAssignments={appointmentAssignments}
-          initialEvalAssignments={initialEvalAssignments}
-          taskWithoutEligibilityAssignments={
-            taskWithoutEligibilityAssignments
-          }
-          dailyAssignments={physioDailyAssignments}
-          monthlyAssignments={physioMonthlyAssignments}
-        />
-      )}
+              <div>
+                <strong>Administrator view</strong>
+                <p>
+                  You are viewing the workspace as {displayName}.
+                </p>
+              </div>
+            </div>
 
-      {activeSection === "tracker" && (
-        <PatientTrackerTable
-          patients={patientTrackerRows}
-          title="Patient Tracker"
-          selectedMonth={trackerMonth}
-          onMonthChange={setTrackerMonth}
-          monthLabel={getMonthLabel(trackerMonth)}
-          onRefresh={loadPatientTracker}
-        />
-      )}
-
-      {activeSection === "performance" && (
-        <PerformanceDashboard user={user} actingAs={actingAs} />
-      )}
-
-      {activeSection === "evaluation-tracker" && (
-        <div style={styles.stack}>
-          <EvaluationTrackerSection
-            assignments={physioEvaluationAssignments}
-            month={evaluationMonth}
-            onMonthChange={setEvaluationMonth}
-            loading={evaluationLoading}
-            error={evaluationError}
-            onReload={loadEvaluationTracker}
-          />
-        </div>
-      )}
-
-      {activeSection === "referrals" && (
-        <PhysioReferrals
-          patients={referralPatients}
-          physicians={referralPhysicians}
-          referrals={referrals}
-          loading={referralsLoading}
-          saving={referralSaving}
-          error={referralError}
-          success={referralSuccess}
-          onCreateReferral={handleCreateReferral}
-          onUpdateStatus={handleUpdateReferralStatus}
-          onEditReferral={handleEditReferral}
-          onDeleteReferral={handleDeleteReferral}
-          onRefresh={loadReferralData}
-        />
-      )}
-
-      {activeSection === "leaderboard" && (
-        <div style={styles.stack}>
-          <section style={styles.filter}>
-            <h3 style={styles.filterHeading}>
-              <span
-                aria-hidden="true"
-                style={{
-                  display: "grid",
-                  placeItems: "center",
-                  width: 35,
-                  height: 35,
-                  borderRadius: 10,
-                  background: "#ecfdf5",
-                  color: "#059669",
-                  fontSize: 18,
-                }}
-              >
-                ◷
-              </span>
-              Leaderboard Filters
-            </h3>
-
-            <label style={styles.filterLabel}>
-              <span style={styles.filterCaption}>
-                Leaderboard month
-              </span>
-
-              <input
-                type="month"
-                value={leaderboardMonth}
-                onChange={(event) =>
-                  setLeaderboardMonth(event.target.value)
-                }
-                style={styles.filterInput}
-              />
-            </label>
+            <button
+              type="button"
+              className="pfw-admin-button"
+              onClick={handleBackToAdmin}
+            >
+              ← Back to Admin
+            </button>
           </section>
+        )}
 
-          <LeaderboardSection
-            title="Leaderboard"
-            department={`Physiotherapy · ${getMonthLabel(leaderboardMonth)}`}
-            rows={monthlyLeaderboardRows}
-            loading={monthlyLeaderboardLoading}
-            error={monthlyLeaderboardError}
-            onReload={loadMonthlyLeaderboard}
-            showTarget
-            todayLabel="TODAY"
-            monthlyLabel="THIS MONTH"
-            countLabel="used sessions"
-            emptyMessage={`No leaderboard data is available for ${getMonthLabel(
-              leaderboardMonth
-            )}.`}
-            getName={getLeaderboardName}
-            getMonthly={getLeaderboardUsedSessions}
-            getId={getLeaderboardId}
-            getTarget={(row) =>
-              row?.target ?? row?.monthly_target ?? 0
-            }
-          />
-        </div>
-      )}
-    </DashboardLayout>
+        <header className="pfw-header">
+          <div className="pfw-brand">
+            <div className="pfw-brand-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 48 48"
+                width="35"
+                height="35"
+                fill="none"
+              >
+                <path
+                  d="M20 7h8v13h13v8H28v13h-8V28H7v-8h13V7Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </div>
+
+            <div>
+              <div className="pfw-brand-name">
+                HOSPITAL <span>WORKFLOW</span>
+              </div>
+
+              <div className="pfw-brand-subtitle">
+                PHYSIOTHERAPY DEPARTMENT
+              </div>
+            </div>
+          </div>
+
+          <div className="pfw-header-actions">
+            <div className="pfw-user-chip">
+              <span className="pfw-avatar">
+                {displayName.trim().charAt(0).toUpperCase()}
+              </span>
+
+              <span className="pfw-user-name">
+                {displayName}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              className="pfw-logout"
+              onClick={onLogout}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="17"
+                height="17"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M10 17l5-5-5-5" />
+                <path d="M15 12H3" />
+                <path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6" />
+              </svg>
+
+              Logout
+            </button>
+          </div>
+        </header>
+
+        <section className="pfw-hero">
+          <div className="pfw-hero-copy">
+            <div className="pfw-eyebrow">
+              <span className="pfw-live-dot" />
+              YOUR CLINICAL WORKSPACE
+            </div>
+
+            <h1>
+              Patient <span>Workflow</span>
+            </h1>
+
+            <p>
+              Welcome, {displayName}. Manage patient follow-ups,
+              monitor rehabilitation activity, coordinate referrals,
+              and review your clinical performance.
+            </p>
+
+            <div className="pfw-hero-note">
+              <span className="pfw-note-check">✓</span>
+              Organized care. Meaningful progress. Better outcomes.
+            </div>
+          </div>
+
+          <div className="pfw-hero-art" aria-hidden="true">
+            <div className="pfw-art-ring pfw-art-ring-one" />
+            <div className="pfw-art-ring pfw-art-ring-two" />
+
+            <div className="pfw-art-center">
+              <svg
+                viewBox="0 0 100 100"
+                width="100"
+                height="100"
+                fill="none"
+              >
+                <rect
+                  x="15"
+                  y="15"
+                  width="70"
+                  height="70"
+                  rx="23"
+                  fill="rgba(255,255,255,0.12)"
+                  stroke="rgba(255,255,255,0.65)"
+                  strokeWidth="1.5"
+                />
+
+                <path
+                  d="M44 28h12v16h16v12H56v16H44V56H28V44h16V28Z"
+                  fill="#FFFFFF"
+                />
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        <section className="pfw-workspace-heading">
+          <div>
+            <div className="pfw-section-eyebrow">
+              WORKSPACE NAVIGATION
+            </div>
+
+            <h2>Your workspace</h2>
+
+            <p>
+              Select a section to access your clinical tools.
+            </p>
+          </div>
+
+          <div className="pfw-workspace-counter">
+            <strong>07</strong>
+            <span>SECTIONS</span>
+          </div>
+        </section>
+
+        <nav
+          className="pfw-navigation"
+          aria-label="Patient workflow sections"
+        >
+          {WORKSPACE_TABS.map((tab) => {
+            const isActive = activeSection === tab.key;
+
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                className={`pfw-tab ${
+                  isActive ? "pfw-tab-active" : ""
+                }`}
+                aria-current={
+                  isActive ? "page" : undefined
+                }
+                onClick={() => handleSectionChange(tab.key)}
+              >
+                <span
+                  className="pfw-tab-icon"
+                  aria-hidden="true"
+                >
+                  {tab.icon}
+                </span>
+
+                <span>
+                  {tab.key === "statistics"
+                    ? `Statistics (${statisticsCount})`
+                    : tab.label}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <main className="pfw-content">
+          {error ? (
+            <DashboardNotice type="error">
+              {error}
+            </DashboardNotice>
+          ) : null}
+
+          {activeSection === "statistics" && (
+            <PhysioStatisticsSection
+              statisticsDate={statisticsDate}
+              setStatisticsDate={setStatisticsDate}
+              statisticsMonth={statisticsMonth}
+              setStatisticsMonth={setStatisticsMonth}
+              dailyStatistics={dailyStatistics}
+              monthlyStatistics={monthlyStatistics}
+              dailyStatisticsLoading={dailyStatisticsLoading}
+              monthlyStatisticsLoading={monthlyStatisticsLoading}
+              monthlyLabel={getMonthLabel(statisticsMonth)}
+              walkInAssignments={walkInAssignments}
+              appointmentAssignments={appointmentAssignments}
+              initialEvalAssignments={initialEvalAssignments}
+              taskWithoutEligibilityAssignments={
+                taskWithoutEligibilityAssignments
+              }
+              dailyAssignments={physioDailyAssignments}
+              monthlyAssignments={physioMonthlyAssignments}
+            />
+          )}
+
+          {activeSection === "tracker" && (
+            <PatientTrackerTable
+              patients={patientTrackerRows}
+              title="Patient Tracker"
+              selectedMonth={trackerMonth}
+              onMonthChange={setTrackerMonth}
+              monthLabel={getMonthLabel(trackerMonth)}
+              onRefresh={loadPatientTracker}
+            />
+          )}
+
+          {activeSection === "performance" && (
+            <PerformanceDashboard
+              user={user}
+              actingAs={actingAs}
+            />
+          )}
+
+          {activeSection === "evaluation-tracker" && (
+            <div style={styles.stack}>
+              <EvaluationTrackerSection
+                assignments={physioEvaluationAssignments}
+                month={evaluationMonth}
+                onMonthChange={setEvaluationMonth}
+                loading={evaluationLoading}
+                error={evaluationError}
+                onReload={loadEvaluationTracker}
+              />
+            </div>
+          )}
+
+          {activeSection === "referrals" && (
+            <PhysioReferrals
+              patients={referralPatients}
+              physicians={referralPhysicians}
+              referrals={referrals}
+              loading={referralsLoading}
+              saving={referralSaving}
+              error={referralError}
+              success={referralSuccess}
+              onCreateReferral={handleCreateReferral}
+              onUpdateStatus={handleUpdateReferralStatus}
+              onEditReferral={handleEditReferral}
+              onDeleteReferral={handleDeleteReferral}
+              onRefresh={loadReferralData}
+            />
+          )}
+
+          {activeSection === "leaderboard" && (
+            <div style={styles.stack}>
+              <section style={styles.filter}>
+                <h3 style={styles.filterHeading}>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      display: "grid",
+                      placeItems: "center",
+                      width: 35,
+                      height: 35,
+                      borderRadius: 10,
+                      background: "#e8f0ff",
+                      color: "#2864e8",
+                      fontSize: 18,
+                    }}
+                  >
+                    ◷
+                  </span>
+
+                  Leaderboard Filters
+                </h3>
+
+                <label style={styles.filterLabel}>
+                  <span style={styles.filterCaption}>
+                    Leaderboard month
+                  </span>
+
+                  <input
+                    type="month"
+                    value={leaderboardMonth}
+                    onChange={(event) =>
+                      setLeaderboardMonth(event.target.value)
+                    }
+                    style={styles.filterInput}
+                  />
+                </label>
+              </section>
+
+              <LeaderboardSection
+                title="Leaderboard"
+                department={`Physiotherapy · ${getMonthLabel(
+                  leaderboardMonth
+                )}`}
+                rows={monthlyLeaderboardRows}
+                loading={monthlyLeaderboardLoading}
+                error={monthlyLeaderboardError}
+                onReload={loadMonthlyLeaderboard}
+                showTarget
+                todayLabel="TODAY"
+                monthlyLabel="THIS MONTH"
+                countLabel="used sessions"
+                emptyMessage={`No leaderboard data is available for ${getMonthLabel(
+                  leaderboardMonth
+                )}.`}
+                getName={getLeaderboardName}
+                getMonthly={getLeaderboardUsedSessions}
+                getId={getLeaderboardId}
+                getTarget={(row) =>
+                  row?.target ?? row?.monthly_target ?? 0
+                }
+              />
+            </div>
+          )}
+        </main>
+
+        <footer className="pfw-footer">
+          <div className="pfw-footer-brand">
+            <span>✚</span>
+            HOSPITAL WORKFLOW
+          </div>
+
+          <p>
+            Every patient deserves thoughtful, individualized care.
+          </p>
+
+          <span className="pfw-footer-caption">
+            PHYSIOTHERAPY WORKSPACE
+          </span>
+        </footer>
+      </div>
+
+      <style>{`
+        .pfw-page {
+          --pfw-navy: #203650;
+          --pfw-blue: #2864e8;
+          --pfw-text: #19345a;
+          --pfw-muted: #788aa5;
+          --pfw-border: #e0e8f4;
+
+          position: relative;
+          isolation: isolate;
+          min-height: 100vh;
+          width: 100%;
+          padding: 28px;
+          background:
+            radial-gradient(
+              ellipse at 90% 0%,
+              rgba(40,100,232,.075),
+              transparent 32%
+            ),
+            #eef3fa;
+          color: var(--pfw-text);
+          font-family:
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            Roboto,
+            Helvetica,
+            Arial,
+            sans-serif;
+        }
+
+        .pfw-page *,
+        .pfw-page *::before,
+        .pfw-page *::after {
+          box-sizing: border-box;
+        }
+
+        .pfw-container {
+          width: 100%;
+          max-width: 1380px;
+          margin: 0 auto;
+          display: grid;
+          gap: 23px;
+          min-width: 0;
+        }
+
+        .pfw-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 20px;
+          padding: 3px 0 6px;
+        }
+
+        .pfw-brand {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          min-width: 0;
+        }
+
+        .pfw-brand-icon {
+          width: 51px;
+          height: 51px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 15px;
+          background: var(--pfw-blue);
+          color: white;
+          box-shadow:
+            0 7px 18px rgba(40,100,232,.2);
+        }
+
+        .pfw-brand-name {
+          color: var(--pfw-navy);
+          font-size: 19px;
+          font-weight: 900;
+          letter-spacing: -.035em;
+        }
+
+        .pfw-brand-name span {
+          color: var(--pfw-blue);
+        }
+
+        .pfw-brand-subtitle {
+          margin-top: 5px;
+          color: #788aa5;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: .13em;
+        }
+
+        .pfw-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .pfw-user-chip {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          min-width: 0;
+          padding: 7px 12px 7px 7px;
+          border: 1px solid #dbe5f2;
+          border-radius: 12px;
+          background: rgba(255,255,255,.85);
+        }
+
+        .pfw-avatar {
+          width: 33px;
+          height: 33px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 10px;
+          background: #e8f0ff;
+          color: var(--pfw-blue);
+          font-size: 14px;
+          font-weight: 850;
+        }
+
+        .pfw-user-name {
+          max-width: 180px;
+          overflow: hidden;
+          color: #536984;
+          font-size: 12px;
+          font-weight: 700;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .pfw-logout {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 9px;
+          min-height: 43px;
+          padding: 11px 16px;
+          border: 1px solid #f0d8dc;
+          border-radius: 11px;
+          background: white;
+          color: #d94b50;
+          font: inherit;
+          font-size: 12px;
+          font-weight: 800;
+          cursor: pointer;
+          transition:
+            transform 160ms ease,
+            background 160ms ease;
+        }
+
+        .pfw-logout:hover {
+          background: #fff3f3;
+          transform: translateY(-1px);
+        }
+
+        .pfw-hero {
+          position: relative;
+          display: grid;
+          grid-template-columns:
+            minmax(0,1.35fr)
+            minmax(180px,.65fr);
+          align-items: center;
+          gap: 20px;
+          min-height: 265px;
+          overflow: hidden;
+          padding: 35px 43px;
+          border: 1px solid rgba(255,255,255,.15);
+          border-radius: 25px;
+          background:
+            radial-gradient(
+              circle at 85% 45%,
+              rgba(75,127,224,.24),
+              transparent 32%
+            ),
+            linear-gradient(
+              120deg,
+              #203650 0%,
+              #1b3659 62%,
+              #244b79 100%
+            );
+          box-shadow:
+            0 16px 38px rgba(25,52,90,.12);
+        }
+
+        .pfw-hero-copy {
+          position: relative;
+          z-index: 2;
+          display: grid;
+          justify-items: start;
+          gap: 16px;
+          min-width: 0;
+        }
+
+        .pfw-eyebrow {
+          display: inline-flex;
+          align-items: center;
+          gap: 9px;
+          padding: 9px 12px;
+          border: 1px solid rgba(255,255,255,.17);
+          border-radius: 999px;
+          background: rgba(255,255,255,.07);
+          color: #d9e7ff;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: .13em;
+        }
+
+        .pfw-live-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #55d6a9;
+          box-shadow:
+            0 0 0 4px rgba(85,214,169,.12);
+        }
+
+        .pfw-hero h1 {
+          margin: 0;
+          color: white;
+          font-size: clamp(31px,4vw,44px);
+          font-weight: 850;
+          line-height: 1.14;
+          letter-spacing: -.045em;
+          overflow-wrap: anywhere;
+        }
+
+        .pfw-hero h1 span {
+          color: #b9d2ff;
+        }
+
+        .pfw-hero-copy > p {
+          max-width: 650px;
+          margin: 0;
+          color: #c8d5e7;
+          font-size: 13px;
+          line-height: 1.9;
+        }
+
+        .pfw-hero-note {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          color: #cfdaea;
+          font-size: 11px;
+          line-height: 1.6;
+        }
+
+        .pfw-note-check {
+          width: 21px;
+          height: 21px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          background: rgba(16,167,125,.19);
+          color: #9af0d2;
+          font-weight: 900;
+        }
+
+        .pfw-hero-art {
+          position: relative;
+          min-height: 195px;
+          display: grid;
+          place-items: center;
+        }
+
+        .pfw-art-ring {
+          position: absolute;
+          border: 1px solid rgba(196,218,255,.17);
+          border-radius: 50%;
+        }
+
+        .pfw-art-ring-one {
+          width: 185px;
+          height: 185px;
+          box-shadow:
+            0 0 0 22px rgba(255,255,255,.025),
+            0 0 0 44px rgba(255,255,255,.02);
+        }
+
+        .pfw-art-ring-two {
+          width: 135px;
+          height: 135px;
+          border-style: dashed;
+          border-color: rgba(196,218,255,.25);
+        }
+
+        .pfw-art-center {
+          position: relative;
+          z-index: 1;
+          width: 120px;
+          height: 120px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(255,255,255,.24);
+          border-radius: 33px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255,255,255,.19),
+              rgba(255,255,255,.06)
+            );
+          box-shadow:
+            0 16px 35px rgba(0,0,0,.12);
+          transform: rotate(-5deg);
+        }
+
+        .pfw-art-center svg {
+          transform: rotate(5deg);
+        }
+
+        .pfw-workspace-heading {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+        }
+
+        .pfw-section-eyebrow {
+          color: #873ce8;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: .13em;
+        }
+
+        .pfw-workspace-heading h2 {
+          margin: 7px 0 0;
+          color: var(--pfw-text);
+          font-size: 24px;
+          font-weight: 850;
+          letter-spacing: -.035em;
+        }
+
+        .pfw-workspace-heading p {
+          margin: 6px 0 0;
+          color: var(--pfw-muted);
+          font-size: 12px;
+          line-height: 1.7;
+        }
+
+        .pfw-workspace-counter {
+          display: grid;
+          justify-items: end;
+          gap: 3px;
+        }
+
+        .pfw-workspace-counter strong {
+          color: #bdcce0;
+          font-size: 28px;
+          font-weight: 850;
+          letter-spacing: -.04em;
+        }
+
+        .pfw-workspace-counter span {
+          color: #8192aa;
+          font-size: 9px;
+          font-weight: 850;
+          letter-spacing: .1em;
+        }
+
+        .pfw-navigation {
+          display: flex;
+          align-items: stretch;
+          gap: 8px;
+          width: 100%;
+          min-width: 0;
+          overflow-x: auto;
+          padding: 9px;
+          border: 1px solid var(--pfw-border);
+          border-radius: 17px;
+          background: white;
+          box-shadow:
+            0 5px 19px rgba(31,56,89,.035);
+          scrollbar-width: thin;
+        }
+
+        .pfw-tab {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 9px;
+          flex: 1 0 auto;
+          min-height: 46px;
+          padding: 12px 14px;
+          border: 1px solid transparent;
+          border-radius: 11px;
+          background: transparent;
+          color: #657994;
+          font: inherit;
+          font-size: 12px;
+          font-weight: 800;
+          white-space: nowrap;
+          cursor: pointer;
+          transition:
+            background 160ms ease,
+            color 160ms ease,
+            box-shadow 160ms ease;
+        }
+
+        .pfw-tab:hover {
+          background: #eef3ff;
+          color: var(--pfw-blue);
+        }
+
+        .pfw-tab-active {
+          background: var(--pfw-blue);
+          color: white;
+          box-shadow:
+            0 5px 13px rgba(40,100,232,.18);
+        }
+
+        .pfw-tab-active:hover {
+          background: #245bd4;
+          color: white;
+        }
+
+        .pfw-tab-icon {
+          font-size: 18px;
+          line-height: 1;
+        }
+
+        .pfw-content {
+          display: grid;
+          gap: 18px;
+          min-width: 0;
+          width: 100%;
+        }
+
+        .pfw-admin-banner {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 14px;
+          padding: 15px 18px;
+          border: 1px solid #cbdcff;
+          border-radius: 14px;
+          background: #eaf1ff;
+        }
+
+        .pfw-admin-info {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .pfw-admin-icon {
+          width: 38px;
+          height: 38px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          border-radius: 11px;
+          background: #d8e5ff;
+          color: var(--pfw-blue);
+          font-size: 19px;
+          font-weight: 900;
+        }
+
+        .pfw-admin-info strong {
+          display: block;
+          font-size: 12px;
+        }
+
+        .pfw-admin-info p {
+          margin: 4px 0 0;
+          color: #637b9c;
+          font-size: 11px;
+          line-height: 1.6;
+        }
+
+        .pfw-admin-button {
+          min-height: 42px;
+          padding: 10px 15px;
+          border: 1px solid #cbdcff;
+          border-radius: 11px;
+          background: white;
+          color: var(--pfw-blue);
+          font: inherit;
+          font-size: 12px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .pfw-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 13px;
+          padding: 18px 0 3px;
+          border-top: 1px solid #dce5f0;
+        }
+
+        .pfw-footer-brand {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #536a88;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: .055em;
+        }
+
+        .pfw-footer-brand span {
+          color: var(--pfw-blue);
+          font-size: 15px;
+        }
+
+        .pfw-footer p {
+          margin: 0;
+          color: #8494aa;
+          font-size: 10px;
+          text-align: center;
+          line-height: 1.6;
+        }
+
+        .pfw-footer-caption {
+          color: #92a1b5;
+          font-size: 9px;
+          font-weight: 850;
+          letter-spacing: .08em;
+        }
+
+        .pfw-page button:focus-visible {
+          outline: 3px solid rgba(40,100,232,.35);
+          outline-offset: 3px;
+        }
+
+        @media (max-width: 1000px) {
+          .pfw-tab {
+            flex: 0 0 auto;
+          }
+        }
+
+        @media (max-width: 850px) {
+          .pfw-page {
+            padding: 22px 18px 30px;
+          }
+
+          .pfw-container {
+            gap: 20px;
+          }
+
+          .pfw-hero {
+            grid-template-columns:
+              minmax(0,1fr)
+              minmax(150px,.5fr);
+            padding: 30px 26px;
+          }
+
+          .pfw-hero-art {
+            min-height: 170px;
+          }
+
+          .pfw-art-ring-one {
+            width: 145px;
+            height: 145px;
+          }
+
+          .pfw-art-ring-two {
+            width: 110px;
+            height: 110px;
+          }
+
+          .pfw-art-center {
+            width: 100px;
+            height: 100px;
+          }
+
+          .pfw-art-center svg {
+            width: 85px;
+            height: 85px;
+          }
+        }
+
+        @media (max-width: 600px) {
+          .pfw-page {
+            padding: 17px 13px 25px;
+          }
+
+          .pfw-header {
+            align-items: flex-start;
+          }
+
+          .pfw-brand {
+            gap: 9px;
+          }
+
+          .pfw-brand-icon {
+            width: 43px;
+            height: 43px;
+            border-radius: 12px;
+          }
+
+          .pfw-brand-name {
+            font-size: 15px;
+          }
+
+          .pfw-brand-subtitle {
+            font-size: 8px;
+            letter-spacing: .08em;
+          }
+
+          .pfw-header-actions {
+            width: 100%;
+            justify-content: space-between;
+          }
+
+          .pfw-user-chip {
+            flex: 1;
+            min-width: 0;
+          }
+
+          .pfw-user-name {
+            max-width: 200px;
+          }
+
+          .pfw-logout {
+            flex-shrink: 0;
+          }
+
+          .pfw-hero {
+            grid-template-columns: minmax(0,1fr);
+            gap: 0;
+            padding: 27px 21px;
+            border-radius: 20px;
+          }
+
+          .pfw-hero h1 {
+            font-size: clamp(29px,8vw,39px);
+          }
+
+          .pfw-hero-copy > p {
+            font-size: 12px;
+          }
+
+          .pfw-hero-art {
+            display: none;
+          }
+
+          .pfw-workspace-heading h2 {
+            font-size: 22px;
+          }
+
+          .pfw-navigation {
+            padding: 7px;
+            gap: 6px;
+          }
+
+          .pfw-tab {
+            min-height: 43px;
+            padding: 11px 13px;
+            font-size: 11px;
+          }
+
+          .pfw-tab-icon {
+            font-size: 16px;
+          }
+
+          .pfw-footer {
+            justify-content: center;
+            text-align: center;
+          }
+
+          .pfw-footer p {
+            flex-basis: 100%;
+            order: 3;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .pfw-page *,
+          .pfw-page *::before,
+          .pfw-page *::after {
+            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
+            animation-duration: .01ms !important;
+          }
+        }
+      `}</style>
+    </div>
   );
 }
+
