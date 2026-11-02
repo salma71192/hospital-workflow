@@ -85,6 +85,27 @@ const styles = `
   background: #fff; color: #203b5c; font: inherit; font-size: 14px;
   outline: none; transition: border-color .15s, box-shadow .15s;
 }
+
+/* FIX: Date fields match other fields in width and height */
+.create-claim-input[type="date"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 48px;
+  min-height: 48px;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: normal;
+  appearance: auto;
+  -webkit-appearance: auto;
+}
+.create-claim-input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+  min-height: 1em;
+}
+
 .create-claim-input:focus, .create-claim-select:focus,
 .create-claim-textarea:focus, .create-claim-search-input:focus {
   border-color: #536cda; box-shadow: 0 0 0 3px rgba(83,108,218,.12);
@@ -333,19 +354,36 @@ function getPatientName(patient) {
   );
 }
 
+/* FIX: Return the actual patient file number, not database ID */
+
 function getPatientNumber(patient) {
-  return (
-    patient?.file_number ||
-    patient?.fileNumber ||
-    patient?.patient_number ||
-    patient?.patientNumber ||
-    patient?.mrn ||
-    patient?.medical_record_number ||
-    patient?.medicalRecordNumber ||
-    patient?.id ||
-    "N/A"
-  );
+  if (!patient) return "N/A";
+
+  const number =
+    patient.patient_id ??
+    patient.file_number ??
+    patient.patientId ??
+    patient.fileNumber ??
+    patient.patient_file_number ??
+    patient.patientFileNumber ??
+    patient.patient_number ??
+    patient.patientNumber ??
+    patient.mrn ??
+    patient.medical_record_number ??
+    patient.medicalRecordNumber;
+
+  if (
+    number === null ||
+    number === undefined ||
+    String(number).trim() === ""
+  ) {
+    return "N/A";
+  }
+
+  return String(number).trim();
 }
+
+      
 
 function getPatientPhone(patient) {
   return (
@@ -369,7 +407,6 @@ function getPatientList(response) {
   return [];
 }
 
-// UPDATED: Support the clinicians endpoint response.
 function getUserList(response) {
   const data = response?.data;
 
@@ -461,7 +498,6 @@ function getUserRole(user) {
   return String(role);
 }
 
-// UPDATED: Recognize Django's "physio" role.
 function isEligibleClinician(user) {
   const role = getUserRole(user)
     .toLowerCase()
@@ -482,11 +518,8 @@ function isEligibleClinician(user) {
 function getApiError(err) {
   const data = err?.response?.data;
 
-  // Do not display Django's HTML error pages in the form.
   if (typeof data === "string") {
-    if (
-      /<!doctype html|<html|<body/i.test(data)
-    ) {
+    if (/<!doctype html|<html|<body/i.test(data)) {
       return `Server request failed (HTTP ${err?.response?.status || "error"}). Please check the API endpoint.`;
     }
     return data.slice(0, 500);
@@ -602,6 +635,7 @@ function getClinicianId(claim) {
   return clinician === null ? "" : String(clinician);
 }
 
+/* FIX: Default new-claim dates to today */
 function getInitialForm(renewalAlert) {
   const existingClaim = renewalAlert?.claim ?? {};
 
@@ -630,12 +664,12 @@ function getInitialForm(renewalAlert) {
       existingClaim?.approvalDate ??
       existingClaim?.approval_date ??
       ""
-    ).slice(0, 10),
+    ).slice(0, 10) || getLocalToday(),
     expirationDate: String(
       existingClaim?.expirationDate ??
       existingClaim?.expiration_date ??
       ""
-    ).slice(0, 10),
+    ).slice(0, 10) || (renewalAlert ? "" : getLocalToday()),
     approvedVisits: String(
       existingClaim?.approvedVisits ??
       existingClaim?.approved_visits ??
@@ -843,7 +877,6 @@ export default function CreateClaim({
       }
     }
 
-    // UPDATED: Use the dedicated clinician endpoint.
     async function loadUsers() {
       setLoadingUsers(true);
       setUsersError("");
@@ -1375,9 +1408,7 @@ export default function CreateClaim({
     setSaving(true);
 
     try {
-      /* ===========================================
-         RENEW EXISTING CLAIM
-      =========================================== */
+      /* RENEW EXISTING CLAIM */
 
       if (isRenewalMode) {
         const claimPk =
@@ -1409,9 +1440,7 @@ export default function CreateClaim({
         return;
       }
 
-      /* ===========================================
-         CLAIM PAYLOAD
-      =========================================== */
+      /* CLAIM PAYLOAD */
 
       const payload = {
         patientId: selectedPatient.id,
@@ -1440,9 +1469,7 @@ export default function CreateClaim({
         insurancePayer: form.insurancePayer.trim(),
       };
 
-      /* ===========================================
-         EDIT EXISTING CLAIM
-      =========================================== */
+      /* EDIT EXISTING CLAIM */
 
       if (isEditing) {
         const response = await api.patch(
@@ -1482,9 +1509,7 @@ export default function CreateClaim({
         return;
       }
 
-      /* ===========================================
-         CREATE NEW CLAIM
-      =========================================== */
+      /* CREATE NEW CLAIM */
 
       const createPayload = {
         ...payload,
