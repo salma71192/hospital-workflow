@@ -36,27 +36,50 @@ SESSION_INSURANCE_TYPES = {
     "cash": "cash",
 }
 
-# NEW: Permission required to view another therapist's tracker.
-# This permission must be registered in Django and assigned
-# only to authorized Call Center, Rehab Manager, and CEO users.
+# Permission required to view another therapist's tracker.
 MANAGEMENT_TRACKER_PERMISSION = (
     "patients.view_all_therapist_trackers"
 )
 
+# Roles permitted to view individual physiotherapist trackers.
+# These must match the values stored in your user model.
+MANAGEMENT_TRACKER_ROLES = {
+    "callcenter",
+    "call_center",
+    "rehab_manager",
+    "rehabmanager",
+    "ceo",
+}
+
 
 # ============================================================
-# NEW: MANAGEMENT ACCESS HELPERS
+# MANAGEMENT ACCESS HELPERS
 # ============================================================
 
 def _tracker_can_view_others(user):
     """
-    Check permission to view another therapist's tracker.
+    Check whether a user can view another therapist's tracker.
+
+    Access is granted through:
+    1. The explicit Django permission; or
+    2. An authorized management role.
+
+    This grants viewing access only. It does not authorize
+    recording sessions or running monthly rollover.
     """
-    return bool(
-        user
-        and getattr(user, "is_authenticated", False)
-        and user.has_perm(MANAGEMENT_TRACKER_PERMISSION)
-    )
+    if not user or not getattr(
+        user, "is_authenticated", False
+    ):
+        return False
+
+    if user.has_perm(MANAGEMENT_TRACKER_PERMISSION):
+        return True
+
+    role = str(
+        getattr(user, "role", "") or ""
+    ).strip().lower()
+
+    return role in MANAGEMENT_TRACKER_ROLES
 
 
 def _tracker_can_access(user):
@@ -80,8 +103,9 @@ def _tracker_selected_therapist(request):
     Resolve the therapist selected in a GET request.
 
     - Existing physiotherapists can view their own tracker.
-    - Viewing another therapist requires management permission.
-    - Management users must select a therapist.
+    - Viewing another therapist requires management access.
+    - Management-only users must select a therapist.
+    - A therapist with no assignments is still selectable.
     """
     requested_id = request.GET.get("therapist_id")
 
@@ -130,16 +154,24 @@ def _tracker_selected_therapist(request):
             "Selected therapist not found or inactive."
         )
 
-    # Check that the account has therapist assignments.
-    # This is preliminary validation; the actual therapist
-    # role should also be checked using your user model.
-    if not PatientAssignment.objects.filter(
-        therapist_id=therapist.pk
-    ).exists():
+    # Validate the selected account as a physiotherapist.
+    # Adjust these values only if your user model uses
+    # different role identifiers.
+    therapist_role = str(
+        getattr(therapist, "role", "") or ""
+    ).strip().lower()
+
+    if therapist_role not in {
+        "physio",
+        "physiotherapist",
+    }:
         raise ValueError(
-            "The selected account has no therapist assignments."
+            "The selected account is not a physiotherapist."
         )
 
+    # No assignment requirement:
+    # A physiotherapist without assignments should have
+    # an empty tracker rather than an error.
     return therapist
 
 
@@ -496,48 +528,44 @@ def _tracker_row(
     """
     Build one patient tracker row.
 
-    Existing physiotherapist behavior remains unchanged.
+    Both the physiotherapist and Call Center views now
+    use the same monthly session and activity rules.
 
-    Management views use the selected therapist's
-    assignments instead of attributing shared monthly
-    tracker totals to that therapist.
+    The selected therapist determines which patients
+    appear in the tracker.
+
+    Existing monthly tracker records take priority.
     """
+
     record = PatientMonthlyTracker.objects.filter(
         patient=patient,
         month=month,
     ).first()
 
-    if management_view:
-        sessions = _tracker_assignment_session_count(
-            patient,
-            month,
-            user,
+    if record:
+        # Use the saved monthly tracker data.
+        # This is shared patient/month data, not a
+        # therapist-specific completed-session total.
+        sessions = int(
+            record.utilized_sessions or 0
         )
 
-        status = _tracker_status(sessions)
-
-        last_seen = _tracker_last_assignment_date(
-            patient,
-            month,
-            user,
-        )
-
-        category_counts = {
-            "thiqa_sessions": 0,
-            "daman_sessions": 0,
-            "cash_sessions": 0,
-        }
-
-        count_source = "eligible_assignments"
-
-    elif record:
-        sessions = int(record.utilized_sessions or 0)
         status = record.status
+
         last_seen = record.last_seen_date
-        category_counts = _tracker_session_counts(record)
+
+        category_counts = _tracker_session_counts(
+            record
+        )
+
         count_source = "monthly_tracker"
 
     else:
+        # Preserve the original physiotherapist fallback
+        # for months without a saved tracker record.
+        #
+        # These values count eligible assignments,
+        # not verified completed treatment sessions.
         sessions = _tracker_assignment_session_count(
             patient,
             month,
@@ -580,7 +608,9 @@ def _tracker_row(
         getattr(patient, "insurance_provider", "")
     ) or ""
 
-    approval_status = _tracker_get_rcm_approval(patient)
+    approval_status = _tracker_get_rcm_approval(
+        patient
+    )
 
     return {
         "id": patient.id,
@@ -802,7 +832,7 @@ def _tracker_record_session(request, data, month):
 
 
 # ============================================================
-# UPDATED: MAIN PATIENT TRACKER API
+# MAIN PATIENT TRACKER API
 # ============================================================
 
 @csrf_exempt
@@ -939,7 +969,7 @@ def patient_tracker_api(request):
             "month": month.strftime("%Y-%m"),
             "therapist_id": selected_therapist.pk,
             "count_source": (
-                "eligible_assignments"
+                "monthly_tracker_global"
                 if management_view
                 else "existing_tracker"
             ),
