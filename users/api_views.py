@@ -1,3 +1,4 @@
+
 import json
 
 from django.contrib.auth import (
@@ -427,6 +428,73 @@ def physician_users_api(request):
     return JsonResponse({
         "physicians": physician_data,
         "count": len(physician_data),
+    })
+
+
+# =========================================================
+# REQUESTING CLINICIANS - PHYSIOTHERAPISTS AND PHYSICIANS
+# =========================================================
+
+def requesting_clinicians_api(request):
+    """
+    Return active physiotherapists and physicians for
+    the Requesting Clinician dropdown in RCM claims.
+
+    Reads from the existing User table.
+
+    Supported roles:
+        physio
+        physician
+        doctor (legacy)
+
+    Only authenticated, active users may access this endpoint.
+
+    Does not expose passwords, tokens, emails, or other
+    unnecessary account information.
+    """
+    if request.method != "GET":
+        return JsonResponse(
+            {"error": "Method not allowed"},
+            status=405,
+        )
+
+    current_user = get_authenticated_user(request)
+
+    if current_user is None:
+        return JsonResponse(
+            {"error": "Not authenticated"},
+            status=401,
+        )
+
+    clinicians = User.objects.filter(
+        role__in=[
+            "physio",
+            "physician",
+            "doctor",
+        ],
+        is_active=True,
+    ).order_by("username")
+
+    clinician_data = []
+
+    for clinician in clinicians:
+        data = get_user_data(clinician)
+
+        clinician_data.append({
+            "id": data["id"],
+            "username": data["username"],
+            "display_name": data["display_name"],
+            "name": data["display_name"],
+            "role": data["role"],
+        })
+
+    clinician_data.sort(
+        key=lambda item: item["display_name"].casefold()
+    )
+
+    return JsonResponse({
+        "clinicians": clinician_data,
+        "count": len(clinician_data),
     })
 
 

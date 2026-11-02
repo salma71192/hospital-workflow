@@ -1,3 +1,4 @@
+
 import React, {
   Fragment,
   useCallback,
@@ -7,6 +8,10 @@ import React, {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/api";
+
+/* =========================================================
+   COLORS
+========================================================= */
 
 const C = {
   navy: "#172b4d",
@@ -20,16 +25,22 @@ const C = {
   red: "#b91c1c",
 };
 
+/* =========================================================
+   GENERAL HELPERS
+========================================================= */
+
 const localDateString = (date = new Date()) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate()
-  ).padStart(2, "0")}`;
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(date.getDate()).padStart(2, "0")}`;
 
 const localMonthString = () => localDateString().slice(0, 7);
 
 function valueOf(obj, keys, fallback = "") {
   for (const key of keys) {
     const value = obj?.[key];
+
     if (
       value !== undefined &&
       value !== null &&
@@ -39,24 +50,39 @@ function valueOf(obj, keys, fallback = "") {
       return value;
     }
   }
+
   return fallback;
 }
 
 function objectOf(obj, keys) {
   for (const key of keys) {
     const value = obj?.[key];
-    if (value && typeof value === "object" && !Array.isArray(value)) {
+
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value)
+    ) {
       return value;
     }
   }
+
   return {};
 }
 
 function listFromResponse(data, keys = []) {
   if (Array.isArray(data)) return data;
 
-  for (const key of [...keys, "results", "items", "claims", "history"]) {
-    if (Array.isArray(data?.[key])) return data[key];
+  for (const key of [
+    ...keys,
+    "results",
+    "items",
+    "claims",
+    "history",
+  ]) {
+    if (Array.isArray(data?.[key])) {
+      return data[key];
+    }
   }
 
   if (data?.data && typeof data.data === "object") {
@@ -65,6 +91,32 @@ function listFromResponse(data, keys = []) {
 
   return [];
 }
+
+function apiErrorMessage(error, fallback) {
+  const data = error?.response?.data;
+
+  if (typeof data === "string" && data.trim()) {
+    return data;
+  }
+
+  if (typeof data?.detail === "string") {
+    return data.detail;
+  }
+
+  if (typeof data?.message === "string") {
+    return data.message;
+  }
+
+  if (typeof data?.error === "string") {
+    return data.error;
+  }
+
+  return fallback;
+}
+
+/* =========================================================
+   PATIENT HELPERS
+========================================================= */
 
 function patientOf(claim) {
   return objectOf(claim, [
@@ -112,7 +164,11 @@ function patientIdOf(claim) {
   return valueOf(
     claim,
     ["patientId", "patient_id"],
-    valueOf(patientOf(claim), ["id", "patient_id", "patientId"], "")
+    valueOf(
+      patientOf(claim),
+      ["id", "patient_id", "patientId"],
+      ""
+    )
   );
 }
 
@@ -138,10 +194,13 @@ const FILE_KEYS = [
 
 function fileNumberOf(claim) {
   const direct = valueOf(claim, FILE_KEYS);
+
   if (direct) return String(direct);
 
   const patient = patientOf(claim);
+
   const patientValue = valueOf(patient, FILE_KEYS);
+
   if (patientValue) return String(patientValue);
 
   const record = objectOf(patient, [
@@ -154,6 +213,10 @@ function fileNumberOf(claim) {
   return String(valueOf(record, FILE_KEYS, "—"));
 }
 
+/* =========================================================
+   CLAIM HELPERS
+========================================================= */
+
 function claimDatabaseId(claim) {
   return valueOf(claim, ["id", "claim_pk", "claimPk"], "");
 }
@@ -161,25 +224,62 @@ function claimDatabaseId(claim) {
 function claimIdOf(claim) {
   return valueOf(
     claim,
-    ["claim_number", "claimNumber", "claim_id", "claimId", "id"],
+    [
+      "claim_number",
+      "claimNumber",
+      "claim_id",
+      "claimId",
+      "id",
+    ],
     "—"
   );
 }
 
-/* ---------------- Approval fields ---------------- */
+function nameFromUser(user) {
+  return String(
+    valueOf(user, [
+      "display_name",
+      "displayName",
+      "full_name",
+      "fullName",
+      "name",
+      "username",
+      "email",
+    ])
+  );
+}
 
 function requestingClinicianOf(claim) {
-  return valueOf(
-    claim,
-    [
-      "requesting_clinician",
-      "requestingClinician",
-      "clinician",
-      "physician",
-      "doctor_name",
-      "doctorName",
-    ],
-    "—"
+  const nested = objectOf(claim, [
+    "requesting_clinician",
+    "requestingClinician",
+    "clinician",
+    "physician",
+  ]);
+
+  const nestedName = nameFromUser(nested);
+
+  if (nestedName) return nestedName;
+
+  return String(
+    valueOf(
+      claim,
+      [
+        "requesting_clinician_name",
+        "requestingClinicianName",
+        "clinician_name",
+        "clinicianName",
+        "physician_name",
+        "physicianName",
+        "doctor_name",
+        "doctorName",
+        "requesting_clinician",
+        "requestingClinician",
+        "clinician",
+        "physician",
+      ],
+      "—"
+    )
   );
 }
 
@@ -306,7 +406,9 @@ function rejectionReasonOf(claim) {
 }
 
 function statusCategory(input) {
-  const status = (typeof input === "string" ? input : statusOf(input))
+  const status = (
+    typeof input === "string" ? input : statusOf(input)
+  )
     .toLowerCase()
     .trim()
     .replace(/[_-]+/g, " ");
@@ -378,6 +480,10 @@ function statusColors(status) {
   };
 }
 
+/* =========================================================
+   DATE HELPERS
+========================================================= */
+
 function createdDateOf(claim) {
   return valueOf(claim, [
     "createdAt",
@@ -399,36 +505,51 @@ function dateParts(value) {
   if (!value) return null;
 
   const raw = String(value);
+
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
 
   if (match) {
-    return { day: `${match[1]}-${match[2]}-${match[3]}` };
+    return {
+      day: `${match[1]}-${match[2]}-${match[3]}`,
+    };
   }
 
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return null;
 
-  return { day: localDateString(date) };
+  return {
+    day: localDateString(date),
+  };
 }
 
 function formatDate(value) {
   const parts = dateParts(value);
+
   if (!parts) return "—";
 
-  const [year, month, day] = parts.day.split("-").map(Number);
+  const [year, month, day] = parts.day
+    .split("-")
+    .map(Number);
 
-  return new Date(year, month - 1, day).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return new Date(year, month - 1, day).toLocaleDateString(
+    "en-GB",
+    {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }
+  );
 }
 
 function formatDateTime(value) {
   if (!value) return "—";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return formatDate(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return formatDate(value);
+  }
 
   return date.toLocaleString("en-GB", {
     day: "2-digit",
@@ -443,13 +564,21 @@ function formatMonth(value) {
   if (!value) return "All months";
 
   const [year, month] = value.split("-").map(Number);
+
   if (!year || !month) return value;
 
-  return new Date(year, month - 1, 1).toLocaleDateString("en-GB", {
-    month: "long",
-    year: "numeric",
-  });
+  return new Date(year, month - 1, 1).toLocaleDateString(
+    "en-GB",
+    {
+      month: "long",
+      year: "numeric",
+    }
+  );
 }
+
+/* =========================================================
+   USER HELPERS
+========================================================= */
 
 function currentUserFromStorage() {
   for (const key of [
@@ -462,12 +591,19 @@ function currentUserFromStorage() {
   ]) {
     try {
       const raw = localStorage.getItem(key);
+
       if (!raw) continue;
 
       const parsed = JSON.parse(raw);
-      const user = parsed?.user || parsed?.currentUser || parsed;
 
-      if (user && typeof user === "object") return user;
+      const user =
+        parsed?.user ||
+        parsed?.currentUser ||
+        parsed;
+
+      if (user && typeof user === "object") {
+        return user;
+      }
     } catch {
       // Continue checking other storage keys.
     }
@@ -483,7 +619,11 @@ function currentUserFromStorage() {
 }
 
 function userIdOf(user) {
-  return valueOf(user, ["id", "user_id", "userId", "pk"], "");
+  return valueOf(
+    user,
+    ["id", "user_id", "userId", "pk"],
+    ""
+  );
 }
 
 function creatorOf(claim) {
@@ -502,9 +642,16 @@ function creatorOf(claim) {
 
 function creatorIdOf(claim) {
   const creator = creatorOf(claim);
-  const nestedId = valueOf(creator, ["id", "user_id", "userId", "pk"], "");
 
-  if (nestedId !== "") return String(nestedId);
+  const nestedId = valueOf(
+    creator,
+    ["id", "user_id", "userId", "pk"],
+    ""
+  );
+
+  if (nestedId !== "") {
+    return String(nestedId);
+  }
 
   const direct = valueOf(
     claim,
@@ -521,7 +668,9 @@ function creatorIdOf(claim) {
     ""
   );
 
-  if (direct !== "") return String(direct);
+  if (direct !== "") {
+    return String(direct);
+  }
 
   const raw =
     claim?.created_by ??
@@ -530,27 +679,15 @@ function creatorIdOf(claim) {
     claim?.submitted_by ??
     claim?.submittedBy;
 
-  return typeof raw === "number" || typeof raw === "string"
+  return typeof raw === "number" ||
+    typeof raw === "string"
     ? String(raw)
     : "";
 }
 
-function nameFromUser(user) {
-  return String(
-    valueOf(user, [
-      "display_name",
-      "displayName",
-      "full_name",
-      "fullName",
-      "name",
-      "username",
-      "email",
-    ])
-  );
-}
-
 function creatorNameOf(claim) {
   const nestedName = nameFromUser(creatorOf(claim));
+
   if (nestedName) return nestedName;
 
   const direct = valueOf(claim, [
@@ -569,10 +706,15 @@ function creatorNameOf(claim) {
   if (direct) return String(direct);
 
   const id = creatorIdOf(claim);
-  return id !== "" ? `RCM user #${id}` : "Not recorded";
+
+  return id !== ""
+    ? `RCM user #${id}`
+    : "Not recorded";
 }
 
-/* ---------------- Claim history helpers ---------------- */
+/* =========================================================
+   HISTORY HELPERS
+========================================================= */
 
 function eventDate(event) {
   return valueOf(event, [
@@ -649,15 +791,22 @@ function eventStatus(event, claim) {
     "data",
   ]);
 
-  const nestedStatus = valueOf(
+  const nested = valueOf(
     details,
-    ["new_status", "newStatus", "current_status", "status"],
+    [
+      "new_status",
+      "newStatus",
+      "current_status",
+      "status",
+    ],
     ""
   );
 
-  if (nestedStatus) return String(nestedStatus);
+  if (nested) return String(nested);
 
-  if (isCreationEvent(event)) return statusOf(claim);
+  if (isCreationEvent(event)) {
+    return statusOf(claim);
+  }
 
   return "Status not recorded";
 }
@@ -681,9 +830,10 @@ function eventUserName(event) {
   ]);
 
   const nestedName = nameFromUser(user);
+
   if (nestedName) return nestedName;
 
-  const directName = valueOf(
+  const direct = valueOf(
     event,
     [
       "changed_by_name",
@@ -705,7 +855,7 @@ function eventUserName(event) {
     ""
   );
 
-  if (directName) return String(directName);
+  if (direct) return String(direct);
 
   const id = valueOf(
     event,
@@ -728,19 +878,25 @@ function eventUserName(event) {
     ""
   );
 
-  return id !== "" ? `User #${id}` : "Not recorded";
+  return id !== ""
+    ? `User #${id}`
+    : "Not recorded";
 }
 
 function eventKey(event, index) {
   return String(
     event.id ||
       event.pk ||
-      `${eventDate(event) || "event"}-${normalizedEventType(event)}-${index}`
+      `${eventDate(event) || "event"}-${normalizedEventType(
+        event
+      )}-${index}`
   );
 }
 
 function historyActorLabel(event) {
-  return isCreationEvent(event) ? "Created by" : "Edited by";
+  return isCreationEvent(event)
+    ? "Created by"
+    : "Edited by";
 }
 
 function embeddedHistoryOf(claim) {
@@ -751,7 +907,9 @@ function embeddedHistoryOf(claim) {
     "history_records",
     "historyRecords",
   ]) {
-    if (Array.isArray(claim?.[key])) return claim[key];
+    if (Array.isArray(claim?.[key])) {
+      return claim[key];
+    }
   }
 
   return null;
@@ -761,8 +919,11 @@ function deduplicateHistoryEvents(events, claim) {
   if (!Array.isArray(events)) return [];
 
   const sorted = [...events].sort((a, b) => {
-    const aTime = new Date(eventDate(a) || 0).getTime();
-    const bTime = new Date(eventDate(b) || 0).getTime();
+    const aTime =
+      new Date(eventDate(a) || 0).getTime() || 0;
+
+    const bTime =
+      new Date(eventDate(b) || 0).getTime() || 0;
 
     return aTime - bTime;
   });
@@ -772,20 +933,31 @@ function deduplicateHistoryEvents(events, claim) {
   const seenSignatures = new Set();
 
   for (const event of sorted) {
-    const rawId = valueOf(event, ["id", "pk"], "");
+    const rawId = valueOf(
+      event,
+      ["id", "pk"],
+      ""
+    );
 
     if (rawId !== "") {
       const id = String(rawId);
 
       if (seenIds.has(id)) continue;
+
       seenIds.add(id);
     }
 
     const type = normalizedEventType(event);
-    const status = eventStatus(event, claim).trim().toLowerCase();
-    const actor = eventUserName(event).trim().toLowerCase();
+
+    const status = eventStatus(event, claim)
+      .trim()
+      .toLowerCase();
+
+    const actor = eventUserName(event)
+      .trim()
+      .toLowerCase();
+
     const timestamp = eventDate(event);
-    const creation = isCreationEvent(event);
 
     const signature = [
       timestamp || "",
@@ -795,15 +967,23 @@ function deduplicateHistoryEvents(events, claim) {
     ].join("|");
 
     if (seenSignatures.has(signature)) continue;
+
     seenSignatures.add(signature);
 
     const duplicateOfCreation =
-      !creation &&
+      !isCreationEvent(event) &&
       unique.some((existing) => {
-        if (!isCreationEvent(existing)) return false;
+        if (!isCreationEvent(existing)) {
+          return false;
+        }
 
-        const existingTimestamp = eventDate(existing);
-        const existingStatus = eventStatus(existing, claim)
+        const existingTimestamp =
+          eventDate(existing);
+
+        const existingStatus = eventStatus(
+          existing,
+          claim
+        )
           .trim()
           .toLowerCase();
 
@@ -824,6 +1004,10 @@ function deduplicateHistoryEvents(events, claim) {
   return unique;
 }
 
+/* =========================================================
+   ICONS
+========================================================= */
+
 function Icon({ name, size = 18 }) {
   const paths = {
     search: (
@@ -832,62 +1016,78 @@ function Icon({ name, size = 18 }) {
         <path d="m16 16 4 4" />
       </>
     ),
+
     calendar: (
       <>
         <rect x="3" y="5" width="18" height="16" rx="2" />
         <path d="M16 3v4M8 3v4M3 10h18" />
       </>
     ),
-    filter: <path d="M4 5h16M7 12h10m-7 7h4" />,
+
+    filter: (
+      <path d="M4 5h16M7 12h10m-7 7h4" />
+    ),
+
     refresh: (
       <>
         <path d="M20 7v5h-5M4 17v-5h5" />
         <path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3" />
       </>
     ),
+
     reset: (
       <>
         <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
         <path d="M3 3v5h5" />
       </>
     ),
+
     edit: (
       <>
         <path d="M12 20h9" />
         <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
       </>
     ),
+
     trash: (
       <>
         <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6" />
         <path d="M10 10v6m4-6v6" />
       </>
     ),
+
     list: (
       <>
         <path d="M8 6h13M8 12h13M8 18h13" />
         <path d="M3 6h.01M3 12h.01M3 18h.01" />
       </>
     ),
-    check: <path d="m5 12 4 4L19 6" />,
+
+    check: (
+      <path d="m5 12 4 4L19 6" />
+    ),
+
     clock: (
       <>
         <circle cx="12" cy="12" r="9" />
         <path d="M12 7v5l3 2" />
       </>
     ),
+
     alert: (
       <>
         <path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0Z" />
         <path d="M12 9v4m0 4h.01" />
       </>
     ),
+
     history: (
       <>
         <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
         <path d="M3 3v5h5M12 7v5l3 2" />
       </>
     ),
+
     more: (
       <>
         <circle cx="5" cy="12" r="1" />
@@ -895,11 +1095,18 @@ function Icon({ name, size = 18 }) {
         <circle cx="19" cy="12" r="1" />
       </>
     ),
+
     renewal: (
       <>
         <path d="M20 7v5h-5" />
         <path d="M4 17v-5h5" />
         <path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3" />
+      </>
+    ),
+
+    close: (
+      <>
+        <path d="M18 6 6 18M6 6l12 12" />
       </>
     ),
   };
@@ -921,106 +1128,195 @@ function Icon({ name, size = 18 }) {
   );
 }
 
-export default function ClaimHistory({ refreshKey = 0 }) {
+/* =========================================================
+   MAIN COMPONENT
+========================================================= */
+
+export default function ClaimHistory({
+  refreshKey = 0,
+}) {
   const navigate = useNavigate();
 
+  /* ---------------- State ---------------- */
+
   const [claims, setClaims] = useState([]);
-  const [currentUser, setCurrentUser] = useState(currentUserFromStorage);
+
+  const [currentUser, setCurrentUser] =
+    useState(currentUserFromStorage);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [successMessage, setSuccessMessage] =
+    useState("");
+
   const [deletingId, setDeletingId] = useState(null);
 
-  const [expandedClaim, setExpandedClaim] = useState(null);
-  const [historyByClaim, setHistoryByClaim] = useState({});
-  const [historyLoadingId, setHistoryLoadingId] = useState(null);
-  const [historyErrors, setHistoryErrors] = useState({});
-  const [historyCountByClaim, setHistoryCountByClaim] = useState({});
+  // NEW: Custom deletion confirmation modal
+  const [pendingDelete, setPendingDelete] =
+    useState(null);
 
-  // Three-dot action menu
-  const [openMenuId, setOpenMenuId] = useState(null);
+  const [expandedClaim, setExpandedClaim] =
+    useState(null);
+
+  const [historyByClaim, setHistoryByClaim] =
+    useState({});
+
+  const [historyLoadingId, setHistoryLoadingId] =
+    useState(null);
+
+  const [historyErrors, setHistoryErrors] =
+    useState({});
+
+  const [
+    historyCountByClaim,
+    setHistoryCountByClaim,
+  ] = useState({});
+
+  const [openMenuId, setOpenMenuId] =
+    useState(null);
 
   const [search, setSearch] = useState("");
-  const [createdByFilter, setCreatedByFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState("All");
 
-  const [dateMode, setDateMode] = useState("day");
-  const [selectedDate, setSelectedDate] = useState(localDateString());
-  const [selectedMonth, setSelectedMonth] = useState(localMonthString());
+  const [createdByFilter, setCreatedByFilter] =
+    useState("All");
 
-  const userId = String(userIdOf(currentUser) || "");
+  const [statusFilter, setStatusFilter] =
+    useState("All");
 
-  const loadClaims = useCallback(async (showLoader = true) => {
-    if (showLoader) setLoading(true);
-    else setRefreshing(true);
+  const [dateMode, setDateMode] =
+    useState("day");
 
-    setError("");
-    setActionError("");
-    setSuccessMessage("");
+  const [selectedDate, setSelectedDate] =
+    useState(localDateString());
 
-    try {
-      const response = await api.get("rcm/claims/");
-      const loadedClaims = listFromResponse(response.data, [
-        "claims",
-        "results",
-        "data",
-        "items",
-      ]);
+  const [selectedMonth, setSelectedMonth] =
+    useState(localMonthString());
 
-      setClaims(loadedClaims);
+  const userId = String(
+    userIdOf(currentUser) || ""
+  );
 
-      setHistoryCountByClaim((current) => {
-        const next = { ...current };
+  /* =========================================================
+     LOAD CLAIMS
+  ========================================================= */
 
-        loadedClaims.forEach((claim) => {
-          const id = String(claimDatabaseId(claim) || "");
-          const embedded = embeddedHistoryOf(claim);
+  const loadClaims = useCallback(
+    async (showLoader = true) => {
+      if (showLoader) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
 
-          if (id && embedded !== null) {
-            next[id] = embedded.length;
-          }
+      setError("");
+
+      try {
+        const response = await api.get(
+          "rcm/claims/"
+        );
+
+        const loadedClaims = listFromResponse(
+          response.data,
+          [
+            "claims",
+            "results",
+            "data",
+            "items",
+          ]
+        );
+
+        setClaims(loadedClaims);
+
+        setHistoryCountByClaim((current) => {
+          const next = { ...current };
+
+          loadedClaims.forEach((claim) => {
+            const id = String(
+              claimDatabaseId(claim) || ""
+            );
+
+            const embedded =
+              embeddedHistoryOf(claim);
+
+            if (id && embedded !== null) {
+              next[id] = embedded.length;
+            }
+          });
+
+          return next;
         });
+      } catch (err) {
+        setError(
+          apiErrorMessage(
+            err,
+            "Unable to load claim records. Please try again."
+          )
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    []
+  );
 
-        return next;
-      });
-    } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-          err.response?.data?.message ||
-          err.response?.data?.error ||
-          "Unable to load claim records. Please try again."
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  /* =========================================================
+     LOAD CURRENT USER
+  ========================================================= */
 
-  const loadCurrentUser = useCallback(async () => {
-    try {
-      const response = await api.get("users/me/");
-      const data = response.data;
-      const user = data?.user || data?.data?.user || data?.data || data;
+  const loadCurrentUser = useCallback(
+    async () => {
+      try {
+        const response = await api.get(
+          "users/me/"
+        );
 
-      if (user && typeof user === "object") setCurrentUser(user);
-    } catch {
-      // Keep local user information if the endpoint is unavailable.
-    }
-  }, []);
+        const data = response.data;
+
+        const user =
+          data?.user ||
+          data?.data?.user ||
+          data?.data ||
+          data;
+
+        if (
+          user &&
+          typeof user === "object"
+        ) {
+          setCurrentUser(user);
+        }
+      } catch {
+        // Keep locally stored user as fallback.
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     loadClaims();
     loadCurrentUser();
-  }, [loadClaims, loadCurrentUser, refreshKey]);
+  }, [
+    loadClaims,
+    loadCurrentUser,
+    refreshKey,
+  ]);
 
-  // Close the dropdown when clicking outside or pressing Escape.
+  /* =========================================================
+     CLOSE ACTION MENU
+  ========================================================= */
+
   useEffect(() => {
     if (!openMenuId) return undefined;
 
     function handleOutsideClick(event) {
-      if (!event.target.closest(".ch-action-menu")) {
+      if (
+        !event.target.closest(
+          ".ch-action-menu"
+        )
+      ) {
         setOpenMenuId(null);
       }
     }
@@ -1031,14 +1327,61 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       }
     }
 
-    document.addEventListener("mousedown", handleOutsideClick);
-    document.addEventListener("keydown", handleEscape);
+    document.addEventListener(
+      "mousedown",
+      handleOutsideClick
+    );
+
+    document.addEventListener(
+      "keydown",
+      handleEscape
+    );
 
     return () => {
-      document.removeEventListener("mousedown", handleOutsideClick);
-      document.removeEventListener("keydown", handleEscape);
+      document.removeEventListener(
+        "mousedown",
+        handleOutsideClick
+      );
+
+      document.removeEventListener(
+        "keydown",
+        handleEscape
+      );
     };
   }, [openMenuId]);
+
+  /* =========================================================
+     NEW: MODAL ESCAPE KEY
+  ========================================================= */
+
+  useEffect(() => {
+    if (!pendingDelete) return undefined;
+
+    function handleEscape(event) {
+      if (
+        event.key === "Escape" &&
+        deletingId === null
+      ) {
+        setPendingDelete(null);
+      }
+    }
+
+    document.addEventListener(
+      "keydown",
+      handleEscape
+    );
+
+    return () => {
+      document.removeEventListener(
+        "keydown",
+        handleEscape
+      );
+    };
+  }, [pendingDelete, deletingId]);
+
+  /* =========================================================
+     CREATOR OPTIONS
+  ========================================================= */
 
   const creatorOptions = useMemo(() => {
     const map = new Map();
@@ -1047,55 +1390,110 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       const id = creatorIdOf(claim);
       const name = creatorNameOf(claim);
 
-      if (name === "Not recorded") return;
+      if (name === "Not recorded") {
+        return;
+      }
 
-      const key = id !== "" ? String(id) : name;
-      if (!map.has(key)) map.set(key, { key, name });
+      const key =
+        id !== "" ? String(id) : name;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          name,
+        });
+      }
     });
 
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return [...map.values()].sort(
+      (a, b) =>
+        a.name.localeCompare(b.name)
+    );
   }, [claims]);
+
+  /* =========================================================
+     DATE FILTERING
+  ========================================================= */
 
   const periodClaims = useMemo(() => {
     return claims.filter((claim) => {
-      const created = dateParts(createdDateOf(claim));
+      const created = dateParts(
+        createdDateOf(claim)
+      );
 
-      if (!created?.day) return false;
+      if (!created?.day) {
+        return false;
+      }
 
       if (dateMode === "day") {
         return created.day === selectedDate;
       }
 
-      return created.day.startsWith(`${selectedMonth}-`);
+      return created.day.startsWith(
+        `${selectedMonth}-`
+      );
     });
-  }, [claims, dateMode, selectedDate, selectedMonth]);
+  }, [
+    claims,
+    dateMode,
+    selectedDate,
+    selectedMonth,
+  ]);
+
+  /* =========================================================
+     STATISTICS
+  ========================================================= */
 
   const stats = useMemo(
     () => ({
       total: periodClaims.length,
+
       approved: periodClaims.filter(
-        (claim) => statusCategory(claim) === "Approved"
+        (claim) =>
+          statusCategory(claim) ===
+          "Approved"
       ).length,
+
       submitted: periodClaims.filter(
-        (claim) => statusCategory(claim) === "Submitted"
+        (claim) =>
+          statusCategory(claim) ===
+          "Submitted"
       ).length,
+
       pending: periodClaims.filter(
-        (claim) => statusCategory(claim) === "Pending"
+        (claim) =>
+          statusCategory(claim) ===
+          "Pending"
       ).length,
+
       rejected: periodClaims.filter(
-        (claim) => statusCategory(claim) === "Rejected"
+        (claim) =>
+          statusCategory(claim) ===
+          "Rejected"
       ).length,
     }),
     [periodClaims]
   );
 
+  /* =========================================================
+     SEARCH AND FILTER
+  ========================================================= */
+
   const filteredClaims = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = search
+      .trim()
+      .toLowerCase();
 
     return periodClaims.filter((claim) => {
       const creatorId = creatorIdOf(claim);
-      const creatorName = creatorNameOf(claim);
-      const creatorKey = creatorId !== "" ? creatorId : creatorName;
+
+      const creatorName =
+        creatorNameOf(claim);
+
+      const creatorKey =
+        creatorId !== ""
+          ? creatorId
+          : creatorName;
 
       const searchText = [
         patientName(claim),
@@ -1112,26 +1510,48 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         .join(" ")
         .toLowerCase();
 
-      if (query && !searchText.includes(query)) return false;
+      if (
+        query &&
+        !searchText.includes(query)
+      ) {
+        return false;
+      }
 
       if (createdByFilter !== "All") {
-        if (createdByFilter === "Not recorded") {
-          if (creatorName !== "Not recorded") return false;
-        } else if (String(creatorKey) !== createdByFilter) {
+        if (
+          createdByFilter ===
+          "Not recorded"
+        ) {
+          if (
+            creatorName !==
+            "Not recorded"
+          ) {
+            return false;
+          }
+        } else if (
+          String(creatorKey) !==
+          createdByFilter
+        ) {
           return false;
         }
       }
 
       if (
         statusFilter !== "All" &&
-        statusCategory(claim) !== statusFilter
+        statusCategory(claim) !==
+          statusFilter
       ) {
         return false;
       }
 
       return true;
     });
-  }, [periodClaims, search, createdByFilter, statusFilter]);
+  }, [
+    periodClaims,
+    search,
+    createdByFilter,
+    statusFilter,
+  ]);
 
   const hasFilters =
     Boolean(search.trim()) ||
@@ -1146,15 +1566,28 @@ export default function ClaimHistory({ refreshKey = 0 }) {
 
   function handleCardClick(category) {
     setStatusFilter((current) =>
-      category === "All" || current === category ? "All" : category
+      category === "All" ||
+      current === category
+        ? "All"
+        : category
     );
   }
+
+  /* =========================================================
+     EDIT CLAIM
+  ========================================================= */
 
   function startEditing(claim) {
     const id = claimDatabaseId(claim);
 
-    if (id === "" || id === "—") {
-      setActionError("This claim has no database ID.");
+    if (
+      id === "" ||
+      id === "—"
+    ) {
+      setActionError(
+        "This claim has no database ID."
+      );
+
       setOpenMenuId(null);
       return;
     }
@@ -1172,25 +1605,39 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     });
   }
 
-  // Send rejected claims to the renewal/rejection alert workflow.
+  /* =========================================================
+     CREATE RENEWAL ALERT
+  ========================================================= */
+
   function createRenewalAlert(claim) {
     const id = claimDatabaseId(claim);
 
-    if (id === "" || id === "—") {
-      setActionError("This claim has no database ID.");
+    if (
+      id === "" ||
+      id === "—"
+    ) {
+      setActionError(
+        "This claim has no database ID."
+      );
+
       setOpenMenuId(null);
       return;
     }
 
-    if (statusCategory(claim) !== "Rejected") {
+    if (
+      statusCategory(claim) !==
+      "Rejected"
+    ) {
       setActionError(
         "A rejection alert can only be created for a rejected claim."
       );
+
       setOpenMenuId(null);
       return;
     }
 
-    const reason = rejectionReasonOf(claim);
+    const reason =
+      rejectionReasonOf(claim);
 
     const renewalAlert = {
       id,
@@ -1199,7 +1646,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       patientId: patientIdOf(claim),
       patientName: patientName(claim),
       alertType: "rejection",
-      rejectionReason: reason === "—" ? "" : reason,
+      rejectionReason:
+        reason === "—" ? "" : reason,
     };
 
     setActionError("");
@@ -1214,135 +1662,351 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     });
   }
 
+  /* =========================================================
+     HISTORY COUNT
+  ========================================================= */
+
   function historyCountOf(claim) {
-    const id = String(claimDatabaseId(claim) || "");
-    const embedded = embeddedHistoryOf(claim);
+    const id = String(
+      claimDatabaseId(claim) || ""
+    );
 
-    if (embedded !== null) return embedded.length;
-
-    if (typeof historyCountByClaim[id] === "number") {
+    if (
+      typeof historyCountByClaim[id] ===
+      "number"
+    ) {
       return historyCountByClaim[id];
+    }
+
+    const embedded =
+      embeddedHistoryOf(claim);
+
+    if (embedded !== null) {
+      return embedded.length;
     }
 
     return null;
   }
 
-  function canDeleteClaim(claim) {
+  /* =========================================================
+     DELETE ELIGIBILITY
+  ========================================================= */
+
+  function isTodaysOwnClaim(claim) {
     if (!userId) return false;
 
-    const createdDay = dateParts(createdDateOf(claim))?.day;
-    if (createdDay !== localDateString()) return false;
+    const createdDay = dateParts(
+      createdDateOf(claim)
+    )?.day;
 
-    const creatorId = creatorIdOf(claim);
-    if (!creatorId || String(creatorId) !== userId) return false;
+    if (
+      createdDay !== localDateString()
+    ) {
+      return false;
+    }
 
-    const count = historyCountOf(claim);
+    const creatorId =
+      creatorIdOf(claim);
 
-    if (count === null) return false;
-
-    return count <= 1;
+    return (
+      Boolean(creatorId) &&
+      String(creatorId) === userId
+    );
   }
 
-  async function loadClaimHistory(claim, forceRefresh = false) {
-    const id = String(claimDatabaseId(claim) || "");
+  function canDeleteClaim(claim) {
+    if (!isTodaysOwnClaim(claim)) {
+      return false;
+    }
+
+    const count =
+      historyCountOf(claim);
+
+    // Unknown history count requires
+    // verification before deletion.
+    return (
+      count === null ||
+      count <= 1
+    );
+  }
+
+  /* =========================================================
+     LOAD CLAIM HISTORY
+  ========================================================= */
+
+  async function loadClaimHistory(
+    claim,
+    forceRefresh = false
+  ) {
+    const id = String(
+      claimDatabaseId(claim) || ""
+    );
 
     if (!id || id === "—") {
       setHistoryErrors((current) => ({
         ...current,
-        [id]: "This claim has no database ID.",
+        [id]:
+          "This claim has no database ID.",
       }));
+
+      return;
+    }
+
+    if (
+      !forceRefresh &&
+      String(expandedClaim) === id
+    ) {
+      setExpandedClaim(null);
+      setOpenMenuId(null);
       return;
     }
 
     setExpandedClaim(id);
     setOpenMenuId(null);
-    setHistoryErrors((current) => ({ ...current, [id]: "" }));
 
-    if (!forceRefresh && Array.isArray(historyByClaim[id])) return;
+    setHistoryErrors((current) => ({
+      ...current,
+      [id]: "",
+    }));
+
+    if (
+      !forceRefresh &&
+      Array.isArray(historyByClaim[id])
+    ) {
+      return;
+    }
 
     setHistoryLoadingId(id);
 
     try {
-      const response = await api.get(`rcm/claims/${id}/history/`);
+      const response = await api.get(
+        `rcm/claims/${id}/history/`
+      );
 
-      const events = listFromResponse(response.data, [
-        "history",
-        "claim_history",
-        "claimHistory",
-        "results",
-        "items",
-        "data",
-      ]);
+      const events = listFromResponse(
+        response.data,
+        [
+          "history",
+          "claim_history",
+          "claimHistory",
+          "results",
+          "items",
+          "data",
+        ]
+      );
 
       setHistoryByClaim((current) => ({
         ...current,
         [id]: events,
       }));
 
-      setHistoryCountByClaim((current) => ({
-        ...current,
-        [id]: events.length,
-      }));
+      setHistoryCountByClaim(
+        (current) => ({
+          ...current,
+          [id]: events.length,
+        })
+      );
     } catch (err) {
       setHistoryErrors((current) => ({
         ...current,
-        [id]:
-          err.response?.data?.detail ||
-          err.response?.data?.message ||
-          "Unable to load history. Please check the claim-history API endpoint.",
+        [id]: apiErrorMessage(
+          err,
+          "Unable to load history. Please check the claim-history API endpoint."
+        ),
       }));
     } finally {
       setHistoryLoadingId(null);
     }
   }
 
+  /* =========================================================
+     NEW: VERIFY BEFORE SHOWING DELETE MODAL
+  ========================================================= */
+
   async function deleteClaim(claim) {
     setActionError("");
     setSuccessMessage("");
     setOpenMenuId(null);
 
-    const id = String(claimDatabaseId(claim) || "");
-    const count = historyCountOf(claim);
-
-    if (count === null) {
-      setActionError(
-        "Claim history has not been verified. Open History and refresh it before deleting this claim."
-      );
-      return;
-    }
-
-    if (count > 1) {
-      setActionError(
-        "This claim cannot be deleted because it has more than one history record."
-      );
-      return;
-    }
-
-    if (!canDeleteClaim(claim)) {
-      setActionError(
-        "Only a claim created by your account today can be deleted."
-      );
-      return;
-    }
-
-    if (!id || id === "—") {
-      setActionError("The claim database ID is missing.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Delete claim ${claimIdOf(claim)} for ${patientName(claim)}?`
+    const id = String(
+      claimDatabaseId(claim) || ""
     );
 
-    if (!confirmed) return;
+    if (!id || id === "—") {
+      setActionError(
+        "The claim database ID is missing."
+      );
+      return;
+    }
+
+    if (!isTodaysOwnClaim(claim)) {
+      setActionError(
+        "Only claims created today by your own account can be deleted."
+      );
+      return;
+    }
+
+    if (
+      deletingId !== null ||
+      pendingDelete !== null
+    ) {
+      return;
+    }
 
     setDeletingId(id);
 
     try {
-      await api.delete(`rcm/claims/${id}/`);
+      // Always request fresh history.
+      const response = await api.get(
+        `rcm/claims/${id}/history/`
+      );
+
+      const events = listFromResponse(
+        response.data,
+        [
+          "history",
+          "claim_history",
+          "claimHistory",
+          "results",
+          "items",
+          "data",
+        ]
+      );
+
+      setHistoryByClaim((current) => ({
+        ...current,
+        [id]: events,
+      }));
+
+      setHistoryCountByClaim(
+        (current) => ({
+          ...current,
+          [id]: events.length,
+        })
+      );
+
+      if (events.length > 1) {
+        setActionError(
+          "This claim cannot be deleted because it has more than one history record."
+        );
+        return;
+      }
+
+      if (events.length === 0) {
+        setActionError(
+          "This claim cannot be deleted because its initial creation history could not be verified."
+        );
+        return;
+      }
+
+      // History verified.
+      // Open custom React modal.
+      // No DELETE request has been sent.
+      setPendingDelete(claim);
+    } catch (err) {
+      setActionError(
+        apiErrorMessage(
+          err,
+          "Unable to verify claim history. The claim has not been deleted."
+        )
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  /* =========================================================
+     NEW: CONFIRM PERMANENT DELETION
+  ========================================================= */
+
+  async function confirmDeleteClaim() {
+    if (
+      !pendingDelete ||
+      deletingId !== null
+    ) {
+      return;
+    }
+
+    const claim = pendingDelete;
+
+    const id = String(
+      claimDatabaseId(claim) || ""
+    );
+
+    if (!id || id === "—") {
+      setActionError(
+        "The claim database ID is missing."
+      );
+      setPendingDelete(null);
+      return;
+    }
+
+    if (!isTodaysOwnClaim(claim)) {
+      setActionError(
+        "Only claims created today by your own account can be deleted."
+      );
+      setPendingDelete(null);
+      return;
+    }
+
+    setDeletingId(id);
+    setActionError("");
+    setSuccessMessage("");
+
+    try {
+      // Recheck history before the final DELETE
+      // to reduce the risk of deleting a claim
+      // modified while the modal was open.
+      const response = await api.get(
+        `rcm/claims/${id}/history/`
+      );
+
+      const events = listFromResponse(
+        response.data,
+        [
+          "history",
+          "claim_history",
+          "claimHistory",
+          "results",
+          "items",
+          "data",
+        ]
+      );
+
+      setHistoryByClaim((current) => ({
+        ...current,
+        [id]: events,
+      }));
+
+      setHistoryCountByClaim(
+        (current) => ({
+          ...current,
+          [id]: events.length,
+        })
+      );
+
+      if (events.length !== 1) {
+        setActionError(
+          "Deletion cancelled. The claim history has changed or its creation record could not be verified."
+        );
+        setPendingDelete(null);
+        return;
+      }
+
+      // The backend must enforce ownership,
+      // creation date, history, and linked
+      // renewal-alert restrictions atomically.
+      await api.delete(
+        `rcm/claims/${id}/`
+      );
 
       setClaims((current) =>
-        current.filter((item) => String(claimDatabaseId(item)) !== id)
+        current.filter(
+          (item) =>
+            String(
+              claimDatabaseId(item)
+            ) !== id
+        )
       );
 
       setHistoryByClaim((current) => {
@@ -1351,11 +2015,13 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         return next;
       });
 
-      setHistoryCountByClaim((current) => {
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
+      setHistoryCountByClaim(
+        (current) => {
+          const next = { ...current };
+          delete next[id];
+          return next;
+        }
+      );
 
       setHistoryErrors((current) => {
         const next = { ...current };
@@ -1364,49 +2030,88 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       });
 
       setExpandedClaim((current) =>
-        String(current) === id ? null : current
+        String(current) === id
+          ? null
+          : current
       );
 
-      setSuccessMessage("Claim deleted successfully.");
+      setPendingDelete(null);
+      setOpenMenuId(null);
+
+      setSuccessMessage(
+        `Claim ${claimIdOf(
+          claim
+        )} was deleted successfully.`
+      );
     } catch (err) {
-      const data = err.response?.data;
+      const status =
+        err.response?.status;
+
+      const fallback =
+        status === 403
+          ? "The server denied deletion. Check claim ownership and permissions."
+          : status === 404
+          ? "The claim or history endpoint was not found."
+          : status === 409
+          ? "The claim cannot be deleted because it has been modified or has linked records."
+          : "Unable to delete this claim. Please check the backend response.";
 
       setActionError(
-        data?.detail ||
-          data?.message ||
-          data?.error ||
-          (err.response?.status === 403
-            ? "The server denied deletion. Check the backend delete permissions."
-            : err.response?.status === 404
-              ? "The claim was not found. Refresh the list and try again."
-              : err.response?.status === 409
-                ? "This claim cannot be deleted because it has more than one history record."
-                : "The server could not delete this claim. Check the backend response and delete rules.")
+        apiErrorMessage(err, fallback)
       );
 
-      loadClaims(false);
+      setPendingDelete(null);
     } finally {
       setDeletingId(null);
     }
   }
 
+  /* =========================================================
+     CANCEL DELETION
+  ========================================================= */
+
+  function cancelDeleteClaim() {
+    if (deletingId !== null) {
+      return;
+    }
+
+    setPendingDelete(null);
+  }
+
+  /* =========================================================
+     PATIENT NAVIGATION
+  ========================================================= */
+
   function openPatientFile(id) {
-    if (id !== null && id !== undefined && id !== "") {
+    if (
+      id !== null &&
+      id !== undefined &&
+      id !== ""
+    ) {
       navigate(`/patients/${id}`);
     }
   }
+
+  /* =========================================================
+     PERIOD LABEL
+  ========================================================= */
 
   const periodLabel =
     dateMode === "day"
       ? formatDate(selectedDate)
       : formatMonth(selectedMonth);
 
+  /* =========================================================
+     SUMMARY CARDS
+  ========================================================= */
+
   const cards = [
     {
       label: "Total Claims",
       value: stats.total,
       category: "All",
-      description: "Claims in selected period",
+      description:
+        "Claims in selected period",
       color: C.blue,
       bg: "#eff6ff",
       border: "#bfdbfe",
@@ -1416,7 +2121,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       label: "Approved Claims",
       value: stats.approved,
       category: "Approved",
-      description: "Approved, completed, or paid",
+      description:
+        "Approved, completed, or paid",
       color: C.green,
       bg: "#ecfdf5",
       border: "#a7f3d0",
@@ -1426,7 +2132,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       label: "Submitted Claims",
       value: stats.submitted,
       category: "Submitted",
-      description: "Submitted or awaiting a decision",
+      description:
+        "Submitted or awaiting a decision",
       color: C.teal,
       bg: "#f0fdfa",
       border: "#99f6e4",
@@ -1436,7 +2143,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       label: "Pending Claims",
       value: stats.pending,
       category: "Pending",
-      description: "Awaiting action or processing",
+      description:
+        "Awaiting action or processing",
       color: C.orange,
       bg: "#fff7ed",
       border: "#fed7aa",
@@ -1446,7 +2154,8 @@ export default function ClaimHistory({ refreshKey = 0 }) {
       label: "Rejected Claims",
       value: stats.rejected,
       category: "Rejected",
-      description: "Rejected or denied claims",
+      description:
+        "Rejected or denied claims",
       color: C.red,
       bg: "#fff1f2",
       border: "#fecdd3",
@@ -1454,120 +2163,991 @@ export default function ClaimHistory({ refreshKey = 0 }) {
     },
   ];
 
+  /* =========================================================
+     RENDER
+  ========================================================= */
+
   return (
     <div className="claim-history-page">
       <style>{`
-        .claim-history-page{width:100%;color:${C.navy};font-family:inherit;font-size:14px}
-        .claim-history-page *{box-sizing:border-box}
-        .ch-page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:22px}
-        .ch-title{font-size:25px;font-weight:900;margin:0 0 7px;color:${C.navy};letter-spacing:-.45px}
-        .ch-subtitle{margin:0;color:${C.muted};font-size:13px;line-height:1.65}
-        .ch-count{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #d4e4fa;border-radius:20px;background:#f1f7ff;color:#2455a0;font-size:12px;font-weight:800;white-space:nowrap}
-        .ch-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:9px 13px;border:1px solid #1557b0;border-radius:9px;background:#1557b0;color:#fff;font-family:inherit;font-size:13px;font-weight:750;cursor:pointer;transition:background .15s,border .15s}
-        .ch-button:hover:not(:disabled){filter:brightness(.97)}
-        .ch-button:disabled{opacity:.5;cursor:not-allowed}
-        .ch-secondary{border-color:#cbdcf3;background:#fff;color:#174b91}
-        .ch-danger{border-color:#fecdd3;background:#fff5f5;color:#be123c}
-        .ch-edit{border-color:#c9ddfc;background:#f0f6ff;color:#1d4ed8}
-        .ch-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:13px;margin-bottom:22px}
-        .ch-card{position:relative;display:flex;align-items:flex-start;gap:11px;min-width:0;width:100%;padding:16px 13px;border:1px solid;border-radius:14px;text-align:left;font-family:inherit;cursor:pointer;transition:transform .18s,box-shadow .18s,outline-color .18s;appearance:none;color:inherit}
-        .ch-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px #172b4d12}
-        .ch-card:focus-visible{outline:3px solid #60a5fa;outline-offset:3px}
-        .ch-card.ch-card-active{box-shadow:0 0 0 2px #2563eb,0 8px 24px #172b4d12}
-        .ch-card-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;flex-shrink:0}
-        .ch-card-content{min-width:0}
-        .ch-card-label{display:block;font-size:12px;font-weight:800;line-height:1.5;color:#334155}
-        .ch-card-value{display:block;font-size:27px;font-weight:900;margin:6px 0 4px;line-height:1.2}
-        .ch-card-description{display:block;color:${C.muted};font-size:10px;line-height:1.5}
-        .ch-card-active-label{display:block;margin-top:7px;color:#1d4ed8;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.04em}
-        .ch-panel{border:1px solid ${C.border};border-radius:15px;background:#fff;box-shadow:0 4px 18px #172b4d08;overflow:hidden}
-        .ch-content{padding:22px}
-        .ch-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:20px}
-        .ch-filter{border:1px solid #dce7f5;border-radius:14px;background:#fff;overflow:hidden}
-        .ch-filter-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:17px 20px;border-bottom:1px solid #e5edf8;background:linear-gradient(120deg,#f3f8ff,#fbfdff)}
-        .ch-filter-title{display:flex;align-items:center;gap:10px;color:#173b73;font-size:16px;font-weight:850}
-        .ch-filter-subtitle{margin:4px 0 0 29px;color:${C.muted};font-size:12px}
-        .ch-filter-body{padding:20px}
-        .ch-mode-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:19px;padding:15px;border:1px solid #e1eaf7;border-radius:12px;background:#f8fbff}
-        .ch-mode-label{display:flex;align-items:center;gap:10px;color:#244b83;font-size:13px;font-weight:850}
-        .ch-mode-label small{display:block;margin-top:4px;color:${C.muted};font-size:11px;font-weight:500}
-        .ch-segment{display:inline-flex;gap:4px;padding:4px;border:1px solid #d4e1f2;border-radius:10px;background:#edf3fb}
-        .ch-segment button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:8px 15px;border:0;border-radius:7px;background:transparent;color:#506782;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer}
-        .ch-segment button.active{background:#fff;color:#174b91;box-shadow:0 1px 4px #172b4d18}
-        .ch-filter-grid{display:grid;grid-template-columns:minmax(240px,1.5fr) repeat(2,minmax(170px,1fr));gap:16px;align-items:end}
-        .ch-label{display:block;min-width:0;color:#526781;font-size:12px;font-weight:800}
-        .ch-control-wrap{position:relative;margin-top:8px}
-        .ch-control{width:100%;min-width:0;height:45px;padding:0 12px;border:1px solid #d4dfed;border-radius:9px;background:#fff;color:${C.navy};font-family:inherit;font-size:13px;outline:none}
-        .ch-control:focus{border-color:#3b82f6;box-shadow:0 0 0 3px #3b82f61a}
-        .ch-search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#64748b;pointer-events:none}
-        .ch-search{padding-left:39px}
-        .ch-date-description{margin-top:8px;color:#64748b;font-size:11px;font-weight:500;line-height:1.6}
-        .ch-period-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:18px;padding:12px 14px;border:1px solid #dbeafe;border-radius:9px;background:#eff6ff;color:#244b83;font-size:12px}
-        .ch-period-summary strong{font-weight:850}
-        .ch-filter-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 20px;border-top:1px solid #e7edf6;background:#fbfdff}
-        .ch-muted{color:${C.muted};font-size:12px}
-        .ch-table-section{margin-top:27px}
-        .ch-table-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-        .ch-table-title{margin:0 0 5px;color:${C.navy};font-size:18px;font-weight:850}
-        .ch-table-wrap{width:100%;overflow:auto;border:1px solid #dce7f5;border-radius:11px;background:#fff;min-height:650px;}
-        .ch-table{width:100%;min-width:1900px;border-collapse:separate;border-spacing:0;text-align:left}
-        .ch-table th{position:sticky;top:0;z-index:1;padding:14px;border-bottom:1px solid #dce7f5;background:#eff5fd;color:#31527f;font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.035em;white-space:nowrap}
-        .ch-table td{padding:13px;border-bottom:1px solid #eaf0f8;color:#526781;font-size:13px;vertical-align:middle}
-        .ch-row:hover{background:#f7faff}
-        .ch-claim-id{display:inline-block;padding:7px 10px;border:1px solid #d8e8ff;border-radius:20px;background:#eaf3ff;color:#1554a5;font-size:12px;font-weight:850;white-space:nowrap}
-        .ch-link{padding:0;border:0;background:transparent;color:#17365f;font-family:inherit;font-size:13px;font-weight:800;text-align:left;cursor:pointer}
-        .ch-link:hover{color:${C.blue};text-decoration:underline}
-        .ch-status{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid;border-radius:20px;font-size:12px;font-weight:800;white-space:nowrap}
-        .ch-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-        .ch-cell-text{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
-        .ch-rejection{display:inline-block;max-width:240px;color:#9f1239;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
-        .ch-detail-row td{padding:0;background:#f4f8ff}
-        .ch-history-wrap{padding:18px}
-        .ch-history-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:15px}
-        .ch-history-heading{margin:0 0 5px;color:#173b73;font-size:16px;font-weight:850}
-        .ch-history-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #dce8f8}
-        .ch-history-table th,.ch-history-table td{padding:13px 15px;border-bottom:1px solid #e8eff8;text-align:left;vertical-align:middle}
-        .ch-history-table th{background:#edf4ff;color:#31527f;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
-        .ch-history-table td{color:#334e70;font-size:13px;overflow-wrap:anywhere}
-        .ch-history-table tr:last-child td{border-bottom:0}
-        .ch-history-event{display:inline-flex;padding:6px 10px;border-radius:20px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:800}
-        .ch-history-empty{padding:24px;border:1px dashed #cbdcf0;border-radius:10px;background:#fff;text-align:center;color:#71839d;line-height:1.7}
-        .ch-empty{padding:38px 16px;text-align:center;color:#71839d;font-size:13px;line-height:1.7}
-        .ch-empty strong{display:block;margin-bottom:8px;color:#203c63;font-size:17px}
-        .ch-alert{margin:14px 0;padding:12px 14px;border:1px solid;border-radius:10px;font-size:13px;line-height:1.6}
-        .ch-error{border-color:#fecaca;background:#fef2f2;color:${C.red}}
-        .ch-success{border-color:#bbf7d0;background:#f0fdf4;color:${C.green}}
+        .claim-history-page {
+          width: 100%;
+          color: ${C.navy};
+          font-family: inherit;
+          font-size: 14px;
+        }
 
-        /* Three-dot action menu */
-        .ch-action-menu{position:relative;display:inline-flex;justify-content:center}
-        .ch-dots-button{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border:1px solid #d5e1ef;border-radius:9px;background:#fff;color:#334e70;cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
-        .ch-dots-button:hover,.ch-dots-button[aria-expanded="true"]{border-color:#93b4e5;background:#eff6ff;color:#174b91;box-shadow:0 2px 8px #172b4d12}
-        .ch-dots-button:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
-        .ch-action-dropdown{position:absolute;right:0;top:calc(100% + 7px);z-index:20;width:220px;padding:6px;border:1px solid #dbe4f0;border-radius:11px;background:#fff;box-shadow:0 12px 30px #172b4d20}
-        .ch-action-dropdown button{display:flex;align-items:center;gap:10px;width:100%;min-height:39px;padding:9px 10px;border:0;border-radius:7px;background:transparent;color:#334e70;font-family:inherit;font-size:12px;font-weight:700;text-align:left;cursor:pointer}
-        .ch-action-dropdown button:hover:not(:disabled){background:#eff6ff;color:#174b91}
-        .ch-action-dropdown button:disabled{opacity:.45;cursor:not-allowed}
-        .ch-action-dropdown button.ch-menu-danger{color:#be123c}
-        .ch-action-dropdown button.ch-menu-danger:hover:not(:disabled){background:#fff1f2;color:#9f1239}
-        .ch-action-dropdown button.ch-menu-renewal{color:#0f766e}
-        .ch-action-dropdown button.ch-menu-renewal:hover{background:#f0fdfa;color:#115e59}
-        .ch-menu-divider{height:1px;margin:5px 4px;background:#e8eef6}
-        .ch-menu-hint{padding:6px 10px 4px;color:#8493a8;font-size:10px;line-height:1.5}
+        .claim-history-page * {
+          box-sizing: border-box;
+        }
 
-        @media(max-width:1250px){.ch-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
-        @media(max-width:850px){.ch-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-filter-grid>.ch-label:first-child{grid-column:1/-1}}
-        @media(max-width:650px){.ch-content{padding:13px}.ch-cards{gap:9px}.ch-card{padding:12px;gap:9px}.ch-card-value{font-size:24px}.ch-card-icon{width:35px;height:35px}.ch-filter-grid{grid-template-columns:1fr}.ch-filter-grid>.ch-label:first-child{grid-column:auto}.ch-filter-heading,.ch-filter-body{padding:14px}.ch-filter-footer{padding:12px 14px}.ch-title{font-size:22px}.ch-mode-row{align-items:flex-start}.ch-segment{width:100%}.ch-segment button{flex:1}.ch-action-dropdown{right:0;position:fixed;top:auto;margin-top:0}}
+        .ch-page-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+          flex-wrap: wrap;
+          margin-bottom: 22px;
+        }
+
+        .ch-title {
+          font-size: 25px;
+          font-weight: 900;
+          margin: 0 0 7px;
+          color: ${C.navy};
+          letter-spacing: -.45px;
+        }
+
+        .ch-subtitle {
+          margin: 0;
+          color: ${C.muted};
+          font-size: 13px;
+          line-height: 1.65;
+        }
+
+        .ch-count {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          border: 1px solid #d4e4fa;
+          border-radius: 20px;
+          background: #f1f7ff;
+          color: #2455a0;
+          font-size: 12px;
+          font-weight: 800;
+          white-space: nowrap;
+        }
+
+        .ch-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          min-height: 40px;
+          padding: 9px 13px;
+          border: 1px solid #1557b0;
+          border-radius: 9px;
+          background: #1557b0;
+          color: #fff;
+          font-family: inherit;
+          font-size: 13px;
+          font-weight: 750;
+          cursor: pointer;
+          transition: background .15s, border .15s;
+        }
+
+        .ch-button:hover:not(:disabled) {
+          filter: brightness(.97);
+        }
+
+        .ch-button:disabled {
+          opacity: .5;
+          cursor: not-allowed;
+        }
+
+        .ch-secondary {
+          border-color: #cbdcf3;
+          background: #fff;
+          color: #174b91;
+        }
+
+        .ch-cards {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 13px;
+          margin-bottom: 22px;
+        }
+
+        .ch-card {
+          position: relative;
+          display: flex;
+          align-items: flex-start;
+          gap: 11px;
+          min-width: 0;
+          width: 100%;
+          padding: 16px 13px;
+          border: 1px solid;
+          border-radius: 14px;
+          text-align: left;
+          font-family: inherit;
+          cursor: pointer;
+          transition: transform .18s, box-shadow .18s;
+          appearance: none;
+          color: inherit;
+        }
+
+        .ch-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 24px #172b4d12;
+        }
+
+        .ch-card:focus-visible {
+          outline: 3px solid #60a5fa;
+          outline-offset: 3px;
+        }
+
+        .ch-card.ch-card-active {
+          box-shadow:
+            0 0 0 2px #2563eb,
+            0 8px 24px #172b4d12;
+        }
+
+        .ch-card-icon {
+          display: grid;
+          place-items: center;
+          width: 38px;
+          height: 38px;
+          border-radius: 11px;
+          flex-shrink: 0;
+        }
+
+        .ch-card-content {
+          min-width: 0;
+        }
+
+        .ch-card-label {
+          display: block;
+          font-size: 12px;
+          font-weight: 800;
+          line-height: 1.5;
+          color: #334155;
+        }
+
+        .ch-card-value {
+          display: block;
+          font-size: 27px;
+          font-weight: 900;
+          margin: 6px 0 4px;
+          line-height: 1.2;
+        }
+
+        .ch-card-description {
+          display: block;
+          color: ${C.muted};
+          font-size: 10px;
+          line-height: 1.5;
+        }
+
+        .ch-card-active-label {
+          display: block;
+          margin-top: 7px;
+          color: #1d4ed8;
+          font-size: 10px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: .04em;
+        }
+
+        .ch-panel {
+          border: 1px solid ${C.border};
+          border-radius: 15px;
+          background: #fff;
+          box-shadow: 0 4px 18px #172b4d08;
+          overflow: hidden;
+        }
+
+        .ch-content {
+          padding: 22px;
+        }
+
+        .ch-toolbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 14px;
+          flex-wrap: wrap;
+          margin-bottom: 20px;
+        }
+
+        .ch-filter {
+          border: 1px solid #dce7f5;
+          border-radius: 14px;
+          background: #fff;
+          overflow: hidden;
+        }
+
+        .ch-filter-heading {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          padding: 17px 20px;
+          border-bottom: 1px solid #e5edf8;
+          background: linear-gradient(
+            120deg,
+            #f3f8ff,
+            #fbfdff
+          );
+        }
+
+        .ch-filter-title {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: #173b73;
+          font-size: 16px;
+          font-weight: 850;
+        }
+
+        .ch-filter-subtitle {
+          margin: 4px 0 0 29px;
+          color: ${C.muted};
+          font-size: 12px;
+        }
+
+        .ch-filter-body {
+          padding: 20px;
+        }
+
+        .ch-mode-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          flex-wrap: wrap;
+          margin-bottom: 19px;
+          padding: 15px;
+          border: 1px solid #e1eaf7;
+          border-radius: 12px;
+          background: #f8fbff;
+        }
+
+        .ch-mode-label {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: #244b83;
+          font-size: 13px;
+          font-weight: 850;
+        }
+
+        .ch-mode-label small {
+          display: block;
+          margin-top: 4px;
+          color: ${C.muted};
+          font-size: 11px;
+          font-weight: 500;
+        }
+
+        .ch-segment {
+          display: inline-flex;
+          gap: 4px;
+          padding: 4px;
+          border: 1px solid #d4e1f2;
+          border-radius: 10px;
+          background: #edf3fb;
+        }
+
+        .ch-segment button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          min-height: 36px;
+          padding: 8px 15px;
+          border: 0;
+          border-radius: 7px;
+          background: transparent;
+          color: #506782;
+          font-family: inherit;
+          font-size: 13px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .ch-segment button.active {
+          background: #fff;
+          color: #174b91;
+          box-shadow: 0 1px 4px #172b4d18;
+        }
+
+        .ch-filter-grid {
+          display: grid;
+          grid-template-columns:
+            minmax(240px, 1.5fr)
+            repeat(2, minmax(170px, 1fr));
+          gap: 16px;
+          align-items: end;
+        }
+
+        .ch-label {
+          display: block;
+          min-width: 0;
+          color: #526781;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .ch-control-wrap {
+          position: relative;
+          margin-top: 8px;
+        }
+
+        .ch-control {
+          width: 100%;
+          min-width: 0;
+          height: 45px;
+          padding: 0 12px;
+          border: 1px solid #d4dfed;
+          border-radius: 9px;
+          background: #fff;
+          color: ${C.navy};
+          font-family: inherit;
+          font-size: 13px;
+          outline: none;
+        }
+
+        .ch-control:focus {
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 3px #3b82f61a;
+        }
+
+        .ch-search-icon {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #64748b;
+          pointer-events: none;
+        }
+
+        .ch-search {
+          padding-left: 39px;
+        }
+
+        .ch-date-description {
+          margin-top: 8px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 500;
+          line-height: 1.6;
+        }
+
+        .ch-period-summary {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 18px;
+          padding: 12px 14px;
+          border: 1px solid #dbeafe;
+          border-radius: 9px;
+          background: #eff6ff;
+          color: #244b83;
+          font-size: 12px;
+        }
+
+        .ch-period-summary strong {
+          font-weight: 850;
+        }
+
+        .ch-filter-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          padding: 14px 20px;
+          border-top: 1px solid #e7edf6;
+          background: #fbfdff;
+        }
+
+        .ch-muted {
+          color: ${C.muted};
+          font-size: 12px;
+        }
+
+        .ch-table-section {
+          margin-top: 27px;
+        }
+
+        .ch-table-heading {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+          margin-bottom: 14px;
+        }
+
+        .ch-table-title {
+          margin: 0 0 5px;
+          color: ${C.navy};
+          font-size: 18px;
+          font-weight: 850;
+        }
+
+        .ch-table-wrap {
+          width: 100%;
+          overflow: auto;
+          border: 1px solid #dce7f5;
+          border-radius: 11px;
+          background: #fff;
+          min-height: 650px;
+        }
+
+        .ch-table {
+          width: 100%;
+          min-width: 1900px;
+          border-collapse: separate;
+          border-spacing: 0;
+          text-align: left;
+        }
+
+        .ch-table th {
+          position: sticky;
+          top: 0;
+          z-index: 1;
+          padding: 14px;
+          border-bottom: 1px solid #dce7f5;
+          background: #eff5fd;
+          color: #31527f;
+          font-size: 11px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: .035em;
+          white-space: nowrap;
+        }
+
+        .ch-table td {
+          padding: 13px;
+          border-bottom: 1px solid #eaf0f8;
+          color: #526781;
+          font-size: 13px;
+          vertical-align: middle;
+        }
+
+        .ch-row:hover {
+          background: #f7faff;
+        }
+
+        .ch-claim-id {
+          display: inline-block;
+          padding: 7px 10px;
+          border: 1px solid #d8e8ff;
+          border-radius: 20px;
+          background: #eaf3ff;
+          color: #1554a5;
+          font-size: 12px;
+          font-weight: 850;
+          white-space: nowrap;
+        }
+
+        .ch-link {
+          padding: 0;
+          border: 0;
+          background: transparent;
+          color: #17365f;
+          font-family: inherit;
+          font-size: 13px;
+          font-weight: 800;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .ch-link:hover {
+          color: ${C.blue};
+          text-decoration: underline;
+        }
+
+        .ch-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 10px;
+          border: 1px solid;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 800;
+          white-space: nowrap;
+        }
+
+        .ch-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+
+        .ch-cell-text {
+          display: inline-block;
+          max-width: 220px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          vertical-align: middle;
+        }
+
+        .ch-rejection {
+          display: inline-block;
+          max-width: 240px;
+          color: #9f1239;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          line-height: 1.5;
+        }
+
+        .ch-detail-row td {
+          padding: 0;
+          background: #f4f8ff;
+        }
+
+        .ch-history-wrap {
+          padding: 18px;
+        }
+
+        .ch-history-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          margin-bottom: 15px;
+        }
+
+        .ch-history-heading {
+          margin: 0 0 5px;
+          color: #173b73;
+          font-size: 16px;
+          font-weight: 850;
+        }
+
+        .ch-history-table {
+          width: 100%;
+          border-collapse: collapse;
+          background: #fff;
+          border: 1px solid #dce8f8;
+        }
+
+        .ch-history-table th,
+        .ch-history-table td {
+          padding: 13px 15px;
+          border-bottom: 1px solid #e8eff8;
+          text-align: left;
+          vertical-align: middle;
+        }
+
+        .ch-history-table th {
+          background: #edf4ff;
+          color: #31527f;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: .03em;
+        }
+
+        .ch-history-table td {
+          color: #334e70;
+          font-size: 13px;
+          overflow-wrap: anywhere;
+        }
+
+        .ch-history-table tr:last-child td {
+          border-bottom: 0;
+        }
+
+        .ch-history-event {
+          display: inline-flex;
+          padding: 6px 10px;
+          border-radius: 20px;
+          background: #eff6ff;
+          color: #1d4ed8;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .ch-history-empty {
+          padding: 24px;
+          border: 1px dashed #cbdcf0;
+          border-radius: 10px;
+          background: #fff;
+          text-align: center;
+          color: #71839d;
+          line-height: 1.7;
+        }
+
+        .ch-empty {
+          padding: 38px 16px;
+          text-align: center;
+          color: #71839d;
+          font-size: 13px;
+          line-height: 1.7;
+        }
+
+        .ch-empty strong {
+          display: block;
+          margin-bottom: 8px;
+          color: #203c63;
+          font-size: 17px;
+        }
+
+        .ch-alert {
+          margin: 14px 0;
+          padding: 12px 14px;
+          border: 1px solid;
+          border-radius: 10px;
+          font-size: 13px;
+          line-height: 1.6;
+        }
+
+        .ch-error {
+          border-color: #fecaca;
+          background: #fef2f2;
+          color: ${C.red};
+        }
+
+        .ch-success {
+          border-color: #bbf7d0;
+          background: #f0fdf4;
+          color: ${C.green};
+        }
+
+        .ch-action-menu {
+          position: relative;
+          display: inline-flex;
+          justify-content: center;
+        }
+
+        .ch-dots-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 38px;
+          height: 38px;
+          padding: 0;
+          border: 1px solid #d5e1ef;
+          border-radius: 9px;
+          background: #fff;
+          color: #334e70;
+          cursor: pointer;
+        }
+
+        .ch-dots-button:hover,
+        .ch-dots-button[aria-expanded="true"] {
+          border-color: #93b4e5;
+          background: #eff6ff;
+          color: #174b91;
+        }
+
+        .ch-action-dropdown {
+          position: absolute;
+          right: 0;
+          top: calc(100% + 7px);
+          z-index: 20;
+          width: 220px;
+          padding: 6px;
+          border: 1px solid #dbe4f0;
+          border-radius: 11px;
+          background: #fff;
+          box-shadow: 0 12px 30px #172b4d20;
+        }
+
+        .ch-action-dropdown button {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          min-height: 39px;
+          padding: 9px 10px;
+          border: 0;
+          border-radius: 7px;
+          background: transparent;
+          color: #334e70;
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 700;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .ch-action-dropdown button:hover:not(:disabled) {
+          background: #eff6ff;
+          color: #174b91;
+        }
+
+        .ch-action-dropdown button:disabled {
+          opacity: .45;
+          cursor: not-allowed;
+        }
+
+        .ch-action-dropdown button.ch-menu-danger {
+          color: #be123c;
+        }
+
+        .ch-action-dropdown button.ch-menu-danger:hover:not(:disabled) {
+          background: #fff1f2;
+          color: #9f1239;
+        }
+
+        .ch-action-dropdown button.ch-menu-renewal {
+          color: #0f766e;
+        }
+
+        .ch-action-dropdown button.ch-menu-renewal:hover {
+          background: #f0fdfa;
+          color: #115e59;
+        }
+
+        .ch-menu-divider {
+          height: 1px;
+          margin: 5px 4px;
+          background: #e8eef6;
+        }
+
+        .ch-menu-hint {
+          padding: 6px 10px 4px;
+          color: #8493a8;
+          font-size: 10px;
+          line-height: 1.5;
+        }
+
+        /* =====================================
+           NEW DELETE CONFIRMATION MODAL
+        ===================================== */
+
+        .ch-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 10000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          background: rgba(15, 23, 42, .65);
+        }
+
+        .ch-modal {
+          position: relative;
+          width: 100%;
+          max-width: 490px;
+          padding: 27px;
+          border: 1px solid #e2e8f0;
+          border-radius: 18px;
+          background: #fff;
+          box-shadow: 0 24px 80px rgba(0,0,0,.25);
+          color: ${C.navy};
+          animation: chModalEnter .18s ease-out;
+        }
+
+        @keyframes chModalEnter {
+          from {
+            opacity: 0;
+            transform: translateY(12px) scale(.98);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        .ch-modal-close {
+          position: absolute;
+          top: 17px;
+          right: 17px;
+          display: grid;
+          place-items: center;
+          width: 34px;
+          height: 34px;
+          border: 1px solid #e2e8f0;
+          border-radius: 9px;
+          background: #fff;
+          color: #64748b;
+          cursor: pointer;
+        }
+
+        .ch-modal-close:disabled {
+          opacity: .45;
+          cursor: not-allowed;
+        }
+
+        .ch-modal-warning {
+          display: grid;
+          place-items: center;
+          width: 54px;
+          height: 54px;
+          margin-bottom: 17px;
+          border-radius: 15px;
+          background: #fff1f2;
+          color: #be123c;
+        }
+
+        .ch-modal-title {
+          margin: 0 0 10px;
+          color: #172b4d;
+          font-size: 22px;
+          font-weight: 900;
+        }
+
+        .ch-modal-description {
+          margin: 0 0 16px;
+          color: #526781;
+          font-size: 14px;
+          line-height: 1.7;
+        }
+
+        .ch-modal-details {
+          margin: 16px 0;
+          padding: 14px 16px;
+          border: 1px solid #e2e8f0;
+          border-radius: 11px;
+          background: #f8fafc;
+          color: #334155;
+          font-size: 13px;
+          line-height: 2;
+          overflow-wrap: anywhere;
+        }
+
+        .ch-modal-details strong {
+          color: #172b4d;
+        }
+
+        .ch-modal-danger-note {
+          padding: 13px 15px;
+          border: 1px solid #fecdd3;
+          border-radius: 10px;
+          background: #fff1f2;
+          color: #9f1239;
+          font-size: 13px;
+          line-height: 1.65;
+        }
+
+        .ch-modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 23px;
+        }
+
+        .ch-modal-delete {
+          border-color: #b91c1c;
+          background: #b91c1c;
+          color: #fff;
+        }
+
+        .ch-modal-delete:hover:not(:disabled) {
+          border-color: #991b1b;
+          background: #991b1b;
+        }
+
+        @media (max-width: 1250px) {
+          .ch-cards {
+            grid-template-columns:
+              repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 850px) {
+          .ch-cards {
+            grid-template-columns:
+              repeat(2, minmax(0, 1fr));
+          }
+
+          .ch-filter-grid {
+            grid-template-columns:
+              repeat(2, minmax(0, 1fr));
+          }
+
+          .ch-filter-grid > .ch-label:first-child {
+            grid-column: 1 / -1;
+          }
+        }
+
+        @media (max-width: 650px) {
+          .ch-content {
+            padding: 13px;
+          }
+
+          .ch-cards {
+            gap: 9px;
+          }
+
+          .ch-card {
+            padding: 12px;
+            gap: 9px;
+          }
+
+          .ch-card-value {
+            font-size: 24px;
+          }
+
+          .ch-card-icon {
+            width: 35px;
+            height: 35px;
+          }
+
+          .ch-filter-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .ch-filter-grid > .ch-label:first-child {
+            grid-column: auto;
+          }
+
+          .ch-filter-heading,
+          .ch-filter-body {
+            padding: 14px;
+          }
+
+          .ch-filter-footer {
+            padding: 12px 14px;
+          }
+
+          .ch-title {
+            font-size: 22px;
+          }
+
+          .ch-mode-row {
+            align-items: flex-start;
+          }
+
+          .ch-segment {
+            width: 100%;
+          }
+
+          .ch-segment button {
+            flex: 1;
+          }
+
+          .ch-modal {
+            padding: 21px;
+          }
+
+          .ch-modal-actions {
+            flex-direction: column-reverse;
+          }
+
+          .ch-modal-actions .ch-button {
+            width: 100%;
+          }
+        }
       `}</style>
+
+      {/* =================================================
+          PAGE HEADER
+      ================================================= */}
 
       <div className="ch-page-header">
         <div>
-          <h2 className="ch-title">Claim Records</h2>
+          <h2 className="ch-title">
+            Claim Records
+          </h2>
+
           <p className="ch-subtitle">
-            Search, review, edit, and track claim approvals by day or month.
+            Search, review, edit, and track claim
+            approvals by day or month.
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 9,
+            flexWrap: "wrap",
+          }}
+        >
           <span className="ch-count">
             <Icon name="calendar" size={15} />
             {periodLabel}
@@ -1583,26 +3163,43 @@ export default function ClaimHistory({ refreshKey = 0 }) {
             disabled={refreshing}
           >
             <Icon name="refresh" size={16} />
-            {refreshing ? "Refreshing..." : "Refresh"}
+
+            {refreshing
+              ? "Refreshing..."
+              : "Refresh"}
           </button>
         </div>
       </div>
 
+      {/* =================================================
+          MESSAGES
+      ================================================= */}
+
       {actionError && (
-        <div className="ch-alert ch-error" role="alert">
+        <div
+          className="ch-alert ch-error"
+          role="alert"
+        >
           {actionError}
         </div>
       )}
 
       {successMessage && (
-        <div className="ch-alert ch-success" role="status">
+        <div
+          className="ch-alert ch-success"
+          role="status"
+        >
           {successMessage}
         </div>
       )}
 
       {error && (
-        <div className="ch-alert ch-error" role="alert">
+        <div
+          className="ch-alert ch-error"
+          role="alert"
+        >
           {error}
+
           <button
             type="button"
             className="ch-button ch-secondary"
@@ -1615,30 +3212,41 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         </div>
       )}
 
+      {/* =================================================
+          SUMMARY CARDS
+      ================================================= */}
+
       <div className="ch-cards">
         {cards.map((card) => {
-          const active = statusFilter === card.category;
+          const active =
+            statusFilter === card.category;
 
           return (
             <button
               key={card.label}
               type="button"
-              className={`ch-card${active ? " ch-card-active" : ""}`}
+              className={`ch-card${
+                active
+                  ? " ch-card-active"
+                  : ""
+              }`}
               style={{
                 background: card.bg,
-                borderColor: active ? card.color : card.border,
+                borderColor: active
+                  ? card.color
+                  : card.border,
               }}
-              onClick={() => handleCardClick(card.category)}
+              onClick={() =>
+                handleCardClick(
+                  card.category
+                )
+              }
               aria-pressed={active}
-              aria-label={`${card.label}: ${card.value}. ${
-                active
-                  ? "Currently selected. Click to clear the status filter."
-                  : "Click to filter claims."
-              }`}
+              aria-label={`${card.label}: ${card.value}`}
               title={
                 active
                   ? "Click to clear this status filter"
-                  : `Filter table by ${card.category.toLowerCase()} claims`
+                  : `Filter by ${card.category.toLowerCase()} claims`
               }
             >
               <span
@@ -1648,20 +3256,30 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                   color: card.color,
                 }}
               >
-                <Icon name={card.icon} size={21} />
+                <Icon
+                  name={card.icon}
+                  size={21}
+                />
               </span>
 
               <span className="ch-card-content">
-                <span className="ch-card-label">{card.label}</span>
+                <span className="ch-card-label">
+                  {card.label}
+                </span>
+
                 <span
                   className="ch-card-value"
-                  style={{ color: card.color }}
+                  style={{
+                    color: card.color,
+                  }}
                 >
                   {card.value}
                 </span>
+
                 <span className="ch-card-description">
                   {card.description}
                 </span>
+
                 {active && (
                   <span className="ch-card-active-label">
                     {card.category === "All"
@@ -1675,14 +3293,22 @@ export default function ClaimHistory({ refreshKey = 0 }) {
         })}
       </div>
 
+      {/* =================================================
+          MAIN PANEL
+      ================================================= */}
+
       <section className="ch-panel">
         <div className="ch-content">
           <div className="ch-toolbar">
             <div>
-              <h3 className="ch-table-title">Find a claim</h3>
+              <h3 className="ch-table-title">
+                Find a claim
+              </h3>
+
               <p className="ch-subtitle">
-                Select a period first, then narrow the results using search,
-                creator, or the summary cards.
+                Select a period first, then narrow
+                the results using search, creator,
+                or the summary cards.
               </p>
             </div>
 
@@ -1691,15 +3317,25 @@ export default function ClaimHistory({ refreshKey = 0 }) {
             </span>
           </div>
 
+          {/* =============================================
+              FILTERS
+          ============================================= */}
+
           <div className="ch-filter">
             <div className="ch-filter-heading">
               <div>
                 <div className="ch-filter-title">
-                  <Icon name="filter" size={19} />
+                  <Icon
+                    name="filter"
+                    size={19}
+                  />
+
                   Filters &amp; Date Selection
                 </div>
+
                 <p className="ch-filter-subtitle">
-                  Choose whether to view claims for one day or an entire month.
+                  Choose whether to view claims for
+                  one day or an entire month.
                 </p>
               </div>
             </div>
@@ -1707,9 +3343,14 @@ export default function ClaimHistory({ refreshKey = 0 }) {
             <div className="ch-filter-body">
               <div className="ch-mode-row">
                 <div className="ch-mode-label">
-                  <Icon name="calendar" size={21} />
+                  <Icon
+                    name="calendar"
+                    size={21}
+                  />
+
                   <div>
                     View claims by
+
                     <small>
                       {dateMode === "day"
                         ? "Daily summary and records"
@@ -1725,21 +3366,45 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                 >
                   <button
                     type="button"
-                    className={dateMode === "day" ? "active" : ""}
-                    aria-pressed={dateMode === "day"}
-                    onClick={() => setDateMode("day")}
+                    className={
+                      dateMode === "day"
+                        ? "active"
+                        : ""
+                    }
+                    aria-pressed={
+                      dateMode === "day"
+                    }
+                    onClick={() =>
+                      setDateMode("day")
+                    }
                   >
-                    <Icon name="calendar" size={15} />
+                    <Icon
+                      name="calendar"
+                      size={15}
+                    />
+
                     Day
                   </button>
 
                   <button
                     type="button"
-                    className={dateMode === "month" ? "active" : ""}
-                    aria-pressed={dateMode === "month"}
-                    onClick={() => setDateMode("month")}
+                    className={
+                      dateMode === "month"
+                        ? "active"
+                        : ""
+                    }
+                    aria-pressed={
+                      dateMode === "month"
+                    }
+                    onClick={() =>
+                      setDateMode("month")
+                    }
                   >
-                    <Icon name="list" size={15} />
+                    <Icon
+                      name="list"
+                      size={15}
+                    />
+
                     Month
                   </button>
                 </div>
@@ -1748,80 +3413,118 @@ export default function ClaimHistory({ refreshKey = 0 }) {
               <div className="ch-filter-grid">
                 <label className="ch-label">
                   Search claims
+
                   <div className="ch-control-wrap">
                     <span className="ch-search-icon">
-                      <Icon name="search" size={18} />
+                      <Icon
+                        name="search"
+                        size={18}
+                      />
                     </span>
+
                     <input
                       className="ch-control ch-search"
                       type="search"
                       value={search}
-                      onChange={(event) => setSearch(event.target.value)}
+                      onChange={(event) =>
+                        setSearch(
+                          event.target.value
+                        )
+                      }
                       placeholder="Patient, file number, claim ID, authorization..."
                     />
                   </div>
+
                   <div className="ch-date-description">
-                    Search by patient, file number, claim ID, clinician,
-                    authorization, service, payer, status, or rejection reason.
+                    Search by patient, file number,
+                    claim ID, clinician,
+                    authorization, service, payer,
+                    status, or rejection reason.
                   </div>
                 </label>
 
                 <label className="ch-label">
                   Created by
+
                   <div className="ch-control-wrap">
                     <select
                       className="ch-control"
                       value={createdByFilter}
                       onChange={(event) =>
-                        setCreatedByFilter(event.target.value)
+                        setCreatedByFilter(
+                          event.target.value
+                        )
                       }
                     >
-                      <option value="All">All creators</option>
-                      {creatorOptions.map((user) => (
-                        <option key={user.key} value={user.key}>
-                          {user.name}
-                        </option>
-                      ))}
-                      <option value="Not recorded">Not recorded</option>
+                      <option value="All">
+                        All creators
+                      </option>
+
+                      {creatorOptions.map(
+                        (user) => (
+                          <option
+                            key={user.key}
+                            value={user.key}
+                          >
+                            {user.name}
+                          </option>
+                        )
+                      )}
+
+                      <option value="Not recorded">
+                        Not recorded
+                      </option>
                     </select>
                   </div>
+
                   <div className="ch-date-description">
-                    Show claims created by a particular user.
+                    Show claims created by a
+                    particular user.
                   </div>
                 </label>
 
                 {dateMode === "day" ? (
                   <label className="ch-label">
                     Select day
+
                     <div className="ch-control-wrap">
                       <input
                         className="ch-control"
                         type="date"
                         value={selectedDate}
                         onChange={(event) =>
-                          setSelectedDate(event.target.value)
+                          setSelectedDate(
+                            event.target.value
+                          )
                         }
                       />
                     </div>
+
                     <div className="ch-date-description">
-                      Summary cards and records will reflect this date.
+                      Summary cards and records
+                      reflect this date.
                     </div>
                   </label>
                 ) : (
                   <label className="ch-label">
                     Select month
+
                     <div className="ch-control-wrap">
                       <input
                         className="ch-control"
                         type="month"
                         value={selectedMonth}
                         onChange={(event) =>
-                          setSelectedMonth(event.target.value)
+                          setSelectedMonth(
+                            event.target.value
+                          )
                         }
                       />
                     </div>
+
                     <div className="ch-date-description">
-                      Summary cards and records will reflect the whole month.
+                      Summary cards and records
+                      reflect the whole month.
                     </div>
                   </label>
                 )}
@@ -1829,29 +3532,54 @@ export default function ClaimHistory({ refreshKey = 0 }) {
 
               <div className="ch-period-summary">
                 <span>
-                  <strong>Current period:</strong> {periodLabel}
+                  <strong>
+                    Current period:
+                  </strong>{" "}
+                  {periodLabel}
                 </span>
+
                 <span>
-                  <strong>{periodClaims.length}</strong> claims in this period
+                  <strong>
+                    {periodClaims.length}
+                  </strong>{" "}
+                  claims in this period
                 </span>
               </div>
             </div>
 
             <div className="ch-filter-footer">
               <span className="ch-muted">
-                Showing {filteredClaims.length} of {periodClaims.length} claims
+                Showing{" "}
+                {filteredClaims.length} of{" "}
+                {periodClaims.length} claims
                 for the selected period.
-                {statusFilter !== "All" && <> Status: {statusFilter}.</>}
+
+                {statusFilter !== "All" && (
+                  <>
+                    {" "}
+                    Status: {statusFilter}.
+                  </>
+                )}
               </span>
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
                 {hasFilters && (
                   <button
                     type="button"
                     className="ch-button ch-secondary"
                     onClick={resetFilters}
                   >
-                    <Icon name="reset" size={15} />
+                    <Icon
+                      name="reset"
+                      size={15}
+                    />
+
                     Clear filters
                   </button>
                 )}
@@ -1861,8 +3589,15 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                   className="ch-button ch-secondary"
                   onClick={() => {
                     setDateMode("day");
-                    setSelectedDate(localDateString());
-                    setSelectedMonth(localMonthString());
+
+                    setSelectedDate(
+                      localDateString()
+                    );
+
+                    setSelectedMonth(
+                      localMonthString()
+                    );
+
                     resetFilters();
                   }}
                 >
@@ -1874,7 +3609,11 @@ export default function ClaimHistory({ refreshKey = 0 }) {
                   className="ch-button ch-secondary"
                   onClick={() => {
                     setDateMode("month");
-                    setSelectedMonth(localMonthString());
+
+                    setSelectedMonth(
+                      localMonthString()
+                    );
+
                     resetFilters();
                   }}
                 >
@@ -1884,467 +3623,780 @@ export default function ClaimHistory({ refreshKey = 0 }) {
             </div>
           </div>
 
+          {/* =============================================
+              CLAIM APPROVAL RECORDS
+          ============================================= */}
+
           <div className="ch-table-section">
             <div className="ch-table-heading">
               <div>
-                <h3 className="ch-table-title">Claim Approval Records</h3>
+                <h3 className="ch-table-title">
+                  Claim Approval Records
+                </h3>
+
                 <p className="ch-subtitle">
                   {dateMode === "day"
                     ? `Claims created on ${periodLabel}.`
                     : `Claims created during ${periodLabel}.`}
+
                   {statusFilter !== "All" &&
                     ` Showing ${statusFilter.toLowerCase()} claims.`}
-                  {" "}Scroll horizontally to view all approval columns.
+
+                  {" "}
+                  Scroll horizontally to view all
+                  approval columns.
                 </p>
               </div>
 
               <span className="ch-count">
-                {filteredClaims.length} of {periodClaims.length} claims
+                {filteredClaims.length} of{" "}
+                {periodClaims.length} claims
               </span>
             </div>
 
             {loading ? (
-              <div className="ch-empty">Loading claim records...</div>
+              <div className="ch-empty">
+                Loading claim records...
+              </div>
             ) : (
               <div className="ch-table-wrap">
                 <table className="ch-table">
                   <thead>
                     <tr>
-                      <th>Patient File Number</th>
+                      <th>
+                        Patient File Number
+                      </th>
                       <th>Claim ID</th>
-                      <th>Requesting Clinician</th>
-                      <th>Authorization Number</th>
+                      <th>
+                        Requesting Clinician
+                      </th>
+                      <th>
+                        Authorization Number
+                      </th>
                       <th>Approval Date</th>
-                      <th>Expiration Date</th>
-                      <th>Approved Visits</th>
-                      <th>Approved Units</th>
-                      <th>Approved Service</th>
-                      <th>Insurance / Payer</th>
-                      <th>Approval Status</th>
-                      <th>Rejection Reason</th>
+                      <th>
+                        Expiration Date
+                      </th>
+                      <th>
+                        Approved Visits
+                      </th>
+                      <th>
+                        Approved Units
+                      </th>
+                      <th>
+                        Approved Service
+                      </th>
+                      <th>
+                        Insurance / Payer
+                      </th>
+                      <th>
+                        Approval Status
+                      </th>
+                      <th>
+                        Rejection Reason
+                      </th>
                       <th>Actions</th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {filteredClaims.map((claim, index) => {
-                      const status = statusOf(claim);
-                      const badge = statusColors(status);
-                      const patientId = patientIdOf(claim);
-                      const id = claimDatabaseId(claim);
-                      const claimKey = String(
-                        id || `${claimIdOf(claim)}-${index}`
-                      );
-                      const isExpanded = String(expandedClaim) === claimKey;
-                      const count = historyCountOf(claim);
-                      const canDelete = canDeleteClaim(claim);
-                      const hasMultipleHistory =
-                        typeof count === "number" && count > 1;
-                      const isDeleting = deletingId === String(id);
-                      const isMenuOpen = openMenuId === claimKey;
-                      const isRejected =
-                        statusCategory(claim) === "Rejected";
+                    {filteredClaims.map(
+                      (claim, index) => {
+                        const status =
+                          statusOf(claim);
 
-                      const historyEvents = deduplicateHistoryEvents(
-                        historyByClaim[claimKey],
-                        claim
-                      );
+                        const badge =
+                          statusColors(status);
 
-                      const deleteDisabled =
-                        isDeleting || !canDelete || hasMultipleHistory;
+                        const patientId =
+                          patientIdOf(claim);
 
-                      const deleteTitle = hasMultipleHistory
-                        ? "Cannot delete: this claim has more than one history record"
-                        : count === null
-                          ? "Open claim history to verify whether deletion is allowed"
-                          : canDelete
-                            ? "Delete your claim created today"
-                            : "Only your own claims created today with no more than one history record are eligible";
+                        const id =
+                          claimDatabaseId(
+                            claim
+                          );
 
-                      return (
-                        <Fragment key={claimKey}>
-                          <tr className="ch-row">
-                            <td>
-                              {patientId !== "" && patientId != null ? (
-                                <button
-                                  type="button"
-                                  className="ch-link"
-                                  onClick={() => openPatientFile(patientId)}
-                                  title={`Open ${patientName(claim)} patient file`}
+                        const claimKey = String(
+                          id ||
+                            `${claimIdOf(
+                              claim
+                            )}-${index}`
+                        );
+
+                        const isExpanded =
+                          String(
+                            expandedClaim
+                          ) === claimKey;
+
+                        const count =
+                          historyCountOf(
+                            claim
+                          );
+
+                        const canDelete =
+                          canDeleteClaim(
+                            claim
+                          );
+
+                        const hasMultipleHistory =
+                          typeof count ===
+                            "number" &&
+                          count > 1;
+
+                        const isDeleting =
+                          deletingId ===
+                          String(id);
+
+                        const isMenuOpen =
+                          openMenuId ===
+                          claimKey;
+
+                        const isRejected =
+                          statusCategory(
+                            claim
+                          ) === "Rejected";
+
+                        const historyEvents =
+                          deduplicateHistoryEvents(
+                            historyByClaim[
+                              claimKey
+                            ],
+                            claim
+                          );
+
+                        const deleteDisabled =
+                          deletingId !==
+                            null ||
+                          pendingDelete !==
+                            null ||
+                          !canDelete ||
+                          hasMultipleHistory;
+
+                        const deleteTitle =
+                          hasMultipleHistory
+                            ? "Cannot delete: this claim has more than one history record."
+                            : !isTodaysOwnClaim(
+                                claim
+                              )
+                            ? "Only claims created today by your account can be deleted."
+                            : "Verify history and delete this claim.";
+
+                        return (
+                          <Fragment
+                            key={claimKey}
+                          >
+                            <tr className="ch-row">
+                              <td>
+                                {patientId !==
+                                  "" &&
+                                patientId !=
+                                  null ? (
+                                  <button
+                                    type="button"
+                                    className="ch-link"
+                                    onClick={() =>
+                                      openPatientFile(
+                                        patientId
+                                      )
+                                    }
+                                    title={`Open ${patientName(
+                                      claim
+                                    )} patient file`}
+                                  >
+                                    {fileNumberOf(
+                                      claim
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span>
+                                    {fileNumberOf(
+                                      claim
+                                    )}
+                                  </span>
+                                )}
+
+                                <div className="ch-date-description">
+                                  {patientName(
+                                    claim
+                                  )}
+                                </div>
+                              </td>
+
+                              <td>
+                                <span className="ch-claim-id">
+                                  {claimIdOf(
+                                    claim
+                                  )}
+                                </span>
+                              </td>
+
+                              <td>
+                                <span
+                                  className="ch-cell-text"
+                                  title={requestingClinicianOf(
+                                    claim
+                                  )}
                                 >
-                                  {fileNumberOf(claim)}
-                                </button>
-                              ) : (
-                                <span>{fileNumberOf(claim)}</span>
-                              )}
-                              <div className="ch-date-description">
-                                {patientName(claim)}
-                              </div>
-                            </td>
+                                  {requestingClinicianOf(
+                                    claim
+                                  )}
+                                </span>
+                              </td>
 
-                            <td>
-                              <span className="ch-claim-id">
-                                {claimIdOf(claim)}
-                              </span>
-                            </td>
+                              <td>
+                                <span
+                                  className="ch-cell-text"
+                                  title={String(
+                                    authorizationNumberOf(
+                                      claim
+                                    )
+                                  )}
+                                >
+                                  {authorizationNumberOf(
+                                    claim
+                                  )}
+                                </span>
+                              </td>
 
-                            <td>
-                              <span
-                                className="ch-cell-text"
-                                title={requestingClinicianOf(claim)}
-                              >
-                                {requestingClinicianOf(claim)}
-                              </span>
-                            </td>
-
-                            <td>
-                              <span
-                                className="ch-cell-text"
-                                title={authorizationNumberOf(claim)}
-                              >
-                                {authorizationNumberOf(claim)}
-                              </span>
-                            </td>
-
-                            <td style={{ whiteSpace: "nowrap" }}>
-                              {formatDate(approvalDateOf(claim))}
-                            </td>
-
-                            <td style={{ whiteSpace: "nowrap" }}>
-                              {formatDate(expirationDateOf(claim))}
-                            </td>
-
-                            <td>{approvedVisitsOf(claim)}</td>
-
-                            <td>{approvedUnitsOf(claim)}</td>
-
-                            <td>
-                              <span
-                                className="ch-cell-text"
-                                title={approvedServiceOf(claim)}
-                              >
-                                {approvedServiceOf(claim)}
-                              </span>
-                            </td>
-
-                            <td>
-                              <span
-                                className="ch-cell-text"
-                                title={payerOf(claim)}
-                              >
-                                {payerOf(claim)}
-                              </span>
-                            </td>
-
-                            <td>
-                              <span
-                                className="ch-status"
+                              <td
                                 style={{
-                                  color: badge.color,
-                                  background: badge.bg,
-                                  borderColor: badge.border,
+                                  whiteSpace:
+                                    "nowrap",
                                 }}
                               >
-                                <span
-                                  className="ch-dot"
-                                  style={{ background: badge.dot }}
-                                />
-                                {status}
-                              </span>
-                            </td>
-
-                            <td>
-                              {rejectionReasonOf(claim) !== "—" ? (
-                                <span
-                                  className="ch-rejection"
-                                  title={rejectionReasonOf(claim)}
-                                >
-                                  {rejectionReasonOf(claim)}
-                                </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-
-                            {/* All actions are inside the three-dot menu */}
-                            <td>
-                              <div className="ch-action-menu">
-                                <button
-                                  type="button"
-                                  className="ch-dots-button"
-                                  aria-label={`Actions for claim ${claimIdOf(
+                                {formatDate(
+                                  approvalDateOf(
                                     claim
-                                  )}`}
-                                  aria-haspopup="menu"
-                                  aria-expanded={isMenuOpen}
-                                  title="Claim actions"
-                                  onClick={() => {
-                                    setOpenMenuId((current) =>
-                                      current === claimKey ? null : claimKey
-                                    );
+                                  )
+                                )}
+                              </td>
+
+                              <td
+                                style={{
+                                  whiteSpace:
+                                    "nowrap",
+                                }}
+                              >
+                                {formatDate(
+                                  expirationDateOf(
+                                    claim
+                                  )
+                                )}
+                              </td>
+
+                              <td>
+                                {approvedVisitsOf(
+                                  claim
+                                )}
+                              </td>
+
+                              <td>
+                                {approvedUnitsOf(
+                                  claim
+                                )}
+                              </td>
+
+                              <td>
+                                <span
+                                  className="ch-cell-text"
+                                  title={String(
+                                    approvedServiceOf(
+                                      claim
+                                    )
+                                  )}
+                                >
+                                  {approvedServiceOf(
+                                    claim
+                                  )}
+                                </span>
+                              </td>
+
+                              <td>
+                                <span
+                                  className="ch-cell-text"
+                                  title={String(
+                                    payerOf(
+                                      claim
+                                    )
+                                  )}
+                                >
+                                  {payerOf(
+                                    claim
+                                  )}
+                                </span>
+                              </td>
+
+                              <td>
+                                <span
+                                  className="ch-status"
+                                  style={{
+                                    color:
+                                      badge.color,
+                                    background:
+                                      badge.bg,
+                                    borderColor:
+                                      badge.border,
                                   }}
                                 >
-                                  <Icon name="more" size={21} />
-                                </button>
+                                  <span
+                                    className="ch-dot"
+                                    style={{
+                                      background:
+                                        badge.dot,
+                                    }}
+                                  />
 
-                                {isMenuOpen && (
-                                  <div
-                                    className="ch-action-dropdown"
-                                    role="menu"
+                                  {status}
+                                </span>
+                              </td>
+
+                              <td>
+                                {rejectionReasonOf(
+                                  claim
+                                ) !== "—" ? (
+                                  <span
+                                    className="ch-rejection"
+                                    title={String(
+                                      rejectionReasonOf(
+                                        claim
+                                      )
+                                    )}
                                   >
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      onClick={() =>
-                                        loadClaimHistory(claim)
-                                      }
-                                    >
-                                      <Icon name="history" size={16} />
-                                      {isExpanded
-                                        ? "Hide claim history"
-                                        : "View claim history"}
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      onClick={() => startEditing(claim)}
-                                    >
-                                      <Icon name="edit" size={16} />
-                                      Edit claim
-                                    </button>
-
-                                    {isRejected && (
-                                      <>
-                                        <div className="ch-menu-divider" />
-                                        <button
-                                          type="button"
-                                          role="menuitem"
-                                          className="ch-menu-renewal"
-                                          onClick={() =>
-                                            createRenewalAlert(claim)
-                                          }
-                                        >
-                                          <Icon name="renewal" size={16} />
-                                          Create renewal alert
-                                        </button>
-                                        <div className="ch-menu-hint">
-                                          Opens the rejection alert workflow
-                                          with the patient and claim details.
-                                        </div>
-                                      </>
+                                    {rejectionReasonOf(
+                                      claim
                                     )}
-
-                                    <div className="ch-menu-divider" />
-
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      className="ch-menu-danger"
-                                      onClick={() => deleteClaim(claim)}
-                                      disabled={deleteDisabled}
-                                      title={deleteTitle}
-                                    >
-                                      <Icon name="trash" size={16} />
-                                      {isDeleting
-                                        ? "Deleting..."
-                                        : "Delete claim"}
-                                    </button>
-
-                                    {deleteDisabled && (
-                                      <div className="ch-menu-hint">
-                                        {deleteTitle}
-                                      </div>
-                                    )}
-                                  </div>
+                                  </span>
+                                ) : (
+                                  "—"
                                 )}
-                              </div>
-                            </td>
-                          </tr>
+                              </td>
 
-                          {isExpanded && (
-                            <tr className="ch-detail-row">
-                              <td colSpan={13}>
-                                <div className="ch-history-wrap">
-                                  <div className="ch-history-header">
-                                    <div>
-                                      <h4 className="ch-history-heading">
-                                        Claim History
-                                      </h4>
-                                      <p className="ch-subtitle">
-                                        Claim {claimIdOf(claim)} ·{" "}
-                                        {patientName(claim)}
-                                      </p>
-                                    </div>
+                              {/* =========================
+                                  ACTION MENU
+                              ========================= */}
 
-                                    <button
-                                      type="button"
-                                      className="ch-button ch-secondary"
-                                      onClick={() =>
-                                        loadClaimHistory(claim, true)
-                                      }
-                                      disabled={historyLoadingId === claimKey}
+                              <td>
+                                <div className="ch-action-menu">
+                                  <button
+                                    type="button"
+                                    className="ch-dots-button"
+                                    aria-label={`Actions for claim ${claimIdOf(
+                                      claim
+                                    )}`}
+                                    aria-haspopup="menu"
+                                    aria-expanded={
+                                      isMenuOpen
+                                    }
+                                    title="Claim actions"
+                                    onClick={() => {
+                                      setOpenMenuId(
+                                        (current) =>
+                                          current ===
+                                          claimKey
+                                            ? null
+                                            : claimKey
+                                      );
+                                    }}
+                                  >
+                                    <Icon
+                                      name="more"
+                                      size={21}
+                                    />
+                                  </button>
+
+                                  {isMenuOpen && (
+                                    <div
+                                      className="ch-action-dropdown"
+                                      role="menu"
                                     >
-                                      <Icon name="refresh" size={15} />
-                                      Refresh history
-                                    </button>
-                                  </div>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() =>
+                                          loadClaimHistory(
+                                            claim
+                                          )
+                                        }
+                                      >
+                                        <Icon
+                                          name="history"
+                                          size={16}
+                                        />
 
-                                  {historyLoadingId === claimKey ? (
-                                    <div className="ch-history-empty">
-                                      Loading history...
-                                    </div>
-                                  ) : historyErrors[claimKey] ? (
-                                    <div className="ch-alert ch-error">
-                                      {historyErrors[claimKey]}
-                                    </div>
-                                  ) : historyEvents.length === 0 ? (
-                                    <div className="ch-history-empty">
-                                      No history records are available for
-                                      this claim.
-                                    </div>
-                                  ) : (
-                                    <div style={{ overflowX: "auto" }}>
-                                      <table className="ch-history-table">
-                                        <thead>
-                                          <tr>
-                                            <th>Date</th>
-                                            <th>Status</th>
-                                            <th>Created by / Edited by</th>
-                                          </tr>
-                                        </thead>
+                                        {isExpanded
+                                          ? "Hide claim history"
+                                          : "View claim history"}
+                                      </button>
 
-                                        <tbody>
-                                          {historyEvents.map(
-                                            (event, eventIndex) => {
-                                              const creation =
-                                                isCreationEvent(event);
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() =>
+                                          startEditing(
+                                            claim
+                                          )
+                                        }
+                                      >
+                                        <Icon
+                                          name="edit"
+                                          size={16}
+                                        />
 
-                                              const creatorName =
-                                                creatorNameOf(claim);
+                                        Edit claim
+                                      </button>
 
-                                              const actorName = creation
-                                                ? creatorName !== "Not recorded"
-                                                  ? creatorName
-                                                  : eventUserName(event)
-                                                : eventUserName(event);
+                                      {isRejected && (
+                                        <>
+                                          <div className="ch-menu-divider" />
 
-                                              return (
-                                                <tr
-                                                  key={eventKey(
-                                                    event,
-                                                    eventIndex
-                                                  )}
-                                                >
-                                                  <td
-                                                    style={{
-                                                      whiteSpace: "nowrap",
-                                                    }}
-                                                  >
-                                                    {formatDateTime(
-                                                      eventDate(event)
-                                                    )}
-                                                  </td>
-
-                                                  <td>
-                                                    <span className="ch-history-event">
-                                                      {eventStatus(
-                                                        event,
-                                                        claim
-                                                      )}
-                                                    </span>
-                                                  </td>
-
-                                                  <td>
-                                                    <strong>
-                                                      {historyActorLabel(
-                                                        event
-                                                      )}
-                                                      :{" "}
-                                                    </strong>
-                                                    {actorName}
-                                                  </td>
-                                                </tr>
-                                              );
+                                          <button
+                                            type="button"
+                                            role="menuitem"
+                                            className="ch-menu-renewal"
+                                            onClick={() =>
+                                              createRenewalAlert(
+                                                claim
+                                              )
                                             }
-                                          )}
-                                        </tbody>
-                                      </table>
+                                          >
+                                            <Icon
+                                              name="renewal"
+                                              size={16}
+                                            />
+
+                                            Create renewal alert
+                                          </button>
+
+                                          <div className="ch-menu-hint">
+                                            Opens the rejection
+                                            alert workflow with
+                                            patient and claim
+                                            details.
+                                          </div>
+                                        </>
+                                      )}
+
+                                      <div className="ch-menu-divider" />
+
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        className="ch-menu-danger"
+                                        onClick={() =>
+                                          deleteClaim(
+                                            claim
+                                          )
+                                        }
+                                        disabled={
+                                          deleteDisabled
+                                        }
+                                        title={
+                                          deleteTitle
+                                        }
+                                      >
+                                        <Icon
+                                          name="trash"
+                                          size={16}
+                                        />
+
+                                        {isDeleting
+                                          ? "Verifying..."
+                                          : "Delete claim"}
+                                      </button>
+
+                                      {deleteDisabled ? (
+                                        <div className="ch-menu-hint">
+                                          {deleteTitle}
+                                        </div>
+                                      ) : (
+                                        <div className="ch-menu-hint">
+                                          Available for your
+                                          claims created
+                                          today. History
+                                          will be verified
+                                          before deletion.
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>
                               </td>
                             </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
 
-                    {!filteredClaims.length && !error && (
-                      <tr>
-                        <td colSpan={13}>
-                          <div className="ch-empty">
-                            <strong>
+                            {/* =========================
+                                CLAIM HISTORY
+                            ========================= */}
+
+                            {isExpanded && (
+                              <tr className="ch-detail-row">
+                                <td colSpan={13}>
+                                  <div className="ch-history-wrap">
+                                    <div className="ch-history-header">
+                                      <div>
+                                        <h4 className="ch-history-heading">
+                                          Claim History
+                                        </h4>
+
+                                        <p className="ch-subtitle">
+                                          Claim{" "}
+                                          {claimIdOf(
+                                            claim
+                                          )}{" "}
+                                          ·{" "}
+                                          {patientName(
+                                            claim
+                                          )}
+                                        </p>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        className="ch-button ch-secondary"
+                                        onClick={() =>
+                                          loadClaimHistory(
+                                            claim,
+                                            true
+                                          )
+                                        }
+                                        disabled={
+                                          historyLoadingId ===
+                                          claimKey
+                                        }
+                                      >
+                                        <Icon
+                                          name="refresh"
+                                          size={15}
+                                        />
+
+                                        Refresh history
+                                      </button>
+                                    </div>
+
+                                    {historyLoadingId ===
+                                    claimKey ? (
+                                      <div className="ch-history-empty">
+                                        Loading history...
+                                      </div>
+                                    ) : historyErrors[
+                                        claimKey
+                                      ] ? (
+                                      <div className="ch-alert ch-error">
+                                        {
+                                          historyErrors[
+                                            claimKey
+                                          ]
+                                        }
+                                      </div>
+                                    ) : historyEvents.length ===
+                                      0 ? (
+                                      <div className="ch-history-empty">
+                                        No history records
+                                        are available for
+                                        this claim.
+                                      </div>
+                                    ) : (
+                                      <div
+                                        style={{
+                                          overflowX:
+                                            "auto",
+                                        }}
+                                      >
+                                        <table className="ch-history-table">
+                                          <thead>
+                                            <tr>
+                                              <th>
+                                                Date
+                                              </th>
+                                              <th>
+                                                Status
+                                              </th>
+                                              <th>
+                                                Created by /
+                                                Edited by
+                                              </th>
+                                            </tr>
+                                          </thead>
+
+                                          <tbody>
+                                            {historyEvents.map(
+                                              (
+                                                event,
+                                                eventIndex
+                                              ) => {
+                                                const creation =
+                                                  isCreationEvent(
+                                                    event
+                                                  );
+
+                                                const creatorName =
+                                                  creatorNameOf(
+                                                    claim
+                                                  );
+
+                                                const actorName =
+                                                  creation
+                                                    ? creatorName !==
+                                                      "Not recorded"
+                                                      ? creatorName
+                                                      : eventUserName(
+                                                          event
+                                                        )
+                                                    : eventUserName(
+                                                        event
+                                                      );
+
+                                                return (
+                                                  <tr
+                                                    key={eventKey(
+                                                      event,
+                                                      eventIndex
+                                                    )}
+                                                  >
+                                                    <td
+                                                      style={{
+                                                        whiteSpace:
+                                                          "nowrap",
+                                                      }}
+                                                    >
+                                                      {formatDateTime(
+                                                        eventDate(
+                                                          event
+                                                        )
+                                                      )}
+                                                    </td>
+
+                                                    <td>
+                                                      <span className="ch-history-event">
+                                                        {eventStatus(
+                                                          event,
+                                                          claim
+                                                        )}
+                                                      </span>
+                                                    </td>
+
+                                                    <td>
+                                                      <strong>
+                                                        {historyActorLabel(
+                                                          event
+                                                        )}
+                                                        :{" "}
+                                                      </strong>
+
+                                                      {actorName}
+                                                    </td>
+                                                  </tr>
+                                                );
+                                              }
+                                            )}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      }
+                    )}
+
+                    {/* =========================
+                        EMPTY RESULTS
+                    ========================= */}
+
+                    {!filteredClaims.length &&
+                      !error && (
+                        <tr>
+                          <td colSpan={13}>
+                            <div className="ch-empty">
+                              <strong>
+                                {periodClaims.length
+                                  ? "No matching claims found"
+                                  : "No claims for this period"}
+                              </strong>
+
                               {periodClaims.length
-                                ? "No matching claims found"
-                                : "No claims for this period"}
-                            </strong>
+                                ? "Try changing the search, creator, or selected summary card."
+                                : `No claims were found for ${periodLabel}. Choose another day or month.`}
 
-                            {periodClaims.length
-                              ? "Try changing the search, creator, or selected summary card."
-                              : `No claims were found for ${periodLabel}. Choose another day or month.`}
+                              {(hasFilters ||
+                                periodClaims.length ===
+                                  0) && (
+                                <div
+                                  style={{
+                                    marginTop: 14,
+                                    display:
+                                      "flex",
+                                    justifyContent:
+                                      "center",
+                                    gap: 8,
+                                    flexWrap:
+                                      "wrap",
+                                  }}
+                                >
+                                  {hasFilters && (
+                                    <button
+                                      type="button"
+                                      className="ch-button ch-secondary"
+                                      onClick={
+                                        resetFilters
+                                      }
+                                    >
+                                      <Icon
+                                        name="reset"
+                                        size={15}
+                                      />
 
-                            {(hasFilters || periodClaims.length === 0) && (
-                              <div
-                                style={{
-                                  marginTop: 14,
-                                  display: "flex",
-                                  justifyContent: "center",
-                                  gap: 8,
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                {hasFilters && (
+                                      Clear filters
+                                    </button>
+                                  )}
+
                                   <button
                                     type="button"
                                     className="ch-button ch-secondary"
-                                    onClick={resetFilters}
+                                    onClick={() => {
+                                      setDateMode(
+                                        "day"
+                                      );
+
+                                      setSelectedDate(
+                                        localDateString()
+                                      );
+
+                                      setSelectedMonth(
+                                        localMonthString()
+                                      );
+
+                                      resetFilters();
+                                    }}
                                   >
-                                    <Icon name="reset" size={15} />
-                                    Clear filters
+                                    View today
                                   </button>
-                                )}
 
-                                <button
-                                  type="button"
-                                  className="ch-button ch-secondary"
-                                  onClick={() => {
-                                    setDateMode("day");
-                                    setSelectedDate(localDateString());
-                                    setSelectedMonth(localMonthString());
-                                    resetFilters();
-                                  }}
-                                >
-                                  View today
-                                </button>
+                                  <button
+                                    type="button"
+                                    className="ch-button ch-secondary"
+                                    onClick={() => {
+                                      setDateMode(
+                                        "month"
+                                      );
 
-                                <button
-                                  type="button"
-                                  className="ch-button ch-secondary"
-                                  onClick={() => {
-                                    setDateMode("month");
-                                    setSelectedMonth(localMonthString());
-                                    resetFilters();
-                                  }}
-                                >
-                                  View current month
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
+                                      setSelectedMonth(
+                                        localMonthString()
+                                      );
+
+                                      resetFilters();
+                                    }}
+                                  >
+                                    View current month
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                   </tbody>
                 </table>
               </div>
@@ -2352,6 +4404,154 @@ export default function ClaimHistory({ refreshKey = 0 }) {
           </div>
         </div>
       </section>
+
+      {/* =================================================
+          NEW: DELETE CLAIM CONFIRMATION MODAL
+      ================================================= */}
+
+      {pendingDelete && (
+        <div
+          className="ch-modal-backdrop"
+          onMouseDown={(event) => {
+            if (
+              event.target ===
+                event.currentTarget &&
+              deletingId === null
+            ) {
+              cancelDeleteClaim();
+            }
+          }}
+        >
+          <div
+            className="ch-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="ch-delete-title"
+            aria-describedby="ch-delete-description"
+          >
+            <button
+              type="button"
+              className="ch-modal-close"
+              aria-label="Close confirmation"
+              onClick={cancelDeleteClaim}
+              disabled={deletingId !== null}
+            >
+              <Icon
+                name="close"
+                size={18}
+              />
+            </button>
+
+            <div className="ch-modal-warning">
+              <Icon
+                name="alert"
+                size={28}
+              />
+            </div>
+
+            <h3
+              id="ch-delete-title"
+              className="ch-modal-title"
+            >
+              Delete Claim?
+            </h3>
+
+            <p
+              id="ch-delete-description"
+              className="ch-modal-description"
+            >
+              Are you sure you want to
+              permanently delete this claim?
+              Please review the information
+              below before continuing.
+            </p>
+
+            <div className="ch-modal-details">
+              <div>
+                <strong>
+                  Claim ID:
+                </strong>{" "}
+                {claimIdOf(pendingDelete)}
+              </div>
+
+              <div>
+                <strong>
+                  Patient:
+                </strong>{" "}
+                {patientName(pendingDelete)}
+              </div>
+
+              <div>
+                <strong>
+                  File Number:
+                </strong>{" "}
+                {fileNumberOf(pendingDelete)}
+              </div>
+
+              <div>
+                <strong>
+                  Created By:
+                </strong>{" "}
+                {creatorNameOf(pendingDelete)}
+              </div>
+
+              <div>
+                <strong>
+                  Creation Date:
+                </strong>{" "}
+                {formatDate(
+                  createdDateOf(pendingDelete)
+                )}
+              </div>
+            </div>
+
+            <div className="ch-modal-danger-note">
+              <strong>
+                Warning:
+              </strong>{" "}
+              This action cannot be undone.
+              The claim and its associated
+              creation history will be
+              permanently removed.
+
+              <div style={{ marginTop: 8 }}>
+                Deletion is permitted only
+                for claims created today
+                by your own account that
+                have no additional history
+                or linked renewal alerts.
+              </div>
+            </div>
+
+            <div className="ch-modal-actions">
+              <button
+                type="button"
+                className="ch-button ch-secondary"
+                onClick={cancelDeleteClaim}
+                disabled={deletingId !== null}
+              >
+                Cancel — Keep Claim
+              </button>
+
+              <button
+                type="button"
+                className="ch-button ch-modal-delete"
+                onClick={confirmDeleteClaim}
+                disabled={deletingId !== null}
+              >
+                <Icon
+                  name="trash"
+                  size={16}
+                />
+
+                {deletingId !== null
+                  ? "Deleting..."
+                  : "Yes, Delete Permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

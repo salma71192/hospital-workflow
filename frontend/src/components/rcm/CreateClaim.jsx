@@ -243,6 +243,43 @@ const styles = `
   border-radius: 9px; background: #eef2ff; color: #4057cf;
   font-size: 12px; font-weight: 800;
 }
+.create-claim-clinician-list {
+  max-height: 230px;
+  overflow-y: auto;
+  margin-top: 8px;
+  border: 1px solid #dce5f0;
+  border-radius: 11px;
+  background: #fff;
+}
+.create-claim-clinician-option {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid #edf1f7;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  color: #263b53;
+}
+.create-claim-clinician-option:last-child {
+  border-bottom: 0;
+}
+.create-claim-clinician-option:hover {
+  background: #f4f6ff;
+}
+.create-claim-clinician-option.active {
+  background: #eef2ff;
+}
+.create-claim-clinician-name {
+  font-size: 13px;
+  font-weight: 800;
+}
+.create-claim-clinician-role {
+  margin-top: 4px;
+  color: #71829a;
+  font-size: 12px;
+}
 @media (max-width: 700px) {
   .create-claim-page { padding: 16px 6px 28px; }
   .create-claim-form-grid {
@@ -332,6 +369,18 @@ function getPatientList(response) {
   return [];
 }
 
+// UPDATED: Support the clinicians endpoint response.
+function getUserList(response) {
+  const data = response?.data;
+
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.clinicians)) return data.clinicians;
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.users)) return data.users;
+
+  return [];
+}
+
 function getInitials(name) {
   return String(name)
     .trim()
@@ -394,10 +443,55 @@ function getUserName(user) {
   );
 }
 
+function getUserRole(user) {
+  const role =
+    user?.role_name ??
+    user?.roleName ??
+    user?.role ??
+    user?.profession ??
+    user?.job_title ??
+    user?.jobTitle ??
+    user?.designation ??
+    "";
+
+  if (role && typeof role === "object") {
+    return String(role.name ?? role.title ?? role.code ?? "");
+  }
+
+  return String(role);
+}
+
+// UPDATED: Recognize Django's "physio" role.
+function isEligibleClinician(user) {
+  const role = getUserRole(user)
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .trim();
+
+  return (
+    role === "physio" ||
+    role.includes("physiotherapist") ||
+    role.includes("physiotherapy") ||
+    role.includes("physical therapist") ||
+    role.includes("physician") ||
+    role.includes("doctor") ||
+    role.includes("medical practitioner")
+  );
+}
+
 function getApiError(err) {
   const data = err?.response?.data;
 
-  if (typeof data === "string") return data;
+  // Do not display Django's HTML error pages in the form.
+  if (typeof data === "string") {
+    if (
+      /<!doctype html|<html|<body/i.test(data)
+    ) {
+      return `Server request failed (HTTP ${err?.response?.status || "error"}). Please check the API endpoint.`;
+    }
+    return data.slice(0, 500);
+  }
+
   if (data?.detail) return String(data.detail);
   if (data?.error) return String(data.error);
   if (data?.message) return String(data.message);
@@ -495,6 +589,19 @@ function getLocalToday() {
   return local.toISOString().slice(0, 10);
 }
 
+function getClinicianId(claim) {
+  const clinician =
+    claim?.requestingClinician ??
+    claim?.requesting_clinician ??
+    null;
+
+  if (clinician && typeof clinician === "object") {
+    return String(clinician.id ?? clinician.pk ?? "");
+  }
+
+  return clinician === null ? "" : String(clinician);
+}
+
 function getInitialForm(renewalAlert) {
   const existingClaim = renewalAlert?.claim ?? {};
 
@@ -513,11 +620,7 @@ function getInitialForm(renewalAlert) {
       ? getAlertDate(renewalAlert)
       : getLocalToday(),
 
-    requestingClinician: String(
-      existingClaim?.requestingClinician ??
-      existingClaim?.requesting_clinician ??
-      ""
-    ),
+    requestingClinician: getClinicianId(existingClaim),
     authorizationNumber: String(
       existingClaim?.authorizationNumber ??
       existingClaim?.authorization_number ??
@@ -591,11 +694,7 @@ function getClaimForm(claim) {
         ""
       ).slice(0, 10) || getLocalToday(),
 
-    requestingClinician: String(
-      claim?.requestingClinician ??
-      claim?.requesting_clinician ??
-      ""
-    ),
+    requestingClinician: getClinicianId(claim),
     authorizationNumber: String(
       claim?.authorizationNumber ??
       claim?.authorization_number ??
@@ -692,10 +791,15 @@ export default function CreateClaim({
   ========================================================= */
 
   const [patients, setPatients] = useState([]);
+  const [users, setUsers] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(initialPatient);
   const [search, setSearch] = useState("");
   const [showResults, setShowResults] = useState(false);
   const [loadingPatients, setLoadingPatients] = useState(true);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [usersError, setUsersError] = useState("");
+  const [clinicianSearch, setClinicianSearch] = useState("");
+  const [showClinicianResults, setShowClinicianResults] = useState(false);
   const [loadingClaim, setLoadingClaim] = useState(false);
   const [claimLoadFailed, setClaimLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -715,7 +819,7 @@ export default function CreateClaim({
   const currentEditClaim = loadedEditClaim ?? editClaim;
 
   /* =========================================================
-     LOAD PATIENTS AND CURRENT USER
+     LOAD PATIENTS, CLINICIANS AND CURRENT USER
   ========================================================= */
 
   useEffect(() => {
@@ -739,6 +843,38 @@ export default function CreateClaim({
       }
     }
 
+    // UPDATED: Use the dedicated clinician endpoint.
+    async function loadUsers() {
+      setLoadingUsers(true);
+      setUsersError("");
+
+      try {
+        const response = await api.get(
+          "users/clinicians/",
+          { withCredentials: true }
+        );
+
+        if (active) {
+          setUsers(getUserList(response));
+          setUsersError("");
+        }
+      } catch (err) {
+        if (active) {
+          setUsers([]);
+          setUsersError(
+            "Unable to load clinicians. Please check your connection and try again."
+          );
+
+          console.error(
+            "Failed to load requesting clinicians:",
+            err?.response?.status || err?.message
+          );
+        }
+      } finally {
+        if (active) setLoadingUsers(false);
+      }
+    }
+
     async function loadCurrentUser() {
       try {
         const response = await api.get("users/me/", {
@@ -752,6 +888,7 @@ export default function CreateClaim({
     }
 
     loadPatients();
+    loadUsers();
     loadCurrentUser();
 
     return () => {
@@ -769,6 +906,8 @@ export default function CreateClaim({
     setCreatedClaim(null);
     setSearch("");
     setShowResults(false);
+    setClinicianSearch("");
+    setShowClinicianResults(false);
     setCreateRenewalAlert(false);
     setLoadedEditClaim(null);
     setClaimLoadFailed(false);
@@ -917,6 +1056,46 @@ export default function CreateClaim({
   }, [patients, search]);
 
   /* =========================================================
+     CLINICIAN SEARCH
+  ========================================================= */
+
+  const clinicians = useMemo(() => {
+    return users
+      .filter((user) =>
+        hasValidId(user?.id ?? user?.pk) &&
+        isEligibleClinician(user)
+      )
+      .sort((a, b) =>
+        getUserName(a).localeCompare(getUserName(b))
+      );
+  }, [users]);
+
+  const filteredClinicians = useMemo(() => {
+    const term = clinicianSearch.trim().toLowerCase();
+
+    if (!term) return clinicians;
+
+    return clinicians.filter((user) => {
+      const text = [
+        getUserName(user),
+        getUserRole(user),
+        user?.username,
+        user?.email,
+      ].join(" ").toLowerCase();
+
+      return text.includes(term);
+    });
+  }, [clinicians, clinicianSearch]);
+
+  const selectedClinician = useMemo(() => {
+    return clinicians.find(
+      (user) =>
+        String(user.id ?? user.pk) ===
+        String(form.requestingClinician)
+    ) ?? null;
+  }, [clinicians, form.requestingClinician]);
+
+  /* =========================================================
      DERIVED VALUES
   ========================================================= */
 
@@ -987,6 +1166,17 @@ export default function CreateClaim({
     setCreatedClaim(null);
   }
 
+  function selectClinician(user) {
+    if (isRenewalMode) return;
+
+    const id = user.id ?? user.pk;
+
+    updateForm("requestingClinician", String(id));
+    setClinicianSearch("");
+    setShowClinicianResults(false);
+    setError("");
+  }
+
   function openPatientFile(patient) {
     if (!hasValidId(patient?.id)) {
       setError("This patient does not have a valid ID.");
@@ -1003,6 +1193,8 @@ export default function CreateClaim({
     setSuccess("");
     setCreatedClaim(null);
     setCreateRenewalAlert(false);
+    setClinicianSearch("");
+    setShowClinicianResults(false);
 
     if (isRenewalMode) {
       setForm(getInitialForm(renewalAlert));
@@ -1078,6 +1270,13 @@ export default function CreateClaim({
       return "";
     }
 
+    if (
+      form.requestingClinician &&
+      !selectedClinician
+    ) {
+      return "Please select a valid requesting clinician from the user list.";
+    }
+
     if (form.approvedVisits !== "") {
       const visits = Number(form.approvedVisits);
       if (!Number.isInteger(visits) || visits < 0) {
@@ -1104,7 +1303,6 @@ export default function CreateClaim({
       return "Please enter the rejection reason.";
     }
 
-    /* Applies to BOTH Create and Edit modes. */
     if (isRejected && createRenewalAlert) {
       if (!form.renewalDate) {
         return "Please select a renewal date.";
@@ -1124,7 +1322,7 @@ export default function CreateClaim({
 
   /* =========================================================
      CREATE RENEWAL ALERT HELPER
-========================================================= */
+  ========================================================= */
 
   async function saveRenewalReminder(claim, claimPk) {
     if (
@@ -1156,7 +1354,7 @@ export default function CreateClaim({
 
   /* =========================================================
      SUBMIT CLAIM
-========================================================= */
+  ========================================================= */
 
   async function submitClaim(event) {
     event.preventDefault();
@@ -1223,7 +1421,10 @@ export default function CreateClaim({
           ? form.rejectionReason.trim()
           : "",
 
-        requestingClinician: form.requestingClinician.trim(),
+        requestingClinician:
+          form.requestingClinician
+            ? Number(form.requestingClinician)
+            : null,
         authorizationNumber: form.authorizationNumber.trim(),
         approvalDate: form.approvalDate || null,
         expirationDate: form.expirationDate || null,
@@ -1302,10 +1503,6 @@ export default function CreateClaim({
       const claim = unwrapClaim(response);
       setCreatedClaim(claim);
 
-      /* ===========================================
-         CREATE OPTIONAL RENEWAL REMINDER
-      =========================================== */
-
       if (isRejected && createRenewalAlert) {
         try {
           await saveRenewalReminder(
@@ -1330,6 +1527,8 @@ export default function CreateClaim({
 
       setForm(getInitialForm(null));
       setCreateRenewalAlert(false);
+      setClinicianSearch("");
+      setShowClinicianResults(false);
 
       if (typeof onClaimCreated === "function") {
         await onClaimCreated(claim);
@@ -1343,7 +1542,7 @@ export default function CreateClaim({
 
   /* =========================================================
      RENDER
-========================================================= */
+  ========================================================= */
 
   return (
     <div className="create-claim-page">
@@ -1700,9 +1899,8 @@ export default function CreateClaim({
             </h2>
 
             <p className="create-claim-section-description">
-              Record the claim reference, authorization details,
-              approval information, and status.
-              Rejected claims can have an optional renewal reminder.
+              Record the claim reference, requesting clinician,
+              authorization details, approval information, and status.
             </p>
           </div>
         </div>
@@ -1732,10 +1930,6 @@ export default function CreateClaim({
                 placeholder="Select a patient"
                 readOnly
               />
-
-              <div className="create-claim-form-note">
-                Automatically populated from the selected patient.
-              </div>
             </div>
 
             {/* CLAIM REFERENCE */}
@@ -1762,17 +1956,11 @@ export default function CreateClaim({
                 readOnly={isRenewalMode}
                 required
               />
-
-              <div className="create-claim-form-note">
-                {isRenewalMode
-                  ? "The original claim reference cannot be changed."
-                  : "Enter the reference used by your RCM team."}
-              </div>
             </div>
 
             {/* REQUESTING CLINICIAN */}
 
-            <div className="create-claim-field">
+            <div className="create-claim-field create-claim-field-full">
               <label
                 className="create-claim-label"
                 htmlFor="claim-requesting-clinician"
@@ -1780,17 +1968,116 @@ export default function CreateClaim({
                 Requesting Clinician
               </label>
 
-              <input
-                id="claim-requesting-clinician"
-                className="create-claim-input"
-                type="text"
-                value={form.requestingClinician}
-                onChange={(event) =>
-                  updateForm("requestingClinician", event.target.value)
-                }
-                placeholder="Enter clinician name"
-                readOnly={isRenewalMode}
-              />
+              <div className="create-claim-search-box">
+                <span aria-hidden="true">⌕</span>
+
+                <input
+                  id="claim-requesting-clinician"
+                  className="create-claim-search-input"
+                  type="search"
+                  value={
+                    isRenewalMode
+                      ? selectedClinician
+                        ? getUserName(selectedClinician)
+                        : ""
+                      : showClinicianResults
+                        ? clinicianSearch
+                        : selectedClinician
+                          ? `${getUserName(selectedClinician)} — ${getUserRole(selectedClinician)}`
+                          : clinicianSearch
+                  }
+                  placeholder={
+                    loadingUsers
+                      ? "Loading clinicians..."
+                      : "Search physiotherapists or physicians..."
+                  }
+                  readOnly={isRenewalMode}
+                  disabled={loadingUsers || Boolean(usersError)}
+                  autoComplete="off"
+                  onFocus={() => {
+                    if (!isRenewalMode) {
+                      setClinicianSearch("");
+                      setShowClinicianResults(true);
+                    }
+                  }}
+                  onChange={(event) => {
+                    setClinicianSearch(event.target.value);
+                    setShowClinicianResults(true);
+                  }}
+                />
+
+                {!isRenewalMode && form.requestingClinician && (
+                  <button
+                    type="button"
+                    className="create-claim-button create-claim-button-secondary"
+                    onClick={() => {
+                      updateForm("requestingClinician", "");
+                      setClinicianSearch("");
+                      setShowClinicianResults(false);
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {usersError && (
+                <div
+                  className="create-claim-form-note"
+                  style={{ color: "#b91c1c" }}
+                >
+                  {usersError}
+                </div>
+              )}
+
+              {!usersError && !loadingUsers && clinicians.length === 0 && (
+                <div className="create-claim-form-note">
+                  No physiotherapists or physicians were found in the users list.
+                  Check that their user roles are correctly assigned.
+                </div>
+              )}
+
+              {!isRenewalMode &&
+                showClinicianResults &&
+                !loadingUsers &&
+                !usersError && (
+                  <div className="create-claim-clinician-list">
+                    {filteredClinicians.length === 0 ? (
+                      <div className="create-claim-empty">
+                        No matching clinicians found.
+                      </div>
+                    ) : (
+                      filteredClinicians.map((user) => {
+                        const userId = user.id ?? user.pk;
+                        const active =
+                          String(form.requestingClinician) ===
+                          String(userId);
+
+                        return (
+                          <button
+                            key={userId}
+                            type="button"
+                            className={`create-claim-clinician-option${
+                              active ? " active" : ""
+                            }`}
+                            onClick={() => selectClinician(user)}
+                          >
+                            <div className="create-claim-clinician-name">
+                              {getUserName(user)}
+                            </div>
+                            <div className="create-claim-clinician-role">
+                              {getUserRole(user)}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+              <div className="create-claim-form-note">
+                Select a registered physiotherapist or physician.
+              </div>
             </div>
 
             {/* AUTHORIZATION NUMBER */}
@@ -1982,12 +2269,6 @@ export default function CreateClaim({
                 <option value="Approved">Approved</option>
                 <option value="Rejected">Rejected</option>
               </select>
-
-              <div className="create-claim-form-note">
-                {isRenewalMode
-                  ? "Renewal submission changes the claim status to Submitted."
-                  : "Select Rejected to enter a rejection reason and optional reminder."}
-              </div>
             </div>
 
             {/* REJECTION REASON */}
@@ -2011,16 +2292,10 @@ export default function CreateClaim({
                   placeholder="Explain why the claim was rejected..."
                   required
                 />
-
-                <div className="create-claim-form-note">
-                  This reason will be saved with the rejected claim.
-                </div>
               </div>
             )}
 
-            {/* =================================================
-                RENEWAL REMINDER - CREATE AND EDIT
-            ================================================= */}
+            {/* RENEWAL REMINDER */}
 
             {isRejected && !isRenewalMode && (
               <div className="create-claim-renewal-panel">

@@ -8,6 +8,7 @@ from .api_views import (
     create_user_api,
     list_users_api,
     physician_users_api,
+    requesting_clinicians_api,
     update_user_api,
     delete_user_api,
     set_user_active_api,
@@ -48,6 +49,14 @@ urlpatterns = [
         "physicians/",
         physician_users_api,
         name="physician_users_api",
+    ),
+
+    # Active physiotherapists and physicians
+    # for the RCM Requesting Clinician dropdown
+    path(
+        "clinicians/",
+        requesting_clinicians_api,
+        name="requesting_clinicians_api",
     ),
 
     # Admin resets another user's password
