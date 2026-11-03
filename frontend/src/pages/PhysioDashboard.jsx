@@ -94,6 +94,9 @@ export default function PhysioDashboard({
           patientError={patientError}
         />
       )}
+      {activeSection === "schedule" && (
+  <TherapistSchedule />
+)}
 
       {/*
         FUTURE BOOKING FEATURES — CURRENTLY DISABLED

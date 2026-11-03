@@ -5,7 +5,6 @@ import {
   Routes,
   Route,
   Navigate,
-  useLocation,
 } from "react-router-dom";
 
 import api from "./api/api";
@@ -28,18 +27,18 @@ import RoleRoute from "./components/routing/RoleRoute";
 
 import { dashboardRoutes } from "./routes/routesConfig";
 
-/*
-=========================================================
-NEW: CALL CENTER PATIENT TRACKER
-=========================================================
-*/
 import CallCenterPatientsTracker from "./pages/CallCenterPatientsTracker";
 
+// Independent therapist schedule workspace
+import CallCenterScheduleUpload from "./components/callcenter/CallCenterScheduleUpload";
+
+/* =========================================================
+   HELPERS
+========================================================= */
 
 function normalizeRole(role) {
   return String(role || "").trim().toLowerCase();
 }
-
 
 function getDashboardPath(user) {
   if (!user) return "/login";
@@ -66,13 +65,238 @@ function getDashboardPath(user) {
   return matchingRoute?.path || null;
 }
 
+/* =========================================================
+   THERAPIST SCHEDULE WORKSPACE
+
+   Separate from the existing Booking Module.
+
+   The schedule component is mounted here independently.
+   Booking routes and booking data are not modified.
+========================================================= */
+
+function CallCenterSchedulesWorkspace({
+  user,
+  onLogout,
+  actingAs,
+  onStopImpersonation,
+}) {
+  const [therapists, setTherapists] = useState([]);
+  const [loadingTherapists, setLoadingTherapists] =
+    useState(true);
+  const [therapistsError, setTherapistsError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadTherapists() {
+      try {
+        setLoadingTherapists(true);
+        setTherapistsError("");
+
+        const response = await api.get(
+          "callcenter/therapists/"
+        );
+
+        if (!mounted) return;
+
+        const data = response.data;
+
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.results)
+          ? data.results
+          : Array.isArray(data?.therapists)
+          ? data.therapists
+          : [];
+
+        setTherapists(list);
+      } catch (error) {
+        console.error(
+          "Unable to load schedule therapists:",
+          error
+        );
+
+        if (mounted) {
+          setTherapistsError(
+            "Unable to load the therapist list. Please refresh or try again."
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoadingTherapists(false);
+        }
+      }
+    }
+
+    loadTherapists();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const displayName =
+    actingAs?.first_name ||
+    actingAs?.username ||
+    user?.first_name ||
+    user?.username ||
+    "Call Center Team";
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f8fafc",
+        color: "#334155",
+        padding: "28px 20px",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1200,
+          margin: "0 auto",
+        }}
+      >
+        <header
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 16,
+            flexWrap: "wrap",
+            marginBottom: 24,
+          }}
+        >
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.assign("/callcenter");
+              }}
+              style={{
+                background: "transparent",
+                border: 0,
+                color: "#be185d",
+                fontWeight: 700,
+                cursor: "pointer",
+                padding: "8px 0",
+              }}
+            >
+              ← Call Center Home
+            </button>
+
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                color: "#172b4d",
+                fontSize: 28,
+              }}
+            >
+              Therapist Daily Schedules
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                color: "#64748b",
+                lineHeight: 1.6,
+              }}
+            >
+              Welcome, {displayName}. Upload Concepts
+              screenshots, review appointments, match
+              patients, and manage daily schedules.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            {actingAs && (
+              <button
+                type="button"
+                onClick={() => {
+                  onStopImpersonation?.();
+                  window.location.assign("/admin");
+                }}
+                style={{
+                  padding: "10px 14px",
+                  background: "#fff7ed",
+                  color: "#9a3412",
+                  border: "1px solid #fed7aa",
+                  borderRadius: 10,
+                  cursor: "pointer",
+                }}
+              >
+                Back to Admin
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onLogout}
+              style={{
+                padding: "10px 14px",
+                background: "#fff",
+                color: "#dc2626",
+                border: "1px solid #fecaca",
+                borderRadius: 10,
+                cursor: "pointer",
+              }}
+            >
+              Logout
+            </button>
+          </div>
+        </header>
+
+        {therapistsError && (
+          <div
+            role="alert"
+            style={{
+              padding: 14,
+              marginBottom: 16,
+              borderRadius: 12,
+              border: "1px solid #fecaca",
+              background: "#fef2f2",
+              color: "#991b1b",
+            }}
+          >
+            {therapistsError}
+          </div>
+        )}
+
+        {loadingTherapists ? (
+          <div
+            style={{
+              padding: 24,
+              background: "#fff",
+              borderRadius: 14,
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            Loading therapists...
+          </div>
+        ) : (
+          <CallCenterScheduleUpload
+            therapists={therapists}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   MAIN APPLICATION
+========================================================= */
 
 function AppContent() {
   const [user, setUser] = useState(null);
   const [actingAs, setActingAs] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  const location = useLocation();
 
   useEffect(() => {
     let mounted = true;
@@ -106,14 +330,12 @@ function AppContent() {
     };
   }, []);
 
-
   const handleLogin = (userData) => {
     if (!userData) return;
 
     setUser(userData);
     setActingAs(null);
   };
-
 
   const handleLogout = async () => {
     try {
@@ -126,24 +348,19 @@ function AppContent() {
     }
   };
 
-
   const handleStopImpersonation = () => {
     setActingAs(null);
   };
-
 
   const currentUser = actingAs || user;
 
   const isAdmin = Boolean(
     user &&
-      (
-        user.is_superuser ||
-        normalizeRole(user.role) === "admin"
-      )
+      (user.is_superuser ||
+        normalizeRole(user.role) === "admin")
   );
 
   const dashboardPath = getDashboardPath(currentUser);
-
 
   if (loading) {
     return (
@@ -152,7 +369,6 @@ function AppContent() {
       </div>
     );
   }
-
 
   return (
     <Suspense
@@ -187,14 +403,16 @@ function AppContent() {
                   Please contact the administrator.
                 </p>
 
-                <button onClick={handleLogout}>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                >
                   Log out
                 </button>
               </div>
             )
           }
         />
-
 
         {/* =================================================
             LOGIN
@@ -215,7 +433,10 @@ function AppContent() {
                     No dashboard configured for this account
                   </h3>
 
-                  <button onClick={handleLogout}>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                  >
                     Log out
                   </button>
                 </div>
@@ -226,9 +447,13 @@ function AppContent() {
           }
         />
 
-
         {/* =================================================
             EXISTING DASHBOARD ROUTES
+
+            Includes any Booking Module route already
+            registered in dashboardRoutes.
+
+            These routes remain unchanged.
         ================================================= */}
 
         {dashboardRoutes.map((route) => {
@@ -280,7 +505,6 @@ function AppContent() {
           );
         })}
 
-
         {/* =================================================
             PHYSIOTHERAPY FOLLOW-UP DASHBOARD
         ================================================= */}
@@ -306,9 +530,8 @@ function AppContent() {
           }
         />
 
-
         {/* =================================================
-            NEW: CALL CENTER PATIENT TRACKER
+            CALL CENTER PATIENT TRACKER
         ================================================= */}
 
         <Route
@@ -331,6 +554,40 @@ function AppContent() {
           }
         />
 
+        {/* =================================================
+            NEW: THERAPIST SCHEDULES
+
+            Independent from the Booking Module.
+
+            Call Center Home:
+              /callcenter/schedules
+
+            Component:
+              CallCenterScheduleUpload
+
+            Backend:
+              /api/physio/schedule/
+        ================================================= */}
+
+        <Route
+          path="/callcenter/schedules"
+          element={
+            <RoleRoute
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              allowedRoles={["callcenter", "call_center"]}
+            >
+              <CallCenterSchedulesWorkspace
+                user={currentUser}
+                onLogout={handleLogout}
+                actingAs={actingAs}
+                onStopImpersonation={
+                  handleStopImpersonation
+                }
+              />
+            </RoleRoute>
+          }
+        />
 
         {/* =================================================
             RCM CLAIMS MANAGEMENT
@@ -356,7 +613,6 @@ function AppContent() {
           }
         />
 
-
         {/* =================================================
             RCM CLAIM HISTORY
         ================================================= */}
@@ -380,7 +636,6 @@ function AppContent() {
             </RoleRoute>
           }
         />
-
 
         {/* =================================================
             RECEPTION HOME
@@ -409,7 +664,6 @@ function AppContent() {
           }
         />
 
-
         {/* =================================================
             RECEPTION REGISTRATION
         ================================================= */}
@@ -436,7 +690,6 @@ function AppContent() {
             </RoleRoute>
           }
         />
-
 
         {/* =================================================
             RECEPTION BOOKING
@@ -465,7 +718,6 @@ function AppContent() {
           }
         />
 
-
         {/* =================================================
             PATIENT DETAILS
         ================================================= */}
@@ -488,7 +740,6 @@ function AppContent() {
           }
         />
 
-
         {/* =================================================
             EDIT PATIENT
         ================================================= */}
@@ -510,7 +761,6 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
-
 
         {/* =================================================
             FALLBACK
@@ -536,7 +786,6 @@ function AppContent() {
     </Suspense>
   );
 }
-
 
 export default function App() {
   return (

@@ -22,6 +22,11 @@ urlpatterns = [
     path("api/callcenter/", include("callcenter.urls")),
     path("api/rcm/", include("rcm.urls")),
 
+    # Therapist Schedule module
+    path(
+        "api/physio/schedule/",
+        include("schedules.urls"),
+    ),
 
     # Monthly physiotherapy leaderboard
     path(

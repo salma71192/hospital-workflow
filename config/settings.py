@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "approvals",
     "callcenter",
     "rcm",
+    "schedules",
 ]
 
 # -------------------

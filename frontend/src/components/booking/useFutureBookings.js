@@ -128,7 +128,7 @@ export default function useFutureBookings() {
 
   useEffect(() => {
     loadFutureBookings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, []);
 
   useEffect(() => {

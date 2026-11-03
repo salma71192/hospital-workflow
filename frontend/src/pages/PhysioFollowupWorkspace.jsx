@@ -14,6 +14,7 @@ import EvaluationTrackerSection from "../components/physio/EvaluationTrackerSect
 import PhysioReferrals from "../components/physio/PhysioReferrals";
 import LeaderboardSection from "../components/common/LeaderboardSection";
 import PerformanceDashboard from "../components/physio/performance/PerformanceDashboard";
+import TherapistSchedule from "../components/physio/TherapistSchedule";
 
 const styles = {
   stack: {
@@ -79,6 +80,10 @@ const WORKSPACE_TABS = [
   { key: "performance", label: "Performance", icon: "◉" },
   { key: "referrals", label: "Physio Referrals", icon: "↗" },
   { key: "leaderboard", label: "Leaderboard", icon: "★" },
+  {
+  id: "schedule",
+  label: "Schedule",
+  icon: "📅"}
 ];
 
 function getLocalDateString(date = new Date()) {

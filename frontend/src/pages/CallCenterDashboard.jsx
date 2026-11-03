@@ -1,5 +1,9 @@
 
-import React, { useMemo, useState } from "react";
+import React, {
+  Component,
+  useMemo,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../components/DashboardLayout";
@@ -8,6 +12,7 @@ import DashboardNotice from "../components/common/DashboardNotice";
 import CallCenterSearchSection from "../components/callcenter/CallCenterSearchSection";
 import CallCenterRegisterSection from "../components/callcenter/CallCenterRegisterSection";
 import WaitingListSection from "../components/callcenter/WaitingListSection";
+import CallCenterScheduleUpload from "../components/callcenter/CallCenterScheduleUpload";
 
 import BookingSection from "../components/booking/BookingSection";
 import TodayBookingsSection from "../components/booking/TodayBookingsSection";
@@ -440,6 +445,37 @@ const styles = `
   line-height: 1.6;
 }
 
+.cc-workspace-error {
+  padding: 20px;
+  border: 1px solid #fecaca;
+  border-radius: 14px;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.cc-workspace-error h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+
+.cc-workspace-error p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.cc-error-details {
+  padding: 12px;
+  margin: 0 0 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff;
+  color: #7f1d1d;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1100px) {
   .cc-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -480,6 +516,113 @@ const styles = `
 `;
 
 /* =========================================================
+   NAVIGATION
+========================================================= */
+
+const SECTION_KEYS = new Set([
+  "overview",
+  "search",
+  "register",
+  "booking",
+  "schedule_upload",
+  "waiting_list",
+  "today",
+  "monthly",
+  "future",
+]);
+
+function normalizeSection(value) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    if (typeof value.key === "string") {
+      return value.key;
+    }
+
+    if (typeof value.value === "string") {
+      return value.value;
+    }
+
+    if (typeof value.target?.value === "string") {
+      return value.target.value;
+    }
+
+    if (
+      typeof value.currentTarget?.dataset?.section ===
+      "string"
+    ) {
+      return value.currentTarget.dataset.section;
+    }
+  }
+
+  return "";
+}
+
+/* =========================================================
+   ERROR BOUNDARY
+========================================================= */
+
+class WorkspaceErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      error: null,
+    };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error(
+      "Call Center workspace rendering error:",
+      error,
+      info
+    );
+  }
+
+  render() {
+    const { error } = this.state;
+
+    if (error) {
+      return (
+        <div
+          className="cc-workspace-error"
+          role="alert"
+        >
+          <h3>
+            Unable to display this section
+          </h3>
+
+          <p>
+            The selected section opened, but its
+            component encountered a rendering error.
+          </p>
+
+          <pre className="cc-error-details">
+            {error.message || String(error)}
+          </pre>
+
+          <button
+            type="button"
+            className="cc-back-button"
+            onClick={this.props.onBack}
+          >
+            ← Dashboard Overview
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+/* =========================================================
    REUSABLE UI
 ========================================================= */
 
@@ -499,25 +642,28 @@ function StatCard({
       onClick={onClick}
     >
       <div className="cc-stat-top">
-        <span className="cc-stat-label">{label}</span>
+        <span className="cc-stat-label">
+          {label}
+        </span>
 
         <span
           className="cc-stat-icon"
-          style={{
-            color,
-            background,
-          }}
+          style={{ color, background }}
           aria-hidden="true"
         >
           {icon}
         </span>
       </div>
 
-      <div className="cc-stat-value">{value}</div>
+      <div className="cc-stat-value">
+        {value}
+      </div>
 
       <div className="cc-stat-footer">
         <span>{description}</span>
-        <span className="cc-stat-link">View →</span>
+        <span className="cc-stat-link">
+          View →
+        </span>
       </div>
     </button>
   );
@@ -539,23 +685,25 @@ function ActionCard({
     >
       <span
         className="cc-action-icon"
-        style={{
-          color,
-          background,
-        }}
+        style={{ color, background }}
         aria-hidden="true"
       >
         {icon}
       </span>
 
       <span className="cc-action-content">
-        <div className="cc-action-title">{title}</div>
+        <div className="cc-action-title">
+          {title}
+        </div>
+
         <div className="cc-action-description">
           {description}
         </div>
       </span>
 
-      <span className="cc-action-arrow">→</span>
+      <span className="cc-action-arrow">
+        →
+      </span>
     </button>
   );
 }
@@ -563,8 +711,13 @@ function ActionCard({
 function SummaryRow({ label, value }) {
   return (
     <div className="cc-summary-row">
-      <span className="cc-summary-label">{label}</span>
-      <span className="cc-summary-value">{value}</span>
+      <span className="cc-summary-label">
+        {label}
+      </span>
+
+      <span className="cc-summary-value">
+        {value}
+      </span>
     </div>
   );
 }
@@ -582,65 +735,87 @@ export default function CallCenterDashboard({
   const navigate = useNavigate();
 
   const [waitingList] = useState([]);
+  const [currentSection, setCurrentSection] =
+    useState("overview");
+  const [navigationError, setNavigationError] =
+    useState("");
 
   const {
-    activeSection,
-    setActiveSection,
     message,
     error,
+
     selectedPatient,
+
     patientForm,
     setPatientForm,
+
     bookingForm,
     setBookingForm,
+
     therapists,
     weekDates,
     slots,
+
     todayBookingsCount,
     monthlyBookingsCount,
+
     todayBookings,
     monthlyBookings,
     monthlyAgents,
+
     monthlyFilter,
     setMonthlyFilter,
+
     futureBookings,
     futureTherapistSummary,
     futureDaySummary,
+
     futureFilter,
     setFutureFilter,
+
     handleSelectPatient,
     handleCreatePatientFile,
+
     handleSelectTherapist,
     handleSelectDate,
     handleSelectSlot,
     handleConfirmBooking,
+
     handleApplyMonthlyFilters,
     handleApplyFutureFilters,
+
     handleEditBooking,
     handleDeleteBooking,
   } = useBookingDashboard();
 
   /* =========================================================
-     DASHBOARD NAVIGATION
+     NAVIGATION
   ========================================================= */
 
-  const [showOverview, setShowOverview] = useState(true);
-
   function openSection(section) {
-    setShowOverview(false);
-    setActiveSection(section);
-  }
+    const key = normalizeSection(section);
 
-  function openOverview() {
-    setShowOverview(true);
-  }
+    if (!SECTION_KEYS.has(key)) {
+      console.warn(
+        "Unknown Call Center section:",
+        section
+      );
 
-  function handleSidebarChange(section) {
-    if (section === "overview") {
-      openOverview();
+      setNavigationError(
+        "Unable to open the selected section."
+      );
       return;
     }
 
+    setNavigationError("");
+    setCurrentSection(key);
+  }
+
+  function openOverview() {
+    openSection("overview");
+  }
+
+  function handleSidebarChange(section) {
     openSection(section);
   }
 
@@ -662,12 +837,15 @@ export default function CallCenterDashboard({
 
   const todayLabel = useMemo(
     () =>
-      new Date().toLocaleDateString("en-GB", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      }),
+      new Date().toLocaleDateString(
+        "en-GB",
+        {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }
+      ),
     []
   );
 
@@ -679,13 +857,15 @@ export default function CallCenterDashboard({
 
   const waitingCount = waitingList.length;
 
-  const futureCount = Array.isArray(futureBookings)
-    ? futureBookings.length
-    : 0;
+  const futureCount =
+    Array.isArray(futureBookings)
+      ? futureBookings.length
+      : 0;
 
-  const therapistCount = Array.isArray(therapists)
-    ? therapists.length
-    : 0;
+  const therapistCount =
+    Array.isArray(therapists)
+      ? therapists.length
+      : 0;
 
   const selectedPatientName =
     selectedPatient?.full_name ||
@@ -699,36 +879,54 @@ export default function CallCenterDashboard({
       .join(" ");
 
   const sectionMeta = {
+    overview: {
+      title: "Dashboard Overview",
+      description:
+        "Call Center operations overview.",
+    },
+
     search: {
       title: "Search Patients",
       description:
         "Find existing patient records and access their information.",
     },
+
     register: {
       title: "Register New Patient",
       description:
         "Create a new patient file in the hospital system.",
     },
+
     booking: {
-      title: "Schedule",
+      title: "Appointment Booking",
       description:
         "Select a patient, therapist, date, and available appointment slot.",
     },
+
+    schedule_upload: {
+      title: "Therapist Daily Schedule",
+      description:
+        "Upload Concepts screenshots, review appointments, match patients, and manage confirmation status.",
+    },
+
     waiting_list: {
       title: "Waiting List",
       description:
         "Review patients waiting for appointment availability.",
     },
+
     today: {
       title: "Daily Bookings",
       description:
         "Review and manage appointments scheduled for today.",
     },
+
     monthly: {
       title: "Monthly Tracker",
       description:
         "Monitor monthly appointments and filter by staff or therapist.",
     },
+
     future: {
       title: "Future Bookings",
       description:
@@ -737,10 +935,56 @@ export default function CallCenterDashboard({
   };
 
   const currentMeta =
-    sectionMeta[activeSection] || {
+    sectionMeta[currentSection] || {
       title: "Call Center",
       description: "",
     };
+
+  /* =========================================================
+     SIDEBAR
+
+     Schedule now opens schedule_upload.
+     Booking remains available as a separate section.
+  ========================================================= */
+
+  const sidebarItems = [
+    {
+      key: "overview",
+      label: "Dashboard Overview",
+    },
+    {
+      key: "search",
+      label: "Search Patient",
+    },
+    {
+      key: "register",
+      label: "Register Patient",
+    },
+    {
+      key: "schedule_upload",
+      label: "Schedule",
+    },
+    {
+      key: "booking",
+      label: "Appointment Booking",
+    },
+    {
+      key: "waiting_list",
+      label: `Waiting List (${waitingCount})`,
+    },
+    {
+      key: "today",
+      label: `Daily Bookings (${todayCount})`,
+    },
+    {
+      key: "monthly",
+      label: `Monthly Tracker (${monthlyCount})`,
+    },
+    {
+      key: "future",
+      label: `Future Bookings (${futureCount})`,
+    },
+  ];
 
   /* =========================================================
      RENDER
@@ -751,43 +995,8 @@ export default function CallCenterDashboard({
       title="Call Center Dashboard"
       subtitle={`Welcome ${displayName}`}
       sidebarTitle="Call Center Panel"
-      sidebarItems={[
-        {
-          key: "overview",
-          label: "Dashboard Overview",
-        },
-        {
-          key: "search",
-          label: "Search Patient",
-        },
-        {
-          key: "register",
-          label: "Register Patient",
-        },
-        {
-          key: "booking",
-          label: "Schedule",
-        },
-        {
-          key: "waiting_list",
-          label: `Waiting List (${waitingCount})`,
-        },
-        {
-          key: "today",
-          label: `Daily Bookings (${todayCount})`,
-        },
-        {
-          key: "monthly",
-          label: `Monthly Tracker (${monthlyCount})`,
-        },
-        {
-          key: "future",
-          label: `Future Bookings (${futureCount})`,
-        },
-      ]}
-      activeSection={
-        showOverview ? "overview" : activeSection
-      }
+      sidebarItems={sidebarItems}
+      activeSection={currentSection}
       setActiveSection={handleSidebarChange}
       onLogout={onLogout}
       actingAs={actingAs}
@@ -813,14 +1022,16 @@ export default function CallCenterDashboard({
           </DashboardNotice>
         )}
 
-        {/* =============================================
-            DASHBOARD OVERVIEW
-        ============================================= */}
+        {navigationError && (
+          <DashboardNotice type="error">
+            {navigationError}
+          </DashboardNotice>
+        )}
 
-        {showOverview ? (
+        {/* DASHBOARD OVERVIEW */}
+
+        {currentSection === "overview" ? (
           <>
-            {/* HERO */}
-
             <div className="cc-hero">
               <div className="cc-hero-content">
                 <div className="cc-hero-eyebrow">
@@ -942,12 +1153,25 @@ export default function CallCenterDashboard({
                     }
                   />
 
+                  {/* UPDATED SCHEDULE ACTION */}
+
                   <ActionCard
                     title="Schedule"
-                    description="Manage appointment scheduling"
+                    description="Upload Concepts screenshots and confirm therapist appointments"
                     icon="📆"
                     color={COLORS.pink}
                     background={COLORS.pinkLight}
+                    onClick={() =>
+                      openSection("schedule_upload")
+                    }
+                  />
+
+                  <ActionCard
+                    title="Appointment Booking"
+                    description="Create or edit an appointment"
+                    icon="📝"
+                    color={COLORS.purple}
+                    background={COLORS.purpleLight}
                     onClick={() =>
                       openSection("booking")
                     }
@@ -1064,139 +1288,174 @@ export default function CallCenterDashboard({
             </div>
 
             <div className="cc-workspace-inner">
+              <WorkspaceErrorBoundary
+                key={currentSection}
+                onBack={openOverview}
+              >
 
-              {/* SEARCH PATIENT */}
+                {/* SEARCH PATIENT */}
 
-              {activeSection === "search" && (
-                <CallCenterSearchSection
-                  onSelectPatient={(patient) => {
-                    handleSelectPatient(patient);
-                    openSection("booking");
-                  }}
-                  onRegisterNew={() =>
-                    openSection("register")
-                  }
-                />
-              )}
-
-              {/* REGISTER PATIENT */}
-
-              {activeSection === "register" && (
-                <CallCenterRegisterSection
-                  patientForm={patientForm}
-                  setPatientForm={setPatientForm}
-                  onSubmit={handleCreatePatientFile}
-                />
-              )}
-
-              {/* SCHEDULE */}
-
-              {activeSection === "booking" && (
-                <>
-                  <div className="cc-schedule-intro">
-                    <div className="cc-schedule-icon">
-                      📆
-                    </div>
-
-                    <div>
-                      <h2 className="cc-schedule-intro-title">
-                        Appointment Schedule
-                      </h2>
-
-                      <p className="cc-schedule-intro-text">
-                        Select the patient, choose a
-                        therapist, and assign an available
-                        date and time slot.
-                      </p>
-                    </div>
-                  </div>
-
-                  <BookingSection
-                    selectedPatient={selectedPatient}
-                    bookingForm={bookingForm}
-                    setBookingForm={setBookingForm}
-                    therapists={therapists}
-                    weekDates={weekDates}
-                    slots={slots}
-                    onSelectTherapist={
-                      handleSelectTherapist
-                    }
-                    onSelectDate={handleSelectDate}
-                    onSelectSlot={handleSelectSlot}
-                    onConfirmBooking={
-                      handleConfirmBooking
+                {currentSection === "search" && (
+                  <CallCenterSearchSection
+                    onSelectPatient={(patient) => {
+                      handleSelectPatient(patient);
+                      openSection("booking");
+                    }}
+                    onRegisterNew={() =>
+                      openSection("register")
                     }
                   />
-                </>
-              )}
+                )}
 
-              {/* WAITING LIST */}
+                {/* REGISTER PATIENT */}
 
-              {activeSection === "waiting_list" && (
-                <WaitingListSection
-                  waitingList={waitingList}
-                  onOpenWaitingList={() =>
-                    openSection("waiting_list")
-                  }
-                />
-              )}
+                {currentSection === "register" && (
+                  <CallCenterRegisterSection
+                    patientForm={patientForm}
+                    setPatientForm={setPatientForm}
+                    onSubmit={handleCreatePatientFile}
+                  />
+                )}
 
-              {/* DAILY BOOKINGS */}
+                {/* APPOINTMENT BOOKING */}
 
-              {activeSection === "today" && (
-                <TodayBookingsSection
-                  bookings={todayBookings}
-                  onEditBooking={(booking) => {
-                    handleEditBooking(booking);
-                    openSection("booking");
-                  }}
-                  onDeleteBooking={
-                    handleDeleteBooking
-                  }
-                />
-              )}
+                {currentSection === "booking" && (
+                  <>
+                    <div className="cc-schedule-intro">
+                      <div className="cc-schedule-icon">
+                        📝
+                      </div>
 
-              {/* MONTHLY TRACKER */}
+                      <div>
+                        <h2 className="cc-schedule-intro-title">
+                          Appointment Booking
+                        </h2>
 
-              {activeSection === "monthly" && (
-                <MonthlyBookingsSection
-                  bookings={monthlyBookings}
-                  agents={monthlyAgents}
-                  therapists={therapists}
-                  monthlyFilter={monthlyFilter}
-                  setMonthlyFilter={
-                    setMonthlyFilter
-                  }
-                  onApplyFilters={
-                    handleApplyMonthlyFilters
-                  }
-                />
-              )}
+                        <p className="cc-schedule-intro-text">
+                          Select a patient, choose a
+                          therapist, and assign an available
+                          appointment date and time.
+                        </p>
+                      </div>
+                    </div>
 
-              {/* FUTURE BOOKINGS */}
+                    <BookingSection
+                      selectedPatient={selectedPatient}
+                      bookingForm={bookingForm}
+                      setBookingForm={setBookingForm}
+                      therapists={therapists}
+                      weekDates={weekDates}
+                      slots={slots}
+                      onSelectTherapist={
+                        handleSelectTherapist
+                      }
+                      onSelectDate={handleSelectDate}
+                      onSelectSlot={handleSelectSlot}
+                      onConfirmBooking={
+                        handleConfirmBooking
+                      }
+                    />
+                  </>
+                )}
 
-              {activeSection === "future" && (
-                <FutureBookingsSection
-                  futureBookings={futureBookings}
-                  therapistSummary={
-                    futureTherapistSummary
-                  }
-                  daySummary={futureDaySummary}
-                  therapists={therapists}
-                  futureFilter={futureFilter}
-                  setFutureFilter={setFutureFilter}
-                  onApplyFilters={
-                    handleApplyFutureFilters
-                  }
-                  onEditBooking={(booking) => {
-                    handleEditBooking(booking);
-                    openSection("booking");
-                  }}
-                  onDeleteBooking={
-                    handleDeleteBooking
-                  }
-                />
-              )}
+                {/* THERAPIST DAILY SCHEDULE */}
+
+                {currentSection === "schedule_upload" && (
+                  <>
+                    <div className="cc-schedule-intro">
+                      <div className="cc-schedule-icon">
+                        📆
+                      </div>
+
+                      <div>
+                        <h2 className="cc-schedule-intro-title">
+                          Therapist Daily Schedule
+                        </h2>
+
+                        <p className="cc-schedule-intro-text">
+                          Upload Concepts screenshots,
+                          review appointments, match
+                          patient records, and manage
+                          appointment confirmation.
+                        </p>
+                      </div>
+                    </div>
+
+                    <CallCenterScheduleUpload
+                      therapists={therapists}
+                    />
+                  </>
+                )}
+
+                {/* WAITING LIST */}
+
+                {currentSection === "waiting_list" && (
+                  <WaitingListSection
+                    waitingList={waitingList}
+                    onOpenWaitingList={() =>
+                      openSection("waiting_list")
+                    }
+                  />
+                )}
+
+                {/* DAILY BOOKINGS */}
+
+                {currentSection === "today" && (
+                  <TodayBookingsSection
+                    bookings={todayBookings}
+                    onEditBooking={(booking) => {
+                      handleEditBooking(booking);
+                      openSection("booking");
+                    }}
+                    onDeleteBooking={
+                      handleDeleteBooking
+                    }
+                  />
+                )}
+
+                {/* MONTHLY TRACKER */}
+
+                {currentSection === "monthly" && (
+                  <MonthlyBookingsSection
+                    bookings={monthlyBookings}
+                    agents={monthlyAgents}
+                    therapists={therapists}
+                    monthlyFilter={monthlyFilter}
+                    setMonthlyFilter={
+                      setMonthlyFilter
+                    }
+                    onApplyFilters={
+                      handleApplyMonthlyFilters
+                    }
+                  />
+                )}
+
+                {/* FUTURE BOOKINGS */}
+
+                {currentSection === "future" && (
+                  <FutureBookingsSection
+                    futureBookings={futureBookings}
+                    therapistSummary={
+                      futureTherapistSummary
+                    }
+                    daySummary={futureDaySummary}
+                    therapists={therapists}
+                    futureFilter={futureFilter}
+                    setFutureFilter={setFutureFilter}
+                    onApplyFilters={
+                      handleApplyFutureFilters
+                    }
+                    onEditBooking={(booking) => {
+                      handleEditBooking(booking);
+                      openSection("booking");
+                    }}
+                    onDeleteBooking={
+                      handleDeleteBooking
+                    }
+                  />
+                )}
+
+              </WorkspaceErrorBoundary>
             </div>
           </div>
         )}
