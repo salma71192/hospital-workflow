@@ -2,6 +2,7 @@
 from django.urls import path
 
 from .api_views import (
+    csrf_api,
     login_api,
     logout_api,
     current_user_api,
@@ -17,56 +18,102 @@ from .api_views import (
 )
 
 urlpatterns = [
-    # Authentication
-    path("login/", login_api, name="login_api"),
-    path("logout/", logout_api, name="logout_api"),
-    path("me/", current_user_api, name="current_user_api"),
+    # =====================================================
+    # AUTHENTICATION AND CSRF
+    # =====================================================
 
-    # User management
-    path("create-user/", create_user_api, name="create_user_api"),
-    path("list-users/", list_users_api, name="list_users_api"),
+    path(
+        "csrf/",
+        csrf_api,
+        name="csrf_api",
+    ),
+
+    path(
+        "login/",
+        login_api,
+        name="login_api",
+    ),
+
+    path(
+        "logout/",
+        logout_api,
+        name="logout_api",
+    ),
+
+    path(
+        "me/",
+        current_user_api,
+        name="current_user_api",
+    ),
+
+    # =====================================================
+    # USER MANAGEMENT
+    # =====================================================
+
+    path(
+        "create-user/",
+        create_user_api,
+        name="create_user_api",
+    ),
+
+    path(
+        "list-users/",
+        list_users_api,
+        name="list_users_api",
+    ),
 
     path(
         "update-user/<int:user_id>/",
         update_user_api,
         name="update_user_api",
     ),
+
     path(
         "delete-user/<int:user_id>/",
         delete_user_api,
         name="delete_user_api",
     ),
 
-    # Activate or deactivate user accounts
+    # =====================================================
+    # ACTIVATE / DEACTIVATE USERS
+    # =====================================================
+
     path(
         "set-active/<int:user_id>/",
         set_user_active_api,
         name="set_user_active_api",
     ),
 
-    # Active physicians for referring-physician dropdowns
+    # =====================================================
+    # PHYSICIANS
+    # =====================================================
+
     path(
         "physicians/",
         physician_users_api,
         name="physician_users_api",
     ),
 
-    # Active physiotherapists and physicians
-    # for the RCM Requesting Clinician dropdown
+    # =====================================================
+    # REQUESTING CLINICIANS
+    # =====================================================
+
     path(
         "clinicians/",
         requesting_clinicians_api,
         name="requesting_clinicians_api",
     ),
 
-    # Admin resets another user's password
+    # =====================================================
+    # PASSWORD MANAGEMENT
+    # =====================================================
+
     path(
         "change-password/<int:user_id>/",
         change_user_password_api,
         name="change_user_password_api",
     ),
 
-    # Signed-in user changes their own password
     path(
         "change-my-password/",
         change_my_password_api,

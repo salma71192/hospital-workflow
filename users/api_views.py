@@ -10,13 +10,18 @@ from django.contrib.auth import (
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.middleware.csrf import get_token
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.http import require_GET
 from rest_framework.authtoken.models import Token
 
 from .models import User
 
 
-# Roles available for new users and role changes.
+# =========================================================
+# USER ROLES
+# =========================================================
+
 ALLOWED_ROLES = [
     "admin",
     "administration",
@@ -32,13 +37,16 @@ ALLOWED_ROLES = [
     "callcenter_supervisor",
 ]
 
-# Older roles retained for backward compatibility.
 LEGACY_ROLES = {
     "doctor",
     "visitor",
     "visitor_ceo",
 }
 
+
+# =========================================================
+# GENERAL HELPERS
+# =========================================================
 
 def normalize_role(role):
     """Normalize legacy role names."""
@@ -91,8 +99,6 @@ def get_authenticated_user(request):
     Accepts both:
         Authorization: Token <token>
         Authorization: Bearer <token>
-
-    Both header formats are validated against the DRF Token table.
     """
     request_user = getattr(request, "user", None)
 
@@ -183,6 +189,36 @@ def serialize_user(user):
     """Compatibility alias for older code."""
     return get_user_data(user)
 
+
+# =========================================================
+# CSRF INITIALIZATION
+# =========================================================
+
+@require_GET
+@ensure_csrf_cookie
+def csrf_api(request):
+    """
+    Initialize Django CSRF protection.
+
+    Returns a CSRF token for cross-origin React clients.
+
+    The frontend must send:
+        X-CSRFToken: <returned csrfToken>
+
+    along with the matching CSRF cookie.
+
+    This endpoint does not authenticate a user or
+    bypass CSRF protection.
+    """
+    return JsonResponse({
+        "success": True,
+        "csrfToken": get_token(request),
+    })
+
+
+# =========================================================
+# LOGIN / LOGOUT / CURRENT USER
+# =========================================================
 
 @csrf_exempt
 def login_api(request):
@@ -275,6 +311,10 @@ def current_user_api(request):
     return JsonResponse(get_user_data(user))
 
 
+# =========================================================
+# CREATE USER
+# =========================================================
+
 @csrf_exempt
 def create_user_api(request):
     if request.method != "POST":
@@ -366,6 +406,10 @@ def create_user_api(request):
     }, status=201)
 
 
+# =========================================================
+# LIST USERS
+# =========================================================
+
 def list_users_api(request):
     permission_error = admin_error_response(
         request,
@@ -383,6 +427,10 @@ def list_users_api(request):
         "users": [get_user_data(user) for user in users]
     })
 
+
+# =========================================================
+# PHYSICIAN USERS
+# =========================================================
 
 def physician_users_api(request):
     """
@@ -497,6 +545,10 @@ def requesting_clinicians_api(request):
         "count": len(clinician_data),
     })
 
+
+# =========================================================
+# UPDATE USER
+# =========================================================
 
 @csrf_exempt
 def update_user_api(request, user_id):
@@ -667,6 +719,10 @@ def update_user_api(request, user_id):
     })
 
 
+# =========================================================
+# DELETE / DEACTIVATE USER
+# =========================================================
+
 @csrf_exempt
 def delete_user_api(request, user_id):
     """
@@ -735,6 +791,10 @@ def delete_user_api(request, user_id):
         ),
     })
 
+
+# =========================================================
+# CHANGE ACCOUNT STATUS
+# =========================================================
 
 @csrf_exempt
 def set_user_active_api(request, user_id):
@@ -805,10 +865,14 @@ def set_user_active_api(request, user_id):
         "success": True,
         "is_active": target_user.is_active,
         "message": (
-            f"User '{target_user.username}' {action} successfully."
+            f"User '{target_user.username}' {action} successfully"
         ),
     })
 
+
+# =========================================================
+# ADMIN PASSWORD CHANGE
+# =========================================================
 
 @csrf_exempt
 def change_user_password_api(request, user_id):
@@ -870,6 +934,10 @@ def change_user_password_api(request, user_id):
         ),
     })
 
+
+# =========================================================
+# CHANGE OWN PASSWORD
+# =========================================================
 
 @csrf_exempt
 def change_my_password_api(request):
@@ -955,7 +1023,6 @@ def change_my_password_api(request):
 
     update_session_auth_hash(request, user)
 
-    # Replace the old token with a new one after password change.
     Token.objects.filter(user=user).delete()
     token = Token.objects.create(user=user)
 

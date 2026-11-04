@@ -94,7 +94,7 @@ function CallCenterSchedulesWorkspace({
         setTherapistsError("");
 
         const response = await api.get(
-          "callcenter/therapists/"
+          "physio/schedule/therapists/"
         );
 
         if (!mounted) return;

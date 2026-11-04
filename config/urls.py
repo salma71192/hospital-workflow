@@ -11,6 +11,7 @@ def home(request):
 
 
 urlpatterns = [
+    path("api/physio/schedule/", include("schedules.urls")),
     # Django admin panel
     path("admin-panel/", admin.site.urls),
 
@@ -22,11 +23,6 @@ urlpatterns = [
     path("api/callcenter/", include("callcenter.urls")),
     path("api/rcm/", include("rcm.urls")),
 
-    # Therapist Schedule module
-    path(
-        "api/physio/schedule/",
-        include("schedules.urls"),
-    ),
 
     # Monthly physiotherapy leaderboard
     path(
