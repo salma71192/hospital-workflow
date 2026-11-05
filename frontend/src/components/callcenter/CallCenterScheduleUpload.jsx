@@ -5,998 +5,237 @@ import React, {
   useRef,
   useState,
 } from "react";
+
 import * as XLSX from "xlsx";
 import api from "../../api/api";
 
-// ============================================================
-// CONFIGURATION
-// ============================================================
+import {
+  API,
+  MAX_FILE_SIZE,
+  MAX_APPOINTMENTS,
+  ACCEPTED_EXTENSIONS,
+  STATUS_OPTIONS,
+  STATUS_COLORS,
+  FOLLOW_UP_STATUSES,
+  today,
+  newLocalId,
+  cleanText,
+  validDate,
+  validTime,
+  normalizeTime,
+  normalizeTherapists,
+  normalizeHistory,
+  emptyAppointment,
+  normalizeAppointment,
+  extractRows,
+  errorMessage,
+  detectHeaderRow,
+  makeColumnHeaders,
+  createColumnMapping,
+  appointmentDuplicateKeys,
+  parseImportRows,
+  validateAppointment,
+  payloadForAppointment,
+  statusLabel,
+  formatDateTime,
+} from "./schedule/scheduleHelpers";
 
-const API = "/physio/schedule/";
+import {
+  detectScheduleHeader,
+  extractScheduleAppointments,
+  parseExcelTime,
+} from "./schedule/excelImportRules";
 
-const MAX_FILE_SIZE = 15 * 1024 * 1024;
-const MAX_APPOINTMENTS = 500;
-
-const ACCEPTED_EXTENSIONS = [".xlsx", ".xls", ".csv"];
-
-const STATUS_OPTIONS = [
-  { value: "unconfirmed", label: "Unconfirmed" },
-  { value: "confirmed", label: "Confirmed" },
-  { value: "no_answer", label: "No Answer" },
-  { value: "phone_off", label: "Phone Off" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "rescheduled", label: "Rescheduled" },
-];
-
-const STATUS_COLORS = {
-  unconfirmed: "#D6B36A",
-  confirmed: "#F1D84D",
-  no_answer: "#E7A65A",
-  phone_off: "#9CA3AF",
-  cancelled: "#D96A6A",
-  rescheduled: "#72A8D8",
-};
-
-const FOLLOW_UP_STATUSES = new Set([
-  "unconfirmed",
-  "no_answer",
-  "phone_off",
-]);
-
-const IMPORT_STATUS_OPTIONS = [
-  { value: "confirmed", label: "Confirmed" },
-  { value: "unconfirmed", label: "Unconfirmed" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "rescheduled", label: "Rescheduled" },
-];
-
-const IMPORT_APPROVAL_OPTIONS = [
-  { value: "pending", label: "Pending" },
-  { value: "approved", label: "Approved" },
-  { value: "rejected", label: "Rejected" },
-];
-
-const FIELD_OPTIONS = [
-  { value: "", label: "Do not import" },
-  { value: "patient_name", label: "Patient Name" },
-  { value: "file_number", label: "File Number" },
-  { value: "time", label: "Appointment Time" },
-  { value: "start", label: "Start (Date + Time)" },
-  { value: "date", label: "Appointment Date" },
-  { value: "therapist", label: "Therapist" },
-  { value: "confirmation_status", label: "Status" },
-  { value: "appointment_type", label: "Appointment Type" },
-  { value: "notes", label: "Notes" },
-];
-
-const FIELD_ALIASES = {
-  patient_name: [
-    "patient",
-    "patient name",
-    "patientname",
-    "name",
-    "full name",
-    "patient full name",
-    "subject",
-    "client",
-    "client name",
-    "اسم المريض",
-    "المريض",
-  ],
-  file_number: [
-    "file number",
-    "file no",
-    "file no.",
-    "file",
-    "file id",
-    "code 1",
-    "patient id",
-    "patient number",
-    "mrn",
-    "medical record number",
-    "medical record",
-    "رقم الملف",
-  ],
-  time: [
-    "time",
-    "appointment time",
-    "appt time",
-    "start time",
-    "booking time",
-    "slot",
-    "وقت الموعد",
-    "الوقت",
-  ],
-  start: [
-    "start",
-    "start datetime",
-    "appointment start",
-  ],
-  date: [
-    "date",
-    "appointment date",
-    "appt date",
-    "booking date",
-    "تاريخ الموعد",
-    "التاريخ",
-  ],
-  therapist: [
-    "therapist",
-    "therapist name",
-    "physiotherapist",
-    "provider",
-    "doctor",
-    "resource",
-    "contacts",
-    "المعالج",
-  ],
-  confirmation_status: [
-    "status",
-    "confirmation",
-    "confirmation status",
-    "appointment status",
-    "حالة الموعد",
-  ],
-  appointment_type: [
-    "type",
-    "appointment type",
-    "visit type",
-    "service type",
-    "visit",
-    "نوع الموعد",
-  ],
-  notes: [
-    "notes",
-    "remarks",
-    "comments",
-    "comment",
-    "description",
-    "ملاحظات",
-  ],
-};
+import ScheduleFilters from "./schedule/ScheduleFilters";
+import ScheduleUpload from "./schedule/ScheduleUpload";
+import SchedulePreview from "./schedule/SchedulePreview";
+import ScheduleSummaryCards from "./schedule/ScheduleSummaryCards";
+import ScheduleHistory from "./schedule/ScheduleHistory";
 
 // ============================================================
 // GENERAL HELPERS
 // ============================================================
 
-function today() {
-  const d = new Date();
+const statusOptions = STATUS_OPTIONS;
 
-  return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, "0"),
-    String(d.getDate()).padStart(2, "0"),
-  ].join("-");
-}
+const hasValue = (value) =>
+  value !== null &&
+  value !== undefined &&
+  String(value).trim() !== "";
 
-function newLocalId() {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
-    return crypto.randomUUID();
-  }
+const normalizeId = (value) =>
+  hasValue(value) ? String(value) : "";
 
-  return (
-    Date.now().toString(36) +
-    Math.random().toString(36).slice(2)
+function getTherapistId(row) {
+  return normalizeId(
+    row?.therapist_id ??
+    row?.therapist ??
+    row?.physiotherapist ??
+    ""
   );
 }
 
-function cleanText(value) {
-  if (value === null || value === undefined) return "";
-  return String(value).trim();
+function findRegisteredTherapist(value, options) {
+  const id = normalizeId(value);
+
+  if (!id) return null;
+
+  return (
+    options.find(
+      (option) =>
+        normalizeId(option.value) === id
+    ) || null
+  );
 }
 
-function normalizeHeader(value) {
-  return cleanText(value)
+function normalizeName(value) {
+  return String(value || "")
     .toLowerCase()
-    .replace(/[_\-./:]+/g, " ")
+    .replace(/\b(dr|doctor|pt|physio|physiotherapist)\b/g, " ")
+    .replace(/[^a-z0-9\u0600-\u06ff]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function validTime(value) {
-  if (!/^\d{2}:\d{2}$/.test(value || "")) return false;
+function findTherapistByName(name, options) {
+  const target = normalizeName(name);
 
-  const [hour, minute] = value.split(":").map(Number);
+  if (!target) return null;
 
-  return (
-    hour >= 0 &&
-    hour <= 23 &&
-    minute >= 0 &&
-    minute <= 59
+  const exact = options.filter(
+    (option) =>
+      normalizeName(option.label) === target
   );
-}
 
-function normalizeTime(value) {
-  if (value === null || value === undefined || value === "") {
-    return "";
+  if (exact.length === 1) {
+    return exact[0];
   }
 
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return "";
+  if (exact.length > 1) {
+    return null;
+  }
+
+  const partial = options.filter((option) => {
+    const candidate = normalizeName(option.label);
 
     return (
-      String(value.getHours()).padStart(2, "0") +
-      ":" +
-      String(value.getMinutes()).padStart(2, "0")
+      candidate.length >= 5 &&
+      target.length >= 5 &&
+      (
+        candidate.includes(target) ||
+        target.includes(candidate)
+      )
     );
-  }
+  });
 
-  // Excel stores times as fractions of a day.
-  if (typeof value === "number") {
-    if (!Number.isFinite(value) || value < 0) return "";
-
-    const fraction = value - Math.floor(value);
-
-    if (value >= 1 && fraction === 0) {
-      return "";
-    }
-
-    const minutes = Math.round(fraction * 1440) % 1440;
-
-    return (
-      String(Math.floor(minutes / 60)).padStart(2, "0") +
-      ":" +
-      String(minutes % 60).padStart(2, "0")
-    );
-  }
-
-  const text = cleanText(value)
-    .replace(/\u00a0/g, " ")
-    .replace(/\./g, ":");
-
-  // 09:30, 9:30, 09:30:00, 9:30 AM
-  const match = text.match(
-    /^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i
-  );
-
-  if (match) {
-    let hour = Number(match[1]);
-    const minute = Number(match[2]);
-    const period = match[3]?.toUpperCase();
-
-    if (minute > 59) return "";
-
-    if (period) {
-      if (hour < 1 || hour > 12) return "";
-      hour = hour % 12;
-      if (period === "PM") hour += 12;
-    } else if (hour > 23) {
-      return "";
-    }
-
-    return (
-      String(hour).padStart(2, "0") +
-      ":" +
-      String(minute).padStart(2, "0")
-    );
-  }
-
-  // 9 AM, 12 PM
-  const hourOnly = text.match(/^(\d{1,2})\s*(AM|PM)$/i);
-
-  if (hourOnly) {
-    let hour = Number(hourOnly[1]);
-
-    if (hour < 1 || hour > 12) return "";
-
-    hour %= 12;
-
-    if (hourOnly[2].toUpperCase() === "PM") hour += 12;
-
-    return String(hour).padStart(2, "0") + ":00";
-  }
-
-  // Excel time fraction represented as text.
-  if (/^0\.\d+$/.test(text)) {
-    return normalizeTime(Number(text));
-  }
-
-  return "";
+  return partial.length === 1
+    ? partial[0]
+    : null;
 }
 
-function validDate(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) {
-    return false;
-  }
+function resolveTherapist(row, options) {
+  const byId = findRegisteredTherapist(
+    getTherapistId(row),
+    options
+  );
 
-  const [year, month, day] = value.split("-").map(Number);
-  const d = new Date(Date.UTC(year, month - 1, day));
+  if (byId) return byId;
 
-  return (
-    d.getUTCFullYear() === year &&
-    d.getUTCMonth() === month - 1 &&
-    d.getUTCDate() === day
+  const sourceName =
+    row.excel_therapist_name ||
+    row.import_therapist ||
+    row.therapist_name ||
+    "";
+
+  return findTherapistByName(
+    sourceName,
+    options
   );
 }
 
-function normalizeDate(value) {
-  if (value === null || value === undefined || value === "") {
-    return "";
+function applyTherapist(row, option) {
+  if (!option) {
+    return {
+      ...row,
+      therapist: "",
+      therapist_id: "",
+      therapist_name:
+        row.excel_therapist_name ||
+        row.therapist_name ||
+        "",
+      therapist_matched: false,
+    };
   }
 
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return "";
-
-    return [
-      value.getFullYear(),
-      String(value.getMonth() + 1).padStart(2, "0"),
-      String(value.getDate()).padStart(2, "0"),
-    ].join("-");
-  }
-
-  if (typeof value === "number") {
-    const parsed = XLSX.SSF.parse_date_code(value);
-
-    if (!parsed) return "";
-
-    const result = [
-      parsed.y,
-      String(parsed.m).padStart(2, "0"),
-      String(parsed.d).padStart(2, "0"),
-    ].join("-");
-
-    return validDate(result) ? result : "";
-  }
-
-  const text = cleanText(value);
-
-  if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
-    const result = text.slice(0, 10);
-    return validDate(result) ? result : "";
-  }
-
-  // Day/month/year or day-month-year.
-  const match = text.match(
-    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/
-  );
-
-  if (match) {
-    const first = Number(match[1]);
-    const second = Number(match[2]);
-    const year = match[3];
-
-    // Do not guess ambiguous dates.
-    if (first <= 12 && second <= 12) return "";
-
-    const day = first > 12 ? first : second;
-    const month = first > 12 ? second : first;
-
-    const result =
-      `${year}-${String(month).padStart(2, "0")}` +
-      `-${String(day).padStart(2, "0")}`;
-
-    return validDate(result) ? result : "";
-  }
-
-  return "";
-}
-
-function normalizeStatus(value) {
-  const text = normalizeHeader(value).replace(/\s+/g, "_");
-
-  const aliases = {
-    confirmed: "confirmed",
-    confirm: "confirmed",
-    yes: "confirmed",
-    unconfirmed: "unconfirmed",
-    not_confirmed: "unconfirmed",
-    pending: "unconfirmed",
-    no_answer: "no_answer",
-    noanswer: "no_answer",
-    unanswered: "no_answer",
-    phone_off: "phone_off",
-    phoneoff: "phone_off",
-    switched_off: "phone_off",
-    cancelled: "cancelled",
-    canceled: "cancelled",
-    rescheduled: "rescheduled",
-    postponed: "rescheduled",
-  };
-
-  return aliases[text] || "unconfirmed";
-}
-
-function normalizeType(value) {
-  const text = normalizeHeader(value);
-
-  if (
-    text.includes("evaluation") ||
-    text.includes("assessment") ||
-    text === "eval" ||
-    text === "new patient" ||
-    text === "initial"
-  ) {
-    return "evaluation";
-  }
-
-  return "followup";
-}
-
-function statusLabel(value) {
-  return (
-    STATUS_OPTIONS.find((item) => item.value === value)?.label ||
-    value ||
-    "Unknown"
-  );
-}
-
-function formatDateTime(value) {
-  if (!value) return "Not recorded";
-
-  const d = new Date(value);
-
-  return Number.isNaN(d.getTime())
-    ? String(value)
-    : d.toLocaleString();
-}
-
-function normalizeTherapists(items) {
-  if (!Array.isArray(items)) return [];
-
-  return items
-    .map((item) => {
-      if (typeof item === "string") {
-        return { value: item, label: item };
-      }
-
-      const value = cleanText(
-        item?.username ?? item?.value ?? item?.name
-      );
-
-      const label = cleanText(
-        item?.full_name ??
-        item?.label ??
-        item?.name ??
-        value
-      );
-
-      return value ? { value, label } : null;
-    })
-    .filter(Boolean);
-}
-
-function normalizeHistory(items) {
-  if (!Array.isArray(items)) return [];
-
-  return items.map((item) => ({
-    id: item.id ?? newLocalId(),
-    action: item.action || "Appointment updated",
-    old_status:
-      item.old_status ?? item.previous_status ?? null,
-    new_status: item.new_status ?? item.status ?? null,
-    note: item.note || item.notes || "",
-    changed_by:
-      item.changed_by_name ||
-      (typeof item.changed_by === "string"
-        ? item.changed_by
-        : "Staff"),
-    created_at:
-      item.created_at ||
-      item.changed_at ||
-      item.timestamp ||
-      null,
-  }));
-}
-
-function emptyAppointment() {
   return {
-    localId: newLocalId(),
-    id: null,
-    patient_name: "",
-    patient_id: null,
-    file_number: "",
-    time: "",
-    confirmation_status: "unconfirmed",
-    appointment_type: "followup",
-    source: "manual",
-    notes: "",
-    matched: false,
+    ...row,
+    therapist: option.value,
+    therapist_id: option.value,
+    therapist_name: option.label,
+    therapist_matched: true,
+  };
+}
+
+function getAppointmentTime(row) {
+  const parsed = parseExcelTime(row.time);
+
+  return validTime(parsed)
+    ? parsed
+    : validTime(row.time)
+    ? row.time
+    : "";
+}
+
+function sortAppointments(rows) {
+  return [...rows].sort((a, b) => {
+    const first = getAppointmentTime(a) || "99:99";
+    const second = getAppointmentTime(b) || "99:99";
+
+    return first.localeCompare(second);
+  });
+}
+
+function appointmentKeys(row) {
+  return appointmentDuplicateKeys(row);
+}
+
+function normalizeImportedRow(
+  row,
+  options,
+  selectedDate
+) {
+  const matched = resolveTherapist(
+    row,
+    options
+  );
+
+  const base = {
+    ...row,
+    localId: row.localId || newLocalId(),
+    date:
+      row.date ||
+      row.appointment_date ||
+      selectedDate,
+    appointment_date:
+      row.appointment_date ||
+      row.date ||
+      selectedDate,
+    time: getAppointmentTime(row),
+    confirmation_status:
+      row.confirmation_status || "unconfirmed",
+    appointment_type:
+      row.appointment_type || "followup",
+    source: row.source || "excel",
+    excel_therapist_name:
+      row.excel_therapist_name ||
+      row.import_therapist ||
+      row.therapist_name ||
+      "",
     isNew: true,
     isDirty: true,
-    history: [],
-    second_call_attempts: 0,
-    rescheduled_to_date: "",
-    rescheduled_to_time: "",
-    import_file: "",
-    import_sheet: "",
-    import_row: null,
-    import_date: "",
-    import_therapist: "",
-    import_warnings: [],
-  };
-}
-
-function normalizeAppointment(row = {}, published = false) {
-  const patientId =
-    row.patient_id ?? row.patient?.id ?? null;
-
-  const id = row.id ?? row.appointment_id ?? null;
-
-  return {
-    ...emptyAppointment(),
-    ...row,
-    localId: newLocalId(),
-    id,
-    patient_name: cleanText(
-      row.patient_name || row.patient?.name
-    ),
-    patient_id: patientId,
-    file_number: cleanText(
-      row.file_number ||
-      row.patient_file_number ||
-      row.patient?.patient_id
-    ),
-    time: normalizeTime(
-      row.time ?? row.appointment_time
-    ),
-    confirmation_status: normalizeStatus(
-      row.confirmation_status || row.status
-    ),
-    appointment_type: normalizeType(
-      row.appointment_type
-    ),
-    source: row.source || (published ? "concepts" : "excel"),
-    notes: row.notes || "",
-    matched: patientId !== null && patientId !== "",
-    isNew: !published || id === null,
-    isDirty: !published,
-    history: normalizeHistory(
-      row.history || row.status_history || []
-    ),
-    second_call_attempts: Number(
-      row.second_call_attempts || 0
-    ),
-    rescheduled_to_date: row.rescheduled_to_date || "",
-    rescheduled_to_time: normalizeTime(
-      row.rescheduled_to_time
-    ),
-    import_warnings: row.import_warnings || [],
-  };
-}
-
-function extractRows(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.appointments)) return data.appointments;
-  if (Array.isArray(data?.results)) return data.results;
-  return [];
-}
-
-function errorMessage(err, fallback = "Request failed.") {
-  const status = err?.response?.status;
-  const data = err?.response?.data;
-
-  if (status === 401) {
-    return "Please log in again.";
-  }
-
-  if (status === 403) {
-    return "Access denied or CSRF token invalid.";
-  }
-
-  if (status === 404) {
-    return "The required Django API endpoint is unavailable.";
-  }
-
-  if (status === 413) {
-    return "The request exceeds the server size limit.";
-  }
-
-  if (err?.code === "ECONNABORTED") {
-    return "The request timed out.";
-  }
-
-  if (err?.request && !err?.response) {
-    return "Network error. Check Django and your connection.";
-  }
-
-  if (typeof data === "string" && !data.startsWith("<")) {
-    return data.slice(0, 300);
-  }
-
-  const message = data?.error || data?.detail || data?.message;
-
-  if (typeof message === "string") return message;
-
-  if (message && typeof message === "object") {
-    return JSON.stringify(message);
-  }
-
-  return err?.message || fallback;
-}
-
-// ============================================================
-// EXCEL HELPERS
-// ============================================================
-
-function guessField(header) {
-  const normalized = normalizeHeader(header);
-
-  for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
-    if (aliases.some((alias) => normalizeHeader(alias) === normalized)) {
-      return field;
-    }
-  }
-
-  return "";
-}
-
-function detectHeaderRow(rows) {
-  let bestIndex = 0;
-  let bestScore = -1;
-
-  rows.slice(0, 20).forEach((row, index) => {
-    const recognized = new Set(
-      row.map(guessField).filter(Boolean)
-    );
-
-    let score = recognized.size;
-
-    if (recognized.has("patient_name")) score += 4;
-    if (recognized.has("time")) score += 4;
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = index;
-    }
-  });
-
-  return bestIndex;
-}
-
-function makeColumnHeaders(row) {
-  const used = new Map();
-
-  return row.map((value, index) => {
-    const original = cleanText(value) || `Column ${index + 1}`;
-    const count = (used.get(original) || 0) + 1;
-
-    used.set(original, count);
-
-    return count === 1
-      ? original
-      : `${original} (${count})`;
-  });
-}
-
-function createColumnMapping(headers) {
-  const assigned = new Set();
-
-  return headers.map((header) => {
-    const field = guessField(header);
-
-    if (!field || assigned.has(field)) return "";
-
-    assigned.add(field);
-    return field;
-  });
-}
-
-function isAdministrativeRow(name) {
-  const text = normalizeHeader(name);
-
-  if (!text) return false;
-
-  return (
-    /^(duty time|duty tim|break time|lunch break|total appointments|schedule date|therapist name|appointment list|patient name|grand total)$/i.test(
-      text
-    ) ||
-    text.includes("ask the therapist for double booking")
-  );
-}
-
-function normalizeStartDateTime(value) {
-  if (value === null || value === undefined || value === "") {
-    return { date: "", time: "" };
-  }
-
-  // Excel may store a combined date/time as a serial number.
-  if (typeof value === "number") {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (!parsed) return { date: "", time: "" };
-    const date = [parsed.y, String(parsed.m).padStart(2, "0"), String(parsed.d).padStart(2, "0")].join("-");
-    const minutes = Math.round(((parsed.H || 0) * 60) + (parsed.M || 0) + ((parsed.S || 0) / 60));
-    const time = `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-    return { date: validDate(date) ? date : "", time };
-  }
-
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return { date: normalizeDate(value), time: normalizeTime(value) };
-  }
-
-  const raw = cleanText(value);
-  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]+(.+)$/);
-  if (iso) return { date: normalizeDate(iso[1]), time: normalizeTime(iso[2]) };
-
-  const dmy = raw.match(/^(\d{1,2}[/-]\d{1,2}[/-]\d{4})[\s,]+(.+)$/);
-  if (dmy) return { date: normalizeDate(dmy[1]), time: normalizeTime(dmy[2]) };
-
-  return { date: normalizeDate(raw), time: normalizeTime(raw) };
-}
-
-function appointmentDuplicateKeys(row) {
-  // A patient should appear only once in this import/schedule, even if the
-  // source worksheet lists the same patient at different times. The user can
-  // edit the retained appointment time after import.
-  const patient = normalizeHeader(row.patient_name || "");
-  const file = normalizeHeader(row.file_number || "");
-  const keys = [];
-  if (patient) keys.push(`name:${patient}`);
-  if (file) keys.push(`file:${file}`);
-  return keys;
-}
-
-function parseImportRows(
-  rows,
-  mapping,
-  headerRowIndex,
-  fileName,
-  sheetName,
-  selectedDate,
-  selectedTherapist,
-  therapistLabel
-) {
-  const appointments = [];
-  const warnings = [];
-  let skipped = 0;
-
-  for (let i = headerRowIndex + 1; i < rows.length; i++) {
-    const cells = rows[i] || [];
-
-    if (cells.every((cell) => cleanText(cell) === "")) {
-      continue;
-    }
-
-    const data = {};
-
-    mapping.forEach((field, index) => {
-      if (field) data[field] = cells[index];
-    });
-
-    const name = cleanText(data.patient_name);
-
-    if (!name || isAdministrativeRow(name)) {
-      skipped++;
-      continue;
-    }
-
-    const startParts = normalizeStartDateTime(data.start);
-    const time = normalizeTime(data.time) || startParts.time;
-    const importedDate = normalizeDate(data.date) || startParts.date;
-    const rawDate = cleanText(data.date || data.start);
-    const importedTherapist = cleanText(data.therapist);
-
-    // Import only rows belonging to the therapist currently selected in the UI.
-    // Rows with a blank therapist are also excluded so they cannot be assigned
-    // to the selected therapist by mistake.
-    const selectedTherapistKeys = [
-      normalizeHeader(selectedTherapist),
-      normalizeHeader(therapistLabel),
-    ].filter(Boolean);
-    const importedTherapistKey = normalizeHeader(importedTherapist);
-
-    // Excel may contain the therapist's full HR name while the dropdown
-    // displays a shortened name (for example, "Salma Mohammed" versus
-    // "Salma Mohammed Khalil Mohammed"). Match either exact names or a
-    // complete selected-name prefix, but never a partial word.
-    const therapistMatches = Boolean(
-      importedTherapistKey &&
-      selectedTherapistKeys.some(
-        (selectedKey) =>
-          importedTherapistKey === selectedKey ||
-          importedTherapistKey.startsWith(`${selectedKey} `)
-      )
-    );
-
-    if (!therapistMatches) {
-      skipped++;
-      continue;
-    }
-
-    const rowWarnings = [];
-
-    if (!time) {
-      rowWarnings.push("Missing or invalid appointment time");
-    }
-
-    if (rawDate && !importedDate) {
-      rowWarnings.push("Appointment date could not be interpreted");
-    }
-
-    if (importedDate && importedDate !== selectedDate) {
-      rowWarnings.push(
-        `Date ${importedDate} differs from selected ${selectedDate}`
-      );
-    }
-
-    const rawStatus = cleanText(data.confirmation_status);
-    const rawType = cleanText(data.appointment_type);
-
-    if (
-      rawStatus &&
-      ![
-        "confirmed",
-        "confirm",
-        "yes",
-        "unconfirmed",
-        "not confirmed",
-        "pending",
-        "no answer",
-        "noanswer",
-        "unanswered",
-        "phone off",
-        "phoneoff",
-        "switched off",
-        "cancelled",
-        "canceled",
-        "rescheduled",
-        "postponed",
-      ].includes(normalizeHeader(rawStatus))
-    ) {
-      rowWarnings.push(
-        `Unrecognized status "${rawStatus}"; defaulted to Unconfirmed`
-      );
-    }
-
-    if (
-      rawType &&
-      !/eval|assessment|initial|new patient|follow|review|treatment|session/i.test(
-        rawType
-      )
-    ) {
-      rowWarnings.push(
-        `Appointment type "${rawType}" needs verification`
-      );
-    }
-
-    const row = normalizeAppointment(
-      {
-        patient_name: name,
-        file_number: cleanText(data.file_number),
-        time,
-        confirmation_status: normalizeStatus(rawStatus),
-        appointment_type: normalizeType(rawType),
-        notes: cleanText(data.notes),
-        source: "excel",
-        import_file: fileName,
-        import_sheet: sheetName,
-        import_row: i + 1,
-        import_date: importedDate,
-        import_therapist: importedTherapist,
-        import_warnings: rowWarnings,
-        approval_status: "approved",
-      },
-      false
-    );
-
-    appointments.push(row);
-
-    if (rowWarnings.length) {
-      warnings.push(
-        `Row ${i + 1}: ${name} — ${rowWarnings.join("; ")}`
-      );
-    }
-  }
-
-  return { appointments, warnings, skipped };
-}
-
-function validateAppointment(row) {
-  if (!cleanText(row.patient_name)) {
-    return "Patient name is required.";
-  }
-
-  if (row.patient_name.trim().length > 255) {
-    return "Patient name is too long.";
-  }
-
-  if (!validTime(row.time)) {
-    return "A valid appointment time is required.";
-  }
-
-  if (
-    !STATUS_OPTIONS.some(
-      (option) => option.value === row.confirmation_status
-    )
-  ) {
-    return "Invalid appointment status.";
-  }
-
-  if (!["evaluation", "followup"].includes(row.appointment_type)) {
-    return "Invalid appointment type.";
-  }
-
-  if (row.confirmation_status === "rescheduled") {
-    if (
-      !validDate(row.rescheduled_to_date) ||
-      !validTime(row.rescheduled_to_time)
-    ) {
-      return "Rescheduled appointments need a new date and time.";
-    }
-  }
-
-  return null;
-}
-
-function payloadForAppointment(row, therapist, date) {
-  return {
-    therapist,
-    date,
-    patient_name: row.patient_name.trim(),
-    patient_id: row.patient_id || null,
-    time: row.time,
-    confirmation_status: row.confirmation_status,
-    appointment_type: row.appointment_type,
-    notes: row.notes || "",
-    rescheduled_to_date:
-      row.confirmation_status === "rescheduled"
-        ? row.rescheduled_to_date
-        : null,
-    rescheduled_to_time:
-      row.confirmation_status === "rescheduled"
-        ? row.rescheduled_to_time
-        : null,
-  };
-}
-
-// ============================================================
-// BADGES AND EDITOR
-// ============================================================
-
-function Time12Control({ value, onChange, ariaLabel }) {
-  const [hour24, minuteText] = (value || "").split(":");
-  const numericHour = Number(hour24);
-  const hour12 = value
-    ? String(numericHour % 12 || 12).padStart(2, "0")
-    : "09";
-  const period = value ? (numericHour >= 12 ? "PM" : "AM") : "AM";
-  const minute = value ? (minuteText || "00") : "00";
-
-  const update = (hour, mins, meridiem) => {
-    let h = Number(hour) % 12;
-    if (meridiem === "PM") h += 12;
-    onChange(`${String(h).padStart(2, "0")}:${String(mins).padStart(2, "0")}`);
   };
 
-  return (
-    <div className="csu-time12" aria-label={ariaLabel}>
-      <select
-        value={hour12}
-        onChange={(e) => update(e.target.value, minute, period)}
-        aria-label={`${ariaLabel} hour`}
-      >
-        {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map((h) => (
-          <option key={h} value={h}>{h}</option>
-        ))}
-      </select>
-      <span>:</span>
-      <select
-        value={minute}
-        onChange={(e) => update(hour12, e.target.value, period)}
-        aria-label={`${ariaLabel} minute`}
-      >
-        {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map((m) => (
-          <option key={m} value={m}>{m}</option>
-        ))}
-      </select>
-      <select
-        value={period}
-        onChange={(e) => update(hour12, minute, e.target.value)}
-        aria-label={`${ariaLabel} AM or PM`}
-      >
-        <option value="AM">AM</option>
-        <option value="PM">PM</option>
-      </select>
-    </div>
-  );
-}
-
-function ApprovalBadge({ status }) {
-  const value = status || "approved";
-  const label = IMPORT_APPROVAL_OPTIONS.find((item) => item.value === value)?.label || "Approved";
-  return <span className={`csu-approval-badge ${value}`}>{label}</span>;
+  return applyTherapist(base, matched);
 }
 
 function StatusBadge({ status }) {
@@ -1004,7 +243,8 @@ function StatusBadge({ status }) {
     <span
       className="csu-status-badge"
       style={{
-        background: STATUS_COLORS[status] || "#E2E8F0",
+        background:
+          STATUS_COLORS[status] || "#e2e8f0",
       }}
     >
       {statusLabel(status)}
@@ -1014,21 +254,32 @@ function StatusBadge({ status }) {
 
 function TypeBadge({ type }) {
   return (
-    <span className={`csu-type ${type}`}>
-      {type === "evaluation" ? "Evaluation" : "Follow-up"}
+    <span
+      className={`csu-type ${type || "followup"}`}
+    >
+      {type === "evaluation"
+        ? "Evaluation"
+        : "Follow-up"}
     </span>
   );
 }
 
-function AppointmentFields({
-  appointment,
-  disabled,
+// ============================================================
+// APPOINTMENT EDITOR
+// ============================================================
+
+function AppointmentEditor({
+  row,
+  therapistOptions = [],
   onChange,
   onFindPatient,
+  onSave,
+  onClose,
+  disabled,
 }) {
   const update = (field, value) => {
     const next = {
-      ...appointment,
+      ...row,
       [field]: value,
       isDirty: true,
     };
@@ -1047,124 +298,269 @@ function AppointmentFields({
       next.rescheduled_to_time = "";
     }
 
+    if (field === "therapist") {
+      const selected = findRegisteredTherapist(
+        value,
+        therapistOptions
+      );
+
+      next.therapist = selected?.value || "";
+      next.therapist_id = selected?.value || "";
+      next.therapist_name = selected?.label || "";
+      next.therapist_matched = Boolean(selected);
+    }
+
     onChange(next);
   };
 
   return (
-    <div className="csu-editor-grid">
-      <label>
-        Patient Name
-        <input
-          value={appointment.patient_name}
-          disabled={disabled}
-          onChange={(e) =>
-            update("patient_name", e.target.value)
-          }
-        />
-      </label>
+    <div className="csu-modal-backdrop">
+      <div
+        className="csu-modal csu-modal-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Appointment editor"
+      >
+        <div className="csu-section-header">
+          <h3>
+            {row.id
+              ? "Edit Appointment"
+              : "New Appointment"}
+          </h3>
 
-      <label>
-        Hospital File Number
-        <div className="csu-inline-input">
-          <input
-            value={appointment.file_number || ""}
-            disabled
-            placeholder="Not matched"
-          />
+          <button
+            type="button"
+            className="csu-close"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="csu-editor-grid">
+          <label>
+            Patient Name
+
+            <input
+              value={row.patient_name || ""}
+              onChange={(event) =>
+                update(
+                  "patient_name",
+                  event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Hospital File Number
+
+            <div className="csu-inline-input">
+              <input
+                value={row.file_number || ""}
+                disabled
+              />
+
+              <button
+                type="button"
+                className="csu-secondary"
+                onClick={onFindPatient}
+              >
+                Find
+              </button>
+            </div>
+          </label>
+
+          <label>
+            Physiotherapist
+
+            <select
+              value={getTherapistId(row)}
+              onChange={(event) =>
+                update(
+                  "therapist",
+                  event.target.value
+                )
+              }
+            >
+              <option value="">
+                Select Physiotherapist
+              </option>
+
+              {therapistOptions.map((option) => (
+                <option
+                  key={String(option.value)}
+                  value={String(option.value)}
+                >
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Appointment Time
+
+            <input
+              type="time"
+              value={row.time || ""}
+              onChange={(event) =>
+                update(
+                  "time",
+                  event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Confirmation Status
+
+            <select
+              value={
+                row.confirmation_status ||
+                "unconfirmed"
+              }
+              onChange={(event) =>
+                update(
+                  "confirmation_status",
+                  event.target.value
+                )
+              }
+            >
+              {STATUS_OPTIONS.map((status) => (
+                <option
+                  key={status.value}
+                  value={status.value}
+                >
+                  {status.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Appointment Type
+
+            <select
+              value={
+                row.appointment_type ||
+                "followup"
+              }
+              onChange={(event) =>
+                update(
+                  "appointment_type",
+                  event.target.value
+                )
+              }
+            >
+              <option value="followup">
+                Follow-up
+              </option>
+
+              <option value="evaluation">
+                Evaluation
+              </option>
+            </select>
+          </label>
+
+          <label>
+            Source
+
+            <input
+              value={row.source || "manual"}
+              disabled
+            />
+          </label>
+
+          <label>
+            Claims Approval
+
+            <input
+              value={
+                row.claim_approval_status ||
+                row.insurance_approval_status ||
+                row.approval_status ||
+                "Not verified"
+              }
+              disabled
+            />
+          </label>
+
+          {row.confirmation_status ===
+            "rescheduled" && (
+            <>
+              <label>
+                New Date
+
+                <input
+                  type="date"
+                  value={
+                    row.rescheduled_to_date || ""
+                  }
+                  onChange={(event) =>
+                    update(
+                      "rescheduled_to_date",
+                      event.target.value
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                New Time
+
+                <input
+                  type="time"
+                  value={
+                    row.rescheduled_to_time || ""
+                  }
+                  onChange={(event) =>
+                    update(
+                      "rescheduled_to_time",
+                      event.target.value
+                    )
+                  }
+                />
+              </label>
+            </>
+          )}
+
+          <label className="csu-full-width">
+            Notes
+
+            <textarea
+              rows={3}
+              value={row.notes || ""}
+              onChange={(event) =>
+                update(
+                  "notes",
+                  event.target.value
+                )
+              }
+            />
+          </label>
+        </div>
+
+        <div className="csu-actions">
+          <button
+            type="button"
+            className="csu-primary"
+            disabled={disabled}
+            onClick={onSave}
+          >
+            Apply to Draft
+          </button>
+
           <button
             type="button"
             className="csu-secondary"
-            disabled={disabled}
-            onClick={onFindPatient}
+            onClick={onClose}
           >
-            Find
+            Cancel
           </button>
         </div>
-      </label>
-
-      <label>
-        Appointment Time
-        <input
-          type="time"
-          value={appointment.time}
-          disabled={disabled}
-          onChange={(e) => update("time", e.target.value)}
-        />
-      </label>
-
-      <label>
-        Confirmation Status
-        <select
-          value={appointment.confirmation_status}
-          disabled={disabled}
-          onChange={(e) =>
-            update("confirmation_status", e.target.value)
-          }
-        >
-          {STATUS_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label>
-        Appointment Type
-        <select
-          value={appointment.appointment_type}
-          disabled={disabled}
-          onChange={(e) =>
-            update("appointment_type", e.target.value)
-          }
-        >
-          <option value="followup">Follow-up</option>
-          <option value="evaluation">Evaluation</option>
-        </select>
-      </label>
-
-      <label>
-        Source
-        <input value={appointment.source || "manual"} disabled />
-      </label>
-
-      {appointment.confirmation_status === "rescheduled" && (
-        <>
-          <label>
-            New Date
-            <input
-              type="date"
-              value={appointment.rescheduled_to_date}
-              disabled={disabled}
-              onChange={(e) =>
-                update("rescheduled_to_date", e.target.value)
-              }
-            />
-          </label>
-
-          <label>
-            New Time
-            <input
-              type="time"
-              value={appointment.rescheduled_to_time}
-              disabled={disabled}
-              onChange={(e) =>
-                update("rescheduled_to_time", e.target.value)
-              }
-            />
-          </label>
-        </>
-      )}
-
-      <label className="csu-full-width">
-        Notes
-        <textarea
-          rows={3}
-          value={appointment.notes || ""}
-          disabled={disabled}
-          onChange={(e) => update("notes", e.target.value)}
-        />
-      </label>
+      </div>
     </div>
   );
 }
@@ -1176,102 +572,257 @@ function AppointmentFields({
 export default function CallCenterScheduleUpload({
   therapists = [],
 }) {
-  const [activeTab, setActiveTab] = useState("create");
+  // ----------------------------------------------------------
+  // GENERAL STATE
+  // ----------------------------------------------------------
 
-  const [therapist, setTherapist] = useState("");
-  const [date, setDate] = useState(today());
+  const [activeTab, setActiveTab] =
+    useState("create");
 
-  const [backendTherapists, setBackendTherapists] = useState([]);
-  const [loadingTherapists, setLoadingTherapists] = useState(false);
+  const [therapist, setTherapist] =
+    useState("");
 
-  const [appointments, setAppointments] = useState([]);
-  const [historyAppointments, setHistoryAppointments] = useState([]);
-  const [alerts, setAlerts] = useState([]);
+  const [date, setDate] =
+    useState(today());
 
-  // Excel import state
-  const [excelFile, setExcelFile] = useState(null);
-  const [workbookSheets, setWorkbookSheets] = useState([]);
-  const [selectedSheet, setSelectedSheet] = useState("");
-  const [sheetRows, setSheetRows] = useState([]);
-  const [headerRowIndex, setHeaderRowIndex] = useState(0);
-  const [headers, setHeaders] = useState([]);
-  const [columnMapping, setColumnMapping] = useState([]);
-  const [importPreview, setImportPreview] = useState([]);
-  const [importWarnings, setImportWarnings] = useState([]);
-  const [importSkipped, setImportSkipped] = useState(0);
-  const [importing, setImporting] = useState(false);
+  const [
+    backendTherapists,
+    setBackendTherapists,
+  ] = useState([]);
 
-  const [loading, setLoading] = useState(false);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [loadingAlerts, setLoadingAlerts] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [
+    appointments,
+    setAppointments,
+  ] = useState([]);
 
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [
+    historyAppointments,
+    setHistoryAppointments,
+  ] = useState([]);
 
-  const [hasDraft, setHasDraft] = useState(false);
-  const [loadedSchedule, setLoadedSchedule] = useState(false);
+  const [alerts, setAlerts] =
+    useState([]);
 
-  const [editingAppointment, setEditingAppointment] = useState(null);
-  const [detailsAppointment, setDetailsAppointment] = useState(null);
-  const [detailsHistory, setDetailsHistory] = useState([]);
+  // ----------------------------------------------------------
+  // EXCEL STATE
+  // ----------------------------------------------------------
 
-  const [patientSearchOpen, setPatientSearchOpen] = useState(false);
-  const [patientQuery, setPatientQuery] = useState("");
-  const [patientMatches, setPatientMatches] = useState([]);
-  const [searchingPatients, setSearchingPatients] = useState(false);
-  const [patientSearchTarget, setPatientSearchTarget] = useState(null);
+  const [excelFile, setExcelFile] =
+    useState(null);
 
-  const [historyFilter, setHistoryFilter] = useState("all");
-  const [historyQuery, setHistoryQuery] = useState("");
+  const [
+    workbookSheets,
+    setWorkbookSheets,
+  ] = useState([]);
 
-  const [alertsError, setAlertsError] = useState("");
+  const [
+    selectedSheet,
+    setSelectedSheet,
+  ] = useState("");
+
+  const [sheetRows, setSheetRows] =
+    useState([]);
+
+  const [
+    headerRowIndex,
+    setHeaderRowIndex,
+  ] = useState(0);
+
+  const [headers, setHeaders] =
+    useState([]);
+
+  const [
+    columnMapping,
+    setColumnMapping,
+  ] = useState([]);
+
+  const [
+    importPreview,
+    setImportPreview,
+  ] = useState([]);
+
+  const [
+    importWarnings,
+    setImportWarnings,
+  ] = useState([]);
+
+  const [
+    importSkipped,
+    setImportSkipped,
+  ] = useState(0);
+
+  // ----------------------------------------------------------
+  // LOADING STATE
+  // ----------------------------------------------------------
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [
+    loadingHistory,
+    setLoadingHistory,
+  ] = useState(false);
+
+  const [
+    loadingAlerts,
+    setLoadingAlerts,
+  ] = useState(false);
+
+  const [
+    loadingTherapists,
+    setLoadingTherapists,
+  ] = useState(false);
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [importing, setImporting] =
+    useState(false);
+
+  // ----------------------------------------------------------
+  // MESSAGES
+  // ----------------------------------------------------------
+
+  const [error, setError] =
+    useState("");
+
+  const [success, setSuccess] =
+    useState("");
+
+  const [
+    alertsError,
+    setAlertsError,
+  ] = useState("");
+
+  // ----------------------------------------------------------
+  // WORKSPACE
+  // ----------------------------------------------------------
+
+  const [hasDraft, setHasDraft] =
+    useState(false);
+
+  const [
+    loadedSchedule,
+    setLoadedSchedule,
+  ] = useState(false);
+
+  const [
+    editingAppointment,
+    setEditingAppointment,
+  ] = useState(null);
+
+  const [
+    detailsAppointment,
+    setDetailsAppointment,
+  ] = useState(null);
+
+  const [
+    detailsHistory,
+    setDetailsHistory,
+  ] = useState([]);
+
+  // ----------------------------------------------------------
+  // PATIENT SEARCH
+  // ----------------------------------------------------------
+
+  const [
+    patientSearchOpen,
+    setPatientSearchOpen,
+  ] = useState(false);
+
+  const [
+    patientQuery,
+    setPatientQuery,
+  ] = useState("");
+
+  const [
+    patientMatches,
+    setPatientMatches,
+  ] = useState([]);
+
+  const [
+    searchingPatients,
+    setSearchingPatients,
+  ] = useState(false);
+
+  // ----------------------------------------------------------
+  // FILTERS
+  // ----------------------------------------------------------
+
+  const [
+    historyFilter,
+    setHistoryFilter,
+  ] = useState("all");
+
+  const [
+    historyQuery,
+    setHistoryQuery,
+  ] = useState("");
+
+  const [
+    scheduleFilter,
+    setScheduleFilter,
+  ] = useState("all");
+
+  // ----------------------------------------------------------
+  // REFS
+  // ----------------------------------------------------------
 
   const fileInputRef = useRef(null);
   const workbookRef = useRef(null);
-  const requestRef = useRef(0);
-  const patientRequestRef = useRef(0);
-  const historyRequestRef = useRef(0);
-  const detailsRequestRef = useRef(0);
-  const saveContextRef = useRef(null);
 
-  const busy = loading || saving || importing;
+  const requestRef = useRef(0);
+  const historyRequestRef = useRef(0);
+  const patientRequestRef = useRef(0);
+
+  const busy =
+    loading ||
+    saving ||
+    importing;
 
   // ==========================================================
-  // DERIVED VALUES
+  // THERAPISTS
   // ==========================================================
 
   const therapistOptions = useMemo(() => {
-    const combined = [
-      ...normalizeTherapists(therapists),
-      ...normalizeTherapists(backendTherapists),
-    ];
-
     const seen = new Set();
 
-    return combined.filter((item) => {
-      if (seen.has(item.value)) return false;
-      seen.add(item.value);
+    return [
+      ...normalizeTherapists(therapists),
+      ...normalizeTherapists(
+        backendTherapists
+      ),
+    ].filter((item) => {
+      const key = normalizeId(item.value);
+
+      if (!key || seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
       return true;
     });
-  }, [therapists, backendTherapists]);
+  }, [
+    therapists,
+    backendTherapists,
+  ]);
 
-  const selectedTherapistName =
-    therapistOptions.find((item) => item.value === therapist)
-      ?.label || therapist;
+  const therapistName =
+    therapistOptions.find(
+      (option) =>
+        normalizeId(option.value) ===
+        normalizeId(therapist)
+    )?.label || therapist;
 
-  const sortedAppointments = useMemo(
-    () =>
-      [...appointments].sort((a, b) =>
-        (a.time || "99:99").localeCompare(b.time || "99:99")
-      ),
-    [appointments]
-  );
+  // ==========================================================
+  // SUMMARY
+  // ==========================================================
 
   const totals = useMemo(() => {
     const count = (status) =>
       appointments.filter(
-        (row) => row.confirmation_status === status
+        (row) =>
+          row.confirmation_status === status
       ).length;
 
     return {
@@ -1282,52 +833,109 @@ export default function CallCenterScheduleUpload({
       phone_off: count("phone_off"),
       cancelled: count("cancelled"),
       rescheduled: count("rescheduled"),
+
       evaluations: appointments.filter(
-        (row) => row.appointment_type === "evaluation"
+        (row) =>
+          row.appointment_type ===
+          "evaluation"
       ).length,
+
       missingTime: appointments.filter(
-        (row) => !validTime(row.time)
+        (row) =>
+          !validTime(row.time)
       ).length,
     };
   }, [appointments]);
 
-  const filteredHistory = useMemo(() => {
-    const q = historyQuery.trim().toLowerCase();
-
-    return historyAppointments
-      .filter((row) => {
-        if (
-          historyFilter !== "all" &&
-          row.confirmation_status !== historyFilter
-        ) {
-          return false;
+  const sortedAppointments = useMemo(() => {
+    return sortAppointments(
+      appointments.filter((row) => {
+        if (scheduleFilter === "all") {
+          return true;
         }
 
-        if (!q) return true;
+        if (
+          scheduleFilter === "evaluations"
+        ) {
+          return (
+            row.appointment_type ===
+            "evaluation"
+          );
+        }
 
         return (
-          row.patient_name.toLowerCase().includes(q) ||
-          String(row.file_number || "").toLowerCase().includes(q) ||
-          String(row.time || "").includes(q)
+          row.confirmation_status ===
+          scheduleFilter
         );
       })
-      .sort((a, b) => a.time.localeCompare(b.time));
-  }, [historyAppointments, historyFilter, historyQuery]);
+    );
+  }, [
+    appointments,
+    scheduleFilter,
+  ]);
 
-  const followUpAlerts = useMemo(
-    () =>
-      alerts.filter((row) =>
-        FOLLOW_UP_STATUSES.has(row.confirmation_status)
-      ),
-    [alerts]
-  );
+  const filteredHistory = useMemo(() => {
+    const query = historyQuery
+      .toLowerCase()
+      .trim();
+
+    return sortAppointments(
+      historyAppointments.filter((row) => {
+        const matchesStatus =
+          historyFilter === "all" ||
+          row.confirmation_status ===
+            historyFilter;
+
+        const matchesQuery =
+          !query ||
+          String(
+            row.patient_name || ""
+          )
+            .toLowerCase()
+            .includes(query) ||
+          String(
+            row.file_number || ""
+          )
+            .toLowerCase()
+            .includes(query);
+
+        return (
+          matchesStatus &&
+          matchesQuery
+        );
+      })
+    );
+  }, [
+    historyAppointments,
+    historyFilter,
+    historyQuery,
+  ]);
+
+  const followUpAlerts = useMemo(() => {
+    return alerts.filter((row) => {
+      return (
+        FOLLOW_UP_STATUSES.has(
+          row.confirmation_status
+        ) ||
+        row.confirmation_status ===
+          "unconfirmed"
+      );
+    });
+  }, [alerts]);
 
   const changedCount = appointments.filter(
-    (row) => row.isNew || row.isDirty
+    (row) =>
+      row.isNew ||
+      row.isDirty
   ).length;
 
+  const clearMessages = () => {
+    setError("");
+    setSuccess("");
+  };
+
   // ==========================================================
-  // INITIAL LOAD
+  // FETCH REGISTERED THERAPISTS
   // ==========================================================
 
   useEffect(() => {
@@ -1337,21 +945,34 @@ export default function CallCenterScheduleUpload({
       setLoadingTherapists(true);
 
       try {
-        const response = await api.get(`${API}therapists/`);
+        const response = await api.get(
+          `${API}therapists/`
+        );
 
         if (!active) return;
 
-        setBackendTherapists(
-          Array.isArray(response.data?.therapists)
-            ? response.data.therapists
-            : []
-        );
+        const rows =
+          response.data?.therapists ||
+          (
+            Array.isArray(response.data)
+              ? response.data
+              : []
+          );
+
+        setBackendTherapists(rows);
       } catch (err) {
-        if (active && therapists.length === 0) {
-          setError(errorMessage(err, "Unable to load therapists."));
+        if (
+          active &&
+          !therapists.length
+        ) {
+          setError(
+            errorMessage(err)
+          );
         }
       } finally {
-        if (active) setLoadingTherapists(false);
+        if (active) {
+          setLoadingTherapists(false);
+        }
       }
     }
 
@@ -1363,83 +984,133 @@ export default function CallCenterScheduleUpload({
   }, [therapists.length]);
 
   // ==========================================================
-  // WORKSPACE
+  // SYNCHRONIZE IMPORTED THERAPISTS
   // ==========================================================
 
-  const clearMessages = () => {
-    setError("");
-    setSuccess("");
-  };
+  useEffect(() => {
+    if (!therapistOptions.length) {
+      return;
+    }
 
-  const confirmDiscard = () => {
-    if (!hasDraft) return true;
+    setImportPreview((previous) => {
+      let changed = false;
 
-    return window.confirm(
-      "You have unsaved appointment changes. Discard them?"
-    );
-  };
+      const updated = previous.map((row) => {
+        const matched = resolveTherapist(
+          row,
+          therapistOptions
+        );
+
+        if (!matched) {
+          return row;
+        }
+
+        const currentId =
+          getTherapistId(row);
+
+        if (
+          currentId ===
+            normalizeId(matched.value) &&
+          row.therapist_matched === true &&
+          row.therapist_name ===
+            matched.label
+        ) {
+          return row;
+        }
+
+        changed = true;
+
+        return applyTherapist(
+          row,
+          matched
+        );
+      });
+
+      return changed
+        ? updated
+        : previous;
+    });
+  }, [therapistOptions]);
+
+  // ==========================================================
+  // RESET EXCEL
+  // ==========================================================
 
   const clearExcel = () => {
     workbookRef.current = null;
+
     setExcelFile(null);
     setWorkbookSheets([]);
     setSelectedSheet("");
     setSheetRows([]);
+    setHeaderRowIndex(0);
     setHeaders([]);
     setColumnMapping([]);
     setImportPreview([]);
     setImportWarnings([]);
     setImportSkipped(0);
-    setHeaderRowIndex(0);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
 
+  const cancelPreview = () => {
+    setImportPreview([]);
+    setImportWarnings([]);
+    setImportSkipped(0);
+    setError("");
+    setSuccess("Import preview cancelled.");
+  };
+
+  // ==========================================================
+  // RESET WORKSPACE
+  // ==========================================================
+
   const resetWorkspace = () => {
-    requestRef.current++;
-    historyRequestRef.current++;
-    patientRequestRef.current++;
-    detailsRequestRef.current++;
+    requestRef.current += 1;
+    historyRequestRef.current += 1;
+    patientRequestRef.current += 1;
 
     setAppointments([]);
     setHistoryAppointments([]);
     setAlerts([]);
+
     setHasDraft(false);
     setLoadedSchedule(false);
+
     setEditingAppointment(null);
     setDetailsAppointment(null);
     setPatientSearchOpen(false);
-    setPatientMatches([]);
-    setAlertsError("");
+
+    setScheduleFilter("all");
 
     clearExcel();
     clearMessages();
   };
 
-  const changeTherapist = (value) => {
-    if (value === therapist) return;
-    if (busy || !confirmDiscard()) return;
-
-    resetWorkspace();
-    setTherapist(value);
-  };
-
-  const changeDate = (value) => {
-    if (value === date) return;
-    if (busy || !confirmDiscard()) return;
-
-    resetWorkspace();
-    setDate(value);
-  };
-
-  const changeTab = (value) => {
-    if (value === activeTab) return;
+  const changeContext = (
+    field,
+    value
+  ) => {
     if (busy) return;
 
-    setActiveTab(value);
-    clearMessages();
+    if (
+      hasDraft &&
+      !window.confirm(
+        "Discard unsaved appointment changes?"
+      )
+    ) {
+      return;
+    }
+
+    resetWorkspace();
+
+    if (field === "therapist") {
+      setTherapist(value);
+    } else {
+      setDate(value);
+    }
   };
 
   // ==========================================================
@@ -1447,102 +1118,203 @@ export default function CallCenterScheduleUpload({
   // ==========================================================
 
   const loadSchedule = async () => {
-    if (!therapist || !validDate(date)) {
-      setError("Select a therapist and valid date.");
+    if (
+      !therapist ||
+      !validDate(date)
+    ) {
+      setError(
+        "Select a therapist and valid date."
+      );
       return;
     }
 
-    if (!confirmDiscard()) return;
+    if (
+      hasDraft &&
+      !window.confirm(
+        "Discard unsaved changes and reload?"
+      )
+    ) {
+      return;
+    }
 
-    const requestId = ++requestRef.current;
+    const requestId =
+      ++requestRef.current;
 
     setLoading(true);
     clearMessages();
 
     try {
-      const response = await api.get(`${API}list/`, {
-        params: { therapist, date },
-        timeout: 30000,
-      });
+      const response = await api.get(
+        `${API}list/`,
+        {
+          params: {
+            therapist,
+            date,
+          },
+          timeout: 30000,
+        }
+      );
 
-      if (requestId !== requestRef.current) return;
+      if (
+        requestId !==
+        requestRef.current
+      ) {
+        return;
+      }
 
-      const rows = extractRows(response.data);
+      const rows =
+        extractRows(response.data);
 
       setAppointments(
-        rows.map((row) => normalizeAppointment(row, true))
+        rows.map((row) =>
+          normalizeAppointment(
+            row,
+            true
+          )
+        )
       );
+
       setHasDraft(false);
       setLoadedSchedule(true);
 
       setSuccess(
-        rows.length
-          ? `Loaded ${rows.length} saved appointments.`
-          : "No saved appointments found for this date."
+        `${rows.length} saved appointment(s) loaded.`
       );
     } catch (err) {
-      if (requestId === requestRef.current) {
-        setError(errorMessage(err, "Unable to load schedule."));
+      if (
+        requestId ===
+        requestRef.current
+      ) {
+        setError(
+          errorMessage(err)
+        );
       }
     } finally {
-      if (requestId === requestRef.current) {
+      if (
+        requestId ===
+        requestRef.current
+      ) {
         setLoading(false);
       }
     }
   };
 
   // ==========================================================
-  // EXCEL FILE READING
+  // EXCEL SHEET LOADING
   // ==========================================================
 
-  const loadSheet = (workbook, sheetName) => {
-    const sheet = workbook.Sheets[sheetName];
+  const loadSheet = (
+    workbook,
+    name
+  ) => {
+    const sheet =
+      workbook.Sheets[name];
 
-    if (!sheet) {
-      setError("Selected worksheet could not be found.");
-      return;
+    if (!sheet) return;
+
+    const rows =
+      XLSX.utils.sheet_to_json(
+        sheet,
+        {
+          header: 1,
+          raw: true,
+          defval: "",
+          blankrows: false,
+        }
+      );
+
+    let index = detectHeaderRow(rows);
+
+    const detected =
+      detectScheduleHeader(rows);
+
+    if (
+      detected &&
+      Number.isInteger(
+        detected.index
+      )
+    ) {
+      index = detected.index;
+    } else if (
+      detected &&
+      Number.isInteger(
+        detected.headerRowIndex
+      )
+    ) {
+      index =
+        detected.headerRowIndex;
     }
 
-    const rows = XLSX.utils.sheet_to_json(sheet, {
-      header: 1,
-      raw: true,
-      defval: "",
-      blankrows: false,
-    });
+    if (
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= rows.length
+    ) {
+      index = 0;
+    }
 
-    const headerIndex = detectHeaderRow(rows);
-    const detectedHeaders = makeColumnHeaders(
-      rows[headerIndex] || []
+    const nextHeaders =
+      makeColumnHeaders(
+        rows[index] || []
+      );
+
+    setSelectedSheet(name);
+    setSheetRows(rows);
+    setHeaderRowIndex(index);
+    setHeaders(nextHeaders);
+
+    setColumnMapping(
+      createColumnMapping(
+        nextHeaders
+      )
     );
 
-    setSelectedSheet(sheetName);
-    setSheetRows(rows);
-    setHeaderRowIndex(headerIndex);
-    setHeaders(detectedHeaders);
-    setColumnMapping(createColumnMapping(detectedHeaders));
     setImportPreview([]);
     setImportWarnings([]);
     setImportSkipped(0);
   };
 
-  const handleExcelFile = async (event) => {
-    const file = event.target.files?.[0];
+  // ==========================================================
+  // EXCEL FILE UPLOAD
+  // ==========================================================
+
+  const handleExcelFile = async (
+    event
+  ) => {
+    const file =
+      event.target.files?.[0];
 
     if (!file) return;
 
     clearMessages();
 
     const extension =
-      "." + file.name.split(".").pop().toLowerCase();
+      `.${file.name
+        .split(".")
+        .pop()
+        .toLowerCase()}`;
 
-    if (!ACCEPTED_EXTENSIONS.includes(extension)) {
-      setError("Please select an Excel or CSV file.");
+    if (
+      !ACCEPTED_EXTENSIONS.includes(
+        extension
+      )
+    ) {
+      setError(
+        "Select an XLSX, XLS, or CSV file."
+      );
+
       event.target.value = "";
       return;
     }
 
-    if (!file.size || file.size > MAX_FILE_SIZE) {
-      setError("File must be smaller than 15 MB.");
+    if (
+      !file.size ||
+      file.size > MAX_FILE_SIZE
+    ) {
+      setError(
+        "File must be smaller than 15 MB."
+      );
+
       event.target.value = "";
       return;
     }
@@ -1550,30 +1322,45 @@ export default function CallCenterScheduleUpload({
     setImporting(true);
 
     try {
-      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(
+        await file.arrayBuffer(),
+        {
+          type: "array",
+          cellDates: false,
+        }
+      );
 
-      const workbook = XLSX.read(buffer, {
-        type: "array",
-        cellDates: false,
-      });
-
-      if (!workbook.SheetNames.length) {
-        throw new Error("The spreadsheet has no worksheets.");
+      if (
+        !workbook.SheetNames.length
+      ) {
+        throw new Error(
+          "Spreadsheet has no worksheets."
+        );
       }
 
-      workbookRef.current = workbook;
-      setExcelFile(file);
-      setWorkbookSheets(workbook.SheetNames);
+      workbookRef.current =
+        workbook;
 
-      loadSheet(workbook, workbook.SheetNames[0]);
+      setExcelFile(file);
+
+      setWorkbookSheets(
+        workbook.SheetNames
+      );
+
+      loadSheet(
+        workbook,
+        workbook.SheetNames[0]
+      );
 
       setSuccess(
-        `Loaded "${file.name}". Review column mapping, then preview appointments.`
+        "Excel loaded. Review the schedule and preview appointments."
       );
     } catch (err) {
       clearExcel();
+
       setError(
-        err?.message || "Unable to read the Excel file."
+        err.message ||
+        "Unable to read Excel."
       );
     } finally {
       setImporting(false);
@@ -1581,255 +1368,578 @@ export default function CallCenterScheduleUpload({
     }
   };
 
-  const changeSheet = (sheetName) => {
-    if (!workbookRef.current) return;
+  // ==========================================================
+  // HEADER AND MAPPING
+  // ==========================================================
 
-    loadSheet(workbookRef.current, sheetName);
-    clearMessages();
-  };
-
-  const changeHeaderRow = (value) => {
+  const changeHeaderRow = (
+    value
+  ) => {
     const index = Number(value);
 
     if (
-      !Number.isInteger(index) ||
       index < 0 ||
       index >= sheetRows.length
     ) {
       return;
     }
 
-    const nextHeaders = makeColumnHeaders(
-      sheetRows[index] || []
-    );
+    const nextHeaders =
+      makeColumnHeaders(
+        sheetRows[index] || []
+      );
 
     setHeaderRowIndex(index);
     setHeaders(nextHeaders);
-    setColumnMapping(createColumnMapping(nextHeaders));
-    setImportPreview([]);
-    setImportWarnings([]);
-  };
 
-  const updateMapping = (index, field) => {
-    setColumnMapping((previous) =>
-      previous.map((value, i) => {
-        if (i === index) return field;
-        if (field && value === field) return "";
-        return value;
-      })
+    setColumnMapping(
+      createColumnMapping(
+        nextHeaders
+      )
     );
 
     setImportPreview([]);
-    setImportWarnings([]);
   };
+
+  const updateMapping = (
+    index,
+    field
+  ) => {
+    setColumnMapping(
+      (previous) =>
+        previous.map(
+          (value, i) =>
+            i === index
+              ? field
+              : field &&
+                value === field
+              ? ""
+              : value
+        )
+    );
+
+    setImportPreview([]);
+  };
+
+  // ==========================================================
+  // EXCEL PREVIEW
+  // ==========================================================
 
   const previewExcel = () => {
     clearMessages();
 
-    if (!therapist || !validDate(date)) {
-      setError("Select a therapist and schedule date first.");
-      return;
-    }
-
-    if (!columnMapping.includes("patient_name")) {
-      setError("Map a column to Patient Name.");
-      return;
-    }
-
-    if (!columnMapping.includes("time") && !columnMapping.includes("start")) {
-      setError("Map a column to Appointment Time or Start (Date + Time).");
-      return;
-    }
-
-    const result = parseImportRows(
-      sheetRows,
-      columnMapping,
-      headerRowIndex,
-      excelFile?.name || "",
-      selectedSheet,
-      date,
-      therapist,
-      selectedTherapistName
-    );
-
-    if (result.appointments.length > MAX_APPOINTMENTS) {
+    if (
+      !validDate(date)
+    ) {
       setError(
-        `This worksheet contains ${result.appointments.length} appointments. ` +
-        `The maximum is ${MAX_APPOINTMENTS}.`
+        "Select a valid schedule date."
       );
       return;
     }
 
-    const seenKeys = new Set(appointments.flatMap(appointmentDuplicateKeys));
-    const uniqueAppointments = [];
-    let duplicateCount = 0;
-    result.appointments.forEach((row) => {
-      const keys = appointmentDuplicateKeys(row);
-      if (!keys.length || keys.some((key) => seenKeys.has(key))) {
-        duplicateCount += 1;
+    if (
+      !sheetRows.length
+    ) {
+      setError(
+        "Upload an Excel file first."
+      );
+      return;
+    }
+
+    let result;
+
+    try {
+      result =
+        extractScheduleAppointments({
+          rows: sheetRows,
+          headerRowIndex,
+          headers,
+          columnMapping,
+          selectedTherapist: therapist,
+          therapistUsers:
+            therapistOptions,
+          date,
+          fileName:
+            excelFile?.name || "",
+          sheetName:
+            selectedSheet,
+        });
+    } catch (err) {
+      setError(
+        err.message ||
+        "Unable to extract appointments."
+      );
+      return;
+    }
+
+    const imported =
+      Array.isArray(result)
+        ? result
+        : result?.appointments ||
+          result?.rows ||
+          [];
+
+    const warnings =
+      Array.isArray(result?.warnings)
+        ? result.warnings
+        : [];
+
+    const skipped =
+      Number(result?.skipped || 0);
+
+    if (
+      imported.length >
+      MAX_APPOINTMENTS
+    ) {
+      setError(
+        `Maximum ${MAX_APPOINTMENTS} appointments allowed.`
+      );
+      return;
+    }
+
+    const normalized =
+      imported.map((row) =>
+        normalizeImportedRow(
+          row,
+          therapistOptions,
+          date
+        )
+      );
+
+    const seen = new Set(
+      appointments.flatMap(
+        appointmentKeys
+      )
+    );
+
+    const unique = [];
+    let duplicates = 0;
+
+    normalized.forEach((row) => {
+      const keys =
+        appointmentKeys(row);
+
+      if (
+        !keys.length ||
+        keys.some((key) =>
+          seen.has(key)
+        )
+      ) {
+        duplicates += 1;
         return;
       }
-      keys.forEach((key) => seenKeys.add(key));
-      uniqueAppointments.push(row);
+
+      keys.forEach((key) =>
+        seen.add(key)
+      );
+
+      unique.push(row);
     });
 
-    setImportPreview(uniqueAppointments);
-    setImportWarnings(result.warnings);
-    setImportSkipped(result.skipped + duplicateCount);
+    const sorted =
+      sortAppointments(unique);
+
+    const unassigned =
+      sorted.filter(
+        (row) =>
+          !findRegisteredTherapist(
+            getTherapistId(row),
+            therapistOptions
+          )
+      ).length;
+
+    setImportPreview(sorted);
+    setImportWarnings(warnings);
+
+    setImportSkipped(
+      skipped + duplicates
+    );
 
     setSuccess(
-      `${uniqueAppointments.length} appointments found for ${selectedTherapistName}. ` +
-      `${result.skipped} other/administrative row(s) and ${duplicateCount} duplicate(s) skipped.`
-    );
-  };
-
-  const updateImportPreviewRow = (localId, field, value) => {
-    setImportPreview((previous) =>
-      previous.map((row) =>
-        row.localId === localId
-          ? { ...row, [field]: value, isDirty: true }
-          : row
+      `${sorted.length} appointment(s) ready. ` +
+      `${duplicates} duplicate(s) skipped.` +
+      (
+        unassigned
+          ? ` ${unassigned} require therapist assignment.`
+          : ""
       )
     );
   };
 
-  const addPreviewToDraft = () => {
-    if (!importPreview.length) {
-      setError("Preview the Excel file first.");
-      return;
-    }
+  // ==========================================================
+  // UPDATE PREVIEW ROW
+  // ==========================================================
 
-    const approvedRows = importPreview.filter(
-      (row) => row.approval_status === "approved"
-    );
-    if (!approvedRows.length) {
-      setError("Approve at least one appointment in the Import Approval column.");
-      return;
-    }
+  const updateImportPreviewRow = (
+    localId,
+    field,
+    value
+  ) => {
+    setImportPreview((previous) => {
+      const updated = previous.map(
+        (row) => {
+          if (
+            row.localId !== localId
+          ) {
+            return row;
+          }
 
-    const existingKeys = new Set(
-      appointments.flatMap(appointmentDuplicateKeys)
-    );
-    const acceptedKeys = new Set();
-    const uniqueRows = [];
-    let duplicateCount = 0;
+          if (
+            field === "therapist" ||
+            field === "therapist_id"
+          ) {
+            const selected =
+              findRegisteredTherapist(
+                value,
+                therapistOptions
+              );
 
-    approvedRows.forEach((row) => {
-      const keys = appointmentDuplicateKeys(row);
-      if (!keys.length) return;
-      if (keys.some((key) => existingKeys.has(key) || acceptedKeys.has(key))) {
-        duplicateCount += 1;
-        return;
-      }
-      keys.forEach((key) => acceptedKeys.add(key));
-      uniqueRows.push(row);
+            return {
+              ...applyTherapist(
+                row,
+                selected
+              ),
+              isDirty: true,
+            };
+          }
+
+          if (field === "time") {
+            const parsed =
+              parseExcelTime(value);
+
+            return {
+              ...row,
+              time: parsed || value,
+              isDirty: true,
+            };
+          }
+
+          return {
+            ...row,
+            [field]: value,
+            isDirty: true,
+          };
+        }
+      );
+
+      return sortAppointments(
+        updated
+      );
     });
-
-    if (!uniqueRows.length) {
-      setError(`No new appointments to add. ${duplicateCount} duplicate appointment(s) were blocked.`);
-      return;
-    }
-
-    if (appointments.length + uniqueRows.length > MAX_APPOINTMENTS) {
-      setError(`Import exceeds the maximum of ${MAX_APPOINTMENTS} appointments.`);
-      return;
-    }
-
-    const accepted = window.confirm(
-      `Add ${uniqueRows.length} approved appointment(s) to the draft?\n\n` +
-      `${duplicateCount} duplicate appointment(s) will be skipped.\n` +
-      "Appointments will NOT be saved until you select Save Changes."
-    );
-    if (!accepted) return;
-
-    setAppointments((previous) => [...previous, ...uniqueRows]);
-    setHasDraft(true);
-    setImportPreview([]);
-    setSuccess(
-      `${uniqueRows.length} approved appointment(s) added to the draft. ` +
-      `${duplicateCount} duplicate(s) skipped.`
-    );
-    setError("");
   };
 
   // ==========================================================
-  // MANUAL APPOINTMENT EDITING
+  // REMOVE PREVIEW ROW
+  // ==========================================================
+
+  const removeImportPreviewRow = (
+    localId
+  ) => {
+    setImportPreview(
+      (previous) =>
+        previous.filter(
+          (row) =>
+            row.localId !==
+            localId
+        )
+    );
+  };
+
+  // ==========================================================
+  // ADD PREVIEW TO DRAFT
+  // ==========================================================
+
+  const addPreviewToDraft = () => {
+    clearMessages();
+
+    if (
+      !importPreview.length
+    ) {
+      setError(
+        "No appointments available to import."
+      );
+      return;
+    }
+
+    const prepared =
+      importPreview.map((row) => {
+        const selected =
+          findRegisteredTherapist(
+            getTherapistId(row),
+            therapistOptions
+          );
+
+        return applyTherapist(
+          row,
+          selected
+        );
+      });
+
+    const unassigned =
+      prepared.filter(
+        (row) =>
+          !getTherapistId(row)
+      );
+
+    if (
+      unassigned.length
+    ) {
+      setError(
+        `${unassigned.length} appointment(s) have no registered physiotherapist.`
+      );
+      return;
+    }
+
+    const invalidTime =
+      prepared.find(
+        (row) =>
+          !validTime(row.time)
+      );
+
+    if (invalidTime) {
+      setError(
+        `${invalidTime.patient_name || "Appointment"} has an invalid time.`
+      );
+      return;
+    }
+
+    const seen = new Set(
+      appointments.flatMap(
+        appointmentKeys
+      )
+    );
+
+    const accepted = [];
+
+    prepared.forEach((row) => {
+      const keys =
+        appointmentKeys(row);
+
+      if (
+        !keys.length ||
+        keys.some((key) =>
+          seen.has(key)
+        )
+      ) {
+        return;
+      }
+
+      keys.forEach((key) =>
+        seen.add(key)
+      );
+
+      accepted.push({
+        ...row,
+        isNew: true,
+        isDirty: true,
+      });
+    });
+
+    if (
+      appointments.length +
+        accepted.length >
+      MAX_APPOINTMENTS
+    ) {
+      setError(
+        "Maximum appointment count exceeded."
+      );
+      return;
+    }
+
+    if (
+      !accepted.length
+    ) {
+      setError(
+        "No new appointments to add."
+      );
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Add ${accepted.length} appointment(s) to draft?`
+      )
+    ) {
+      return;
+    }
+
+    setAppointments(
+      (previous) =>
+        sortAppointments([
+          ...previous,
+          ...accepted,
+        ])
+    );
+
+    setHasDraft(true);
+    setImportPreview([]);
+
+    setSuccess(
+      `${accepted.length} appointment(s) added to draft.`
+    );
+  };
+
+  // ==========================================================
+  // MANUAL APPOINTMENT
   // ==========================================================
 
   const addAppointment = () => {
-    if (!therapist || !validDate(date)) {
-      setError("Select therapist and date first.");
+    if (
+      !therapist ||
+      !validDate(date)
+    ) {
+      setError(
+        "Select therapist and date first."
+      );
       return;
     }
 
-    if (appointments.length >= MAX_APPOINTMENTS) {
-      setError(`Maximum ${MAX_APPOINTMENTS} appointments allowed.`);
+    if (
+      appointments.length >=
+      MAX_APPOINTMENTS
+    ) {
+      setError(
+        "Maximum appointments reached."
+      );
       return;
     }
 
-    setEditingAppointment(emptyAppointment());
-    clearMessages();
-  };
+    const selected =
+      findRegisteredTherapist(
+        therapist,
+        therapistOptions
+      );
 
-  const editAppointment = (row) => {
     setEditingAppointment({
-      ...row,
+      ...emptyAppointment(),
+      localId: newLocalId(),
+      therapist:
+        selected?.value ||
+        therapist,
+      therapist_id:
+        selected?.value ||
+        therapist,
+      therapist_name:
+        selected?.label ||
+        therapistName,
+      date,
+      appointment_date: date,
+      isNew: true,
       isDirty: true,
     });
 
     clearMessages();
   };
 
-  const saveEditorToDraft = () => {
-    if (!editingAppointment) return;
+  // ==========================================================
+  // SAVE EDITOR TO DRAFT
+  // ==========================================================
 
-    const validation = validateAppointment(editingAppointment);
+  const saveEditorToDraft = () => {
+    if (
+      !editingAppointment
+    ) {
+      return;
+    }
+
+    const selected =
+      findRegisteredTherapist(
+        getTherapistId(
+          editingAppointment
+        ),
+        therapistOptions
+      );
+
+    if (!selected) {
+      setError(
+        "Select a registered physiotherapist."
+      );
+      return;
+    }
+
+    const updated = {
+      ...applyTherapist(
+        editingAppointment,
+        selected
+      ),
+      isDirty: true,
+      isNew:
+        editingAppointment.isNew ||
+        !editingAppointment.id,
+    };
+
+    const validation =
+      validateAppointment(
+        updated
+      );
 
     if (validation) {
       setError(validation);
       return;
     }
 
-    const updated = {
-      ...editingAppointment,
-      import_warnings: [],
-    };
-
     setAppointments((previous) => {
-      const found = previous.some(
-        (row) => row.localId === updated.localId
-      );
-
-      if (found) {
-        return previous.map((row) =>
-          row.localId === updated.localId ? updated : row
+      const exists =
+        previous.some(
+          (row) =>
+            row.localId ===
+            updated.localId
         );
-      }
 
-      return [...previous, updated];
+      const next = exists
+        ? previous.map(
+            (row) =>
+              row.localId ===
+              updated.localId
+                ? updated
+                : row
+          )
+        : [
+            ...previous,
+            updated,
+          ];
+
+      return sortAppointments(next);
     });
 
     setHasDraft(true);
     setEditingAppointment(null);
-    setSuccess("Changes applied to draft.");
+
     setError("");
+    setSuccess(
+      "Appointment updated in draft."
+    );
   };
 
-  const removeDraftAppointment = (row) => {
+  // ==========================================================
+  // REMOVE DRAFT
+  // ==========================================================
+
+  const removeDraftAppointment = (
+    row
+  ) => {
     if (row.id) {
       setError(
-        "Saved appointments cannot be deleted here. " +
-        "Change their status to Cancelled."
+        "Saved appointments must be cancelled, not removed."
       );
       return;
     }
 
-    if (!window.confirm("Remove this unsaved appointment?")) {
+    if (
+      !window.confirm(
+        "Remove this draft appointment?"
+      )
+    ) {
       return;
     }
 
-    setAppointments((previous) =>
-      previous.filter((item) => item.localId !== row.localId)
+    setAppointments(
+      (previous) =>
+        previous.filter(
+          (item) =>
+            item.localId !==
+            row.localId
+        )
     );
 
     setHasDraft(true);
@@ -1839,227 +1949,316 @@ export default function CallCenterScheduleUpload({
   // PATIENT SEARCH
   // ==========================================================
 
-  const openPatientSearch = () => {
-    if (!editingAppointment) return;
-
-    setPatientSearchTarget(editingAppointment.localId);
-    setPatientQuery(editingAppointment.patient_name || "");
-    setPatientMatches([]);
-    setPatientSearchOpen(true);
-  };
-
   const findPatient = async () => {
-    const query = patientQuery.trim();
+    const query =
+      patientQuery.trim();
 
-    if (query.length < 2) {
-      setPatientMatches([]);
+    if (
+      query.length < 2
+    ) {
       return;
     }
 
-    const requestId = ++patientRequestRef.current;
+    const requestId =
+      ++patientRequestRef.current;
 
     setSearchingPatients(true);
-    setError("");
 
     try {
-      const response = await api.get(`${API}patients/`, {
-        params: { q: query },
-        timeout: 30000,
-      });
-
-      if (requestId !== patientRequestRef.current) return;
-
-      setPatientMatches(
-        Array.isArray(response.data?.matches)
-          ? response.data.matches
-          : []
+      const response = await api.get(
+        `${API}patients/`,
+        {
+          params: {
+            q: query,
+          },
+          timeout: 30000,
+        }
       );
+
+      if (
+        requestId ===
+        patientRequestRef.current
+      ) {
+        setPatientMatches(
+          response.data?.matches ||
+          []
+        );
+      }
     } catch (err) {
-      if (requestId === patientRequestRef.current) {
-        setError(errorMessage(err, "Patient search failed."));
+      if (
+        requestId ===
+        patientRequestRef.current
+      ) {
+        setError(
+          errorMessage(err)
+        );
       }
     } finally {
-      if (requestId === patientRequestRef.current) {
+      if (
+        requestId ===
+        patientRequestRef.current
+      ) {
         setSearchingPatients(false);
       }
     }
   };
 
-  const selectPatient = (patient) => {
-    if (
-      !editingAppointment ||
-      editingAppointment.localId !== patientSearchTarget
-    ) {
-      return;
-    }
-
-    setEditingAppointment((previous) => ({
-      ...previous,
-      patient_id: patient.id,
-      patient_name: patient.name,
-      file_number:
-        patient.file_number || patient.patient_id || "",
-      matched: true,
-      isDirty: true,
-    }));
+  const selectPatient = (
+    patient
+  ) => {
+    setEditingAppointment(
+      (previous) =>
+        previous
+          ? {
+              ...previous,
+              patient_id:
+                patient.id,
+              patient_name:
+                patient.name,
+              file_number:
+                patient.file_number ||
+                patient.patient_id ||
+                "",
+              matched: true,
+              isDirty: true,
+            }
+          : previous
+    );
 
     setPatientSearchOpen(false);
     setPatientMatches([]);
     setPatientQuery("");
-    setPatientSearchTarget(null);
-  };
-
-  const closePatientSearch = () => {
-    patientRequestRef.current++;
-    setPatientSearchOpen(false);
-    setPatientMatches([]);
-    setPatientSearchTarget(null);
-    setSearchingPatients(false);
   };
 
   // ==========================================================
-  // SAVE TO DJANGO
+  // SAVE APPOINTMENTS
   // ==========================================================
 
   const saveAppointments = async () => {
-    if (!therapist || !validDate(date)) {
-      setError("Select a therapist and date.");
+    if (
+      !validDate(date)
+    ) {
+      setError(
+        "Select a valid date."
+      );
       return;
     }
 
-    const changed = appointments.filter(
-      (row) => row.isNew || row.isDirty
-    );
+    const changed =
+      appointments.filter(
+        (row) =>
+          row.isNew ||
+          row.isDirty
+      );
 
-    if (!changed.length) {
-      setSuccess("No unsaved changes.");
+    if (
+      !changed.length
+    ) {
+      setSuccess(
+        "No changes to save."
+      );
       return;
     }
 
-    for (let i = 0; i < changed.length; i++) {
-      const validation = validateAppointment(changed[i]);
+    for (const row of changed) {
+      const selected =
+        findRegisteredTherapist(
+          getTherapistId(row),
+          therapistOptions
+        );
 
-      if (validation) {
+      if (!selected) {
         setError(
-          `${changed[i].patient_name || `Appointment ${i + 1}`}: ` +
-          validation
+          `${row.patient_name || "Appointment"}: Select a registered physiotherapist.`
+        );
+        return;
+      }
+
+      const issue =
+        validateAppointment(
+          row
+        );
+
+      if (issue) {
+        setError(
+          `${row.patient_name || "Appointment"}: ${issue}`
         );
         return;
       }
     }
 
-    const accepted = window.confirm(
-      `Save ${changed.length} appointment change(s) for ` +
-      `${selectedTherapistName} on ${date}?\n\n` +
-      "This action writes to the Django database."
-    );
-
-    if (!accepted) return;
+    if (
+      !window.confirm(
+        `Save ${changed.length} appointment(s) to Django?`
+      )
+    ) {
+      return;
+    }
 
     setSaving(true);
     clearMessages();
 
     let completed = 0;
-    const savedIds = [];
+    const saved = [];
 
     try {
       for (const row of changed) {
-        const payload = payloadForAppointment(
-          row,
-          therapist,
-          date
-        );
-
-        let response;
-
-        if (row.id && !row.isNew) {
-          response = await api.patch(
-            `${API}appointments/${row.id}/`,
-            payload,
-            {
-              timeout: 30000,
-              withCredentials: true,
-            }
+        const selected =
+          findRegisteredTherapist(
+            getTherapistId(row),
+            therapistOptions
           );
-        } else {
-          response = await api.post(
-            `${API}appointments/`,
-            payload,
-            {
-              timeout: 30000,
-              withCredentials: true,
-            }
+
+        const normalizedRow =
+          applyTherapist(
+            row,
+            selected
           );
-        }
 
-        const returnedId =
-          response.data?.appointment?.id ??
-          response.data?.id ??
-          row.id;
+        const payload =
+          payloadForAppointment(
+            normalizedRow,
+            selected.value,
+            normalizedRow.date ||
+              normalizedRow.appointment_date ||
+              date
+          );
 
-        savedIds.push({
+        // Ensure the selected registered therapist
+        // is sent instead of the main filter therapist.
+        payload.therapist =
+          selected.value;
+
+        const response =
+          row.id && !row.isNew
+            ? await api.patch(
+                `${API}appointments/${row.id}/`,
+                payload,
+                {
+                  timeout: 30000,
+                  withCredentials: true,
+                }
+              )
+            : await api.post(
+                `${API}appointments/`,
+                payload,
+                {
+                  timeout: 30000,
+                  withCredentials: true,
+                }
+              );
+
+        saved.push({
           localId: row.localId,
-          id: returnedId,
+          id:
+            response.data?.appointment?.id ??
+            response.data?.id ??
+            row.id,
         });
 
-        completed++;
+        completed += 1;
       }
 
-      setHasDraft(false);
-
-      // Load the authoritative saved records.
-      try {
-        const response = await api.get(`${API}list/`, {
-          params: { therapist, date },
-          timeout: 30000,
-        });
-
-        setAppointments(
-          extractRows(response.data).map((row) =>
-            normalizeAppointment(row, true)
-          )
-        );
-
-        setLoadedSchedule(true);
-
-        setSuccess(
-          `${completed} appointment change(s) saved successfully.`
-        );
-      } catch (reloadError) {
-        // Do not claim that the database save failed
-        // when only the reload failed.
-        setAppointments((previous) =>
-          previous.map((row) => {
-            const saved = savedIds.find(
-              (item) => item.localId === row.localId
+      setAppointments((previous) =>
+        previous.map((row) => {
+          const match =
+            saved.find(
+              (item) =>
+                item.localId ===
+                row.localId
             );
 
-            if (!saved) return row;
-
-            return {
-              ...row,
-              id: saved.id,
-              isNew: false,
-              isDirty: false,
-            };
-          })
-        );
-
-        setSuccess(
-          `${completed} changes saved, but schedule refresh failed. ` +
-          "Reload the schedule to verify saved records."
-        );
-      }
-    } catch (err) {
-      setError(
-        `${completed} of ${changed.length} changes completed. ` +
-        errorMessage(err) +
-        " Some changes may have reached the server. " +
-        "Reload the schedule before retrying to avoid duplicates."
+          return match
+            ? {
+                ...row,
+                id: match.id,
+                isNew: false,
+                isDirty: false,
+              }
+            : row;
+        })
       );
 
-      // Avoid allowing an immediate repeat submission.
       setHasDraft(false);
+      setLoadedSchedule(true);
+
+      setSuccess(
+        `${completed} appointment(s) saved successfully.`
+      );
+
+      // Refresh only when the loaded workspace
+      // represents one therapist's appointments.
+      const oneTherapist =
+        changed.every(
+          (row) =>
+            getTherapistId(row) ===
+            normalizeId(therapist)
+        );
+
+      if (
+        therapist &&
+        oneTherapist
+      ) {
+        try {
+          const response =
+            await api.get(
+              `${API}list/`,
+              {
+                params: {
+                  therapist,
+                  date,
+                },
+                timeout: 30000,
+              }
+            );
+
+          setAppointments(
+            extractRows(
+              response.data
+            ).map((row) =>
+              normalizeAppointment(
+                row,
+                true
+              )
+            )
+          );
+        } catch {
+          setSuccess(
+            `${completed} saved. Refresh failed; reload to verify.`
+          );
+        }
+      }
+
+      // Refresh follow-up alerts after saving.
+      await loadAlerts();
+    } catch (err) {
+      setAppointments((previous) =>
+        previous.map((row) => {
+          const match =
+            saved.find(
+              (item) =>
+                item.localId ===
+                row.localId
+            );
+
+          return match
+            ? {
+                ...row,
+                id: match.id,
+                isNew: false,
+                isDirty: false,
+              }
+            : row;
+        })
+      );
+
+      setHasDraft(true);
+
+      setError(
+        `${completed}/${changed.length} saved. ` +
+        errorMessage(err) +
+        " Check saved records before retrying to avoid duplicates."
+      );
     } finally {
       setSaving(false);
     }
@@ -2070,56 +2269,108 @@ export default function CallCenterScheduleUpload({
   // ==========================================================
 
   const loadHistory = async () => {
-    if (!therapist || !validDate(date)) return;
+    if (
+      !validDate(date)
+    ) {
+      return;
+    }
 
-    const requestId = ++historyRequestRef.current;
+    const requestId =
+      ++historyRequestRef.current;
 
     setLoadingHistory(true);
+    setError("");
 
     try {
-      const response = await api.get(`${API}list/`, {
-        params: { therapist, date },
-        timeout: 30000,
-      });
+      const params = {
+        date,
+      };
 
-      if (requestId !== historyRequestRef.current) return;
+      if (therapist) {
+        params.therapist =
+          therapist;
+      }
 
-      setHistoryAppointments(
-        extractRows(response.data).map((row) =>
-          normalizeAppointment(row, true)
-        )
+      const response = await api.get(
+        `${API}list/`,
+        {
+          params,
+          timeout: 30000,
+        }
       );
+
+      if (
+        requestId ===
+        historyRequestRef.current
+      ) {
+        setHistoryAppointments(
+          extractRows(
+            response.data
+          ).map((row) =>
+            normalizeAppointment(
+              row,
+              true
+            )
+          )
+        );
+      }
     } catch (err) {
-      if (requestId === historyRequestRef.current) {
-        setError(errorMessage(err, "Unable to load history."));
+      if (
+        requestId ===
+        historyRequestRef.current
+      ) {
+        setError(
+          errorMessage(err)
+        );
       }
     } finally {
-      if (requestId === historyRequestRef.current) {
+      if (
+        requestId ===
+        historyRequestRef.current
+      ) {
         setLoadingHistory(false);
       }
     }
   };
+
+  // ==========================================================
+  // ALERTS
+  // ==========================================================
 
   const loadAlerts = async () => {
     setLoadingAlerts(true);
     setAlertsError("");
 
     try {
-      const response = await api.get(`${API}alerts/`, {
-        timeout: 30000,
-      });
+      const response = await api.get(
+        `${API}alerts/`,
+        {
+          timeout: 30000,
+        }
+      );
 
-      const rows = Array.isArray(response.data?.alerts)
-        ? response.data.alerts
-        : extractRows(response.data);
+      const rows =
+        response.data?.alerts ||
+        extractRows(
+          response.data
+        );
 
       setAlerts(
-        rows.map((row) => normalizeAppointment(row, true))
+        (
+          Array.isArray(rows)
+            ? rows
+            : []
+        ).map((row) =>
+          normalizeAppointment(
+            row,
+            true
+          )
+        )
       );
     } catch (err) {
       setAlerts([]);
       setAlertsError(
-        errorMessage(err, "Unable to load call center alerts.")
+        errorMessage(err)
       );
     } finally {
       setLoadingAlerts(false);
@@ -2127,49 +2378,70 @@ export default function CallCenterScheduleUpload({
   };
 
   useEffect(() => {
-    if (activeTab === "history" && therapist && date) {
-      loadHistory();
-    }
-  }, [activeTab, therapist, date]);
+    if (
+      activeTab === "history"
+    ) {
+      if (
+        validDate(date)
+      ) {
+        loadHistory();
+      }
 
-  useEffect(() => {
-    if (activeTab === "history") {
       loadAlerts();
     }
-  }, [activeTab]);
+  }, [
+    activeTab,
+    therapist,
+    date,
+  ]);
 
-  const openDetails = async (row) => {
-    const requestId = ++detailsRequestRef.current;
+  // ==========================================================
+  // DETAILS
+  // ==========================================================
 
+  const openDetails = async (
+    row
+  ) => {
     setDetailsAppointment(row);
-    setDetailsHistory(normalizeHistory(row.history));
 
-    if (!row.id) return;
+    setDetailsHistory(
+      normalizeHistory(
+        row.history
+      )
+    );
+
+    if (!row.id) {
+      return;
+    }
 
     try {
       const response = await api.get(
-        `${API}appointments/${row.id}/history/`,
-        { timeout: 30000 }
+        `${API}appointments/${row.id}/history/`
       );
 
-      if (requestId !== detailsRequestRef.current) return;
-
-      const entries =
-        response.data?.history ||
-        response.data?.events ||
-        [];
-
-      if (Array.isArray(entries)) {
-        setDetailsHistory(normalizeHistory(entries));
-      }
-    } catch (err) {
-      // Existing history remains visible.
+      setDetailsHistory(
+        normalizeHistory(
+          response.data?.history ||
+          response.data?.events ||
+          []
+        )
+      );
+    } catch {
+      // Keep history included in the appointment.
     }
   };
 
-  const recordCallAttempt = async (row) => {
+  // ==========================================================
+  // RECORD CALL ATTEMPT
+  // ==========================================================
+
+  const recordCallAttempt = async (
+    row
+  ) => {
     if (!row.id) {
-      setError("Save this appointment first.");
+      setError(
+        "Save appointment first."
+      );
       return;
     }
 
@@ -2183,11 +2455,14 @@ export default function CallCenterScheduleUpload({
         }
       );
 
-      setSuccess("Call attempt recorded.");
+      setSuccess(
+        "Call attempt recorded."
+      );
+
       await loadAlerts();
     } catch (err) {
       setError(
-        errorMessage(err, "Unable to record call attempt.")
+        errorMessage(err)
       );
     }
   };
@@ -2200,424 +2475,241 @@ export default function CallCenterScheduleUpload({
     <div className="csu-root">
       <style>{styles}</style>
 
+      {/* HERO */}
+
       <header className="csu-hero">
         <div>
-          <small>CALL CENTER OPERATIONS</small>
-          <h2>Therapist Scheduling</h2>
+          <small>
+            CALL CENTER OPERATIONS
+          </small>
+
+          <h2>
+            Therapist Scheduling
+          </h2>
+
           <p>
-            Import Excel schedules, confirm appointments,
+            Import schedules, confirm appointments,
             and track patient communications.
           </p>
         </div>
 
-        <span className="csu-hero-icon">📅</span>
+        <span className="csu-hero-icon">
+          📅
+        </span>
       </header>
 
-      <div className="csu-tabs">
-        <button
-          type="button"
-          className={activeTab === "create" ? "active" : ""}
-          onClick={() => changeTab("create")}
-        >
-          Create Schedule
-        </button>
+      {/* TABS */}
 
-        <button
-          type="button"
-          className={activeTab === "history" ? "active" : ""}
-          onClick={() => changeTab("history")}
-        >
-          Schedule History
-        </button>
+      <div className="csu-tabs">
+        {[
+          [
+            "create",
+            "Create Schedule",
+          ],
+          [
+            "history",
+            "Schedule History",
+          ],
+        ].map(
+          ([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              className={
+                activeTab === value
+                  ? "active"
+                  : ""
+              }
+              onClick={() => {
+                if (!busy) {
+                  setActiveTab(value);
+                  clearMessages();
+                }
+              }}
+            >
+              {label}
+            </button>
+          )
+        )}
       </div>
 
+      {/* MESSAGES */}
+
       {error && (
-        <div className="csu-alert error" role="alert">
+        <div className="csu-alert error">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="csu-alert success" role="status">
+        <div className="csu-alert success">
           {success}
         </div>
       )}
 
-      <section className="csu-panel">
-        <div className="csu-section-header">
-          <h3>Therapist and Schedule Date</h3>
-        </div>
+      {/* FILTERS */}
 
-        <div className="csu-form-grid">
-          <label>
-            Therapist
-            <select
-              value={therapist}
-              disabled={busy}
-              onChange={(e) =>
-                changeTherapist(e.target.value)
-              }
-            >
-              <option value="">
-                {loadingTherapists
-                  ? "Loading therapists..."
-                  : "Select therapist"}
-              </option>
+      <ScheduleFilters
+        activeTab={activeTab}
+        therapist={therapist}
+        therapistOptions={therapistOptions}
+        loadingTherapists={loadingTherapists}
+        onTherapistChange={(value) =>
+          changeContext(
+            "therapist",
+            value
+          )
+        }
+        date={date}
+        onDateChange={(value) =>
+          changeContext(
+            "date",
+            value
+          )
+        }
+        busy={busy}
+        loading={loading}
+        loadingHistory={loadingHistory}
+        onLoadSchedule={loadSchedule}
+        onLoadHistory={loadHistory}
+        hasDraft={hasDraft}
+        historyFilter={historyFilter}
+        onHistoryFilterChange={
+          setHistoryFilter
+        }
+        historyQuery={historyQuery}
+        onHistoryQueryChange={
+          setHistoryQuery
+        }
+      />
 
-              {therapistOptions.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Schedule Date
-            <input
-              type="date"
-              value={date}
-              disabled={busy}
-              onChange={(e) => changeDate(e.target.value)}
-            />
-          </label>
-
-          <button
-            type="button"
-            className="csu-secondary"
-            disabled={!therapist || busy}
-            onClick={
-              activeTab === "create"
-                ? loadSchedule
-                : loadHistory
-            }
-          >
-            {loading || loadingHistory
-              ? "Loading..."
-              : activeTab === "create"
-              ? "Load Schedule"
-              : "Refresh History"}
-          </button>
-        </div>
-
-        {hasDraft && activeTab === "create" && (
-          <p className="csu-note csu-draft">
-            You have unsaved appointment changes.
-          </p>
-        )}
-      </section>
+      {/* CREATE TAB */}
 
       {activeTab === "create" && (
         <>
-          {/* ================================================
-              EXCEL IMPORT
-          ================================================ */}
+          {/* EXCEL UPLOAD */}
+
+          <ScheduleUpload
+            excelFile={excelFile}
+            workbookSheets={workbookSheets}
+            selectedSheet={selectedSheet}
+            sheetRows={sheetRows}
+            headerRowIndex={headerRowIndex}
+            headers={headers}
+            columnMapping={columnMapping}
+            importing={importing}
+            busy={busy}
+            therapist={therapist}
+            fileInputRef={fileInputRef}
+            handleExcelFile={handleExcelFile}
+            clearExcel={clearExcel}
+            changeSheet={(name) => {
+              if (
+                workbookRef.current
+              ) {
+                loadSheet(
+                  workbookRef.current,
+                  name
+                );
+              }
+            }}
+            changeHeaderRow={
+              changeHeaderRow
+            }
+            updateMapping={
+              updateMapping
+            }
+            previewExcel={
+              previewExcel
+            }
+          />
+
+          {/* IMPORT PREVIEW */}
+
+          <SchedulePreview
+            importPreview={importPreview}
+            importSkipped={importSkipped}
+            importWarnings={importWarnings}
+            therapistOptions={
+              therapistOptions
+            }
+            busy={busy}
+            updateImportPreviewRow={
+              updateImportPreviewRow
+            }
+            removeImportPreviewRow={
+              removeImportPreviewRow
+            }
+            addPreviewToDraft={
+              addPreviewToDraft
+            }
+            cancelPreview={
+              cancelPreview
+            }
+          />
+
+          {/* MANUAL ENTRY */}
 
           <section className="csu-panel">
             <div className="csu-section-header">
-              <h3>Import Appointments from Excel</h3>
-
-              <button
-                type="button"
-                className="csu-secondary"
-                disabled={busy}
-                onClick={clearExcel}
-              >
-                Clear File
-              </button>
-            </div>
-
-            <p className="csu-note">
-              Import a daily schedule from Concepts using
-              Excel or CSV. Appointment information will be
-              reviewed before saving to Django.
-            </p>
-
-            <div className="csu-upload">
-              <span>📊</span>
-              <strong>Select Excel Schedule</strong>
-              <p>
-                Supported formats: XLSX, XLS, CSV.
-                Maximum file size: 15 MB.
-              </p>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                disabled={busy}
-                onChange={handleExcelFile}
-              />
-            </div>
-
-            {excelFile && (
-              <>
-                <div className="csu-file-info">
-                  <strong>{excelFile.name}</strong>
-                  <span>
-                    {(excelFile.size / 1024).toFixed(1)} KB
-                  </span>
-                </div>
-
-                <div className="csu-form-grid">
-                  <label>
-                    Worksheet
-                    <select
-                      value={selectedSheet}
-                      onChange={(e) =>
-                        changeSheet(e.target.value)
-                      }
-                    >
-                      {workbookSheets.map((sheet) => (
-                        <option key={sheet} value={sheet}>
-                          {sheet}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    Header Row
-                    <select
-                      value={headerRowIndex}
-                      onChange={(e) =>
-                        changeHeaderRow(e.target.value)
-                      }
-                    >
-                      {sheetRows
-                        .slice(0, Math.min(20, sheetRows.length))
-                        .map((_, index) => (
-                          <option key={index} value={index}>
-                            Row {index + 1}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                </div>
-
-                <h4>Column Mapping</h4>
-
-                <p className="csu-note">
-                  Check that each Excel column is assigned
-                  to the correct appointment field.
-                </p>
-
-                <div className="csu-mapping-grid">
-                  {headers.map((header, index) => (
-                    <label key={index}>
-                      <span title={header}>{header}</span>
-
-                      <select
-                        value={columnMapping[index] || ""}
-                        onChange={(e) =>
-                          updateMapping(index, e.target.value)
-                        }
-                      >
-                        {FIELD_OPTIONS.map((field) => (
-                          <option
-                            key={field.value}
-                            value={field.value}
-                          >
-                            {field.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
-                </div>
-
-                <div className="csu-actions">
-                  <button
-                    type="button"
-                    className="csu-primary"
-                    disabled={busy || !therapist}
-                    onClick={previewExcel}
-                  >
-                    Preview Appointments
-                  </button>
-                </div>
-              </>
-            )}
-          </section>
-
-          {/* ================================================
-              IMPORT PREVIEW
-          ================================================ */}
-
-          {importPreview.length > 0 && (
-            <section className="csu-panel">
-              <div className="csu-section-header">
-                <h3>Excel Import Preview</h3>
-
-                <span className="csu-count">
-                  {importPreview.length} appointments
-                </span>
-              </div>
-
-              <div className="csu-preview-summary">
-                <div>
-                  <strong>{importPreview.length}</strong>
-                  <span>Appointments</span>
-                </div>
-
-                <div>
-                  <strong>{importSkipped}</strong>
-                  <span>Skipped Rows</span>
-                </div>
-              </div>
-
-              <div className="csu-table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Patient</th>
-                      <th>File Number</th>
-                      <th>Status</th>
-                      <th>Import Approval</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {importPreview.map((row) => (
-                      <tr key={row.localId}>
-                        <td>
-                          <Time12Control
-                            value={row.time || ""}
-                            onChange={(value) => updateImportPreviewRow(row.localId, "time", value)}
-                            ariaLabel={`Appointment time for ${row.patient_name}`}
-                          />
-                        </td>
-
-                        <td>{row.patient_name}</td>
-
-                        <td>{row.file_number || "—"}</td>
-
-                        <td>
-                          <select
-                            value={row.confirmation_status}
-                            onChange={(e) => updateImportPreviewRow(row.localId, "confirmation_status", e.target.value)}
-                            aria-label={`Status for ${row.patient_name}`}
-                          >
-                            {IMPORT_STATUS_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>{option.label}</option>
-                            ))}
-                          </select>
-                        </td>
-
-                        <td>
-                          <select
-                            value={row.approval_status || "approved"}
-                            onChange={(e) => updateImportPreviewRow(row.localId, "approval_status", e.target.value)}
-                            aria-label={`Import approval for ${row.patient_name}`}
-                          >
-                            {IMPORT_APPROVAL_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>{option.label}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="csu-remove"
-                            onClick={() => setImportPreview((previous) => previous.filter((item) => item.localId !== row.localId))}
-                            aria-label={`Remove ${row.patient_name} from import`}
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-
-              <div className="csu-actions">
-                <button
-                  type="button"
-                  className="csu-primary"
-                  disabled={busy}
-                  onClick={addPreviewToDraft}
-                >
-                  Add {importPreview.length} to Draft
-                </button>
-
-                <button
-                  type="button"
-                  className="csu-secondary"
-                  onClick={() => setImportPreview([])}
-                >
-                  Cancel Preview
-                </button>
-              </div>
-
-              <p className="csu-note">
-                Change appointment times and statuses here. Rows are approved by default. Duplicate patient names are imported once; edit the retained appointment time if needed.
-              </p>
-            </section>
-          )}
-
-          {/* ================================================
-              MANUAL ENTRY
-          ================================================ */}
-
-          <section className="csu-panel">
-            <div className="csu-section-header">
-              <h3>Manual Appointment Entry</h3>
+              <h3>
+                Manual Appointment Entry
+              </h3>
 
               <button
                 type="button"
                 className="csu-primary"
-                disabled={!therapist || busy}
-                onClick={addAppointment}
+                disabled={
+                  !therapist ||
+                  busy
+                }
+                onClick={
+                  addAppointment
+                }
               >
                 + New Appointment
               </button>
             </div>
 
             <p className="csu-note">
-              Add appointments manually or edit imported
-              records before saving.
+              Add appointments manually or edit
+              imported records.
             </p>
           </section>
 
-          {/* ================================================
-              STATISTICS
-          ================================================ */}
+          {/* SUMMARY CARDS */}
 
-          <div className="csu-stats">
-            {[
-              ["Total", totals.total],
-              ["Confirmed", totals.confirmed],
-              ["Unconfirmed", totals.unconfirmed],
-              ["No Answer", totals.no_answer],
-              ["Phone Off", totals.phone_off],
-              ["Cancelled", totals.cancelled],
-              ["Rescheduled", totals.rescheduled],
-              ["Evaluations", totals.evaluations],
-            ].map(([label, value]) => (
-              <div className="csu-stat" key={label}>
-                <span>{label}</span>
-                <strong>{value}</strong>
-              </div>
-            ))}
-          </div>
+          <ScheduleSummaryCards
+            totals={totals}
+            activeFilter={
+              scheduleFilter
+            }
+            onFilterChange={
+              setScheduleFilter
+            }
+            setFilter={
+              setScheduleFilter
+            }
+          />
 
-          {/* ================================================
-              APPOINTMENT TABLE
-          ================================================ */}
+          {/* APPOINTMENT TABLE */}
 
           <section className="csu-panel">
             <div className="csu-section-header">
-              <h3>Therapist Appointments</h3>
+              <h3>
+                Therapist Appointments
+              </h3>
 
               <button
                 type="button"
                 className="csu-primary"
-                disabled={!changedCount || busy}
-                onClick={saveAppointments}
+                disabled={
+                  !changedCount ||
+                  busy
+                }
+                onClick={
+                  saveAppointments
+                }
               >
                 {saving
                   ? "Saving..."
@@ -2627,9 +2719,8 @@ export default function CallCenterScheduleUpload({
 
             {totals.missingTime > 0 && (
               <div className="csu-alert error">
-                {totals.missingTime} appointment(s) have
-                missing or invalid times. Edit these
-                appointments before saving.
+                {totals.missingTime} appointment(s)
+                have invalid times.
               </div>
             )}
 
@@ -2640,103 +2731,126 @@ export default function CallCenterScheduleUpload({
                     <th>Time</th>
                     <th>Patient</th>
                     <th>File Number</th>
+                    <th>Therapist</th>
                     <th>Status</th>
                     <th>Type</th>
-                    <th>Approval Status</th>
+                    <th>Claims Approval</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {sortedAppointments.length === 0 ? (
+                  {sortedAppointments.length ===
+                  0 ? (
                     <tr>
-                      <td colSpan={7} className="csu-empty">
-                        No appointments loaded. Import an Excel
-                        file, load a schedule, or add manually.
+                      <td
+                        colSpan={8}
+                        className="csu-empty"
+                      >
+                        No appointments found.
                       </td>
                     </tr>
                   ) : (
-                    sortedAppointments.map((row) => (
-                      <tr
-                        key={row.localId}
-                        style={{
-                          borderLeft:
-                            `5px solid ${
-                              STATUS_COLORS[row.confirmation_status]
-                            }`,
-                        }}
-                      >
-                        <td>
-                          {validTime(row.time) ? (
-                            <strong>{row.time}</strong>
-                          ) : (
-                            <span className="csu-invalid">
-                              Missing time
-                            </span>
-                          )}
-                        </td>
+                    sortedAppointments.map(
+                      (row) => (
+                        <tr
+                          key={row.localId}
+                        >
+                          <td>
+                            {row.time ||
+                              "Missing"}
+                          </td>
 
-                        <td>{row.patient_name}</td>
+                          <td>
+                            {row.patient_name}
+                          </td>
 
-                        <td>
-                          {row.file_number || (
-                            <span className="csu-muted">
-                              Not matched
-                            </span>
-                          )}
-                        </td>
+                          <td>
+                            {row.file_number ||
+                              "Not matched"}
+                          </td>
 
-                        <td>
-                          <StatusBadge
-                            status={row.confirmation_status}
-                          />
-                        </td>
+                          <td>
+                            {row.therapist_name ||
+                              therapistOptions.find(
+                                (option) =>
+                                  normalizeId(
+                                    option.value
+                                  ) ===
+                                  getTherapistId(
+                                    row
+                                  )
+                              )?.label ||
+                              "Unassigned"}
+                          </td>
 
-                        <td>
-                          <TypeBadge
-                            type={row.appointment_type}
-                          />
-                        </td>
+                          <td>
+                            <StatusBadge
+                              status={
+                                row.confirmation_status
+                              }
+                            />
+                          </td>
 
-                        <td>
-                          <ApprovalBadge status={row.approval_status || "approved"} />
-                        </td>
+                          <td>
+                            <TypeBadge
+                              type={
+                                row.appointment_type
+                              }
+                            />
+                          </td>
 
-                        <td>
-                          <div className="csu-row-actions">
-                            <button
-                              type="button"
-                              className="csu-secondary"
-                              disabled={busy}
-                              onClick={() => editAppointment(row)}
-                            >
-                              Edit
-                            </button>
+                          <td>
+                            {row.claim_approval_status ||
+                              row.insurance_approval_status ||
+                              row.approval_status ||
+                              "Not verified"}
+                          </td>
 
-                            <button
-                              type="button"
-                              className="csu-secondary"
-                              onClick={() => openDetails(row)}
-                            >
-                              Details
-                            </button>
-
-                            {row.isNew && (
+                          <td>
+                            <div className="csu-row-actions">
                               <button
                                 type="button"
-                                className="csu-remove"
-                                disabled={busy}
+                                className="csu-secondary"
                                 onClick={() =>
-                                  removeDraftAppointment(row)
+                                  setEditingAppointment({
+                                    ...row,
+                                  })
                                 }
                               >
-                                Remove
+                                Edit
                               </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+
+                              <button
+                                type="button"
+                                className="csu-secondary"
+                                onClick={() =>
+                                  openDetails(
+                                    row
+                                  )
+                                }
+                              >
+                                Details
+                              </button>
+
+                              {row.isNew && (
+                                <button
+                                  type="button"
+                                  className="csu-remove"
+                                  onClick={() =>
+                                    removeDraftAppointment(
+                                      row
+                                    )
+                                  }
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    )
                   )}
                 </tbody>
               </table>
@@ -2744,272 +2858,103 @@ export default function CallCenterScheduleUpload({
 
             {loadedSchedule && (
               <p className="csu-note">
-                Existing appointments loaded from Django.
-                Editing preserves their database IDs.
+                Saved appointments were loaded
+                from Django.
               </p>
             )}
           </section>
         </>
       )}
 
-      {/* ======================================================
-          SCHEDULE HISTORY
-      ====================================================== */}
+      {/* HISTORY TAB */}
 
       {activeTab === "history" && (
-        <>
-          <section className="csu-panel">
-            <div className="csu-section-header">
-              <h3>Appointment Status History</h3>
-
-              <span className="csu-count">
-                {filteredHistory.length} appointments
-              </span>
-            </div>
-
-            <div className="csu-form-grid">
-              <label>
-                Filter by Status
-                <select
-                  value={historyFilter}
-                  onChange={(e) =>
-                    setHistoryFilter(e.target.value)
-                  }
-                >
-                  <option value="all">All statuses</option>
-
-                  {STATUS_OPTIONS.map((option) => (
-                    <option
-                      key={option.value}
-                      value={option.value}
-                    >
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Search Patient / File Number
-                <input
-                  value={historyQuery}
-                  onChange={(e) =>
-                    setHistoryQuery(e.target.value)
-                  }
-                  placeholder="Search..."
-                />
-              </label>
-            </div>
-
-            <div className="csu-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Patient</th>
-                    <th>File Number</th>
-                    <th>Status</th>
-                    <th>Type</th>
-                    <th>Details</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredHistory.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="csu-empty">
-                        {loadingHistory
-                          ? "Loading..."
-                          : "No appointments found."}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredHistory.map((row) => (
-                      <tr key={row.localId}>
-                        <td>{row.time}</td>
-                        <td>{row.patient_name}</td>
-                        <td>{row.file_number || "—"}</td>
-
-                        <td>
-                          <StatusBadge
-                            status={row.confirmation_status}
-                          />
-                        </td>
-
-                        <td>
-                          <TypeBadge
-                            type={row.appointment_type}
-                          />
-                        </td>
-
-                        <td>
-                          <button
-                            type="button"
-                            className="csu-secondary"
-                            onClick={() => openDetails(row)}
-                          >
-                            View History
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          {/* ================================================
-              INTERNAL ALERTS
-          ================================================ */}
-
-          <section className="csu-panel">
-            <div className="csu-section-header">
-              <h3>Internal Call Center Alerts</h3>
-
-              <button
-                type="button"
-                className="csu-secondary"
-                disabled={loadingAlerts}
-                onClick={loadAlerts}
-              >
-                {loadingAlerts ? "Loading..." : "Refresh"}
-              </button>
-            </div>
-
-            <p className="csu-note">
-              Unconfirmed, No Answer, and Phone Off
-              appointments require follow-up calls.
-              No SMS or WhatsApp messages are sent.
-            </p>
-
-            {alertsError && (
-              <div className="csu-alert error">
-                {alertsError}
-              </div>
-            )}
-
-            {followUpAlerts.length === 0 ? (
-              <div className="csu-empty-state">
-                {loadingAlerts
-                  ? "Loading alerts..."
-                  : alertsError
-                  ? "Alerts could not be loaded."
-                  : "No pending follow-up alerts."}
-              </div>
-            ) : (
-              <div className="csu-alert-list">
-                {followUpAlerts.map((row) => (
-                  <div
-                    className="csu-alert-item"
-                    key={row.id || row.localId}
-                  >
-                    <div>
-                      <strong>{row.patient_name}</strong>
-
-                      <p>
-                        {row.appointment_date || row.date || ""}
-                        {" · "}
-                        {row.time}
-                        {" · "}
-                        {row.therapist || ""}
-                      </p>
-
-                      <StatusBadge
-                        status={row.confirmation_status}
-                      />
-
-                      <small>
-                        Call attempts: {row.second_call_attempts}
-                      </small>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="csu-secondary"
-                      onClick={() => recordCallAttempt(row)}
-                    >
-                      Record Call Attempt
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
+        <ScheduleHistory
+          filteredHistory={
+            filteredHistory
+          }
+          historyFilter={
+            historyFilter
+          }
+          setHistoryFilter={
+            setHistoryFilter
+          }
+          historyQuery={
+            historyQuery
+          }
+          setHistoryQuery={
+            setHistoryQuery
+          }
+          statusOptions={
+            statusOptions
+          }
+          loadingHistory={
+            loadingHistory
+          }
+          openDetails={
+            openDetails
+          }
+          StatusBadge={
+            StatusBadge
+          }
+          TypeBadge={
+            TypeBadge
+          }
+          loadingAlerts={
+            loadingAlerts
+          }
+          loadAlerts={
+            loadAlerts
+          }
+          alertsError={
+            alertsError
+          }
+          followUpAlerts={
+            followUpAlerts
+          }
+          recordCallAttempt={
+            recordCallAttempt
+          }
+        />
       )}
 
-      {/* ======================================================
-          APPOINTMENT EDITOR
-      ====================================================== */}
+      {/* APPOINTMENT EDITOR */}
 
       {editingAppointment && (
-        <div className="csu-modal-backdrop">
-          <div
-            className="csu-modal csu-modal-wide"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Edit appointment"
-          >
-            <div className="csu-section-header">
-              <h3>
-                {editingAppointment.id
-                  ? "Edit Appointment"
-                  : "Create Appointment"}
-              </h3>
+        <AppointmentEditor
+          row={
+            editingAppointment
+          }
+          therapistOptions={
+            therapistOptions
+          }
+          onChange={
+            setEditingAppointment
+          }
+          onFindPatient={() => {
+            setPatientQuery(
+              editingAppointment.patient_name ||
+                ""
+            );
 
-              <button
-                type="button"
-                className="csu-close"
-                onClick={() => setEditingAppointment(null)}
-              >
-                ×
-              </button>
-            </div>
-
-            <p className="csu-note">
-              Therapist: <strong>{selectedTherapistName}</strong>
-              {" · "}
-              Date: <strong>{date}</strong>
-            </p>
-
-            <AppointmentFields
-              appointment={editingAppointment}
-              disabled={saving}
-              onChange={setEditingAppointment}
-              onFindPatient={openPatientSearch}
-            />
-
-            <div className="csu-actions">
-              <button
-                type="button"
-                className="csu-primary"
-                disabled={saving}
-                onClick={saveEditorToDraft}
-              >
-                Apply Changes
-              </button>
-
-              <button
-                type="button"
-                className="csu-secondary"
-                onClick={() => setEditingAppointment(null)}
-              >
-                Cancel
-              </button>
-            </div>
-
-            <p className="csu-note">
-              Apply Changes updates the draft only.
-              Select Save Changes to persist in Django.
-            </p>
-          </div>
-        </div>
+            setPatientMatches([]);
+            setPatientSearchOpen(true);
+          }}
+          onSave={
+            saveEditorToDraft
+          }
+          onClose={() =>
+            setEditingAppointment(
+              null
+            )
+          }
+          disabled={
+            saving
+          }
+        />
       )}
 
-      {/* ======================================================
-          PATIENT SEARCH
-      ====================================================== */}
+      {/* PATIENT SEARCH */}
 
       {patientSearchOpen && (
         <div className="csu-modal-backdrop csu-modal-top">
@@ -3017,33 +2962,48 @@ export default function CallCenterScheduleUpload({
             className="csu-modal"
             role="dialog"
             aria-modal="true"
-            aria-label="Find patient"
+            aria-label="Find existing patient"
           >
             <div className="csu-section-header">
-              <h3>Find Existing Patient</h3>
+              <h3>
+                Find Existing Patient
+              </h3>
 
               <button
                 type="button"
                 className="csu-close"
-                onClick={closePatientSearch}
+                onClick={() =>
+                  setPatientSearchOpen(
+                    false
+                  )
+                }
               >
                 ×
               </button>
             </div>
 
             <p className="csu-note">
-              Search by patient name or hospital file number.
+              Search by patient name or hospital
+              file number.
             </p>
 
             <div className="csu-search-row">
               <input
-                autoFocus
-                value={patientQuery}
-                onChange={(e) =>
-                  setPatientQuery(e.target.value)
+                value={
+                  patientQuery
                 }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") findPatient();
+                onChange={(event) =>
+                  setPatientQuery(
+                    event.target.value
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (
+                    event.key ===
+                    "Enter"
+                  ) {
+                    findPatient();
+                  }
                 }}
                 placeholder="Patient name or file number"
               />
@@ -3051,45 +3011,52 @@ export default function CallCenterScheduleUpload({
               <button
                 type="button"
                 className="csu-primary"
-                disabled={searchingPatients}
-                onClick={findPatient}
+                disabled={
+                  searchingPatients
+                }
+                onClick={
+                  findPatient
+                }
               >
-                {searchingPatients ? "Searching..." : "Search"}
+                {searchingPatients
+                  ? "Searching..."
+                  : "Search"}
               </button>
             </div>
 
             <div className="csu-matches">
-              {patientMatches.map((patient) => (
-                <button
-                  key={patient.id}
-                  type="button"
-                  onClick={() => selectPatient(patient)}
-                >
-                  <strong>{patient.name}</strong>
+              {patientMatches.map(
+                (patient) => (
+                  <button
+                    type="button"
+                    key={
+                      patient.id
+                    }
+                    onClick={() =>
+                      selectPatient(
+                        patient
+                      )
+                    }
+                  >
+                    <strong>
+                      {patient.name}
+                    </strong>
 
-                  <span>
-                    File:{" "}
-                    {patient.file_number ||
-                      patient.patient_id ||
-                      "N/A"}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {!searchingPatients &&
-              patientMatches.length === 0 && (
-                <p className="csu-note">
-                  Enter at least two characters and search.
-                </p>
+                    <span>
+                      File:{" "}
+                      {patient.file_number ||
+                        patient.patient_id ||
+                        "N/A"}
+                    </span>
+                  </button>
+                )
               )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* ======================================================
-          APPOINTMENT DETAILS
-      ====================================================== */}
+      {/* APPOINTMENT DETAILS */}
 
       {detailsAppointment && (
         <div className="csu-modal-backdrop">
@@ -3100,151 +3067,161 @@ export default function CallCenterScheduleUpload({
             aria-label="Appointment details"
           >
             <div className="csu-section-header">
-              <h3>Appointment Details</h3>
+              <h3>
+                Appointment Details
+              </h3>
 
               <button
                 type="button"
                 className="csu-close"
-                onClick={() => setDetailsAppointment(null)}
+                onClick={() =>
+                  setDetailsAppointment(
+                    null
+                  )
+                }
               >
                 ×
               </button>
             </div>
 
             <div className="csu-detail-grid">
-              <div>
-                <small>Patient</small>
-                <strong>{detailsAppointment.patient_name}</strong>
-              </div>
+              {[
+                [
+                  "Patient",
+                  detailsAppointment.patient_name,
+                ],
+                [
+                  "File Number",
+                  detailsAppointment.file_number ||
+                    "—",
+                ],
+                [
+                  "Therapist",
+                  detailsAppointment.therapist_name ||
+                    therapistName,
+                ],
+                [
+                  "Date",
+                  detailsAppointment.date ||
+                    detailsAppointment.appointment_date ||
+                    date,
+                ],
+                [
+                  "Time",
+                  detailsAppointment.time ||
+                    "—",
+                ],
+                [
+                  "Status",
+                  statusLabel(
+                    detailsAppointment.confirmation_status
+                  ),
+                ],
+                [
+                  "Type",
+                  detailsAppointment.appointment_type,
+                ],
+                [
+                  "Claims Approval",
+                  detailsAppointment.claim_approval_status ||
+                    detailsAppointment.insurance_approval_status ||
+                    "Not verified",
+                ],
+                [
+                  "Notes",
+                  detailsAppointment.notes ||
+                    "—",
+                ],
+              ].map(
+                ([label, value]) => (
+                  <div
+                    key={
+                      label
+                    }
+                  >
+                    <small>
+                      {label}
+                    </small>
 
-              <div>
-                <small>File Number</small>
-                <strong>
-                  {detailsAppointment.file_number || "Not matched"}
-                </strong>
-              </div>
-
-              <div>
-                <small>Therapist</small>
-                <strong>
-                  {detailsAppointment.therapist ||
-                    selectedTherapistName}
-                </strong>
-              </div>
-
-              <div>
-                <small>Date and Time</small>
-                <strong>
-                  {detailsAppointment.appointment_date ||
-                    detailsAppointment.date ||
-                    date}
-                  {" · "}
-                  {detailsAppointment.time || "Missing time"}
-                </strong>
-              </div>
-
-              <div>
-                <small>Status</small>
-                <StatusBadge
-                  status={detailsAppointment.confirmation_status}
-                />
-              </div>
-
-              <div>
-                <small>Type</small>
-                <TypeBadge
-                  type={detailsAppointment.appointment_type}
-                />
-              </div>
+                    <strong>
+                      {value}
+                    </strong>
+                  </div>
+                )
+              )}
             </div>
 
-            {detailsAppointment.import_file && (
-              <div className="csu-detail-note">
-                <strong>Imported From</strong>
-                <p>
-                  {detailsAppointment.import_file}
-                  {" · "}
-                  {detailsAppointment.import_sheet}
-                  {" · Row "}
-                  {detailsAppointment.import_row}
-                </p>
-              </div>
-            )}
+            <h4>
+              Change History
+            </h4>
 
-            {detailsAppointment.notes && (
-              <div className="csu-detail-note">
-                <strong>Notes</strong>
-                <p>{detailsAppointment.notes}</p>
-              </div>
-            )}
-
-            {detailsAppointment.confirmation_status ===
-              "rescheduled" && (
-              <div className="csu-detail-note">
-                <strong>Rescheduled To</strong>
-                <p>
-                  {detailsAppointment.rescheduled_to_date || "—"}
-                  {" · "}
-                  {detailsAppointment.rescheduled_to_time || "—"}
-                </p>
-              </div>
-            )}
-
-            <h4>Change History</h4>
-
-            {detailsHistory.length === 0 ? (
+            {detailsHistory.length ===
+            0 ? (
               <p className="csu-note">
-                No audit events were returned.
+                No audit events returned.
               </p>
             ) : (
               <div className="csu-timeline">
-                {[...detailsHistory]
-                  .sort(
-                    (a, b) =>
-                      new Date(b.created_at || 0) -
-                      new Date(a.created_at || 0)
-                  )
-                  .map((event) => (
+                {detailsHistory.map(
+                  (event, index) => (
                     <div
                       className="csu-timeline-item"
-                      key={event.id}
+                      key={
+                        event.id ||
+                        index
+                      }
                     >
-                      <div className="csu-timeline-dot" />
+                      <strong>
+                        {event.action}
+                      </strong>
 
-                      <div>
-                        <strong>{event.action}</strong>
+                      <p>
+                        {event.old_status
+                          ? `${statusLabel(
+                              event.old_status
+                            )} → `
+                          : ""}
 
-                        {event.new_status && (
-                          <p>
-                            {event.old_status
-                              ? `${statusLabel(event.old_status)} → `
-                              : ""}
-                            {statusLabel(event.new_status)}
-                          </p>
+                        {event.new_status
+                          ? statusLabel(
+                              event.new_status
+                            )
+                          : ""}
+                      </p>
+
+                      {event.note && (
+                        <p>
+                          {event.note}
+                        </p>
+                      )}
+
+                      <small>
+                        {event.changed_by}
+                        {" · "}
+                        {formatDateTime(
+                          event.created_at
                         )}
-
-                        {event.note && <p>{event.note}</p>}
-
-                        <small>
-                          {event.changed_by}
-                          {" · "}
-                          {formatDateTime(event.created_at)}
-                        </small>
-                      </div>
+                      </small>
                     </div>
-                  ))}
+                  )
+                )}
               </div>
             )}
 
             <div className="csu-actions">
-              {activeTab === "create" && (
+              {activeTab ===
+                "create" && (
                 <button
                   type="button"
                   className="csu-primary"
                   onClick={() => {
-                    const row = detailsAppointment;
-                    setDetailsAppointment(null);
-                    editAppointment(row);
+                    setEditingAppointment({
+                      ...detailsAppointment,
+                    });
+
+                    setDetailsAppointment(
+                      null
+                    );
                   }}
                 >
                   Edit Appointment
@@ -3254,7 +3231,11 @@ export default function CallCenterScheduleUpload({
               <button
                 type="button"
                 className="csu-secondary"
-                onClick={() => setDetailsAppointment(null)}
+                onClick={() =>
+                  setDetailsAppointment(
+                    null
+                  )
+                }
               >
                 Close
               </button>
@@ -3290,7 +3271,11 @@ const styles = `
   padding: 28px;
   margin-bottom: 18px;
   border-radius: 18px;
-  background: linear-gradient(120deg,#172b4d,#355a91);
+  background: linear-gradient(
+    120deg,
+    #172b4d,
+    #355a91
+  );
   color: white;
 }
 
@@ -3341,10 +3326,12 @@ const styles = `
 .csu-panel {
   padding: 22px;
   background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
+  border: 1px solid #e6ebf2;
+  border-radius: 18px;
   margin-bottom: 18px;
   min-width: 0;
+  box-shadow: 0 8px 28px
+    rgba(15,23,42,.055);
 }
 
 .csu-panel h3 {
@@ -3368,6 +3355,7 @@ const styles = `
 
 .csu-section-header h3 {
   margin: 0;
+  color: #142d4e;
 }
 
 .csu-form-grid {
@@ -3449,34 +3437,6 @@ const styles = `
   font-weight: 700;
 }
 
-
-.csu-time12 {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  white-space: nowrap;
-}
-.csu-time12 select {
-  min-width: 58px;
-  padding: 7px 5px;
-}
-.csu-time12 select:last-child {
-  min-width: 62px;
-  font-weight: 700;
-}
-.csu-approval-badge {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 6px 11px;
-  font-size: 11px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-.csu-approval-badge.approved { background: #dcfce7; color: #166534; }
-.csu-approval-badge.pending { background: #fef3c7; color: #92400e; }
-.csu-approval-badge.rejected { background: #fee2e2; color: #991b1b; }
-
 .csu-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3488,6 +3448,7 @@ const styles = `
   color: #64748b;
   font-size: 12px;
   line-height: 1.6;
+  margin-top: 13px;
 }
 
 .csu-draft {
@@ -3555,13 +3516,10 @@ const styles = `
   font-size: 12px;
 }
 
-.csu-file-info span {
-  color: #64748b;
-}
-
 .csu-mapping-grid {
   display: grid;
-  grid-template-columns: repeat(3,minmax(0,1fr));
+  grid-template-columns:
+    repeat(3,minmax(0,1fr));
   gap: 12px;
   margin-top: 15px;
 }
@@ -3582,7 +3540,8 @@ const styles = `
 
 .csu-preview-summary {
   display: grid;
-  grid-template-columns: repeat(4,minmax(0,1fr));
+  grid-template-columns:
+    repeat(4,minmax(0,1fr));
   gap: 10px;
   margin: 15px 0;
 }
@@ -3606,7 +3565,8 @@ const styles = `
 
 .csu-stats {
   display: grid;
-  grid-template-columns: repeat(4,minmax(0,1fr));
+  grid-template-columns:
+    repeat(4,minmax(0,1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -3616,6 +3576,7 @@ const styles = `
   border: 1px solid #e2e8f0;
   border-radius: 13px;
   background: white;
+  cursor: pointer;
 }
 
 .csu-stat span {
@@ -3633,11 +3594,14 @@ const styles = `
 .csu-table-wrap {
   width: 100%;
   overflow-x: auto;
+  border: 1px solid #e7edf4;
+  border-radius: 14px;
+  background: white;
 }
 
 .csu-table-wrap table {
   width: 100%;
-  min-width: 900px;
+  min-width: 950px;
   border-collapse: collapse;
 }
 
@@ -3647,11 +3611,17 @@ const styles = `
   border-bottom: 1px solid #e2e8f0;
   text-align: left;
   font-size: 12px;
+  vertical-align: middle;
 }
 
 .csu-table-wrap th {
-  background: #f8fafc;
+  background: #f5f8fc;
   color: #475569;
+  font-weight: 800;
+}
+
+.csu-table-wrap tbody tr:hover {
+  background: #f8fbff;
 }
 
 .csu-row-actions {
@@ -3691,16 +3661,6 @@ const styles = `
 .csu-type.followup {
   background: #eff6ff;
   color: #1d4ed8;
-}
-
-.csu-draft-label {
-  color: #b45309;
-  font-weight: 700;
-}
-
-.csu-saved-label {
-  color: #047857;
-  font-weight: 700;
 }
 
 .csu-invalid {
@@ -3744,7 +3704,8 @@ const styles = `
 .csu-count {
   padding: 7px 11px;
   border-radius: 20px;
-  background: #f1f5f9;
+  background: #eff6ff;
+  color: #1d4ed8;
   font-size: 12px;
   font-weight: 700;
 }
@@ -3823,12 +3784,13 @@ const styles = `
 
 .csu-editor-grid {
   display: grid;
-  grid-template-columns: repeat(2,minmax(0,1fr));
+  grid-template-columns:
+    repeat(2,minmax(0,1fr));
   gap: 15px;
 }
 
 .csu-full-width {
-  grid-column: 1 / -1;
+  grid-column: 1/-1;
 }
 
 .csu-inline-input {
@@ -3874,7 +3836,8 @@ const styles = `
 
 .csu-detail-grid {
   display: grid;
-  grid-template-columns: repeat(2,minmax(0,1fr));
+  grid-template-columns:
+    repeat(2,minmax(0,1fr));
   gap: 14px;
   margin: 20px 0;
 }
@@ -3896,18 +3859,6 @@ const styles = `
   font-size: 13px;
 }
 
-.csu-detail-note {
-  padding: 12px;
-  margin-bottom: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 9px;
-  font-size: 12px;
-}
-
-.csu-detail-note p {
-  margin-bottom: 0;
-}
-
 .csu-timeline {
   padding-left: 12px;
   margin: 20px 0;
@@ -3917,17 +3868,6 @@ const styles = `
 .csu-timeline-item {
   position: relative;
   padding: 0 0 20px 22px;
-}
-
-.csu-timeline-dot {
-  position: absolute;
-  left: -19px;
-  top: 3px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #be185d;
-  border: 2px solid white;
 }
 
 .csu-timeline-item strong {
@@ -3944,133 +3884,61 @@ const styles = `
   font-size: 11px;
 }
 
-@media(max-width:900px) {
+.csu-time12 {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.csu-time12 select {
+  min-width: 58px;
+  padding: 7px 5px;
+}
+
+.csu-time12 select:last-child {
+  min-width: 62px;
+  font-weight: 700;
+}
+
+.csu-approval-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.csu-approval-badge.approved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.csu-approval-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.csu-approval-badge.rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+@media (max-width: 900px) {
   .csu-stats,
   .csu-preview-summary {
-    grid-template-columns: repeat(2,minmax(0,1fr));
+    grid-template-columns:
+      repeat(2,minmax(0,1fr));
   }
 
   .csu-mapping-grid {
-    grid-template-columns: repeat(2,minmax(0,1fr));
+    grid-template-columns:
+      repeat(2,minmax(0,1fr));
   }
 }
 
-/* Modern import preview and schedule styling */
-.csu-panel {
-  border: 1px solid #e6ebf2;
-  border-radius: 18px;
-  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.055);
-}
-.csu-section-header {
-  gap: 14px;
-  align-items: center;
-}
-.csu-section-header h3 {
-  color: #142d4e;
-  font-weight: 750;
-  letter-spacing: -0.025em;
-}
-.csu-count {
-  border: 1px solid #dbeafe;
-  border-radius: 999px;
-  padding: 6px 11px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 12px;
-  font-weight: 700;
-}
-.csu-preview-summary {
-  gap: 12px;
-  margin: 16px 0 20px;
-}
-.csu-preview-summary > div {
-  border: 1px solid #e8edf4;
-  border-radius: 14px;
-  padding: 15px 17px;
-  background: linear-gradient(145deg, #ffffff, #f7faff);
-}
-.csu-preview-summary strong {
-  color: #142d4e;
-  font-size: 24px;
-  font-weight: 800;
-}
-.csu-preview-summary span {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 600;
-}
-.csu-table-wrap {
-  overflow-x: auto;
-  border: 1px solid #e7edf4;
-  border-radius: 14px;
-  background: #fff;
-}
-.csu-table-wrap table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  min-width: 650px;
-}
-.csu-table-wrap thead th {
-  padding: 13px 15px;
-  background: #f5f8fc;
-  color: #52647a;
-  border-bottom: 1px solid #e5ebf3;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .055em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.csu-table-wrap tbody td {
-  padding: 12px 15px;
-  border-bottom: 1px solid #eef2f7;
-  color: #26364b;
-  font-size: 13px;
-  vertical-align: middle;
-}
-.csu-table-wrap tbody tr:last-child td { border-bottom: 0; }
-.csu-table-wrap tbody tr:hover { background: #f8fbff; }
-.csu-table-wrap input[type="time"],
-.csu-table-wrap select {
-  min-height: 38px;
-  border: 1px solid #dbe3ed;
-  border-radius: 9px;
-  padding: 7px 10px;
-  background: #fff;
-  color: #1e293b;
-  font: inherit;
-  outline: none;
-  transition: border-color .16s ease, box-shadow .16s ease;
-}
-.csu-table-wrap input[type="time"]:focus,
-.csu-table-wrap select:focus {
-  border-color: #5574df;
-  box-shadow: 0 0 0 3px rgba(85, 116, 223, .13);
-}
-.csu-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
-}
-.csu-primary, .csu-secondary {
-  border-radius: 10px;
-  font-weight: 700;
-  transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
-}
-.csu-primary:hover:not(:disabled), .csu-secondary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(30, 64, 175, .12);
-}
-.csu-note {
-  margin-top: 13px;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-@media(max-width:600px) {
+@media (max-width: 600px) {
   .csu-hero {
     padding: 20px;
   }
