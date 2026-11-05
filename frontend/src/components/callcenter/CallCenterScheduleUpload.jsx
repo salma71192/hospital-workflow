@@ -15,7 +15,7 @@ import api from "../../api/api";
 const API = "/physio/schedule/";
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
-const MAX_APPOINTMENTS = 200;
+const MAX_APPOINTMENTS = 500;
 
 const ACCEPTED_EXTENSIONS = [".xlsx", ".xls", ".csv"];
 
@@ -43,11 +43,25 @@ const FOLLOW_UP_STATUSES = new Set([
   "phone_off",
 ]);
 
+const IMPORT_STATUS_OPTIONS = [
+  { value: "confirmed", label: "Confirmed" },
+  { value: "unconfirmed", label: "Unconfirmed" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "rescheduled", label: "Rescheduled" },
+];
+
+const IMPORT_APPROVAL_OPTIONS = [
+  { value: "pending", label: "Pending" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+];
+
 const FIELD_OPTIONS = [
   { value: "", label: "Do not import" },
   { value: "patient_name", label: "Patient Name" },
   { value: "file_number", label: "File Number" },
   { value: "time", label: "Appointment Time" },
+  { value: "start", label: "Start (Date + Time)" },
   { value: "date", label: "Appointment Date" },
   { value: "therapist", label: "Therapist" },
   { value: "confirmation_status", label: "Status" },
@@ -63,6 +77,7 @@ const FIELD_ALIASES = {
     "name",
     "full name",
     "patient full name",
+    "subject",
     "client",
     "client name",
     "اسم المريض",
@@ -74,6 +89,7 @@ const FIELD_ALIASES = {
     "file no.",
     "file",
     "file id",
+    "code 1",
     "patient id",
     "patient number",
     "mrn",
@@ -91,6 +107,11 @@ const FIELD_ALIASES = {
     "وقت الموعد",
     "الوقت",
   ],
+  start: [
+    "start",
+    "start datetime",
+    "appointment start",
+  ],
   date: [
     "date",
     "appointment date",
@@ -106,6 +127,7 @@ const FIELD_ALIASES = {
     "provider",
     "doctor",
     "resource",
+    "contacts",
     "المعالج",
   ],
   confirmation_status: [
@@ -665,6 +687,47 @@ function isAdministrativeRow(name) {
   );
 }
 
+function normalizeStartDateTime(value) {
+  if (value === null || value === undefined || value === "") {
+    return { date: "", time: "" };
+  }
+
+  // Excel may store a combined date/time as a serial number.
+  if (typeof value === "number") {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed) return { date: "", time: "" };
+    const date = [parsed.y, String(parsed.m).padStart(2, "0"), String(parsed.d).padStart(2, "0")].join("-");
+    const minutes = Math.round(((parsed.H || 0) * 60) + (parsed.M || 0) + ((parsed.S || 0) / 60));
+    const time = `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+    return { date: validDate(date) ? date : "", time };
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return { date: normalizeDate(value), time: normalizeTime(value) };
+  }
+
+  const raw = cleanText(value);
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]+(.+)$/);
+  if (iso) return { date: normalizeDate(iso[1]), time: normalizeTime(iso[2]) };
+
+  const dmy = raw.match(/^(\d{1,2}[/-]\d{1,2}[/-]\d{4})[\s,]+(.+)$/);
+  if (dmy) return { date: normalizeDate(dmy[1]), time: normalizeTime(dmy[2]) };
+
+  return { date: normalizeDate(raw), time: normalizeTime(raw) };
+}
+
+function appointmentDuplicateKeys(row) {
+  // A patient should appear only once in this import/schedule, even if the
+  // source worksheet lists the same patient at different times. The user can
+  // edit the retained appointment time after import.
+  const patient = normalizeHeader(row.patient_name || "");
+  const file = normalizeHeader(row.file_number || "");
+  const keys = [];
+  if (patient) keys.push(`name:${patient}`);
+  if (file) keys.push(`file:${file}`);
+  return keys;
+}
+
 function parseImportRows(
   rows,
   mapping,
@@ -699,10 +762,38 @@ function parseImportRows(
       continue;
     }
 
-    const time = normalizeTime(data.time);
-    const importedDate = normalizeDate(data.date);
-    const rawDate = cleanText(data.date);
+    const startParts = normalizeStartDateTime(data.start);
+    const time = normalizeTime(data.time) || startParts.time;
+    const importedDate = normalizeDate(data.date) || startParts.date;
+    const rawDate = cleanText(data.date || data.start);
     const importedTherapist = cleanText(data.therapist);
+
+    // Import only rows belonging to the therapist currently selected in the UI.
+    // Rows with a blank therapist are also excluded so they cannot be assigned
+    // to the selected therapist by mistake.
+    const selectedTherapistKeys = [
+      normalizeHeader(selectedTherapist),
+      normalizeHeader(therapistLabel),
+    ].filter(Boolean);
+    const importedTherapistKey = normalizeHeader(importedTherapist);
+
+    // Excel may contain the therapist's full HR name while the dropdown
+    // displays a shortened name (for example, "Salma Mohammed" versus
+    // "Salma Mohammed Khalil Mohammed"). Match either exact names or a
+    // complete selected-name prefix, but never a partial word.
+    const therapistMatches = Boolean(
+      importedTherapistKey &&
+      selectedTherapistKeys.some(
+        (selectedKey) =>
+          importedTherapistKey === selectedKey ||
+          importedTherapistKey.startsWith(`${selectedKey} `)
+      )
+    );
+
+    if (!therapistMatches) {
+      skipped++;
+      continue;
+    }
 
     const rowWarnings = [];
 
@@ -717,18 +808,6 @@ function parseImportRows(
     if (importedDate && importedDate !== selectedDate) {
       rowWarnings.push(
         `Date ${importedDate} differs from selected ${selectedDate}`
-      );
-    }
-
-    if (
-      importedTherapist &&
-      ![
-        normalizeHeader(selectedTherapist),
-        normalizeHeader(therapistLabel),
-      ].includes(normalizeHeader(importedTherapist))
-    ) {
-      rowWarnings.push(
-        `Therapist "${importedTherapist}" needs verification`
       );
     }
 
@@ -787,6 +866,7 @@ function parseImportRows(
         import_date: importedDate,
         import_therapist: importedTherapist,
         import_warnings: rowWarnings,
+        approval_status: "approved",
       },
       false
     );
@@ -864,6 +944,60 @@ function payloadForAppointment(row, therapist, date) {
 // ============================================================
 // BADGES AND EDITOR
 // ============================================================
+
+function Time12Control({ value, onChange, ariaLabel }) {
+  const [hour24, minuteText] = (value || "").split(":");
+  const numericHour = Number(hour24);
+  const hour12 = value
+    ? String(numericHour % 12 || 12).padStart(2, "0")
+    : "09";
+  const period = value ? (numericHour >= 12 ? "PM" : "AM") : "AM";
+  const minute = value ? (minuteText || "00") : "00";
+
+  const update = (hour, mins, meridiem) => {
+    let h = Number(hour) % 12;
+    if (meridiem === "PM") h += 12;
+    onChange(`${String(h).padStart(2, "0")}:${String(mins).padStart(2, "0")}`);
+  };
+
+  return (
+    <div className="csu-time12" aria-label={ariaLabel}>
+      <select
+        value={hour12}
+        onChange={(e) => update(e.target.value, minute, period)}
+        aria-label={`${ariaLabel} hour`}
+      >
+        {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map((h) => (
+          <option key={h} value={h}>{h}</option>
+        ))}
+      </select>
+      <span>:</span>
+      <select
+        value={minute}
+        onChange={(e) => update(hour12, e.target.value, period)}
+        aria-label={`${ariaLabel} minute`}
+      >
+        {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map((m) => (
+          <option key={m} value={m}>{m}</option>
+        ))}
+      </select>
+      <select
+        value={period}
+        onChange={(e) => update(hour12, minute, e.target.value)}
+        aria-label={`${ariaLabel} AM or PM`}
+      >
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+  );
+}
+
+function ApprovalBadge({ status }) {
+  const value = status || "approved";
+  const label = IMPORT_APPROVAL_OPTIONS.find((item) => item.value === value)?.label || "Approved";
+  return <span className={`csu-approval-badge ${value}`}>{label}</span>;
+}
 
 function StatusBadge({ status }) {
   return (
@@ -1188,14 +1322,6 @@ export default function CallCenterScheduleUpload({
     [alerts]
   );
 
-  const previewErrors = useMemo(
-    () =>
-      importPreview.filter(
-        (row) => !validTime(row.time) || !row.patient_name.trim()
-      ).length,
-    [importPreview]
-  );
-
   const changedCount = appointments.filter(
     (row) => row.isNew || row.isDirty
   ).length;
@@ -1510,8 +1636,8 @@ export default function CallCenterScheduleUpload({
       return;
     }
 
-    if (!columnMapping.includes("time")) {
-      setError("Map a column to Appointment Time.");
+    if (!columnMapping.includes("time") && !columnMapping.includes("start")) {
+      setError("Map a column to Appointment Time or Start (Date + Time).");
       return;
     }
 
@@ -1534,13 +1660,36 @@ export default function CallCenterScheduleUpload({
       return;
     }
 
-    setImportPreview(result.appointments);
+    const seenKeys = new Set(appointments.flatMap(appointmentDuplicateKeys));
+    const uniqueAppointments = [];
+    let duplicateCount = 0;
+    result.appointments.forEach((row) => {
+      const keys = appointmentDuplicateKeys(row);
+      if (!keys.length || keys.some((key) => seenKeys.has(key))) {
+        duplicateCount += 1;
+        return;
+      }
+      keys.forEach((key) => seenKeys.add(key));
+      uniqueAppointments.push(row);
+    });
+
+    setImportPreview(uniqueAppointments);
     setImportWarnings(result.warnings);
-    setImportSkipped(result.skipped);
+    setImportSkipped(result.skipped + duplicateCount);
 
     setSuccess(
-      `${result.appointments.length} appointments found. ` +
-      `${result.warnings.length} row(s) require review.`
+      `${uniqueAppointments.length} appointments found for ${selectedTherapistName}. ` +
+      `${result.skipped} other/administrative row(s) and ${duplicateCount} duplicate(s) skipped.`
+    );
+  };
+
+  const updateImportPreviewRow = (localId, field, value) => {
+    setImportPreview((previous) =>
+      previous.map((row) =>
+        row.localId === localId
+          ? { ...row, [field]: value, isDirty: true }
+          : row
+      )
     );
   };
 
@@ -1550,49 +1699,55 @@ export default function CallCenterScheduleUpload({
       return;
     }
 
-    if (appointments.length + importPreview.length > MAX_APPOINTMENTS) {
-      setError(
-        "Import exceeds the maximum of 200 appointments."
-      );
+    const approvedRows = importPreview.filter(
+      (row) => row.approval_status === "approved"
+    );
+    if (!approvedRows.length) {
+      setError("Approve at least one appointment in the Import Approval column.");
       return;
     }
 
-    const mismatched = importPreview.filter(
-      (row) =>
-        row.import_warnings.some(
-          (warning) =>
-            warning.startsWith("Date ") ||
-            warning.startsWith("Appointment date") ||
-            warning.startsWith("Therapist ")
-        )
+    const existingKeys = new Set(
+      appointments.flatMap(appointmentDuplicateKeys)
     );
+    const acceptedKeys = new Set();
+    const uniqueRows = [];
+    let duplicateCount = 0;
 
-    if (mismatched.length) {
-      setError(
-        `${mismatched.length} appointment(s) have an uncertain or mismatched ` +
-        "date/therapist. Correct the source file or mapping before importing."
-      );
+    approvedRows.forEach((row) => {
+      const keys = appointmentDuplicateKeys(row);
+      if (!keys.length) return;
+      if (keys.some((key) => existingKeys.has(key) || acceptedKeys.has(key))) {
+        duplicateCount += 1;
+        return;
+      }
+      keys.forEach((key) => acceptedKeys.add(key));
+      uniqueRows.push(row);
+    });
+
+    if (!uniqueRows.length) {
+      setError(`No new appointments to add. ${duplicateCount} duplicate appointment(s) were blocked.`);
+      return;
+    }
+
+    if (appointments.length + uniqueRows.length > MAX_APPOINTMENTS) {
+      setError(`Import exceeds the maximum of ${MAX_APPOINTMENTS} appointments.`);
       return;
     }
 
     const accepted = window.confirm(
-      `Add ${importPreview.length} appointments to the draft?\n\n` +
-      "Appointments will NOT be saved until you select Save Changes.\n\n" +
-      "Check for existing appointments to avoid importing the same booking twice."
+      `Add ${uniqueRows.length} approved appointment(s) to the draft?\n\n` +
+      `${duplicateCount} duplicate appointment(s) will be skipped.\n` +
+      "Appointments will NOT be saved until you select Save Changes."
     );
-
     if (!accepted) return;
 
-    setAppointments((previous) => [
-      ...previous,
-      ...importPreview,
-    ]);
-
+    setAppointments((previous) => [...previous, ...uniqueRows]);
     setHasDraft(true);
     setImportPreview([]);
-
     setSuccess(
-      "Excel appointments added to the draft. Review and save them."
+      `${uniqueRows.length} approved appointment(s) added to the draft. ` +
+      `${duplicateCount} duplicate(s) skipped.`
     );
     setError("");
   };
@@ -1608,7 +1763,7 @@ export default function CallCenterScheduleUpload({
     }
 
     if (appointments.length >= MAX_APPOINTMENTS) {
-      setError("Maximum 200 appointments allowed.");
+      setError(`Maximum ${MAX_APPOINTMENTS} appointments allowed.`);
       return;
     }
 
@@ -2306,16 +2461,6 @@ export default function CallCenterScheduleUpload({
                 </div>
 
                 <div>
-                  <strong>{previewErrors}</strong>
-                  <span>Missing Required Details</span>
-                </div>
-
-                <div>
-                  <strong>{importWarnings.length}</strong>
-                  <span>Rows With Warnings</span>
-                </div>
-
-                <div>
                   <strong>{importSkipped}</strong>
                   <span>Skipped Rows</span>
                 </div>
@@ -2325,29 +2470,24 @@ export default function CallCenterScheduleUpload({
                 <table>
                   <thead>
                     <tr>
-                      <th>Excel Row</th>
                       <th>Time</th>
                       <th>Patient</th>
                       <th>File Number</th>
                       <th>Status</th>
-                      <th>Type</th>
-                      <th>Validation</th>
+                      <th>Import Approval</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
 
                   <tbody>
                     {importPreview.map((row) => (
                       <tr key={row.localId}>
-                        <td>{row.import_row}</td>
-
                         <td>
-                          {validTime(row.time) ? (
-                            row.time
-                          ) : (
-                            <span className="csu-invalid">
-                              Missing time
-                            </span>
-                          )}
+                          <Time12Control
+                            value={row.time || ""}
+                            onChange={(value) => updateImportPreviewRow(row.localId, "time", value)}
+                            ariaLabel={`Appointment time for ${row.patient_name}`}
+                          />
                         </td>
 
                         <td>{row.patient_name}</td>
@@ -2355,30 +2495,37 @@ export default function CallCenterScheduleUpload({
                         <td>{row.file_number || "—"}</td>
 
                         <td>
-                          <StatusBadge
-                            status={row.confirmation_status}
-                          />
+                          <select
+                            value={row.confirmation_status}
+                            onChange={(e) => updateImportPreviewRow(row.localId, "confirmation_status", e.target.value)}
+                            aria-label={`Status for ${row.patient_name}`}
+                          >
+                            {IMPORT_STATUS_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
                         </td>
 
                         <td>
-                          <TypeBadge
-                            type={row.appointment_type}
-                          />
+                          <select
+                            value={row.approval_status || "approved"}
+                            onChange={(e) => updateImportPreviewRow(row.localId, "approval_status", e.target.value)}
+                            aria-label={`Import approval for ${row.patient_name}`}
+                          >
+                            {IMPORT_APPROVAL_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
                         </td>
-
                         <td>
-                          {row.import_warnings.length ? (
-                            <span
-                              className="csu-invalid"
-                              title={row.import_warnings.join("; ")}
-                            >
-                              Review
-                            </span>
-                          ) : (
-                            <span className="csu-saved-label">
-                              Ready
-                            </span>
-                          )}
+                          <button
+                            type="button"
+                            className="csu-remove"
+                            onClick={() => setImportPreview((previous) => previous.filter((item) => item.localId !== row.localId))}
+                            aria-label={`Remove ${row.patient_name} from import`}
+                          >
+                            Remove
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -2386,23 +2533,6 @@ export default function CallCenterScheduleUpload({
                 </table>
               </div>
 
-              {importWarnings.length > 0 && (
-                <div className="csu-warning-panel">
-                  <h4>Import Warnings</h4>
-
-                  <ul>
-                    {importWarnings.slice(0, 30).map((warning, i) => (
-                      <li key={i}>{warning}</li>
-                    ))}
-                  </ul>
-
-                  {importWarnings.length > 30 && (
-                    <p className="csu-note">
-                      Additional warnings are not displayed.
-                    </p>
-                  )}
-                </div>
-              )}
 
               <div className="csu-actions">
                 <button
@@ -2424,9 +2554,7 @@ export default function CallCenterScheduleUpload({
               </div>
 
               <p className="csu-note">
-                Adding to draft does not save appointments.
-                Correct missing times and review imported
-                records before selecting Save Changes.
+                Change appointment times and statuses here. Rows are approved by default. Duplicate patient names are imported once; edit the retained appointment time if needed.
               </p>
             </section>
           )}
@@ -2514,7 +2642,7 @@ export default function CallCenterScheduleUpload({
                     <th>File Number</th>
                     <th>Status</th>
                     <th>Type</th>
-                    <th>Record</th>
+                    <th>Approval Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -2571,19 +2699,7 @@ export default function CallCenterScheduleUpload({
                         </td>
 
                         <td>
-                          {row.isNew ? (
-                            <span className="csu-draft-label">
-                              New / Unsaved
-                            </span>
-                          ) : row.isDirty ? (
-                            <span className="csu-draft-label">
-                              Modified
-                            </span>
-                          ) : (
-                            <span className="csu-saved-label">
-                              Saved
-                            </span>
-                          )}
+                          <ApprovalBadge status={row.approval_status || "approved"} />
                         </td>
 
                         <td>
@@ -3333,6 +3449,34 @@ const styles = `
   font-weight: 700;
 }
 
+
+.csu-time12 {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.csu-time12 select {
+  min-width: 58px;
+  padding: 7px 5px;
+}
+.csu-time12 select:last-child {
+  min-width: 62px;
+  font-weight: 700;
+}
+.csu-approval-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.csu-approval-badge.approved { background: #dcfce7; color: #166534; }
+.csu-approval-badge.pending { background: #fef3c7; color: #92400e; }
+.csu-approval-badge.rejected { background: #fee2e2; color: #991b1b; }
+
 .csu-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3809,6 +3953,121 @@ const styles = `
   .csu-mapping-grid {
     grid-template-columns: repeat(2,minmax(0,1fr));
   }
+}
+
+/* Modern import preview and schedule styling */
+.csu-panel {
+  border: 1px solid #e6ebf2;
+  border-radius: 18px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.055);
+}
+.csu-section-header {
+  gap: 14px;
+  align-items: center;
+}
+.csu-section-header h3 {
+  color: #142d4e;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+.csu-count {
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  padding: 6px 11px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+.csu-preview-summary {
+  gap: 12px;
+  margin: 16px 0 20px;
+}
+.csu-preview-summary > div {
+  border: 1px solid #e8edf4;
+  border-radius: 14px;
+  padding: 15px 17px;
+  background: linear-gradient(145deg, #ffffff, #f7faff);
+}
+.csu-preview-summary strong {
+  color: #142d4e;
+  font-size: 24px;
+  font-weight: 800;
+}
+.csu-preview-summary span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+.csu-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e7edf4;
+  border-radius: 14px;
+  background: #fff;
+}
+.csu-table-wrap table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 650px;
+}
+.csu-table-wrap thead th {
+  padding: 13px 15px;
+  background: #f5f8fc;
+  color: #52647a;
+  border-bottom: 1px solid #e5ebf3;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.csu-table-wrap tbody td {
+  padding: 12px 15px;
+  border-bottom: 1px solid #eef2f7;
+  color: #26364b;
+  font-size: 13px;
+  vertical-align: middle;
+}
+.csu-table-wrap tbody tr:last-child td { border-bottom: 0; }
+.csu-table-wrap tbody tr:hover { background: #f8fbff; }
+.csu-table-wrap input[type="time"],
+.csu-table-wrap select {
+  min-height: 38px;
+  border: 1px solid #dbe3ed;
+  border-radius: 9px;
+  padding: 7px 10px;
+  background: #fff;
+  color: #1e293b;
+  font: inherit;
+  outline: none;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.csu-table-wrap input[type="time"]:focus,
+.csu-table-wrap select:focus {
+  border-color: #5574df;
+  box-shadow: 0 0 0 3px rgba(85, 116, 223, .13);
+}
+.csu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.csu-primary, .csu-secondary {
+  border-radius: 10px;
+  font-weight: 700;
+  transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.csu-primary:hover:not(:disabled), .csu-secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(30, 64, 175, .12);
+}
+.csu-note {
+  margin-top: 13px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 @media(max-width:600px) {
