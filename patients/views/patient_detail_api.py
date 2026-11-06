@@ -112,29 +112,55 @@ def _get_registration_history(patient):
         )
     )
 
-    return [
-        {
+    history = []
+
+    for assignment in assignments:
+
+        # Informational only.
+        # This does not change the assigned therapist
+        # or any statistics/calculations.
+        visit_under_therapist = getattr(
+            assignment,
+            "visit_under_therapist",
+            None,
+        )
+
+        visit_under_name = (
+            _get_user_display(visit_under_therapist)
+            if visit_under_therapist
+            else ""
+        )
+
+        history.append({
             "id": assignment.pk,
             "visit_number": assignment.visit_number,
+
             "registration_date": str(
                 assignment.assignment_date
             ),
+
             "assignment_date": str(
                 assignment.assignment_date
             ),
+
             "registered_by": _get_user_display(
                 assignment.created_by
             ),
+
             "created_by_name": _get_user_display(
                 assignment.created_by
             ),
+
             "therapist": _get_user_display(
                 assignment.therapist
             ),
+
             "therapist_name": _get_user_display(
                 assignment.therapist
             ),
+
             "category": assignment.category or "",
+
             "referring_physician": (
                 getattr(
                     assignment,
@@ -142,6 +168,7 @@ def _get_registration_history(patient):
                     "",
                 ) or ""
             ),
+
             "speciality": (
                 getattr(
                     assignment,
@@ -149,10 +176,18 @@ def _get_registration_history(patient):
                     "",
                 ) or ""
             ),
-        }
-        for assignment in assignments
-    ]
 
+            # Display only when another therapist was selected.
+            "visit_record": (
+                f"Visit under: {visit_under_name}"
+                if visit_under_name
+                else ""
+            ),
+
+            "visit_under_therapist": visit_under_name,
+        })
+
+    return history
 
 def _get_monthly_utilization(
     patient,

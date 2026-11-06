@@ -43,10 +43,23 @@ class PatientAssignment(models.Model):
         related_name="assignments",
     )
 
+    # Original assigned physiotherapist.
+    # This remains responsible for visit attribution.
     therapist = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name="therapist_assignments",
+        limit_choices_to={"role": "physio"},
+    )
+
+    # Informational field only.
+    # Does not replace the original assigned therapist.
+    visit_under_therapist = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="visit_under_assignments",
         limit_choices_to={"role": "physio"},
     )
 

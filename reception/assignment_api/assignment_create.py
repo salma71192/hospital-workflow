@@ -1,4 +1,3 @@
-
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.http import JsonResponse
@@ -24,6 +23,11 @@ def create_assignment(request, role, admin, today_value):
     patient_id = data.get("patient_id")
     therapist_id = data.get("therapist_id")
 
+    # Optional informational therapist.
+    visit_under_therapist_id = data.get(
+        "visit_under_therapist_id"
+    )
+
     if not patient_id or not therapist_id:
         return error("Missing patient or therapist")
 
@@ -47,7 +51,7 @@ def create_assignment(request, role, admin, today_value):
     else:
         assignment_date = today_value
 
-    # Validate the patient and therapist.
+    # Validate the patient and original assigned therapist.
     try:
         patient = Patient.objects.get(id=patient_id)
         therapist = get_physio(therapist_id)
@@ -58,6 +62,21 @@ def create_assignment(request, role, admin, today_value):
         TypeError,
     ):
         return error("Invalid patient or therapist")
+
+    # Validate the optional informational therapist.
+    visit_under_therapist = None
+
+    if visit_under_therapist_id not in (None, ""):
+        try:
+            visit_under_therapist = get_physio(
+                visit_under_therapist_id
+            )
+        except (
+            User.DoesNotExist,
+            ValueError,
+            TypeError,
+        ):
+            return error("Invalid Visit Under therapist")
 
     # Create the assignment safely.
     with transaction.atomic():
@@ -80,7 +99,13 @@ def create_assignment(request, role, admin, today_value):
 
         assignment = PatientAssignment.objects.create(
             patient=locked_patient,
+
+            # Original therapist remains the assigned therapist.
             therapist=therapist,
+
+            # Optional informational field only.
+            visit_under_therapist=visit_under_therapist,
+
             assignment_date=assignment_date,
             category=fields["category"],
             visit_number=fields["visit_number"],
@@ -90,6 +115,8 @@ def create_assignment(request, role, admin, today_value):
             created_by=request.user,
         )
 
+        # Appointment attribution continues to use the original
+        # assigned therapist, not the informational therapist.
         if assignment_date == today_value:
             mark_today_appointment_attended(
                 patient=locked_patient,
@@ -97,7 +124,6 @@ def create_assignment(request, role, admin, today_value):
                 marked_by=request.user,
             )
 
-    # Return the actual status stored in the database.
     approval_status = getattr(
         assignment,
         "approval_status",
@@ -111,8 +137,23 @@ def create_assignment(request, role, admin, today_value):
         "patient_id": locked_patient.id,
         "patient_name": str(locked_patient),
         "assignment_date": str(assignment.assignment_date),
+
+        # Original assigned therapist.
         "therapist_id": therapist.id,
         "therapist_name": therapist.username,
+
+        # Optional informational therapist.
+        "visit_under_therapist_id": (
+            visit_under_therapist.id
+            if visit_under_therapist
+            else None
+        ),
+        "visit_under_therapist_name": (
+            visit_under_therapist.username
+            if visit_under_therapist
+            else ""
+        ),
+
         "category": assignment.category,
         "visit_number": assignment.visit_number,
         "referring_physician": assignment.referring_physician,

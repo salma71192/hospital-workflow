@@ -195,21 +195,34 @@ const getPhysician = (visit) =>
     "-"
   );
 
-const getVisitUnderAnotherPhysio = (visit) =>
-  getValue(
-    visit,
-    [
-      "visit_under_another_physio",
-      "visit_under_other_physio",
-      "under_another_physio",
-      "another_physio",
-      "other_physio_visit",
-      "previous_therapist_visit",
-      "visit_with_another_therapist",
-      "is_visit_under_another_physio",
-    ],
-    "-"
-  );
+const getVisitRecord = (visit) => {
+  const visitUnder =
+    visit?.visit_under_therapist_name ||
+    visit?.visit_under_therapist ||
+    visit?.visit_record ||
+    visit?.visitRecord ||
+    "";
+
+  let therapistName = "";
+
+  if (typeof visitUnder === "object" && visitUnder !== null) {
+    therapistName =
+      visitUnder.full_name ||
+      visitUnder.name ||
+      visitUnder.username ||
+      "";
+  } else {
+    therapistName = String(visitUnder).trim();
+  }
+
+  if (!therapistName || therapistName === "-") return "";
+
+  if (therapistName.toLowerCase().startsWith("visit under:")) {
+    return therapistName;
+  }
+
+  return `${therapistName}`;
+};
 
 const getSessionDate = (session) =>
   getValue(
@@ -1423,20 +1436,13 @@ export default function PatientDetails() {
                     <th>Physiotherapist</th>
                     <th>Category</th>
                     <th>Referring Physician</th>
-                    <th>Visit Under Another Physio</th>
+                    <th>Visit Record</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {filteredVisits.map((visit) => {
-                    const otherPhysio =
-                      getVisitUnderAnotherPhysio(visit);
-
-                    const isYes =
-                      otherPhysio === true ||
-                      ["true", "yes", "1"].includes(
-                        String(otherPhysio).toLowerCase()
-                      );
+                    const visitRecord = getVisitRecord(visit);
 
                     return (
                       <tr
@@ -1483,20 +1489,22 @@ export default function PatientDetails() {
                         </td>
 
                         <td>
-                          {otherPhysio === "-" ? (
-                            <span className="other-physio-no">
-                              Not specified
+                          {visitRecord ? (
+                            <span
+                              style={{
+                                display: "inline-block",
+                                maxWidth: "300px",
+                                whiteSpace: "pre-wrap",
+                                overflowWrap: "anywhere",
+                                color: "#365575",
+                                fontWeight: 600,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              {visitRecord}
                             </span>
                           ) : (
-                            <span
-                              className={
-                                isYes
-                                  ? "other-physio-yes"
-                                  : "other-physio-no"
-                              }
-                            >
-                              {isYes ? "Yes" : "No"}
-                            </span>
+                            <span style={{ color: "#A0AEC0" }}>—</span>
                           )}
                         </td>
                       </tr>
