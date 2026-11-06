@@ -7,6 +7,7 @@ import React, {
   useState,
 } from "react";
 
+import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import api from "../../api/api";
 
@@ -30,7 +31,6 @@ import {
   detectHeaderRow,
   makeColumnHeaders,
   createColumnMapping,
-  appointmentDuplicateKeys,
   validateAppointment,
   payloadForAppointment,
   statusLabel,
@@ -55,28 +55,25 @@ import ManualAppointmentEntry from "./schedule/ManualAppointmentEntry";
 // ============================================================
 
 const HOSPITAL_TIME_ZONE = "Asia/Dubai";
-const statusOptions = STATUS_OPTIONS;
+const MONTH_REQUEST_BATCH_SIZE = 5;
+
+// Must match your actual PatientDetails route.
+const PATIENT_FILE_ROUTE = "/patients";
 
 // ============================================================
 // DATE HELPERS
 // ============================================================
 
 function getHospitalToday() {
-  const parts = new Intl.DateTimeFormat(
-    "en-GB",
-    {
-      timeZone: HOSPITAL_TIME_ZONE,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }
-  ).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: HOSPITAL_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
 
   const values = Object.fromEntries(
-    parts.map((part) => [
-      part.type,
-      part.value,
-    ])
+    parts.map((part) => [part.type, part.value])
   );
 
   return [
@@ -86,30 +83,85 @@ function getHospitalToday() {
   ].join("-");
 }
 
-function appointmentDate(
-  row,
-  fallback = ""
-) {
+function appointmentDate(row, fallback = "") {
   return String(
     row?.appointment_date ||
-    row?.date ||
-    fallback ||
-    ""
+      row?.date ||
+      fallback ||
+      ""
   ).slice(0, 10);
 }
 
 function isPastDate(value) {
   return Boolean(
     value &&
-    validDate(value) &&
-    value < getHospitalToday()
+      validDate(value) &&
+      value < getHospitalToday()
   );
 }
 
 function isEditableDate(value) {
   return Boolean(
     validDate(value) &&
-    value >= getHospitalToday()
+      value >= getHospitalToday()
+  );
+}
+
+function validMonth(value) {
+  if (!/^\d{4}-\d{2}$/.test(value || "")) {
+    return false;
+  }
+
+  const [year, month] = value
+    .split("-")
+    .map(Number);
+
+  return (
+    year >= 1900 &&
+    year <= 9999 &&
+    month >= 1 &&
+    month <= 12
+  );
+}
+
+function getMonthDates(monthValue) {
+  if (!validMonth(monthValue)) {
+    return [];
+  }
+
+  const [year, month] = monthValue
+    .split("-")
+    .map(Number);
+
+  const numberOfDays = new Date(
+    Date.UTC(year, month, 0)
+  ).getUTCDate();
+
+  return Array.from(
+    { length: numberOfDays },
+    (_, index) =>
+      `${year}-${String(month).padStart(2, "0")}-${String(
+        index + 1
+      ).padStart(2, "0")}`
+  );
+}
+
+function formatDisplayDate(value) {
+  if (!validDate(value)) {
+    return value || "—";
+  }
+
+  const [year, month, day] = value
+    .split("-")
+    .map(Number);
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(
+    new Date(Date.UTC(year, month - 1, day))
   );
 }
 
@@ -132,16 +184,13 @@ function getTherapistId(row) {
     row?.physiotherapist ??
     "";
 
-  if (
-    value &&
-    typeof value === "object"
-  ) {
+  if (value && typeof value === "object") {
     return normalizeId(
       value.value ??
-      value.id ??
-      value.pk ??
-      value.username ??
-      ""
+        value.id ??
+        value.pk ??
+        value.username ??
+        ""
     );
   }
 
@@ -168,10 +217,7 @@ function normalizeName(value) {
   return String(value || "")
     .toLowerCase()
     .normalize("NFKD")
-    .replace(
-      /[\u0300-\u036f]/g,
-      ""
-    )
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(
       /\b(dr|doctor|pt|physio|physiotherapist|mr|mrs|ms)\b/g,
       " "
@@ -197,30 +243,23 @@ function findTherapistByName(
       normalizeName(option.label) === target
   );
 
-  if (exact.length === 1) {
-    return exact[0];
-  }
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
 
-  if (exact.length > 1) {
-    return null;
-  }
+  const partial = options.filter((option) => {
+    const candidate = normalizeName(
+      option.label
+    );
 
-  const partial = options.filter(
-    (option) => {
-      const candidate = normalizeName(
-        option.label
-      );
-
-      return (
-        candidate.length >= 5 &&
-        target.length >= 5 &&
-        (
-          candidate.includes(target) ||
-          target.includes(candidate)
-        )
-      );
-    }
-  );
+    return (
+      candidate.length >= 5 &&
+      target.length >= 5 &&
+      (
+        candidate.includes(target) ||
+        target.includes(candidate)
+      )
+    );
+  });
 
   return partial.length === 1
     ? partial[0]
@@ -275,38 +314,27 @@ function applyTherapist(row, option) {
 
 function getAppointmentTime(row) {
   const parsed = parseExcelTime(
-    row?.time ??
-    row?.appointment_time
+    row?.time ?? row?.appointment_time
   );
 
-  return validTime(parsed)
-    ? parsed
-    : "";
+  return validTime(parsed) ? parsed : "";
 }
 
 function sortAppointments(rows = []) {
   return [...rows].sort((a, b) => {
-    const firstDate = appointmentDate(a);
-    const secondDate = appointmentDate(b);
+    const dateA = appointmentDate(a);
+    const dateB = appointmentDate(b);
 
-    if (firstDate !== secondDate) {
-      return firstDate.localeCompare(
-        secondDate
-      );
+    if (dateA !== dateB) {
+      return dateA.localeCompare(dateB);
     }
 
-    const first =
-      getAppointmentTime(a) || "99:99";
-
-    const second =
-      getAppointmentTime(b) || "99:99";
-
-    return first.localeCompare(second);
+    return (
+      getAppointmentTime(a) || "99:99"
+    ).localeCompare(
+      getAppointmentTime(b) || "99:99"
+    );
   });
-}
-
-function appointmentKeys(row) {
-  return appointmentDuplicateKeys(row);
 }
 
 function getApproval(row) {
@@ -315,11 +343,7 @@ function getApproval(row) {
     row?.insurance_approval_status ??
     row?.approval_status;
 
-  if (
-    value === null ||
-    value === undefined ||
-    String(value).trim() === ""
-  ) {
+  if (!hasValue(value)) {
     return "unknown";
   }
 
@@ -353,6 +377,18 @@ function normalizeSavedRow(row) {
 
   return {
     ...normalized,
+
+    // Preserve the real patient database ID.
+    patient_id:
+      row?.patient_id ??
+      (
+        typeof row?.patient === "object"
+          ? row.patient?.id
+          : row?.patient
+      ) ??
+      normalized.patient_id ??
+      null,
+
     localId:
       normalized.localId ||
       (
@@ -360,8 +396,9 @@ function normalizeSavedRow(row) {
           ? `saved-${normalized.id}`
           : newLocalId()
       ),
-    approval_status:
-      getApproval(normalized),
+
+    approval_status: getApproval(row),
+
     isNew: false,
     isDirty: false,
   };
@@ -369,22 +406,23 @@ function normalizeSavedRow(row) {
 
 function normalizeImportedRow(
   row,
-  options,
+  therapistOptions,
   selectedDate
 ) {
   const matched = resolveTherapist(
     row,
-    options
+    therapistOptions
   );
 
-  const dateValue =
-    appointmentDate(row, selectedDate);
+  const dateValue = appointmentDate(
+    row,
+    selectedDate
+  );
 
   const base = {
     ...row,
 
-    localId:
-      row.localId || newLocalId(),
+    localId: row.localId || newLocalId(),
 
     date: dateValue,
     appointment_date: dateValue,
@@ -401,8 +439,7 @@ function normalizeImportedRow(
 
     approval_status: getApproval(row),
 
-    source:
-      row.source || "excel",
+    source: row.source || "excel",
 
     excel_therapist_name:
       row.excel_therapist_name ||
@@ -414,27 +451,57 @@ function normalizeImportedRow(
     isDirty: true,
   };
 
-  return applyTherapist(
-    base,
-    matched
-  );
+  return applyTherapist(base, matched);
+}
+
+// ============================================================
+// PATIENT FILE HELPERS
+// ============================================================
+
+// The PatientDetails page expects the database
+// patient ID in its route parameter.
+//
+// Do not substitute the hospital file number,
+// appointment ID or medical record number.
+
+function getPatientDatabaseId(row) {
+  const patient =
+    row?.patient ??
+    row?.patient_record ??
+    null;
+
+  const candidate =
+    row?.patient_id ??
+    row?.patient_pk ??
+    (
+      patient &&
+      typeof patient === "object"
+        ? patient.id ?? patient.pk
+        : patient
+    );
+
+  if (
+    candidate &&
+    typeof candidate === "object"
+  ) {
+    return normalizeId(
+      candidate.id ?? candidate.pk
+    );
+  }
+
+  return normalizeId(candidate);
 }
 
 // ============================================================
 // DUPLICATE DETECTION
 // ============================================================
 
-// The same normalized patient name on the same
-// date must be reviewed before saving.
-//
-// This matches the duplicate rule used by
-// ScheduleTable. No appointments are removed
-// automatically.
-
 function patientDuplicateKey(
   row,
   fallbackDate = ""
 ) {
+  const patientId = getPatientDatabaseId(row);
+
   const name = normalizeName(
     row.patient_name
   );
@@ -444,11 +511,18 @@ function patientDuplicateKey(
     fallbackDate
   );
 
-  if (!name || !dateValue) {
+  if (
+    !dateValue ||
+    (!patientId && !name)
+  ) {
     return "";
   }
 
-  return `${dateValue}::${name}`;
+  return `${dateValue}::${
+    patientId
+      ? `id:${patientId}`
+      : `name:${name}`
+  }`;
 }
 
 function findPatientDuplicates(
@@ -477,6 +551,46 @@ function findPatientDuplicates(
   }
 
   return duplicates;
+}
+
+function sameAppointment(a, b) {
+  if (a?.id && b?.id) {
+    return String(a.id) === String(b.id);
+  }
+
+  return Boolean(
+    a?.localId &&
+    b?.localId &&
+    a.localId === b.localId
+  );
+}
+
+// ============================================================
+// HISTORY DEDUPLICATION
+// ============================================================
+
+function deduplicateHistory(rows = []) {
+  const seen = new Set();
+
+  return rows.filter((row, index) => {
+    const key = row.id
+      ? `id:${row.id}`
+      : [
+          appointmentDate(row),
+          getTherapistId(row),
+          row.file_number ||
+            normalizeName(row.patient_name),
+          getAppointmentTime(row),
+          index,
+        ].join("|");
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 // ============================================================
@@ -519,32 +633,63 @@ function TypeBadge({ type }) {
 export default function CallCenterScheduleUpload({
   therapists = [],
 }) {
-  // ----------------------------------------------------------
+  const navigate = useNavigate();
+
+  // ==========================================================
   // NAVIGATION
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const [activeTab, setActiveTab] =
     useState("create");
 
-  // ----------------------------------------------------------
-  // SELECTED SCHEDULE
-  // ----------------------------------------------------------
+  // ==========================================================
+  // CREATE SCHEDULE FILTERS
+  // ==========================================================
 
   const [therapist, setTherapist] =
     useState("");
 
-  const [date, setDate] = useState(
-    getHospitalToday
-  );
+  const [date, setDate] =
+    useState(getHospitalToday);
 
   const [
     backendTherapists,
     setBackendTherapists,
   ] = useState([]);
 
-  // ----------------------------------------------------------
+  // ==========================================================
+  // HISTORY FILTERS
+  // ==========================================================
+
+  const [historyMode, setHistoryMode] =
+    useState("day");
+
+  const [historyDate, setHistoryDate] =
+    useState(getHospitalToday);
+
+  const [historyMonth, setHistoryMonth] =
+    useState(() =>
+      getHospitalToday().slice(0, 7)
+    );
+
+  const [
+    historyTherapist,
+    setHistoryTherapist,
+  ] = useState("all");
+
+  const [
+    historyFilter,
+    setHistoryFilter,
+  ] = useState("all");
+
+  const [
+    historyQuery,
+    setHistoryQuery,
+  ] = useState("");
+
+  // ==========================================================
   // APPOINTMENTS
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const [
     appointments,
@@ -559,9 +704,9 @@ export default function CallCenterScheduleUpload({
   const [alerts, setAlerts] =
     useState([]);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // EXCEL STATE
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const [excelFile, setExcelFile] =
     useState(null);
@@ -586,10 +731,8 @@ export default function CallCenterScheduleUpload({
     setHeaderRowIndex,
   ] = useState(0);
 
-  const [
-    headers,
-    setHeaders,
-  ] = useState([]);
+  const [headers, setHeaders] =
+    useState([]);
 
   const [
     columnMapping,
@@ -611,9 +754,9 @@ export default function CallCenterScheduleUpload({
     setImportSkipped,
   ] = useState(0);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // LOADING
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const [loading, setLoading] =
     useState(false);
@@ -639,9 +782,9 @@ export default function CallCenterScheduleUpload({
   const [importing, setImporting] =
     useState(false);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // MESSAGES
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const [error, setError] =
     useState("");
@@ -654,9 +797,9 @@ export default function CallCenterScheduleUpload({
     setAlertsError,
   ] = useState("");
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // WORKSPACE
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const [hasDraft, setHasDraft] =
     useState(false);
@@ -681,9 +824,9 @@ export default function CallCenterScheduleUpload({
     setDetailsHistory,
   ] = useState([]);
 
-  // ----------------------------------------------------------
-  // PATIENT SEARCH — INLINE
-  // ----------------------------------------------------------
+  // ==========================================================
+  // PATIENT SEARCH
+  // ==========================================================
 
   const [
     patientQuery,
@@ -700,38 +843,9 @@ export default function CallCenterScheduleUpload({
     setSearchingPatients,
   ] = useState(false);
 
-  // ----------------------------------------------------------
-  // FILTERS
-  // ----------------------------------------------------------
-
-  const [
-    historyFilter,
-    setHistoryFilter,
-  ] = useState("all");
-
-  const [
-    historyQuery,
-    setHistoryQuery,
-  ] = useState("");
-
-  const [
-    historyMonth,
-    setHistoryMonth,
-  ] = useState("");
-
-  const [
-    historyTherapist,
-    setHistoryTherapist,
-  ] = useState("all");
-
-  // A history query without a specific date is
-  // not assumed to be supported by the backend.
-  // Month and therapist filters apply to the
-  // appointments returned for the selected date.
-
-  // ----------------------------------------------------------
+  // ==========================================================
   // REFS
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const fileInputRef = useRef(null);
   const workbookRef = useRef(null);
@@ -739,6 +853,7 @@ export default function CallCenterScheduleUpload({
   const requestRef = useRef(0);
   const historyRequestRef = useRef(0);
   const patientRequestRef = useRef(0);
+  const detailsRequestRef = useRef(0);
 
   const saveInProgressRef = useRef(false);
 
@@ -755,9 +870,7 @@ export default function CallCenterScheduleUpload({
     const seen = new Set();
 
     return [
-      ...normalizeTherapists(
-        therapists
-      ),
+      ...normalizeTherapists(therapists),
       ...normalizeTherapists(
         backendTherapists
       ),
@@ -781,26 +894,17 @@ export default function CallCenterScheduleUpload({
     backendTherapists,
   ]);
 
-  const therapistName =
-    therapistOptions.find(
-      (option) =>
-        normalizeId(option.value) ===
-        normalizeId(therapist)
-    )?.label || therapist;
-
   // ==========================================================
   // DATE LOCK
   // ==========================================================
 
-  const scheduleIsPast = isPastDate(date);
+  const scheduleIsPast =
+    isPastDate(date);
 
   const hasPastAppointments =
     appointments.some((row) =>
       isPastDate(
-        appointmentDate(
-          row,
-          date
-        )
+        appointmentDate(row, date)
       )
     );
 
@@ -808,13 +912,8 @@ export default function CallCenterScheduleUpload({
     scheduleIsPast ||
     hasPastAppointments;
 
-  const canCreate =
-    Boolean(therapist) &&
-    isEditableDate(date) &&
-    !busy;
-
   // ==========================================================
-  // COUNTS AND SORTING
+  // APPOINTMENT COUNTS
   // ==========================================================
 
   const sortedAppointments = useMemo(
@@ -841,63 +940,9 @@ export default function CallCenterScheduleUpload({
     [appointments, date]
   );
 
-  const filteredHistory = useMemo(() => {
-    const query = historyQuery
-      .toLowerCase()
-      .trim();
-
-    return sortAppointments(
-      historyAppointments.filter((row) => {
-        const matchesStatus =
-          historyFilter === "all" ||
-          row.confirmation_status ===
-            historyFilter;
-
-        const matchesQuery =
-          !query ||
-          String(
-            row.patient_name || ""
-          )
-            .toLowerCase()
-            .includes(query) ||
-          String(
-            row.file_number || ""
-          )
-            .toLowerCase()
-            .includes(query);
-
-        const rowDate = appointmentDate(
-          row
-        );
-
-        const matchesMonth =
-          !historyMonth ||
-          rowDate.startsWith(
-            historyMonth
-          );
-
-        const matchesTherapist =
-          historyTherapist === "all" ||
-          getTherapistId(row) ===
-            normalizeId(
-              historyTherapist
-            );
-
-        return (
-          matchesStatus &&
-          matchesQuery &&
-          matchesMonth &&
-          matchesTherapist
-        );
-      })
-    );
-  }, [
-    historyAppointments,
-    historyFilter,
-    historyQuery,
-    historyMonth,
-    historyTherapist,
-  ]);
+  // ==========================================================
+  // ALERT FILTER
+  // ==========================================================
 
   const followUpAlerts = useMemo(
     () =>
@@ -927,7 +972,38 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // FETCH THERAPISTS
+  // OPEN PATIENT FILE
+  // ==========================================================
+
+  const openPatientFile = useCallback(
+    (row) => {
+      const patientId =
+        getPatientDatabaseId(row);
+
+      if (!patientId) {
+        setError(
+          "This appointment is not linked to a registered patient database ID. The hospital file number cannot be used as the patient database ID."
+        );
+
+        setSuccess("");
+        return;
+      }
+
+      // Navigate to the existing PatientDetails
+      // route. PatientDetails uses useParams()
+      // to obtain the patient database ID.
+
+      navigate(
+        `${PATIENT_FILE_ROUTE}/${encodeURIComponent(
+          patientId
+        )}`
+      );
+    },
+    [navigate]
+  );
+
+  // ==========================================================
+  // FETCH REGISTERED THERAPISTS
   // ==========================================================
 
   useEffect(() => {
@@ -957,7 +1033,7 @@ export default function CallCenterScheduleUpload({
           active &&
           !therapists.length
         ) {
-          showError(
+          setError(
             errorMessage(err)
           );
         }
@@ -976,7 +1052,7 @@ export default function CallCenterScheduleUpload({
   }, [therapists.length]);
 
   // ==========================================================
-  // SYNCHRONIZE IMPORTED THERAPISTS
+  // SYNC IMPORTED THERAPISTS
   // ==========================================================
 
   useEffect(() => {
@@ -995,15 +1071,11 @@ export default function CallCenterScheduleUpload({
               therapistOptions
             );
 
-          if (!matched) {
-            return row;
-          }
+          if (!matched) return row;
 
           if (
             getTherapistId(row) ===
-              normalizeId(
-                matched.value
-              ) &&
+              normalizeId(matched.value) &&
             row.therapist_matched ===
               true &&
             row.therapist_name ===
@@ -1062,51 +1134,43 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // WORKSPACE RESET
+  // RESET CREATE WORKSPACE
   // ==========================================================
 
   const resetWorkspace = () => {
     requestRef.current += 1;
-    historyRequestRef.current += 1;
     patientRequestRef.current += 1;
 
     setAppointments([]);
-    setHistoryAppointments([]);
-    setAlerts([]);
-
     setHasDraft(false);
     setLoadedSchedule(false);
 
     setEditingAppointment(null);
-    setDetailsAppointment(null);
-    setDetailsHistory([]);
 
     setPatientQuery("");
     setPatientMatches([]);
+    setSearchingPatients(false);
 
     clearExcel();
     clearMessages();
   };
 
   // ==========================================================
-  // CHANGE CONTEXT
+  // CHANGE CREATE SCHEDULE CONTEXT
   // ==========================================================
 
-  const changeContext = (
-    field,
-    value
-  ) => {
+  const changeContext = (field, value) => {
     if (busy) return;
 
     if (
       field === "date" &&
-      activeTab === "create" &&
       value &&
       !isEditableDate(value)
     ) {
       showError(
         "Past schedules are locked. Choose today or a future date."
       );
+
       return;
     }
 
@@ -1123,13 +1187,15 @@ export default function CallCenterScheduleUpload({
 
     if (field === "therapist") {
       setTherapist(value);
-    } else if (field === "date") {
+    }
+
+    if (field === "date") {
       setDate(value);
     }
   };
 
   // ==========================================================
-  // LOAD SCHEDULE
+  // LOAD CREATE SCHEDULE
   // ==========================================================
 
   const loadSchedule = async () => {
@@ -1138,7 +1204,7 @@ export default function CallCenterScheduleUpload({
       !validDate(date)
     ) {
       showError(
-        "Select a physiotherapist and a valid date."
+        "Select a physiotherapist and valid date."
       );
 
       return {
@@ -1148,7 +1214,7 @@ export default function CallCenterScheduleUpload({
 
     if (!isEditableDate(date)) {
       showError(
-        "Historical schedules are read-only. Use Scheduled History to review them."
+        "Historical schedules are read-only."
       );
 
       return {
@@ -1157,7 +1223,6 @@ export default function CallCenterScheduleUpload({
     }
 
     if (hasDraft) {
-      // Never replace unsaved drafts automatically.
       return {
         success: false,
         message: "Unsaved draft exists.",
@@ -1183,22 +1248,19 @@ export default function CallCenterScheduleUpload({
       );
 
       if (
-        requestId !==
-        requestRef.current
+        requestId !== requestRef.current
       ) {
         return {
           success: false,
-          message: "Request superseded.",
         };
       }
 
-      const rows =
-        extractRows(response.data);
+      const rows = extractRows(
+        response.data
+      );
 
       setAppointments(
-        rows.map(
-          normalizeSavedRow
-        )
+        rows.map(normalizeSavedRow)
       );
 
       setHasDraft(false);
@@ -1214,8 +1276,7 @@ export default function CallCenterScheduleUpload({
       };
     } catch (err) {
       if (
-        requestId ===
-        requestRef.current
+        requestId === requestRef.current
       ) {
         showError(
           errorMessage(err)
@@ -1228,8 +1289,7 @@ export default function CallCenterScheduleUpload({
       };
     } finally {
       if (
-        requestId ===
-        requestRef.current
+        requestId === requestRef.current
       ) {
         setLoading(false);
       }
@@ -1237,31 +1297,26 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // EXCEL SHEET LOADING
+  // LOAD EXCEL WORKSHEET
   // ==========================================================
 
-  const loadSheet = (
-    workbook,
-    name
-  ) => {
+  const loadSheet = (workbook, name) => {
     const sheet =
       workbook.Sheets[name];
 
     if (!sheet) return;
 
-    const rows =
-      XLSX.utils.sheet_to_json(
-        sheet,
-        {
-          header: 1,
-          raw: true,
-          defval: "",
-          blankrows: false,
-        }
-      );
+    const rows = XLSX.utils.sheet_to_json(
+      sheet,
+      {
+        header: 1,
+        raw: true,
+        defval: "",
+        blankrows: false,
+      }
+    );
 
-    let index =
-      detectHeaderRow(rows);
+    let index = detectHeaderRow(rows);
 
     try {
       const detected =
@@ -1272,11 +1327,10 @@ export default function CallCenterScheduleUpload({
           detected?.index
         )
       ) {
-        index =
-          detected.index;
+        index = detected.index;
       }
     } catch {
-      // Preserve fallback header detection.
+      // Use general header detection.
     }
 
     if (
@@ -1320,9 +1374,7 @@ export default function CallCenterScheduleUpload({
 
     if (!file) return;
 
-    if (
-      !isEditableDate(date)
-    ) {
+    if (!isEditableDate(date)) {
       showError(
         "Cannot import appointments for past dates."
       );
@@ -1383,8 +1435,7 @@ export default function CallCenterScheduleUpload({
         );
       }
 
-      workbookRef.current =
-        workbook;
+      workbookRef.current = workbook;
 
       setExcelFile(file);
       setWorkbookSheets(
@@ -1404,7 +1455,7 @@ export default function CallCenterScheduleUpload({
 
       showError(
         err.message ||
-        "Unable to read the Excel file."
+        "Unable to read Excel."
       );
     } finally {
       setImporting(false);
@@ -1413,12 +1464,10 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // EXCEL MAPPING
+  // COLUMN MAPPING
   // ==========================================================
 
-  const changeHeaderRow = (
-    value
-  ) => {
+  const changeHeaderRow = (value) => {
     const index = Number(value);
 
     if (
@@ -1449,17 +1498,14 @@ export default function CallCenterScheduleUpload({
     index,
     field
   ) => {
-    setColumnMapping(
-      (previous) =>
-        previous.map(
-          (value, i) =>
-            i === index
-              ? field
-              : field &&
-                value === field
-              ? ""
-              : value
-        )
+    setColumnMapping((previous) =>
+      previous.map((value, i) =>
+        i === index
+          ? field
+          : field && value === field
+          ? ""
+          : value
+      )
     );
 
     setImportPreview([]);
@@ -1479,6 +1525,7 @@ export default function CallCenterScheduleUpload({
       showError(
         "Select a physiotherapist and a current or future date."
       );
+
       return;
     }
 
@@ -1486,6 +1533,7 @@ export default function CallCenterScheduleUpload({
       showError(
         "Upload an Excel file first."
       );
+
       return;
     }
 
@@ -1509,69 +1557,61 @@ export default function CallCenterScheduleUpload({
         err.message ||
         "Unable to extract appointments."
       );
+
       return;
     }
 
-    const imported =
-      Array.isArray(result)
-        ? result
-        : result?.appointments ||
-          result?.rows ||
-          [];
+    const imported = Array.isArray(result)
+      ? result
+      : result?.appointments ||
+        result?.rows ||
+        [];
 
-    const warnings =
-      Array.isArray(
-        result?.warnings
-      )
-        ? result.warnings
-        : [];
+    const warnings = Array.isArray(
+      result?.warnings
+    )
+      ? result.warnings
+      : [];
 
-    const skipped =
-      Number(
-        result?.skipped || 0
-      );
+    const skipped = Number(
+      result?.skipped || 0
+    );
 
     if (
-      imported.length >
-      MAX_APPOINTMENTS
+      imported.length > MAX_APPOINTMENTS
     ) {
       showError(
         `Maximum ${MAX_APPOINTMENTS} appointments allowed.`
       );
+
       return;
     }
 
-    const normalized =
-      imported.map((row) =>
+    const normalized = imported.map(
+      (row) =>
         normalizeImportedRow(
           row,
           therapistOptions,
           date
         )
-      );
+    );
 
-    const invalidDate =
-      normalized.find(
-        (row) =>
-          !isEditableDate(
-            appointmentDate(
-              row,
-              date
-            )
-          )
-      );
+    const invalidDate = normalized.find(
+      (row) =>
+        !isEditableDate(
+          appointmentDate(row, date)
+        )
+    );
 
     if (invalidDate) {
       showError(
         "The Excel file contains an appointment with a past or invalid date."
       );
+
       return;
     }
 
-    // Retain every row returned by the extractor.
-    // Do not silently discard duplicates.
-
-    const previewDuplicates =
+    const duplicates =
       findPatientDuplicates(
         [
           ...appointments,
@@ -1584,11 +1624,9 @@ export default function CallCenterScheduleUpload({
       ...warnings,
     ];
 
-    if (
-      previewDuplicates.length
-    ) {
+    if (duplicates.length) {
       extraWarnings.push(
-        `${previewDuplicates.length} possible duplicate appointment(s). Review and correct them before adding the preview to the draft.`
+        `${duplicates.length} possible duplicate appointment(s). Review them before importing.`
       );
     }
 
@@ -1604,19 +1642,18 @@ export default function CallCenterScheduleUpload({
 
     setImportSkipped(skipped);
 
-    if (skipped > 0) {
-      setSuccess(
-        `${normalized.length} appointments extracted. ${skipped} row(s) were skipped by the Excel parser; review its warnings before proceeding.`
-      );
-    } else {
-      setSuccess(
-        `${normalized.length} appointment(s) ready for review.`
-      );
-    }
+    setSuccess(
+      `${normalized.length} appointment(s) extracted for review.` +
+      (
+        skipped
+          ? ` ${skipped} row(s) skipped by the parser.`
+          : ""
+      )
+    );
   };
 
   // ==========================================================
-  // UPDATE PREVIEW ROW
+  // UPDATE EXCEL PREVIEW
   // ==========================================================
 
   const updateImportPreviewRow = (
@@ -1631,62 +1668,53 @@ export default function CallCenterScheduleUpload({
       return;
     }
 
-    setImportPreview(
-      (previous) =>
-        sortAppointments(
-          previous.map((row) => {
-            if (
-              row.localId !== localId
-            ) {
-              return row;
-            }
+    setImportPreview((previous) =>
+      sortAppointments(
+        previous.map((row) => {
+          if (
+            row.localId !== localId
+          ) {
+            return row;
+          }
 
-            if (
-              field === "therapist" ||
-              field === "therapist_id"
-            ) {
-              const selected =
-                findRegisteredTherapist(
-                  value,
-                  therapistOptions
-                );
-
-              return {
-                ...applyTherapist(
-                  row,
-                  selected
-                ),
-                isDirty: true,
-              };
-            }
-
-            if (field === "time") {
-              const parsed =
-                parseExcelTime(
-                  value
-                );
-
-              return {
-                ...row,
-                time:
-                  parsed || value,
-                isDirty: true,
-              };
-            }
+          if (
+            field === "therapist" ||
+            field === "therapist_id"
+          ) {
+            const selected =
+              findRegisteredTherapist(
+                value,
+                therapistOptions
+              );
 
             return {
-              ...row,
-              [field]: value,
+              ...applyTherapist(
+                row,
+                selected
+              ),
               isDirty: true,
             };
-          })
-        )
+          }
+
+          if (field === "time") {
+            return {
+              ...row,
+              time:
+                parseExcelTime(value) ||
+                value,
+              isDirty: true,
+            };
+          }
+
+          return {
+            ...row,
+            [field]: value,
+            isDirty: true,
+          };
+        })
+      )
     );
   };
-
-  // ==========================================================
-  // REMOVE PREVIEW ROW
-  // ==========================================================
 
   const removeImportPreviewRow = (
     localId
@@ -1698,105 +1726,91 @@ export default function CallCenterScheduleUpload({
       return;
     }
 
-    setImportPreview(
-      (previous) =>
-        previous.filter(
-          (row) =>
-            row.localId !==
-            localId
-        )
+    setImportPreview((previous) =>
+      previous.filter(
+        (row) =>
+          row.localId !== localId
+      )
     );
   };
 
   // ==========================================================
-  // ADD EXCEL PREVIEW TO DRAFT
+  // ADD PREVIEW TO DRAFT
   // ==========================================================
 
   const addPreviewToDraft = () => {
     clearMessages();
 
-    if (
-      !isEditableDate(date)
-    ) {
+    if (!isEditableDate(date)) {
       showError(
         "Past schedules cannot be changed."
       );
+
       return;
     }
 
-    if (
-      !importPreview.length
-    ) {
+    if (!importPreview.length) {
       showError(
         "No appointments available to import."
       );
+
       return;
     }
 
-    const prepared =
-      importPreview.map(
-        (row) => {
-          const selected =
-            resolveTherapist(
-              row,
-              therapistOptions
-            );
-
-          return applyTherapist(
+    const prepared = importPreview.map(
+      (row) =>
+        applyTherapist(
+          row,
+          resolveTherapist(
             row,
-            selected
-          );
-        }
-      );
-
-    const unassigned =
-      prepared.filter(
-        (row) =>
-          !findRegisteredTherapist(
-            getTherapistId(row),
             therapistOptions
           )
-      );
+        )
+    );
 
-    if (
-      unassigned.length
-    ) {
+    const unassigned = prepared.filter(
+      (row) =>
+        !findRegisteredTherapist(
+          getTherapistId(row),
+          therapistOptions
+        )
+    );
+
+    if (unassigned.length) {
       showError(
         `${unassigned.length} appointment(s) require a registered physiotherapist.`
       );
+
       return;
     }
 
-    const invalidTime =
-      prepared.find(
-        (row) =>
-          !validTime(
-            getAppointmentTime(row)
-          )
-      );
+    const invalidTime = prepared.find(
+      (row) =>
+        !validTime(
+          getAppointmentTime(row)
+        )
+    );
 
     if (invalidTime) {
       showError(
         `${invalidTime.patient_name || "Appointment"} has an invalid time.`
       );
+
       return;
     }
 
-    const invalidDate =
-      prepared.find(
-        (row) =>
-          !isEditableDate(
-            appointmentDate(
-              row,
-              date
-            )
-          )
-      );
+    const invalidDate = prepared.find(
+      (row) =>
+        !isEditableDate(
+          appointmentDate(row, date)
+        )
+    );
 
     if (invalidDate) {
       showError(
         "The preview contains a past or invalid appointment date."
       );
+
       return;
     }
 
@@ -1809,12 +1823,11 @@ export default function CallCenterScheduleUpload({
         date
       );
 
-    if (
-      duplicates.length
-    ) {
+    if (duplicates.length) {
       showError(
-        `${duplicates.length} duplicate appointment(s) detected. Resolve them in the preview before adding to the draft.`
+        `${duplicates.length} duplicate appointment(s) detected. Resolve them before importing.`
       );
+
       return;
     }
 
@@ -1826,21 +1839,19 @@ export default function CallCenterScheduleUpload({
       showError(
         "Maximum appointment count exceeded."
       );
+
       return;
     }
 
-    setAppointments(
-      (previous) =>
-        sortAppointments([
-          ...previous,
-          ...prepared.map(
-            (row) => ({
-              ...row,
-              isNew: true,
-              isDirty: true,
-            })
-          ),
-        ])
+    setAppointments((previous) =>
+      sortAppointments([
+        ...previous,
+        ...prepared.map((row) => ({
+          ...row,
+          isNew: true,
+          isDirty: true,
+        })),
+      ])
     );
 
     setHasDraft(true);
@@ -1852,7 +1863,7 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // MANUAL APPOINTMENT — INLINE
+  // MANUAL APPOINTMENT
   // ==========================================================
 
   const addAppointment = () => {
@@ -1861,8 +1872,9 @@ export default function CallCenterScheduleUpload({
       !isEditableDate(date)
     ) {
       showError(
-        "Select a physiotherapist and a current or future date first."
+        "Select a physiotherapist and current or future date."
       );
+
       return;
     }
 
@@ -1873,6 +1885,7 @@ export default function CallCenterScheduleUpload({
       showError(
         "Maximum appointment count reached."
       );
+
       return;
     }
 
@@ -1886,33 +1899,30 @@ export default function CallCenterScheduleUpload({
       showError(
         "Select a registered physiotherapist."
       );
+
       return;
     }
 
     setEditingAppointment({
       ...emptyAppointment(),
 
-      localId:
-        newLocalId(),
+      localId: newLocalId(),
 
-      therapist:
-        selected.value,
-
-      therapist_id:
-        selected.value,
-
-      therapist_name:
-        selected.label,
+      therapist: selected.value,
+      therapist_id: selected.value,
+      therapist_name: selected.label,
 
       date,
       appointment_date: date,
 
       confirmation_status:
-        "unconfirmed",
+        "confirmed",
 
       appointment_type:
         "followup",
 
+      // Claims approval must be determined
+      // by the Claims system.
       approval_status:
         "unknown",
 
@@ -1929,12 +1939,10 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // EDIT APPOINTMENT — INLINE
+  // EDIT APPOINTMENT
   // ==========================================================
 
-  const editAppointment = (
-    row
-  ) => {
+  const editAppointment = (row) => {
     if (
       busy ||
       isPastDate(date) ||
@@ -1945,6 +1953,7 @@ export default function CallCenterScheduleUpload({
       showError(
         "Previous-day appointments are read-only."
       );
+
       return;
     }
 
@@ -1977,8 +1986,9 @@ export default function CallCenterScheduleUpload({
       )
     ) {
       showError(
-        "Past appointment schedules cannot be modified."
+        "Past appointments cannot be modified."
       );
+
       return;
     }
 
@@ -1994,6 +2004,7 @@ export default function CallCenterScheduleUpload({
       showError(
         "Select a registered physiotherapist."
       );
+
       return;
     }
 
@@ -2008,9 +2019,7 @@ export default function CallCenterScheduleUpload({
       ),
 
       approval_status:
-        getApproval(
-          editingAppointment
-        ),
+        getApproval(editingAppointment),
 
       isDirty: true,
 
@@ -2029,35 +2038,16 @@ export default function CallCenterScheduleUpload({
       return;
     }
 
-    const isSameRow = (first, second) => {
-      if (
-        first.localId &&
-        second.localId
-      ) {
-        return (
-          first.localId ===
-          second.localId
-        );
-      }
-
-      return Boolean(
-        first.id &&
-        second.id &&
-        String(first.id) ===
-          String(second.id)
-      );
-    };
-
     const otherRows =
       appointments.filter(
         (row) =>
-          !isSameRow(
+          !sameAppointment(
             row,
             updated
           )
       );
 
-    const duplicate =
+    const duplicates =
       findPatientDuplicates(
         [
           ...otherRows,
@@ -2066,63 +2056,61 @@ export default function CallCenterScheduleUpload({
         date
       );
 
-    if (
-      duplicate.length
-    ) {
+    if (duplicates.length) {
       showError(
-        "This patient already has an appointment on the selected date. Review the existing appointment before adding another."
+        "This patient already has an appointment on the selected date."
       );
+
       return;
     }
 
-    if (
-      !appointments.some(
+    const exists =
+      appointments.some(
         (row) =>
-          isSameRow(
+          sameAppointment(
             row,
             updated
           )
-      ) &&
+      );
+
+    if (
+      !exists &&
       appointments.length >=
         MAX_APPOINTMENTS
     ) {
       showError(
         "Maximum appointments reached."
       );
+
       return;
     }
 
-    setAppointments(
-      (previous) => {
-        const exists =
-          previous.some(
-            (row) =>
-              isSameRow(
-                row,
-                updated
-              )
-          );
-
-        const next = exists
-          ? previous.map(
-              (row) =>
-                isSameRow(
-                  row,
-                  updated
-                )
-                  ? updated
-                  : row
+    setAppointments((previous) => {
+      const alreadyExists =
+        previous.some(
+          (row) =>
+            sameAppointment(
+              row,
+              updated
             )
-          : [
-              ...previous,
-              updated,
-            ];
-
-        return sortAppointments(
-          next
         );
-      }
-    );
+
+      const next = alreadyExists
+        ? previous.map((row) =>
+            sameAppointment(
+              row,
+              updated
+            )
+              ? updated
+              : row
+          )
+        : [
+            ...previous,
+            updated,
+          ];
+
+      return sortAppointments(next);
+    });
 
     setHasDraft(true);
     setEditingAppointment(null);
@@ -2132,12 +2120,12 @@ export default function CallCenterScheduleUpload({
 
     setError("");
     setSuccess(
-      "Appointment added to the working draft."
+      "Appointment added to working draft."
     );
   };
 
   // ==========================================================
-  // REMOVE UNSAVED APPOINTMENT
+  // REMOVE DRAFT APPOINTMENT
   // ==========================================================
 
   const removeDraftAppointment = (
@@ -2153,13 +2141,15 @@ export default function CallCenterScheduleUpload({
       showError(
         "Past schedules cannot be modified."
       );
+
       return;
     }
 
     if (row.id) {
       showError(
-        "Saved appointments cannot be removed from the draft. Update their status instead."
+        "Saved appointments cannot be removed. Update their status instead."
       );
+
       return;
     }
 
@@ -2171,28 +2161,27 @@ export default function CallCenterScheduleUpload({
       return;
     }
 
-    setAppointments(
-      (previous) =>
-        previous.filter(
-          (item) =>
-            item.localId !==
-            row.localId
-        )
+    setAppointments((previous) =>
+      previous.filter(
+        (item) =>
+          item.localId !==
+          row.localId
+      )
     );
 
     setHasDraft(true);
+
     setSuccess(
       "Draft appointment removed."
     );
   };
 
   // ==========================================================
-  // PATIENT SEARCH — INLINE
+  // PATIENT SEARCH
   // ==========================================================
 
   const findPatient = async () => {
-    const query =
-      patientQuery.trim();
+    const query = patientQuery.trim();
 
     if (
       query.length < 2 ||
@@ -2205,6 +2194,7 @@ export default function CallCenterScheduleUpload({
       ++patientRequestRef.current;
 
     setSearchingPatients(true);
+    setError("");
 
     try {
       const response = await api.get(
@@ -2221,9 +2211,16 @@ export default function CallCenterScheduleUpload({
         requestId ===
         patientRequestRef.current
       ) {
+        const matches =
+          response.data?.matches ??
+          extractRows(
+            response.data
+          );
+
         setPatientMatches(
-          response.data?.matches ||
-          []
+          Array.isArray(matches)
+            ? matches
+            : []
         );
       }
     } catch (err) {
@@ -2245,34 +2242,45 @@ export default function CallCenterScheduleUpload({
     }
   };
 
-  const selectPatient = (
-    patient
-  ) => {
+  const selectPatient = (patient) => {
     if (!editingAppointment) {
       return;
     }
 
-    setEditingAppointment(
-      (previous) =>
-        previous
-          ? {
-              ...previous,
+    const patientId =
+      patient?.id ??
+      patient?.pk ??
+      null;
 
-              patient_id:
-                patient.id,
+    if (!hasValue(patientId)) {
+      showError(
+        "The selected patient does not have a valid database ID."
+      );
 
-              patient_name:
-                patient.name,
+      return;
+    }
 
-              file_number:
-                patient.file_number ||
-                patient.patient_id ||
-                "",
+    setEditingAppointment((previous) =>
+      previous
+        ? {
+            ...previous,
 
-              matched: true,
-              isDirty: true,
-            }
-          : previous
+            patient_id: patientId,
+
+            patient_name:
+              patient.name ||
+              patient.patient_name ||
+              "",
+
+            file_number:
+              patient.file_number ||
+              patient.patient_id ||
+              "",
+
+            matched: true,
+            isDirty: true,
+          }
+        : previous
     );
 
     setPatientMatches([]);
@@ -2281,153 +2289,330 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // HISTORY
+  // HISTORY API — SINGLE DAY
   // ==========================================================
 
-  const loadHistory = async (
-    options = {}
-  ) => {
-    const selectedDate =
-      options.date || date;
-
-    if (
-      !validDate(
-        selectedDate
-      )
-    ) {
-      return {
-        success: false,
-        message:
-          "Select a valid history date.",
-      };
-    }
-
-    const requestId =
-      ++historyRequestRef.current;
-
-    setLoadingHistory(true);
-
-    if (!options.silent) {
-      setError("");
-    }
-
-    try {
-      // Query every therapist for the selected date.
-      // The all-physio history filter is therefore
-      // not restricted by the Create Schedule therapist.
-
+  const fetchHistoryDay = useCallback(
+    async (day) => {
       const response = await api.get(
         `${API}list/`,
         {
           params: {
-            date: selectedDate,
+            date: day,
           },
           timeout: 30000,
         }
       );
 
-      if (
-        requestId !==
-        historyRequestRef.current
-      ) {
+      return extractRows(
+        response.data
+      ).map((row) => {
+        const normalized =
+          normalizeSavedRow(row);
+
+        return {
+          ...normalized,
+
+          date: appointmentDate(
+            normalized,
+            day
+          ),
+
+          appointment_date:
+            appointmentDate(
+              normalized,
+              day
+            ),
+        };
+      });
+    },
+    []
+  );
+
+  // ==========================================================
+  // LOAD DAY OR COMPLETE MONTH HISTORY
+  // ==========================================================
+
+  const loadHistory = useCallback(
+    async (options = {}) => {
+      const mode =
+        options.mode ||
+        historyMode;
+
+      const targetDate =
+        options.date ||
+        historyDate;
+
+      const targetMonth =
+        options.month ||
+        historyMonth ||
+        targetDate.slice(0, 7);
+
+      const dates =
+        mode === "month"
+          ? getMonthDates(
+              targetMonth
+            )
+          : validDate(
+              targetDate
+            )
+          ? [targetDate]
+          : [];
+
+      if (!dates.length) {
         return {
           success: false,
           message:
-            "Request superseded.",
+            "Select a valid history date or month.",
         };
       }
 
-      const rows =
-        extractRows(
-          response.data
-        ).map(normalizeSavedRow);
+      const requestId =
+        ++historyRequestRef.current;
 
-      setHistoryAppointments(rows);
+      setLoadingHistory(true);
 
-      return {
-        success: true,
-        count: rows.length,
-      };
-    } catch (err) {
-      if (
-        requestId ===
-        historyRequestRef.current
-      ) {
-        setError(
-          `Unable to refresh history: ${errorMessage(err)}`
-        );
+      if (!options.silent) {
+        setError("");
       }
 
-      return {
-        success: false,
-        message:
-          errorMessage(err),
-      };
-    } finally {
-      if (
-        requestId ===
-        historyRequestRef.current
-      ) {
-        setLoadingHistory(false);
-      }
-    }
-  };
+      setHistoryAppointments([]);
 
-  // ==========================================================
-  // ALERTS
-  // ==========================================================
+      try {
+        const combined = [];
 
-  const loadAlerts = async () => {
-    setLoadingAlerts(true);
-    setAlertsError("");
+        // The existing backend supports
+        // fetching history by date.
+        //
+        // Retrieve all days in batches
+        // for a complete monthly view.
 
-    try {
-      const response = await api.get(
-        `${API}alerts/`,
-        {
-          timeout: 30000,
+        for (
+          let i = 0;
+          i < dates.length;
+          i += MONTH_REQUEST_BATCH_SIZE
+        ) {
+          const batch =
+            dates.slice(
+              i,
+              i + MONTH_REQUEST_BATCH_SIZE
+            );
+
+          const results =
+            await Promise.all(
+              batch.map(
+                fetchHistoryDay
+              )
+            );
+
+          if (
+            requestId !==
+            historyRequestRef.current
+          ) {
+            return {
+              success: false,
+              message:
+                "Request superseded.",
+            };
+          }
+
+          results.forEach(
+            (rows) => {
+              combined.push(
+                ...rows
+              );
+            }
+          );
         }
-      );
 
-      const rows =
-        response.data?.alerts ||
-        extractRows(
-          response.data
+        if (
+          requestId !==
+          historyRequestRef.current
+        ) {
+          return {
+            success: false,
+            message:
+              "Request superseded.",
+          };
+        }
+
+        const unique =
+          deduplicateHistory(
+            combined
+          );
+
+        setHistoryAppointments(
+          unique
         );
 
-      setAlerts(
-        (
-          Array.isArray(rows)
-            ? rows
-            : []
-        ).map(
-          normalizeSavedRow
-        )
+        return {
+          success: true,
+          count: unique.length,
+        };
+      } catch (err) {
+        if (
+          requestId ===
+          historyRequestRef.current
+        ) {
+          setHistoryAppointments([]);
+
+          setError(
+            `Unable to load complete history: ${errorMessage(err)}`
+          );
+        }
+
+        return {
+          success: false,
+          message: errorMessage(err),
+        };
+      } finally {
+        if (
+          requestId ===
+          historyRequestRef.current
+        ) {
+          setLoadingHistory(false);
+        }
+      }
+    },
+    [
+      historyMode,
+      historyDate,
+      historyMonth,
+      fetchHistoryDay,
+    ]
+  );
+
+  // ==========================================================
+  // HISTORY FILTER HANDLERS
+  // ==========================================================
+
+  const changeHistoryMode = (mode) => {
+    if (
+      mode !== "day" &&
+      mode !== "month"
+    ) {
+      return;
+    }
+
+    setHistoryMode(mode);
+    setHistoryFilter("all");
+
+    if (
+      mode === "month" &&
+      !validMonth(historyMonth)
+    ) {
+      setHistoryMonth(
+        historyDate.slice(0, 7) ||
+        getHospitalToday().slice(0, 7)
       );
-
-      return {
-        success: true,
-      };
-    } catch (err) {
-      setAlertsError(
-        errorMessage(err)
-      );
-
-      // Do not erase existing alerts
-      // because a refresh failed.
-
-      return {
-        success: false,
-        message:
-          errorMessage(err),
-      };
-    } finally {
-      setLoadingAlerts(false);
     }
   };
 
+  const changeHistoryDate = (
+    value
+  ) => {
+    setHistoryDate(value);
+    setHistoryFilter("all");
+  };
+
+  const changeHistoryMonth = (
+    value
+  ) => {
+    setHistoryMonth(value);
+    setHistoryFilter("all");
+  };
+
   // ==========================================================
-  // SAVE APPOINTMENTS TO DJANGO
+  // AUTOMATIC HISTORY LOADING
+  // ==========================================================
+
+  useEffect(() => {
+    if (
+      activeTab !== "history"
+    ) {
+      return;
+    }
+
+    loadHistory();
+
+    return () => {
+      historyRequestRef.current += 1;
+    };
+  }, [
+    activeTab,
+    loadHistory,
+  ]);
+
+  // ==========================================================
+  // ALERTS API
+  // ==========================================================
+
+  const loadAlerts = useCallback(
+    async () => {
+      setLoadingAlerts(true);
+      setAlertsError("");
+
+      try {
+        const response = await api.get(
+          `${API}alerts/`,
+          {
+            timeout: 30000,
+          }
+        );
+
+        const rows =
+          response.data?.alerts ||
+          extractRows(
+            response.data
+          );
+
+        setAlerts(
+          (
+            Array.isArray(rows)
+              ? rows
+              : []
+          ).map(
+            normalizeSavedRow
+          )
+        );
+
+        return {
+          success: true,
+        };
+      } catch (err) {
+        setAlertsError(
+          errorMessage(err)
+        );
+
+        return {
+          success: false,
+          message:
+            errorMessage(err),
+        };
+      } finally {
+        setLoadingAlerts(false);
+      }
+    },
+    []
+  );
+
+  // ==========================================================
+  // LOAD ALERTS WHEN TAB OPENS
+  // ==========================================================
+
+  useEffect(() => {
+    if (
+      activeTab === "alerts"
+    ) {
+      loadAlerts();
+    }
+  }, [
+    activeTab,
+    loadAlerts,
+  ]);
+
+  // ==========================================================
+  // SAVE APPOINTMENTS
   // ==========================================================
 
   const saveAppointments = async ({
@@ -2443,11 +2628,9 @@ export default function CallCenterScheduleUpload({
       };
     }
 
-    if (
-      !isEditableDate(date)
-    ) {
+    if (!isEditableDate(date)) {
       const message =
-        "Past schedules cannot be saved or modified.";
+        "Past schedules cannot be saved.";
 
       showError(message);
 
@@ -2457,11 +2640,9 @@ export default function CallCenterScheduleUpload({
       };
     }
 
-    if (
-      hasPastAppointments
-    ) {
+    if (hasPastAppointments) {
       const message =
-        "One or more appointments belong to previous dates and cannot be modified.";
+        "One or more appointments belong to past dates.";
 
       showError(message);
 
@@ -2482,7 +2663,7 @@ export default function CallCenterScheduleUpload({
       return {
         success: false,
         message:
-          "There are no changes to save.",
+          "No changes to save.",
       };
     }
 
@@ -2490,7 +2671,7 @@ export default function CallCenterScheduleUpload({
       duplicateAppointments.length
     ) {
       const message =
-        `${duplicateAppointments.length} duplicate patient appointment(s) detected. Resolve them before saving.`;
+        `${duplicateAppointments.length} duplicate appointment(s) detected.`;
 
       showError(message);
 
@@ -2501,16 +2682,15 @@ export default function CallCenterScheduleUpload({
     }
 
     for (const row of changed) {
-      const rowDate = appointmentDate(
-        row,
-        date
-      );
+      const rowDate =
+        appointmentDate(
+          row,
+          date
+        );
 
-      if (
-        !isEditableDate(rowDate)
-      ) {
+      if (!isEditableDate(rowDate)) {
         const message =
-          `${row.patient_name || "Appointment"} has a past or invalid date.`;
+          `${row.patient_name || "Appointment"} has an invalid or past date.`;
 
         showError(message);
 
@@ -2579,20 +2759,18 @@ export default function CallCenterScheduleUpload({
 
     try {
       for (const row of changed) {
-        // Recheck immediately before each write,
-        // including changes that cross midnight.
-
-        const rowDate = appointmentDate(
-          row,
-          date
-        );
+        const rowDate =
+          appointmentDate(
+            row,
+            date
+          );
 
         if (
           !isEditableDate(date) ||
           !isEditableDate(rowDate)
         ) {
           throw new Error(
-            "The appointment date has become historical. Further updates have been stopped."
+            "The appointment date has become historical."
           );
         }
 
@@ -2604,7 +2782,7 @@ export default function CallCenterScheduleUpload({
 
         if (!selected) {
           throw new Error(
-            "A registered physiotherapist could not be resolved."
+            "Registered physiotherapist not found."
           );
         }
 
@@ -2624,12 +2802,8 @@ export default function CallCenterScheduleUpload({
         payload.therapist =
           selected.value;
 
-        // Claims Approval belongs to the Claims
-        // system and must not be overwritten by
-        // scheduling requests.
-        //
-        // This removes approval fields from both
-        // POST and PATCH payloads.
+        // Claims approval is managed
+        // by the Claims system only.
 
         delete payload.approval_status;
         delete payload.claim_approval_status;
@@ -2657,6 +2831,7 @@ export default function CallCenterScheduleUpload({
         saved.push({
           localId: row.localId,
           originalId: row.id,
+
           id:
             response.data?.appointment?.id ??
             response.data?.id ??
@@ -2666,6 +2841,33 @@ export default function CallCenterScheduleUpload({
         completed += 1;
       }
 
+      setAppointments((previous) =>
+        previous.map((row) => {
+          const match = saved.find(
+            (item) =>
+              (
+                item.localId &&
+                item.localId ===
+                  row.localId
+              ) ||
+              (
+                item.originalId &&
+                String(item.originalId) ===
+                  String(row.id)
+              )
+          );
+
+          return match
+            ? {
+                ...row,
+                id: match.id,
+                isNew: false,
+                isDirty: false,
+              }
+            : row;
+        })
+      );
+
       setHasDraft(false);
       setLoadedSchedule(true);
 
@@ -2673,49 +2875,37 @@ export default function CallCenterScheduleUpload({
         `${completed} appointment(s) saved successfully.`
       );
 
-      // Do not reload saved records into the
-      // working draft here. The completion
-      // callback handles history refresh
-      // and clearing.
-
       return {
         success: true,
         savedCount: completed,
       };
     } catch (err) {
-      // A partial save must never cause the
-      // already-saved records to be POSTed again.
-
       if (saved.length) {
-        setAppointments(
-          (previous) =>
-            previous.map((row) => {
-              const match =
-                saved.find(
-                  (item) =>
-                    (
-                      item.localId &&
-                      row.localId ===
-                        item.localId
-                    ) ||
-                    (
-                      item.originalId &&
-                      row.id ===
-                        item.originalId
-                    )
-                );
+        setAppointments((previous) =>
+          previous.map((row) => {
+            const match = saved.find(
+              (item) =>
+                (
+                  item.localId &&
+                  item.localId ===
+                    row.localId
+                ) ||
+                (
+                  item.originalId &&
+                  String(item.originalId) ===
+                    String(row.id)
+                )
+            );
 
-              if (!match) {
-                return row;
-              }
-
-              return {
-                ...row,
-                id: match.id,
-                isNew: false,
-                isDirty: false,
-              };
-            })
+            return match
+              ? {
+                  ...row,
+                  id: match.id,
+                  isNew: false,
+                  isDirty: false,
+                }
+              : row;
+          })
         );
       }
 
@@ -2724,7 +2914,7 @@ export default function CallCenterScheduleUpload({
       const message =
         `${completed}/${changed.length} appointment(s) saved. ` +
         errorMessage(err) +
-        " Review Scheduled History before retrying.";
+        " Review history before retrying.";
 
       showError(message);
 
@@ -2736,12 +2926,13 @@ export default function CallCenterScheduleUpload({
       };
     } finally {
       setSaving(false);
+
       saveInProgressRef.current = false;
     }
   };
 
   // ==========================================================
-  // SUCCESSFUL SAVE COMPLETION
+  // SAVE SUCCESS CALLBACK
   // ==========================================================
 
   const handleSaveSuccess = async (
@@ -2756,9 +2947,6 @@ export default function CallCenterScheduleUpload({
       };
     }
 
-    // Invalidate any old Create Schedule
-    // loading request before clearing.
-
     requestRef.current += 1;
 
     setAppointments([]);
@@ -2767,6 +2955,7 @@ export default function CallCenterScheduleUpload({
     setImportSkipped(0);
 
     setEditingAppointment(null);
+
     setPatientMatches([]);
     setPatientQuery("");
 
@@ -2779,10 +2968,8 @@ export default function CallCenterScheduleUpload({
       `${result?.savedCount ?? "All"} appointment(s) saved. The working table has been cleared.`
     );
 
-    // History refresh is separate from saving.
-    // A history refresh failure must not turn a
-    // successful Django write into a failed save
-    // that could be retried accidentally.
+    // Refresh independently so history failure
+    // does not invalidate successful writes.
 
     const historyResult =
       await loadHistory({
@@ -2793,14 +2980,9 @@ export default function CallCenterScheduleUpload({
       historyResult?.success === false
     ) {
       setError(
-        "Appointments were saved successfully, but Scheduled History could not be refreshed. Use Refresh History to reload them."
+        "Appointments saved, but history could not be refreshed."
       );
     }
-
-    // Alerts are supplementary and may fail
-    // independently of the save operation.
-
-    await loadAlerts();
 
     return {
       success: true,
@@ -2808,35 +2990,13 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // AUTOMATIC HISTORY LOAD
+  // APPOINTMENT DETAILS
   // ==========================================================
 
-  useEffect(() => {
-    if (
-      activeTab !== "history"
-    ) {
-      return;
-    }
+  const openDetails = async (row) => {
+    const requestId =
+      ++detailsRequestRef.current;
 
-    if (
-      validDate(date)
-    ) {
-      loadHistory();
-    }
-
-    loadAlerts();
-  }, [
-    activeTab,
-    date,
-  ]);
-
-  // ==========================================================
-  // DETAILS
-  // ==========================================================
-
-  const openDetails = async (
-    row
-  ) => {
     setDetailsAppointment(row);
 
     setDetailsHistory(
@@ -2845,25 +3005,35 @@ export default function CallCenterScheduleUpload({
       )
     );
 
-    if (!row.id) {
-      return;
-    }
+    if (!row.id) return;
 
     try {
       const response = await api.get(
         `${API}appointments/${row.id}/history/`
       );
 
-      setDetailsHistory(
-        normalizeHistory(
-          response.data?.history ||
-          response.data?.events ||
-          []
-        )
-      );
+      if (
+        requestId ===
+        detailsRequestRef.current
+      ) {
+        setDetailsHistory(
+          normalizeHistory(
+            response.data?.history ||
+            response.data?.events ||
+            []
+          )
+        );
+      }
     } catch {
-      // Retain history provided with row.
+      // Keep row-provided audit history.
     }
+  };
+
+  const closeDetails = () => {
+    detailsRequestRef.current += 1;
+
+    setDetailsAppointment(null);
+    setDetailsHistory([]);
   };
 
   // ==========================================================
@@ -2875,8 +3045,9 @@ export default function CallCenterScheduleUpload({
   ) => {
     if (!row.id) {
       showError(
-        "Save the appointment first."
+        "Save appointment first."
       );
+
       return;
     }
 
@@ -2888,6 +3059,7 @@ export default function CallCenterScheduleUpload({
       showError(
         "Previous-day appointments are read-only."
       );
+
       return;
     }
 
@@ -2914,7 +3086,7 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // NAVIGATION
+  // TAB NAVIGATION
   // ==========================================================
 
   const handleTabChange = (
@@ -2958,41 +3130,38 @@ export default function CallCenterScheduleUpload({
         </span>
       </header>
 
-      {/* NAVIGATION */}
+      {/* THREE TABS */}
 
-      <div className="csu-tabs">
-        <button
-          type="button"
-          className={
-            activeTab === "create"
-              ? "active"
-              : ""
-          }
-          onClick={() =>
-            handleTabChange(
-              "create"
-            )
-          }
-        >
-          Create Schedule
-        </button>
-
-        <button
-          type="button"
-          className={
-            activeTab === "history"
-              ? "active"
-              : ""
-          }
-          onClick={() =>
-            handleTabChange(
-              "history"
-            )
-          }
-        >
-          Scheduled History
-        </button>
-      </div>
+      <nav
+        className="csu-tabs"
+        aria-label="Scheduling sections"
+      >
+        {[
+          ["create", "Create Schedule"],
+          ["history", "Scheduled History"],
+          ["alerts", "Call Center Alerts"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            className={
+              activeTab === value
+                ? "active"
+                : ""
+            }
+            aria-current={
+              activeTab === value
+                ? "page"
+                : undefined
+            }
+            onClick={() =>
+              handleTabChange(value)
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
 
       {/* MESSAGES */}
 
@@ -3006,79 +3175,54 @@ export default function CallCenterScheduleUpload({
       )}
 
       {success && (
-        <div className="csu-alert success">
+        <div
+          className="csu-alert success"
+          role="status"
+        >
           {success}
         </div>
       )}
 
-      {/* SCHEDULE FILTERS */}
-
-      <ScheduleFilters
-        activeTab={activeTab}
-        therapist={therapist}
-        therapistOptions={
-          therapistOptions
-        }
-        loadingTherapists={
-          loadingTherapists
-        }
-        onTherapistChange={(value) =>
-          changeContext(
-            "therapist",
-            value
-          )
-        }
-        date={date}
-        onDateChange={(value) =>
-          changeContext(
-            "date",
-            value
-          )
-        }
-        busy={busy}
-        loading={loading}
-        loadingHistory={
-          loadingHistory
-        }
-        onLoadSchedule={
-          loadSchedule
-        }
-        onLoadHistory={
-          loadHistory
-        }
-        autoLoadSchedule={true}
-        hasDraft={hasDraft}
-        historyFilter={
-          historyFilter
-        }
-        onHistoryFilterChange={
-          setHistoryFilter
-        }
-        historyQuery={
-          historyQuery
-        }
-        onHistoryQueryChange={
-          setHistoryQuery
-        }
-        historyMonth={
-          historyMonth
-        }
-        onHistoryMonthChange={
-          setHistoryMonth
-        }
-        historyTherapist={
-          historyTherapist
-        }
-        onHistoryTherapistChange={
-          setHistoryTherapist
-        }
-      />
-
-      {/* CREATE SCHEDULE */}
+      {/* =====================================================
+          CREATE SCHEDULE TAB
+      ===================================================== */}
 
       {activeTab === "create" && (
         <>
-          {/* PAST DATE WARNING */}
+          {/* CREATE SCHEDULE FILTERS ONLY */}
+
+          <ScheduleFilters
+            activeTab="create"
+            therapist={therapist}
+            therapistOptions={
+              therapistOptions
+            }
+            loadingTherapists={
+              loadingTherapists
+            }
+            onTherapistChange={(value) =>
+              changeContext(
+                "therapist",
+                value
+              )
+            }
+            date={date}
+            onDateChange={(value) =>
+              changeContext(
+                "date",
+                value
+              )
+            }
+            busy={busy}
+            loading={loading}
+            onLoadSchedule={
+              loadSchedule
+            }
+            autoLoadSchedule={true}
+            hasDraft={hasDraft}
+          />
+
+          {/* HISTORICAL LOCK */}
 
           {scheduleLocked && (
             <div className="csu-lock-banner">
@@ -3092,8 +3236,8 @@ export default function CallCenterScheduleUpload({
                 <p>
                   Previous-day schedules
                   cannot be modified.
-                  Review historical appointments
-                  in Scheduled History.
+                  Review them in
+                  Scheduled History.
                 </p>
               </div>
             </div>
@@ -3116,9 +3260,7 @@ export default function CallCenterScheduleUpload({
               selectedSheet={
                 selectedSheet
               }
-              sheetRows={
-                sheetRows
-              }
+              sheetRows={sheetRows}
               headerRowIndex={
                 headerRowIndex
               }
@@ -3195,7 +3337,7 @@ export default function CallCenterScheduleUpload({
             }
           />
 
-          {/* INLINE MANUAL ENTRY */}
+          {/* MANUAL APPOINTMENT ENTRY */}
 
           <ManualAppointmentEntry
             row={
@@ -3221,19 +3363,23 @@ export default function CallCenterScheduleUpload({
               saveEditorToDraft
             }
             onCancel={() => {
+              patientRequestRef.current += 1;
+
               setEditingAppointment(null);
               setPatientQuery("");
               setPatientMatches([]);
+              setSearchingPatients(false);
               setError("");
             }}
             patientQuery={
               patientQuery
             }
-            onPatientQueryChange={(
-              value
-            ) => {
+            onPatientQueryChange={(value) => {
+              patientRequestRef.current += 1;
+
               setPatientQuery(value);
               setPatientMatches([]);
+              setSearchingPatients(false);
             }}
             patientMatches={
               patientMatches
@@ -3249,7 +3395,7 @@ export default function CallCenterScheduleUpload({
             }
           />
 
-          {/* APPOINTMENT TABLE */}
+          {/* APPOINTMENTS TABLE */}
 
           <ScheduleTable
             appointments={
@@ -3283,86 +3429,299 @@ export default function CallCenterScheduleUpload({
               handleSaveSuccess
             }
             onViewHistory={() => {
-              setActiveTab(
-                "history"
-              );
+              setActiveTab("history");
               clearMessages();
             }}
           />
         </>
       )}
 
-      {/* SCHEDULED HISTORY */}
+      {/* =====================================================
+          SCHEDULED HISTORY TAB
+      ===================================================== */}
 
       {activeTab === "history" && (
-        <>
-          {historyMonth && (
-            <div className="csu-history-scope">
-              <strong>
-                Month filter: {historyMonth}
-              </strong>
+        <ScheduleHistory
+          historyAppointments={
+            historyAppointments
+          }
+          filteredHistory={
+            historyAppointments
+          }
+          historyMode={
+            historyMode
+          }
+          onHistoryModeChange={
+            changeHistoryMode
+          }
+          historyDate={
+            historyDate
+          }
+          onHistoryDateChange={
+            changeHistoryDate
+          }
+          historyMonth={
+            historyMonth
+          }
+          onHistoryMonthChange={
+            changeHistoryMonth
+          }
+          historyTherapist={
+            historyTherapist
+          }
+          setHistoryTherapist={
+            setHistoryTherapist
+          }
+          therapistOptions={
+            therapistOptions
+          }
+          historyFilter={
+            historyFilter
+          }
+          setHistoryFilter={
+            setHistoryFilter
+          }
+          historyQuery={
+            historyQuery
+          }
+          setHistoryQuery={
+            setHistoryQuery
+          }
+          statusOptions={
+            STATUS_OPTIONS
+          }
+          loadingHistory={
+            loadingHistory
+          }
+          loadHistory={() =>
+            loadHistory()
+          }
+          openDetails={
+            openDetails
+          }
+          onOpenFile={
+            openPatientFile
+          }
+          onOpenPatientFile={
+            openPatientFile
+          }
+          StatusBadge={
+            StatusBadge
+          }
+          TypeBadge={
+            TypeBadge
+          }
+        />
+      )}
 
+      {/* =====================================================
+          THIRD TAB — CALL CENTER ALERTS
+      ===================================================== */}
+
+      {activeTab === "alerts" && (
+        <section className="csu-panel csu-alerts-panel">
+          <div className="csu-section-header">
+            <div>
+              <h3>
+                Internal Call Center Alerts
+              </h3>
+
+              <p className="csu-note">
+                Appointments requiring
+                follow-up calls.
+                No SMS or WhatsApp
+                messages are sent.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="csu-secondary"
+              disabled={loadingAlerts}
+              onClick={loadAlerts}
+            >
+              {loadingAlerts
+                ? "Refreshing..."
+                : "Refresh Alerts"}
+            </button>
+          </div>
+
+          {/* ALERT SUMMARY */}
+
+          <div className="csu-alert-summary">
+            <div>
               <span>
-                Showing matching records
-                returned for the selected
-                schedule date. Full-month
-                results require a date-range
-                history API.
+                Pending Follow-ups
               </span>
+
+              <strong>
+                {followUpAlerts.length}
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                Unconfirmed
+              </span>
+
+              <strong>
+                {
+                  followUpAlerts.filter(
+                    (row) =>
+                      row.confirmation_status ===
+                      "unconfirmed"
+                  ).length
+                }
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                Other Call Alerts
+              </span>
+
+              <strong>
+                {
+                  followUpAlerts.filter(
+                    (row) =>
+                      row.confirmation_status !==
+                      "unconfirmed"
+                  ).length
+                }
+              </strong>
+            </div>
+          </div>
+
+          {alertsError && (
+            <div className="csu-alert error">
+              {alertsError}
             </div>
           )}
 
-          <ScheduleHistory
-            filteredHistory={
-              filteredHistory
-            }
-            historyFilter={
-              historyFilter
-            }
-            setHistoryFilter={
-              setHistoryFilter
-            }
-            historyQuery={
-              historyQuery
-            }
-            setHistoryQuery={
-              setHistoryQuery
-            }
-            statusOptions={
-              statusOptions
-            }
-            loadingHistory={
-              loadingHistory
-            }
-            openDetails={
-              openDetails
-            }
-            StatusBadge={
-              StatusBadge
-            }
-            TypeBadge={
-              TypeBadge
-            }
-            loadingAlerts={
-              loadingAlerts
-            }
-            loadAlerts={
-              loadAlerts
-            }
-            alertsError={
-              alertsError
-            }
-            followUpAlerts={
-              followUpAlerts
-            }
-            recordCallAttempt={
-              recordCallAttempt
-            }
-          />
-        </>
+          {followUpAlerts.length === 0 ? (
+            <div className="csu-empty-state">
+              {loadingAlerts
+                ? "Loading alerts..."
+                : alertsError
+                ? "Alerts could not be loaded."
+                : "No pending follow-up alerts."}
+            </div>
+          ) : (
+            <div className="csu-alert-list">
+              {followUpAlerts.map((row) => {
+                const rowDate =
+                  appointmentDate(row);
+
+                const locked =
+                  isPastDate(rowDate);
+
+                return (
+                  <div
+                    key={
+                      row.id ||
+                      row.localId
+                    }
+                    className="csu-alert-item"
+                  >
+                    <div className="csu-alert-patient">
+                      <span className="csu-alert-avatar">
+                        {String(
+                          row.patient_name || "?"
+                        )
+                          .charAt(0)
+                          .toUpperCase()}
+                      </span>
+
+                      <div>
+                        <strong>
+                          {row.patient_name ||
+                            "Unknown Patient"}
+                        </strong>
+
+                        <p>
+                          File:{" "}
+                          {row.file_number ||
+                            "—"}
+                        </p>
+
+                        <p>
+                          {formatDisplayDate(
+                            rowDate
+                          )}
+                          {" · "}
+                          {getAppointmentTime(row) ||
+                            "—"}
+                        </p>
+
+                        <p>
+                          {row.therapist_name ||
+                            getTherapistId(row) ||
+                            "Not assigned"}
+                        </p>
+
+                        <StatusBadge
+                          status={
+                            row.confirmation_status
+                          }
+                        />
+
+                        <small>
+                          Call attempts:{" "}
+                          {row.second_call_attempts ??
+                            row.call_attempts ??
+                            0}
+                        </small>
+                      </div>
+                    </div>
+
+                    <div className="csu-alert-actions">
+                      <button
+                        type="button"
+                        className="csu-secondary"
+                        onClick={() =>
+                          openDetails(row)
+                        }
+                      >
+                        View History
+                      </button>
+
+                      <button
+                        type="button"
+                        className="csu-secondary"
+                        onClick={() =>
+                          openPatientFile(row)
+                        }
+                      >
+                        Open Patient File
+                      </button>
+
+                      <button
+                        type="button"
+                        className="csu-primary"
+                        disabled={
+                          locked ||
+                          loadingAlerts
+                        }
+                        onClick={() =>
+                          recordCallAttempt(row)
+                        }
+                      >
+                        {locked
+                          ? "Read Only"
+                          : "Record Call Attempt"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       )}
 
-      {/* APPOINTMENT DETAILS */}
+      {/* =====================================================
+          APPOINTMENT DETAILS MODAL
+      ===================================================== */}
 
       {detailsAppointment && (
         <div className="csu-modal-backdrop">
@@ -3380,15 +3739,14 @@ export default function CallCenterScheduleUpload({
               <button
                 type="button"
                 className="csu-close"
-                onClick={() =>
-                  setDetailsAppointment(
-                    null
-                  )
-                }
+                aria-label="Close details"
+                onClick={closeDetails}
               >
                 ×
               </button>
             </div>
+
+            {/* PATIENT DETAILS */}
 
             <div className="csu-detail-grid">
               {[
@@ -3405,7 +3763,13 @@ export default function CallCenterScheduleUpload({
                 [
                   "Therapist",
                   detailsAppointment.therapist_name ||
-                    therapistName ||
+                    therapistOptions.find(
+                      (item) =>
+                        normalizeId(item.value) ===
+                        getTherapistId(
+                          detailsAppointment
+                        )
+                    )?.label ||
                     "—",
                 ],
                 [
@@ -3443,23 +3807,20 @@ export default function CallCenterScheduleUpload({
                   detailsAppointment.notes ||
                     "—",
                 ],
-              ].map(
-                ([
-                  detailLabel,
-                  value,
-                ]) => (
-                  <div key={detailLabel}>
-                    <small>
-                      {detailLabel}
-                    </small>
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <small>
+                    {label}
+                  </small>
 
-                    <strong>
-                      {value}
-                    </strong>
-                  </div>
-                )
-              )}
+                  <strong>
+                    {value}
+                  </strong>
+                </div>
+              ))}
             </div>
+
+            {/* CHANGE HISTORY */}
 
             <h4>
               Change History
@@ -3476,12 +3837,12 @@ export default function CallCenterScheduleUpload({
                     <div
                       className="csu-timeline-item"
                       key={
-                        event.id ||
-                        index
+                        event.id || index
                       }
                     >
                       <strong>
-                        {event.action}
+                        {event.action ||
+                          "Update"}
                       </strong>
 
                       <p>
@@ -3505,7 +3866,8 @@ export default function CallCenterScheduleUpload({
                       )}
 
                       <small>
-                        {event.changed_by}
+                        {event.changed_by ||
+                          "System"}
                         {" · "}
                         {formatDateTime(
                           event.created_at
@@ -3516,6 +3878,8 @@ export default function CallCenterScheduleUpload({
                 )}
               </div>
             )}
+
+            {/* MODAL ACTIONS */}
 
             <div className="csu-actions">
               {activeTab === "create" &&
@@ -3535,9 +3899,7 @@ export default function CallCenterScheduleUpload({
                         detailsAppointment
                       );
 
-                      setDetailsAppointment(
-                        null
-                      );
+                      closeDetails();
                     }}
                   >
                     Edit Appointment
@@ -3546,12 +3908,20 @@ export default function CallCenterScheduleUpload({
 
               <button
                 type="button"
-                className="csu-secondary"
+                className="csu-primary"
                 onClick={() =>
-                  setDetailsAppointment(
-                    null
+                  openPatientFile(
+                    detailsAppointment
                   )
                 }
+              >
+                Open Patient File
+              </button>
+
+              <button
+                type="button"
+                className="csu-secondary"
+                onClick={closeDetails}
               >
                 Close
               </button>
@@ -3591,7 +3961,9 @@ const styles = `
   cursor: not-allowed;
 }
 
-/* HERO */
+/* ==========================================================
+   HERO
+========================================================== */
 
 .csu-hero {
   display: flex;
@@ -3633,16 +4005,21 @@ const styles = `
   font-size: 43px;
 }
 
-/* TABS */
+/* ==========================================================
+   TABS
+========================================================== */
 
 .csu-tabs {
   display: flex;
   gap: 8px;
   margin-bottom: 18px;
   border-bottom: 1px solid #e2e8f0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .csu-tabs button {
+  flex-shrink: 0;
   padding: 14px 20px;
   background: transparent;
   border: 0;
@@ -3650,6 +4027,7 @@ const styles = `
   color: #64748b;
   font-size: 13px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .csu-tabs button.active {
@@ -3657,7 +4035,9 @@ const styles = `
   border-bottom-color: #2457d8;
 }
 
-/* MESSAGES */
+/* ==========================================================
+   MESSAGES
+========================================================== */
 
 .csu-alert {
   padding: 14px 16px;
@@ -3679,7 +4059,9 @@ const styles = `
   color: #166534;
 }
 
-/* GENERAL PANELS */
+/* ==========================================================
+   GENERAL PANELS
+========================================================== */
 
 .csu-panel {
   padding: 22px;
@@ -3737,10 +4119,6 @@ const styles = `
   flex: 1 1 210px;
 }
 
-/* Only style legacy CSU fields.
-   Do not override custom filters,
-   calendar or inline form controls. */
-
 .csu-root .csu-panel input,
 .csu-root .csu-panel select,
 .csu-root .csu-panel textarea {
@@ -3758,7 +4136,9 @@ const styles = `
   resize: vertical;
 }
 
-/* BUTTONS */
+/* ==========================================================
+   BUTTONS
+========================================================== */
 
 .csu-primary,
 .csu-secondary {
@@ -3781,16 +4161,6 @@ const styles = `
   border: 1px solid #cbd5e1;
 }
 
-.csu-remove {
-  padding: 8px 11px;
-  border: 1px solid #fecaca;
-  border-radius: 9px;
-  background: #fff1f2;
-  color: #be123c;
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .csu-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3805,12 +4175,9 @@ const styles = `
   margin-top: 13px;
 }
 
-.csu-draft {
-  color: #92400e;
-  font-weight: 700;
-}
-
-/* EXCEL UPLOAD */
+/* ==========================================================
+   EXCEL UPLOAD
+========================================================== */
 
 .csu-upload {
   display: flex;
@@ -3855,7 +4222,9 @@ const styles = `
   font-size: 12px;
 }
 
-/* MAPPING */
+/* ==========================================================
+   EXCEL MAPPING
+========================================================== */
 
 .csu-mapping-grid {
   display: grid;
@@ -3879,7 +4248,9 @@ const styles = `
   white-space: nowrap;
 }
 
-/* PREVIEW */
+/* ==========================================================
+   EXCEL PREVIEW
+========================================================== */
 
 .csu-preview-summary {
   display: grid;
@@ -3906,7 +4277,9 @@ const styles = `
   font-size: 11px;
 }
 
-/* STATISTICS */
+/* ==========================================================
+   LEGACY STATS
+========================================================== */
 
 .csu-stats {
   display: grid;
@@ -3921,7 +4294,6 @@ const styles = `
   border: 1px solid #e2e8f0;
   border-radius: 13px;
   background: white;
-  cursor: pointer;
 }
 
 .csu-stat span {
@@ -3936,7 +4308,9 @@ const styles = `
   font-size: 27px;
 }
 
-/* TABLES */
+/* ==========================================================
+   LEGACY TABLE STYLES
+========================================================== */
 
 .csu-table-wrap {
   width: 100%;
@@ -3971,15 +4345,9 @@ const styles = `
   background: #f8fbff;
 }
 
-.csu-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.csu-row-actions button {
-  padding: 7px 9px;
-}
+/* ==========================================================
+   STATUS AND TYPE BADGES
+========================================================== */
 
 .csu-status-badge {
   display: inline-block;
@@ -4034,7 +4402,9 @@ const styles = `
   font-size: 13px;
 }
 
-/* WARNINGS */
+/* ==========================================================
+   WARNINGS AND LOCK
+========================================================== */
 
 .csu-warning-panel {
   padding: 15px;
@@ -4082,45 +4452,65 @@ const styles = `
   opacity: .65;
 }
 
-.csu-history-scope {
-  display: flex;
-  align-items: center;
+/* ==========================================================
+   THIRD TAB — ALERTS
+========================================================== */
+
+.csu-alerts-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.csu-alerts-panel > .csu-section-header {
+  margin: 0;
+  padding: 21px 23px;
+  background: linear-gradient(
+    110deg,
+    #f1f5ff,
+    #ffffff
+  );
+  border-bottom: 1px solid #e8eef8;
+}
+
+.csu-alerts-panel .csu-note {
+  margin: 5px 0 0;
+}
+
+.csu-alert-summary {
+  display: grid;
+  grid-template-columns:
+    repeat(3,minmax(0,1fr));
   gap: 12px;
-  flex-wrap: wrap;
-  padding: 12px 15px;
-  margin-bottom: 15px;
-  border: 1px solid #dbeafe;
-  border-radius: 11px;
-  background: #eff6ff;
+  padding: 20px 23px;
 }
 
-.csu-history-scope strong {
-  color: #1d4ed8;
+.csu-alert-summary > div {
+  padding: 17px;
+  border: 1px solid #e3eaf5;
+  border-radius: 12px;
+  background: #f8faff;
+}
+
+.csu-alert-summary span {
+  display: block;
+  color: #71839e;
   font-size: 12px;
+  font-weight: 750;
 }
 
-.csu-history-scope span {
-  color: #64748b;
-  font-size: 11px;
+.csu-alert-summary strong {
+  display: block;
+  margin-top: 8px;
+  color: #1d3559;
+  font-size: 27px;
+  font-weight: 900;
 }
-
-/* COUNTS */
-
-.csu-count {
-  padding: 7px 11px;
-  border-radius: 20px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-/* CALL ALERTS */
 
 .csu-alert-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 11px;
+  padding: 0 23px 23px;
 }
 
 .csu-alert-item {
@@ -4128,31 +4518,70 @@ const styles = `
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 15px;
+  padding: 17px;
   border: 1px solid #fde68a;
   border-radius: 12px;
   background: #fffbeb;
 }
 
-.csu-alert-item strong {
-  display: block;
-  margin-bottom: 5px;
-  font-size: 13px;
+.csu-alert-patient {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  min-width: 0;
 }
 
-.csu-alert-item p {
-  margin: 0 0 8px;
+.csu-alert-avatar {
+  display: grid;
+  place-items: center;
+  width: 41px;
+  height: 41px;
+  border-radius: 11px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 15px;
+  font-weight: 850;
+  flex-shrink: 0;
+}
+
+.csu-alert-patient strong {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 13px;
+  color: #233b5c;
+}
+
+.csu-alert-patient p {
+  margin: 0 0 6px;
   color: #64748b;
   font-size: 12px;
 }
 
-.csu-alert-item small {
+.csu-alert-patient small {
   display: block;
-  margin-top: 8px;
+  margin-top: 9px;
   color: #64748b;
+  font-size: 11px;
 }
 
-/* DETAILS MODAL ONLY */
+.csu-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.csu-alerts-panel > .csu-alert {
+  margin: 0 23px 20px;
+}
+
+.csu-alerts-panel > .csu-empty-state {
+  margin: 0 23px 23px;
+}
+
+/* ==========================================================
+   DETAILS MODAL
+========================================================== */
 
 .csu-modal-backdrop {
   position: fixed;
@@ -4187,7 +4616,9 @@ const styles = `
   line-height: 1;
 }
 
-/* DETAILS */
+/* ==========================================================
+   DETAILS GRID
+========================================================== */
 
 .csu-detail-grid {
   display: grid;
@@ -4215,7 +4646,9 @@ const styles = `
   overflow-wrap: anywhere;
 }
 
-/* AUDIT TIMELINE */
+/* ==========================================================
+   AUDIT TIMELINE
+========================================================== */
 
 .csu-timeline {
   padding-left: 12px;
@@ -4242,7 +4675,9 @@ const styles = `
   font-size: 11px;
 }
 
-/* TIME */
+/* ==========================================================
+   PREVIEW TIME
+========================================================== */
 
 .csu-time12 {
   display: inline-flex;
@@ -4261,7 +4696,9 @@ const styles = `
   font-weight: 700;
 }
 
-/* APPROVAL */
+/* ==========================================================
+   APPROVAL BADGES
+========================================================== */
 
 .csu-approval-badge {
   display: inline-flex;
@@ -4287,7 +4724,9 @@ const styles = `
   color: #991b1b;
 }
 
-/* RESPONSIVE */
+/* ==========================================================
+   TABLET
+========================================================== */
 
 @media (max-width: 900px) {
   .csu-stats,
@@ -4300,7 +4739,16 @@ const styles = `
     grid-template-columns:
       repeat(2,minmax(0,1fr));
   }
+
+  .csu-alert-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
+
+/* ==========================================================
+   MOBILE
+========================================================== */
 
 @media (max-width: 600px) {
   .csu-hero {
@@ -4315,10 +4763,21 @@ const styles = `
     padding: 15px;
   }
 
+  .csu-alerts-panel {
+    padding: 0;
+  }
+
+  .csu-alerts-panel > .csu-section-header {
+    padding: 16px;
+  }
+
+  .csu-tabs {
+    gap: 2px;
+  }
+
   .csu-tabs button {
-    flex: 1;
-    padding: 12px 8px;
-    font-size: 12px;
+    padding: 12px 11px;
+    font-size: 11px;
   }
 
   .csu-detail-grid,
@@ -4326,9 +4785,22 @@ const styles = `
     grid-template-columns: 1fr;
   }
 
-  .csu-alert-item {
-    flex-direction: column;
-    align-items: stretch;
+  .csu-alert-summary {
+    grid-template-columns:
+      repeat(2,minmax(0,1fr));
+    padding: 15px;
+  }
+
+  .csu-alert-list {
+    padding: 0 15px 15px;
+  }
+
+  .csu-alert-actions {
+    width: 100%;
+  }
+
+  .csu-alert-actions button {
+    flex: 1;
   }
 
   .csu-modal {
