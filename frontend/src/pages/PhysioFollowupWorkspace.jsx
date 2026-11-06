@@ -820,35 +820,47 @@ export default function PhysioFollowupWorkspace({
     }
   }, [statisticsMonth]);
 
-  const loadEvaluationTracker = useCallback(async () => {
-    if (!evaluationMonth) return;
+ const loadEvaluationTracker = useCallback(async () => {
+  if (!evaluationMonth) return;
 
-    setEvaluationLoading(true);
-    setEvaluationError("");
+  setEvaluationLoading(true);
+  setEvaluationError("");
 
-    try {
-      const params = new URLSearchParams(
-        getMonthDateRange(evaluationMonth)
-      );
+  try {
+    const params = new URLSearchParams({
+      start_date: `${evaluationMonth}-01`,
+      end_date: getLocalDateString(),
+    });
 
-      const res = await api.get(
-        `reception/assignments/?${params.toString()}`
-      );
+    const res = await api.get(
+      `reception/assignments/?${params.toString()}`
+    );
 
-      setEvaluationAssignments(getArray(res.data, "assignments"));
-    } catch (err) {
-      console.error("Failed to load evaluation tracker:", err);
-      setEvaluationAssignments([]);
-      setEvaluationError(
-        getApiError(
-          err,
-          "Failed to load evaluations for the selected month."
-        )
-      );
-    } finally {
-      setEvaluationLoading(false);
-    }
-  }, [evaluationMonth]);
+    const allAssignments = getArray(res.data, "assignments");
+
+    // Keep records for ALL therapists.
+    // The Evaluation Tracker needs other therapists' records
+    // to identify patient transfers.
+    setEvaluationAssignments(allAssignments);
+
+    console.log("Evaluation Tracker - all patient records:", {
+      month: evaluationMonth,
+      totalRecords: allAssignments.length,
+      records: allAssignments,
+    });
+  } catch (err) {
+    console.error("Failed to load evaluation tracker:", err);
+    setEvaluationAssignments([]);
+    setEvaluationError(
+      getApiError(
+        err,
+        "Failed to load evaluations and subsequent patient records."
+      )
+    );
+  } finally {
+    setEvaluationLoading(false);
+  }
+}, [evaluationMonth]);
 
   /*
    * Monthly leaderboard:
@@ -1849,7 +1861,7 @@ export default function PhysioFollowupWorkspace({
           {activeSection === "evaluation-tracker" && (
             <div style={styles.stack}>
               <EvaluationTrackerSection
-                assignments={physioEvaluationAssignments}
+                assignments={evaluationAssignments}
                 month={evaluationMonth}
                 onMonthChange={setEvaluationMonth}
                 loading={evaluationLoading}

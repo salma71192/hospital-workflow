@@ -1,5 +1,15 @@
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../../api/api";
 
-import React, { useMemo } from "react";
+/* =========================================================
+   HELPERS
+========================================================= */
 
 function firstValue(...values) {
   return values.find(
@@ -38,8 +48,6 @@ function getPatientSources(item) {
     "patient_profile",
     "patient_registration",
     "registration",
-    "assignment",
-    "data",
     "medical_record",
     "identification",
     "patient_file",
@@ -68,7 +76,6 @@ function getPatientName(item) {
       source.full_name,
       source.display_name,
       source.name,
-      source.patient?.name,
       source.first_name && source.last_name
         ? `${source.first_name} ${source.last_name}`
         : undefined
@@ -100,19 +107,22 @@ function getFileNumber(item) {
     for (const field of fields) {
       const value = source[field];
 
-      if (value !== undefined && value !== null && String(value).trim()) {
-        if (isObject(value)) {
-          const nested = firstValue(
-            value.file_number,
-            value.file_no,
-            value.number,
-            value.value,
-            value.label
-          );
-          if (nested !== undefined) return String(nested);
-        } else {
-          return String(value);
-        }
+      if (value === undefined || value === null || String(value).trim() === "") {
+        continue;
+      }
+
+      if (isObject(value)) {
+        const nested = firstValue(
+          value.file_number,
+          value.file_no,
+          value.number,
+          value.value,
+          value.label
+        );
+
+        if (nested !== undefined) return String(nested);
+      } else {
+        return String(value);
       }
     }
   }
@@ -120,43 +130,96 @@ function getFileNumber(item) {
   return "—";
 }
 
-function getPatientIdentity(item) {
-  const patientId = firstValue(
-    item?.patient_id,
-    item?.patient?.id,
-    item?.patient?.pk,
-    item?.patient?.patient_id
-  );
+/*
+ * Extract the actual patient database ID.
+ * Never use the evaluation/assignment ID as a patient ID.
+ */
+function getPatientId(item) {
+  const fields = [
+    "patient_id",
+    "patientId",
+    "patient",
+    "patient_details",
+    "patient_data",
+    "patient_record",
+    "patient_obj",
+    "patient_profile",
+  ];
 
-  if (patientId !== undefined) return `id:${String(patientId).trim()}`;
+  for (const field of fields) {
+    const value = item?.[field];
+
+    if (isObject(value)) {
+      const id = firstValue(value.id, value.pk, value.patient_id);
+      if (id !== undefined) return String(id);
+    }
+
+    if (
+      field === "patient_id" ||
+      field === "patientId"
+    ) {
+      if (value !== undefined && value !== null && value !== "") {
+        return String(value);
+      }
+    }
+  }
+
+  for (const source of getPatientSources(item)) {
+    if (source === item) continue;
+
+    const id = firstValue(source.id, source.pk);
+
+    if (id !== undefined) return String(id);
+  }
+
+  return "";
+}
+
+/*
+ * Do not use the top-level assignment id as the patient ID.
+ */
+function getPatientIdentity(item) {
+  const patientId = getPatientId(item);
+
+  if (patientId) return `id:${patientId}`;
 
   const fileNumber = getFileNumber(item);
-  if (fileNumber !== "—") return `file:${normalize(fileNumber)}`;
+
+  if (fileNumber !== "—") {
+    return `file:${normalize(fileNumber)}`;
+  }
 
   const name = getPatientName(item);
-  if (name !== "Patient") return `name:${normalize(name)}`;
+
+  if (name !== "Patient") {
+    return `name:${normalize(name)}`;
+  }
 
   return null;
 }
 
 function getEvaluationDate(item) {
-  return firstValue(
-    item?.evaluation_date,
-    item?.assignment_date,
-    item?.date_of_evaluation,
-    item?.date_of_eval,
-    item?.date,
-    item?.created_at
-  ) || null;
+  return (
+    firstValue(
+      item?.evaluation_date,
+      item?.assignment_date,
+      item?.date_of_evaluation,
+      item?.date_of_eval,
+      item?.date,
+      item?.created_at
+    ) || null
+  );
 }
 
 function getVisitNumber(item) {
-  return firstValue(
-    item?.visit_number,
-    item?.first_visit_number,
-    item?.visit_no,
-    item?.session_number
-  ) ?? "—";
+  return (
+    firstValue(
+      item?.visit_number,
+      item?.first_visit_number,
+      item?.visit_no,
+      item?.session_number
+    ) ?? "—"
+  );
 }
 
 function getPhysician(item) {
@@ -169,21 +232,9 @@ function getPhysician(item) {
     item?.doctor_name
   );
 
-  if (isObject(value)) {
-    return value.name || value.label || "—";
-  }
+  if (isObject(value)) return value.name || value.label || "—";
 
   return value || "—";
-}
-
-function getSpecialty(item) {
-  return firstValue(
-    item?.physician_specialty,
-    item?.physician_speciality,
-    item?.specialty,
-    item?.speciality,
-    item?.department
-  ) || "—";
 }
 
 function getCategory(item) {
@@ -193,6 +244,9 @@ function getCategory(item) {
       item?.category_label,
       item?.assignment_category,
       item?.assignment_type,
+      item?.registration_type,
+      item?.visit_type,
+      item?.appointment_type,
       item?.type
     )
   );
@@ -204,25 +258,59 @@ function getRecordTimestamp(item) {
     item?.registration_date,
     item?.created_at,
     item?.evaluation_date,
-    item?.date
+    item?.date,
+    item?.visit_date,
+    item?.appointment_date
   );
 
   if (!value) return 0;
 
   const timestamp = new Date(value).getTime();
+
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function getTherapistId(item) {
-  const value = firstValue(
-    item?.therapist_id,
-    item?.assigned_therapist_id,
-    item?.physio_id,
-    item?.physiotherapist_id,
-    item?.therapist?.id
-  );
+  const fields = [
+    "therapist_id",
+    "assigned_therapist_id",
+    "physio_id",
+    "physiotherapist_id",
+    "assigned_to_id",
+    "assigned_user_id",
+  ];
 
-  return value === undefined ? "" : String(value);
+  for (const source of getPatientSources(item)) {
+    for (const field of fields) {
+      const value = source[field];
+
+      if (value !== undefined && value !== null && value !== "") {
+        return String(value).trim();
+      }
+    }
+  }
+
+  const therapistObjects = [
+    item?.therapist,
+    item?.assigned_therapist,
+    item?.physiotherapist,
+    item?.assigned_to,
+    item?.assigned_user,
+  ];
+
+  for (const therapist of therapistObjects) {
+    if (isObject(therapist)) {
+      const id = firstValue(
+        therapist.id,
+        therapist.pk,
+        therapist.user_id
+      );
+
+      if (id !== undefined) return String(id).trim();
+    }
+  }
+
+  return "";
 }
 
 function getTherapistName(item) {
@@ -230,11 +318,19 @@ function getTherapistName(item) {
     item?.therapist_name,
     item?.assigned_therapist_name,
     item?.physiotherapist_name,
+    item?.assigned_to_name,
+    item?.assigned_user_name,
     item?.therapist?.username,
-    item?.therapist?.name
+    item?.therapist?.name,
+    item?.assigned_therapist?.username,
+    item?.assigned_therapist?.name,
+    item?.physiotherapist?.username,
+    item?.physiotherapist?.name,
+    item?.assigned_to?.username,
+    item?.assigned_to?.name
   );
 
-  return value === undefined ? "" : String(value);
+  return value === undefined ? "" : String(value).trim();
 }
 
 function isInitialEvaluation(item) {
@@ -251,83 +347,110 @@ function isInitialEvaluation(item) {
 function isStartedRegistration(item) {
   const category = getCategory(item);
 
-  // These are the actual assignment category values in the backend.
-  return category === "appointment" || category === "walk_in";
+  return (
+    category === "appointment" ||
+    category === "walk_in" ||
+    category.includes("appointment") ||
+    category.includes("walk_in") ||
+    category.includes("walkin")
+  );
 }
 
-function calculatePatientStatus(evaluation, history) {
+/* =========================================================
+   STATUS CALCULATION
+========================================================= */
+
+/*
+ * Patient registration history is fetched separately for each patient.
+ * Therefore, records in this history already belong to this patient.
+ */
+function calculatePatientStatus(evaluation, history = []) {
   const evaluationDate = getRecordTimestamp(evaluation);
-  const evaluationTherapistId = getTherapistId(evaluation);
 
-  const laterRecords = history
-    .filter((record) => {
-      if (getPatientIdentity(record) !== getPatientIdentity(evaluation)) {
-        return false;
-      }
-
-      // Only consider records on or after the evaluation date.
-      return getRecordTimestamp(record) >= evaluationDate;
-    })
-    .sort((a, b) => getRecordTimestamp(a) - getRecordTimestamp(b));
-
-  if (laterRecords.length === 0) {
-    return { label: "Pending", type: "pending" };
+  if (!evaluationDate || !Array.isArray(history)) {
+    return { label: "Awaiting", type: "pending" };
   }
 
-  // A later appointment or walk-in registration means treatment has started.
-  const startedRecord = laterRecords
-    .filter(isStartedRegistration)
-    .sort((a, b) => getRecordTimestamp(b) - getRecordTimestamp(a))[0];
-
-  if (!startedRecord) {
-    return { label: "Pending", type: "pending" };
-  }
-
-  // A different therapist on a later qualifying registration indicates transfer.
-  const startedTherapistId = getTherapistId(startedRecord);
-
-  const differentTherapistRecord = laterRecords
+  const subsequentRecords = history
     .filter((record) => {
-      if (!isStartedRegistration(record)) return false;
+      if (!isObject(record)) return false;
 
-      const therapistId = getTherapistId(record);
+      const recordDate = getRecordTimestamp(record);
 
       return (
-        therapistId &&
-        evaluationTherapistId &&
-        therapistId !== evaluationTherapistId
+        recordDate > evaluationDate &&
+        isStartedRegistration(record)
       );
     })
-    .sort((a, b) => getRecordTimestamp(b) - getRecordTimestamp(a))[0];
+    .sort(
+      (a, b) => getRecordTimestamp(a) - getRecordTimestamp(b)
+    );
 
-  if (differentTherapistRecord) {
-    const therapistName = getTherapistName(differentTherapistRecord);
+  const nextRecord = subsequentRecords[0];
+
+  if (!nextRecord) {
+    return { label: "Awaiting", type: "pending" };
+  }
+
+  const evaluationTherapistId = getTherapistId(evaluation);
+  const nextTherapistId = getTherapistId(nextRecord);
+
+  const evaluationTherapistName = normalize(
+    getTherapistName(evaluation)
+  );
+
+  const nextTherapistName = normalize(
+    getTherapistName(nextRecord)
+  );
+
+  if (evaluationTherapistId && nextTherapistId) {
+    if (evaluationTherapistId === nextTherapistId) {
+      return { label: "Started", type: "started" };
+    }
+
+    const name = getTherapistName(nextRecord);
 
     return {
-      label: therapistName
-        ? `Transferred – ${therapistName}`
-        : "Transferred",
+      label: name ? `Transferred – ${name}` : "Transferred",
       type: "transferred",
     };
   }
 
-  // If the patient started with the evaluating therapist, show Started.
-  if (
-    !evaluationTherapistId ||
-    !startedTherapistId ||
-    startedTherapistId === evaluationTherapistId
-  ) {
-    return { label: "Started", type: "started" };
+  if (evaluationTherapistName && nextTherapistName) {
+    if (evaluationTherapistName === nextTherapistName) {
+      return { label: "Started", type: "started" };
+    }
+
+    const name = getTherapistName(nextRecord);
+
+    return {
+      label: name ? `Transferred – ${name}` : "Transferred",
+      type: "transferred",
+    };
   }
 
-  return { label: "Pending", type: "pending" };
+  return { label: "Awaiting", type: "pending" };
 }
+
+/* =========================================================
+   FORMATTING
+========================================================= */
 
 function formatDate(value) {
   if (!value) return "—";
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
+  const text = String(value);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  const date = match
+    ? new Date(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3])
+      )
+    : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return text;
 
   return date.toLocaleDateString("en-GB", {
     day: "2-digit",
@@ -352,19 +475,19 @@ function getMonthLabel(month) {
 function getStatusColors(type) {
   const colors = {
     started: {
-      background: "#dff7ec",
-      color: "#08784f",
-      border: "1px solid #c4efdf",
+      background: "#dcfce7",
+      color: "#15803d",
+      border: "1px solid #bbf7d0",
     },
     transferred: {
-      background: "#fff0d9",
-      color: "#a85b00",
-      border: "1px solid #ffe1ad",
+      background: "#f3e8ff",
+      color: "#7e22ce",
+      border: "1px solid #e9d5ff",
     },
     pending: {
-      background: "#f1e6ff",
-      color: "#7928ca",
-      border: "1px solid #e6d2ff",
+      background: "#fff7ed",
+      color: "#c2410c",
+      border: "1px solid #fed7aa",
     },
     rejected: {
       background: "#ffe4e6",
@@ -376,34 +499,38 @@ function getStatusColors(type) {
   return colors[type] || colors.pending;
 }
 
+/* =========================================================
+   SUMMARY CARD
+========================================================= */
+
 function SummaryCard({ label, value, percentage, type }) {
   const cardStyles = {
     total: {
-      background: "linear-gradient(135deg, #f0f6ff, #ffffff)",
-      border: "#cfe1ff",
-      iconBackground: "#dceaff",
+      background: "linear-gradient(135deg, #eff6ff, #ffffff)",
+      border: "#bfdbfe",
+      iconBackground: "#dbeafe",
       iconColor: "#2563eb",
       symbol: "▤",
     },
     started: {
-      background: "linear-gradient(135deg, #effcf7, #ffffff)",
-      border: "#bceedd",
-      iconBackground: "#d8f7eb",
+      background: "linear-gradient(135deg, #ecfdf5, #ffffff)",
+      border: "#a7f3d0",
+      iconBackground: "#d1fae5",
       iconColor: "#059669",
       symbol: "✓",
     },
     transferred: {
-      background: "linear-gradient(135deg, #fff8ed, #ffffff)",
-      border: "#ffdfad",
-      iconBackground: "#ffedcf",
-      iconColor: "#d97706",
+      background: "linear-gradient(135deg, #faf5ff, #ffffff)",
+      border: "#e9d5ff",
+      iconBackground: "#f3e8ff",
+      iconColor: "#7c3aed",
       symbol: "⇄",
     },
     pending: {
-      background: "linear-gradient(135deg, #f8f2ff, #ffffff)",
-      border: "#e4d1ff",
-      iconBackground: "#ebdcff",
-      iconColor: "#7c3aed",
+      background: "linear-gradient(135deg, #fff7ed, #ffffff)",
+      border: "#fed7aa",
+      iconBackground: "#ffedd5",
+      iconColor: "#ea580c",
       symbol: "◷",
     },
     rejected: {
@@ -416,6 +543,7 @@ function SummaryCard({ label, value, percentage, type }) {
   };
 
   const config = cardStyles[type] || cardStyles.total;
+
   const safePercentage = Math.min(
     Math.max(Number(percentage) || 0, 0),
     100
@@ -432,7 +560,7 @@ function SummaryCard({ label, value, percentage, type }) {
         display: "grid",
         gap: 15,
         boxSizing: "border-box",
-        boxShadow: "0 4px 14px rgba(31, 52, 89, 0.025)",
+        boxShadow: "0 4px 14px rgba(31, 52, 89, 0.04)",
       }}
     >
       <div
@@ -522,6 +650,10 @@ function SummaryCard({ label, value, percentage, type }) {
   );
 }
 
+/* =========================================================
+   ROLE OPTIONS
+========================================================= */
+
 export const STATIC_ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
   { value: "physio", label: "Physiotherapist" },
@@ -537,6 +669,10 @@ export const STATIC_ROLE_OPTIONS = [
   { value: "callcenter_supervisor", label: "Call Center Supervisor" },
 ];
 
+/* =========================================================
+   MAIN COMPONENT
+========================================================= */
+
 export default function EvaluationTrackerSection({
   assignments = [],
   month = "",
@@ -545,7 +681,32 @@ export default function EvaluationTrackerSection({
   error = "",
   onReload,
 }) {
-  const safeAssignments = Array.isArray(assignments) ? assignments : [];
+  const navigate = useNavigate();
+
+  const safeAssignments = Array.isArray(assignments)
+    ? assignments
+    : [];
+
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const [patientHistories, setPatientHistories] = useState({});
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  /*
+   * Approval status defaults to Pending.
+   * If a real approval status is later supplied by the backend,
+   * this helper will display it.
+   */
+  const getApprovalStatus = (item) => {
+    const value = firstValue(
+      item?.approval_status,
+      item?.rcm_approval_status,
+      item?.current_approval_status,
+      item?.authorization_status
+    );
+
+    return value || "Pending";
+  };
 
   const evaluations = useMemo(() => {
     return safeAssignments
@@ -554,14 +715,25 @@ export default function EvaluationTrackerSection({
 
         if (month) {
           const dateValue = getEvaluationDate(item);
+
           if (!dateValue) return false;
 
-          const date = new Date(dateValue);
-          if (Number.isNaN(date.getTime())) return false;
+          const text = String(dateValue);
+          const match = text.match(/^(\d{4})-(\d{2})/);
 
-          const rowMonth = `${date.getFullYear()}-${String(
-            date.getMonth() + 1
-          ).padStart(2, "0")}`;
+          let rowMonth = "";
+
+          if (match) {
+            rowMonth = `${match[1]}-${match[2]}`;
+          } else {
+            const date = new Date(dateValue);
+
+            if (Number.isNaN(date.getTime())) return false;
+
+            rowMonth = `${date.getFullYear()}-${String(
+              date.getMonth() + 1
+            ).padStart(2, "0")}`;
+          }
 
           if (rowMonth !== month) return false;
         }
@@ -573,6 +745,94 @@ export default function EvaluationTrackerSection({
       );
   }, [safeAssignments, month]);
 
+  /*
+   * Fetch registration history directly from each patient's file.
+   * This includes registrations made under other physiotherapists.
+   */
+  const patientIds = useMemo(() => {
+    return [
+      ...new Set(
+        evaluations
+          .map((evaluation) => getPatientId(evaluation))
+          .filter(Boolean)
+      ),
+    ];
+  }, [evaluations]);
+
+  const loadPatientHistories = useCallback(async () => {
+    if (!patientIds.length) {
+      setPatientHistories({});
+      return;
+    }
+
+    setHistoryLoading(true);
+
+    try {
+      const results = await Promise.all(
+        patientIds.map(async (patientId) => {
+          try {
+            const response = await api.get(
+              `patients/${encodeURIComponent(patientId)}/?months=6`
+            );
+
+            const data = response.data || {};
+
+            const history = Array.isArray(data.registration_history)
+              ? data.registration_history
+              : [];
+
+            return [patientId, history];
+          } catch (err) {
+            console.error(
+              `Unable to load registration history for patient ${patientId}:`,
+              err
+            );
+
+            return [patientId, null];
+          }
+        })
+      );
+
+      setPatientHistories(Object.fromEntries(results));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [patientIds]);
+
+  useEffect(() => {
+    loadPatientHistories();
+  }, [loadPatientHistories]);
+
+  const getHistoryForEvaluation = useCallback(
+    (evaluation) => {
+      const patientId = getPatientId(evaluation);
+
+      if (!patientId) return [];
+
+      return patientHistories[patientId] || [];
+    },
+    [patientHistories]
+  );
+
+  const getEvaluationStatus = useCallback(
+    (evaluation) => {
+      const patientId = getPatientId(evaluation);
+
+      if (!patientId) {
+        return { label: "Awaiting", type: "pending" };
+      }
+
+      const history = patientHistories[patientId];
+
+      if (!Array.isArray(history)) {
+        return { label: "Awaiting", type: "pending" };
+      }
+
+      return calculatePatientStatus(evaluation, history);
+    },
+    [patientHistories]
+  );
+
   const statistics = useMemo(() => {
     const counts = {
       total: evaluations.length,
@@ -583,7 +843,7 @@ export default function EvaluationTrackerSection({
     };
 
     evaluations.forEach((evaluation) => {
-      const status = calculatePatientStatus(evaluation, safeAssignments);
+      const status = getEvaluationStatus(evaluation);
 
       if (status.type === "started") counts.started += 1;
       else if (status.type === "transferred") counts.transferred += 1;
@@ -592,16 +852,53 @@ export default function EvaluationTrackerSection({
     });
 
     return counts;
-  }, [evaluations, safeAssignments]);
+  }, [evaluations, getEvaluationStatus]);
+
+  const filteredEvaluations = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+
+    if (!query) return evaluations;
+
+    return evaluations.filter((item) => {
+      const status = getEvaluationStatus(item);
+
+      const searchableValues = [
+        getPatientName(item),
+        getFileNumber(item),
+        getVisitNumber(item),
+        getPhysician(item),
+        formatDate(getEvaluationDate(item)),
+        status.label,
+        getApprovalStatus(item),
+      ];
+
+      return searchableValues.some((value) =>
+        String(value ?? "").toLowerCase().includes(query)
+      );
+    });
+  }, [evaluations, searchTerm, getEvaluationStatus]);
 
   const getPercentage = (value) =>
     statistics.total
       ? Math.round((value / statistics.total) * 1000) / 10
       : 0;
 
+  const openPatientFile = (item) => {
+    const patientId = getPatientId(item);
+
+    if (!patientId) {
+      window.alert(
+        "The patient ID is missing from this evaluation record. The patient file cannot be opened."
+      );
+      return;
+    }
+
+    navigate(`/patients/${encodeURIComponent(patientId)}`);
+  };
+
   const styles = {
     page: {
-      background: "linear-gradient(135deg, #f0f5fc 0%, #f8faff 100%)",
+      background: "linear-gradient(135deg, #f1f5fb 0%, #f8faff 100%)",
       borderRadius: 20,
       padding: 22,
       display: "grid",
@@ -623,8 +920,8 @@ export default function EvaluationTrackerSection({
       alignItems: "center",
       padding: "7px 12px",
       borderRadius: 9,
-      background: "#eee5ff",
-      color: "#7029d8",
+      background: "#e9eaff",
+      color: "#5145cd",
       fontSize: 11,
       fontWeight: 850,
       letterSpacing: "0.8px",
@@ -653,7 +950,7 @@ export default function EvaluationTrackerSection({
     },
     monthInput: {
       padding: "11px 13px",
-      border: "1px solid #d3ddff",
+      border: "1px solid #d3dded",
       borderRadius: 11,
       background: "#ffffff",
       color: "#243b63",
@@ -663,7 +960,7 @@ export default function EvaluationTrackerSection({
     },
     statsPanel: {
       padding: 12,
-      background: "rgba(255,255,255,0.68)",
+      background: "rgba(255,255,255,0.75)",
       border: "1px solid #e4ecfa",
       borderRadius: 18,
     },
@@ -677,7 +974,7 @@ export default function EvaluationTrackerSection({
       border: "1px solid #e1eaf7",
       borderRadius: 18,
       padding: 22,
-      boxShadow: "0 7px 24px rgba(30, 56, 95, 0.045)",
+      boxShadow: "0 8px 28px rgba(30, 56, 95, 0.055)",
       display: "grid",
       gap: 18,
       minWidth: 0,
@@ -701,6 +998,46 @@ export default function EvaluationTrackerSection({
       fontSize: 13,
       color: "#7b8eac",
     },
+    toolbar: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      flexWrap: "wrap",
+      gap: 12,
+    },
+    searchWrap: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      flex: "1 1 300px",
+      maxWidth: 470,
+      minWidth: 0,
+      padding: "0 13px",
+      border: "1px solid #dce5f1",
+      borderRadius: 12,
+      background: "#f8faff",
+      boxSizing: "border-box",
+      height: 44,
+    },
+    searchInput: {
+      flex: 1,
+      minWidth: 0,
+      border: "none",
+      outline: "none",
+      background: "transparent",
+      color: "#243b63",
+      fontSize: 13,
+      fontFamily: "inherit",
+    },
+    clearButton: {
+      border: "none",
+      background: "transparent",
+      color: "#7185a5",
+      fontSize: 18,
+      cursor: "pointer",
+      padding: 3,
+      lineHeight: 1,
+    },
     refreshButton: {
       display: "inline-flex",
       alignItems: "center",
@@ -709,18 +1046,19 @@ export default function EvaluationTrackerSection({
       padding: "12px 17px",
       border: "none",
       borderRadius: 11,
-      background: "linear-gradient(135deg, #10b981, #059669)",
+      background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
       color: "#ffffff",
       fontSize: 12,
       fontWeight: 800,
-      cursor: loading ? "wait" : "pointer",
-      opacity: loading ? 0.65 : 1,
+      cursor: loading || historyLoading ? "wait" : "pointer",
+      opacity: loading || historyLoading ? 0.65 : 1,
+      boxShadow: "0 4px 10px rgba(37, 99, 235, 0.18)",
     },
     tableWrap: {
       width: "100%",
       overflowX: "auto",
-      border: "1px solid #e5edf8",
-      borderRadius: 13,
+      border: "1px solid #dce6f3",
+      borderRadius: 14,
       background: "#ffffff",
     },
     table: {
@@ -731,32 +1069,43 @@ export default function EvaluationTrackerSection({
     },
     th: {
       textAlign: "left",
-      padding: "15px 16px",
-      background: "#f0f5fc",
-      color: "#607696",
+      padding: "16px 17px",
+      background: "linear-gradient(110deg, #203b63, #315b8e)",
+      color: "#ffffff",
       fontSize: 10,
       fontWeight: 850,
       textTransform: "uppercase",
-      letterSpacing: "0.45px",
+      letterSpacing: "0.75px",
       whiteSpace: "nowrap",
-      borderBottom: "1px solid #e2eaf5",
+      borderBottom: "1px solid #294d7b",
+      position: "sticky",
+      top: 0,
+      zIndex: 1,
     },
     td: {
-      padding: "15px 16px",
-      color: "#3c5477",
+      padding: "16px 17px",
+      color: "#405775",
       fontSize: 12,
-      borderBottom: "1px solid #edf2f9",
+      borderBottom: "1px solid #edf2f8",
       verticalAlign: "middle",
     },
     patientName: {
-      color: "#203c65",
-      fontWeight: 750,
-      whiteSpace: "nowrap",
+      display: "block",
+      color: "#1e3a5f",
+      fontWeight: 800,
+      fontSize: 13,
+      marginBottom: 6,
     },
     fileNumber: {
-      color: "#456184",
+      display: "inline-block",
+      color: "#365d91",
       fontWeight: 750,
+      fontSize: 10,
       fontVariantNumeric: "tabular-nums",
+      background: "#eff6ff",
+      border: "1px solid #dbeafe",
+      borderRadius: 7,
+      padding: "4px 8px",
       whiteSpace: "nowrap",
     },
     statusBadge: {
@@ -770,14 +1119,43 @@ export default function EvaluationTrackerSection({
       whiteSpace: "nowrap",
       maxWidth: 280,
     },
+    approvalBadge: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 7,
+      padding: "7px 11px",
+      borderRadius: 30,
+      fontSize: 11,
+      fontWeight: 800,
+      whiteSpace: "nowrap",
+      background: "#fff7ed",
+      color: "#c2410c",
+      border: "1px solid #fed7aa",
+    },
+    openFileButton: {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 7,
+      padding: "9px 13px",
+      border: "1px solid #c8dcff",
+      borderRadius: 9,
+      background: "#eff6ff",
+      color: "#245fc2",
+      fontSize: 11,
+      fontWeight: 850,
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+    },
     emptyState: {
-      padding: 38,
+      padding: 42,
       borderRadius: 12,
       background: "#f7faff",
       color: "#7185a5",
       textAlign: "center",
       lineHeight: 1.7,
       fontSize: 13,
+      border: "1px dashed #d8e3f1",
     },
     error: {
       padding: 14,
@@ -796,10 +1174,16 @@ export default function EvaluationTrackerSection({
       color: "#8496b1",
       fontSize: 12,
     },
+    resultCount: {
+      color: "#526985",
+      fontSize: 12,
+      fontWeight: 700,
+    },
   };
 
   function renderStatus(item) {
-    const status = calculatePatientStatus(item, safeAssignments);
+    const status = getEvaluationStatus(item);
+
     const symbol =
       status.type === "started"
         ? "✓"
@@ -828,7 +1212,9 @@ export default function EvaluationTrackerSection({
       <div style={styles.header}>
         <div>
           <div style={styles.teamBadge}>Physiotherapy</div>
+
           <h2 style={styles.title}>Evaluation Tracker</h2>
+
           <p style={styles.subtitle}>
             Track initial evaluations and subsequent patient registrations.
           </p>
@@ -836,10 +1222,13 @@ export default function EvaluationTrackerSection({
 
         <label style={styles.monthLabel}>
           Evaluation Month
+
           <input
             type="month"
             value={month}
-            onChange={(event) => onMonthChange?.(event.target.value)}
+            onChange={(event) =>
+              onMonthChange?.(event.target.value)
+            }
             style={styles.monthInput}
           />
         </label>
@@ -853,24 +1242,28 @@ export default function EvaluationTrackerSection({
             type="total"
             percentage={100}
           />
+
           <SummaryCard
             label="Started / Registered"
             value={statistics.started}
             type="started"
             percentage={getPercentage(statistics.started)}
           />
+
           <SummaryCard
             label="Transferred"
             value={statistics.transferred}
             type="transferred"
             percentage={getPercentage(statistics.transferred)}
           />
+
           <SummaryCard
-            label="Pending"
+            label="Awaiting"
             value={statistics.pending}
             type="pending"
             percentage={getPercentage(statistics.pending)}
           />
+
           <SummaryCard
             label="Rejected"
             value={statistics.rejected}
@@ -886,65 +1279,144 @@ export default function EvaluationTrackerSection({
         <div style={styles.recordsHeader}>
           <div>
             <h3 style={styles.recordsTitle}>Evaluation Records</h3>
+
             <p style={styles.recordsSubtitle}>
               Showing initial evaluations for {getMonthLabel(month)}.
             </p>
           </div>
 
-          {onReload && (
-            <button
-              type="button"
-              onClick={onReload}
-              disabled={loading}
-              style={styles.refreshButton}
+          <button
+            type="button"
+            onClick={() => {
+              onReload?.();
+              loadPatientHistories();
+            }}
+            disabled={loading || historyLoading}
+            style={styles.refreshButton}
+          >
+            <span aria-hidden="true">↻</span>
+            {loading || historyLoading
+              ? "Refreshing..."
+              : "Refresh Evaluations"}
+          </button>
+        </div>
+
+        <div style={styles.toolbar}>
+          <div style={styles.searchWrap}>
+            <span
+              aria-hidden="true"
+              style={{ color: "#7b8eac", fontSize: 17 }}
             >
-              <span aria-hidden="true">↻</span>
-              {loading ? "Refreshing..." : "Refresh Evaluations"}
-            </button>
-          )}
+              ⌕
+            </span>
+
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search patient, file number, physician..."
+              aria-label="Search evaluation records"
+              style={styles.searchInput}
+            />
+
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                style={styles.clearButton}
+                aria-label="Clear search"
+                title="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <span style={styles.resultCount}>
+            {filteredEvaluations.length} of {evaluations.length} records
+            {historyLoading ? " · Checking patient files..." : ""}
+          </span>
         </div>
 
         {loading ? (
-          <div style={styles.emptyState}>Loading evaluations...</div>
-        ) : evaluations.length === 0 ? (
           <div style={styles.emptyState}>
-            No initial evaluations were found for {getMonthLabel(month)}.
+            Loading evaluations...
+          </div>
+        ) : filteredEvaluations.length === 0 ? (
+          <div style={styles.emptyState}>
+            {evaluations.length === 0
+              ? `No initial evaluations were found for ${getMonthLabel(month)}.`
+              : "No matching patients found. Try another search."}
           </div>
         ) : (
           <div style={styles.tableWrap}>
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Name</th>
-                  <th style={styles.th}>File Number</th>
+                  <th style={styles.th}>Patient / File Number</th>
                   <th style={styles.th}>Visit Number</th>
-                  <th style={styles.th}>Date</th>
+                  <th style={styles.th}>Evaluation Date</th>
                   <th style={styles.th}>Referring Physician</th>
-                  <th style={styles.th}>Specialty</th>
-                  <th style={styles.th}>Status</th>
+                  <th style={styles.th}>Approval Status</th>
+                  <th style={styles.th}>Registration Status</th>
+                  <th style={styles.th}>Action</th>
                 </tr>
               </thead>
 
               <tbody>
-                {evaluations.map((item, index) => (
-                  <tr key={item?.id ?? item?.assignment_id ?? `${getPatientIdentity(item) || "patient"}-${index}`}>
+                {filteredEvaluations.map((item, index) => (
+                  <tr
+                    key={
+                      item?.id ??
+                      item?.assignment_id ??
+                      `${getPatientIdentity(item) || "patient"}-${index}`
+                    }
+                    style={{
+                      background: index % 2 === 0 ? "#ffffff" : "#f8faff",
+                    }}
+                  >
                     <td style={styles.td}>
                       <span style={styles.patientName}>
                         {getPatientName(item)}
                       </span>
-                    </td>
-                    <td style={styles.td}>
+
                       <span style={styles.fileNumber}>
-                        {getFileNumber(item)}
+                        File: {getFileNumber(item)}
                       </span>
                     </td>
-                    <td style={styles.td}>{getVisitNumber(item)}</td>
+
+                    <td style={styles.td}>
+                      {getVisitNumber(item)}
+                    </td>
+
                     <td style={styles.td}>
                       {formatDate(getEvaluationDate(item))}
                     </td>
-                    <td style={styles.td}>{getPhysician(item)}</td>
-                    <td style={styles.td}>{getSpecialty(item)}</td>
-                    <td style={styles.td}>{renderStatus(item)}</td>
+
+                    <td style={styles.td}>
+                      {getPhysician(item)}
+                    </td>
+
+                    <td style={styles.td}>
+                      <span style={styles.approvalBadge}>
+                        <span aria-hidden="true">◷</span>
+                        {getApprovalStatus(item)}
+                      </span>
+                    </td>
+
+                    <td style={styles.td}>
+                      {renderStatus(item)}
+                    </td>
+
+                    <td style={styles.td}>
+                      <button
+                        type="button"
+                        style={styles.openFileButton}
+                        onClick={() => openPatientFile(item)}
+                      >
+                        Open File <span aria-hidden="true">↗</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -954,9 +1426,10 @@ export default function EvaluationTrackerSection({
 
         <div style={styles.footer}>
           <span>
-            Showing {evaluations.length}{" "}
-            {evaluations.length === 1 ? "evaluation" : "evaluations"}
+            Showing {filteredEvaluations.length}{" "}
+            {filteredEvaluations.length === 1 ? "evaluation" : "evaluations"}
           </span>
+
           <span>{getMonthLabel(month)}</span>
         </div>
       </div>

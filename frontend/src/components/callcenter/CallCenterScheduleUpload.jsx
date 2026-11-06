@@ -19,10 +19,8 @@ import {
   FOLLOW_UP_STATUSES,
   today,
   newLocalId,
-  cleanText,
   validDate,
   validTime,
-  normalizeTime,
   normalizeTherapists,
   normalizeHistory,
   emptyAppointment,
@@ -33,7 +31,6 @@ import {
   makeColumnHeaders,
   createColumnMapping,
   appointmentDuplicateKeys,
-  parseImportRows,
   validateAppointment,
   payloadForAppointment,
   statusLabel,
@@ -51,6 +48,7 @@ import ScheduleUpload from "./schedule/ScheduleUpload";
 import SchedulePreview from "./schedule/SchedulePreview";
 import ScheduleSummaryCards from "./schedule/ScheduleSummaryCards";
 import ScheduleHistory from "./schedule/ScheduleHistory";
+import ScheduleTable from "./schedule/ScheduleTable";
 
 // ============================================================
 // GENERAL HELPERS
@@ -67,15 +65,26 @@ const normalizeId = (value) =>
   hasValue(value) ? String(value) : "";
 
 function getTherapistId(row) {
-  return normalizeId(
+  const value =
     row?.therapist_id ??
     row?.therapist ??
     row?.physiotherapist ??
-    ""
-  );
+    "";
+
+  if (value && typeof value === "object") {
+    return normalizeId(
+      value.value ??
+      value.id ??
+      value.pk ??
+      value.username ??
+      ""
+    );
+  }
+
+  return normalizeId(value);
 }
 
-function findRegisteredTherapist(value, options) {
+function findRegisteredTherapist(value, options = []) {
   const id = normalizeId(value);
 
   if (!id) return null;
@@ -91,13 +100,18 @@ function findRegisteredTherapist(value, options) {
 function normalizeName(value) {
   return String(value || "")
     .toLowerCase()
-    .replace(/\b(dr|doctor|pt|physio|physiotherapist)\b/g, " ")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(
+      /\b(dr|doctor|pt|physio|physiotherapist|mr|mrs|ms)\b/g,
+      " "
+    )
     .replace(/[^a-z0-9\u0600-\u06ff]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function findTherapistByName(name, options) {
+function findTherapistByName(name, options = []) {
   const target = normalizeName(name);
 
   if (!target) return null;
@@ -133,7 +147,7 @@ function findTherapistByName(name, options) {
     : null;
 }
 
-function resolveTherapist(row, options) {
+function resolveTherapist(row, options = []) {
   const byId = findRegisteredTherapist(
     getTherapistId(row),
     options
@@ -177,16 +191,16 @@ function applyTherapist(row, option) {
 }
 
 function getAppointmentTime(row) {
-  const parsed = parseExcelTime(row.time);
+  const parsed = parseExcelTime(
+    row?.time ?? row?.appointment_time
+  );
 
   return validTime(parsed)
     ? parsed
-    : validTime(row.time)
-    ? row.time
     : "";
 }
 
-function sortAppointments(rows) {
+function sortAppointments(rows = []) {
   return [...rows].sort((a, b) => {
     const first = getAppointmentTime(a) || "99:99";
     const second = getAppointmentTime(b) || "99:99";
@@ -197,6 +211,15 @@ function sortAppointments(rows) {
 
 function appointmentKeys(row) {
   return appointmentDuplicateKeys(row);
+}
+
+function getApproval(row) {
+  return (
+    row.claim_approval_status ??
+    row.insurance_approval_status ??
+    row.approval_status ??
+    "approved"
+  );
 }
 
 function normalizeImportedRow(
@@ -211,31 +234,50 @@ function normalizeImportedRow(
 
   const base = {
     ...row,
-    localId: row.localId || newLocalId(),
+
+    localId:
+      row.localId || newLocalId(),
+
     date:
       row.date ||
       row.appointment_date ||
       selectedDate,
+
     appointment_date:
       row.appointment_date ||
       row.date ||
       selectedDate,
+
     time: getAppointmentTime(row),
+
     confirmation_status:
-      row.confirmation_status || "unconfirmed",
+      row.confirmation_status ||
+      "unconfirmed",
+
     appointment_type:
-      row.appointment_type || "followup",
-    source: row.source || "excel",
+      row.appointment_type ||
+      "followup",
+
+    approval_status:
+      getApproval(row),
+
+    source:
+      row.source || "excel",
+
     excel_therapist_name:
       row.excel_therapist_name ||
       row.import_therapist ||
       row.therapist_name ||
       "",
+
     isNew: true,
     isDirty: true,
   };
 
-  return applyTherapist(base, matched);
+  return applyTherapist(
+    base,
+    matched
+  );
 }
 
 function StatusBadge({ status }) {
@@ -244,7 +286,8 @@ function StatusBadge({ status }) {
       className="csu-status-badge"
       style={{
         background:
-          STATUS_COLORS[status] || "#e2e8f0",
+          STATUS_COLORS[status] ||
+          "#e2e8f0",
       }}
     >
       {statusLabel(status)}
@@ -299,15 +342,23 @@ function AppointmentEditor({
     }
 
     if (field === "therapist") {
-      const selected = findRegisteredTherapist(
-        value,
-        therapistOptions
-      );
+      const selected =
+        findRegisteredTherapist(
+          value,
+          therapistOptions
+        );
 
-      next.therapist = selected?.value || "";
-      next.therapist_id = selected?.value || "";
-      next.therapist_name = selected?.label || "";
-      next.therapist_matched = Boolean(selected);
+      next.therapist =
+        selected?.value ?? "";
+
+      next.therapist_id =
+        selected?.value ?? "";
+
+      next.therapist_name =
+        selected?.label ?? "";
+
+      next.therapist_matched =
+        Boolean(selected);
     }
 
     onChange(next);
@@ -403,7 +454,7 @@ function AppointmentEditor({
 
             <input
               type="time"
-              value={row.time || ""}
+              value={getAppointmentTime(row)}
               onChange={(event) =>
                 update(
                   "time",
@@ -477,12 +528,7 @@ function AppointmentEditor({
             Claims Approval
 
             <input
-              value={
-                row.claim_approval_status ||
-                row.insurance_approval_status ||
-                row.approval_status ||
-                "Not verified"
-              }
+              value={getApproval(row)}
               disabled
             />
           </label>
@@ -842,7 +888,7 @@ export default function CallCenterScheduleUpload({
 
       missingTime: appointments.filter(
         (row) =>
-          !validTime(row.time)
+          !getAppointmentTime(row)
       ).length,
     };
   }, [appointments]);
@@ -1225,24 +1271,17 @@ export default function CallCenterScheduleUpload({
 
     let index = detectHeaderRow(rows);
 
-    const detected =
-      detectScheduleHeader(rows);
+    try {
+      const detected =
+        detectScheduleHeader(rows);
 
-    if (
-      detected &&
-      Number.isInteger(
-        detected.index
-      )
-    ) {
-      index = detected.index;
-    } else if (
-      detected &&
-      Number.isInteger(
-        detected.headerRowIndex
-      )
-    ) {
-      index =
-        detected.headerRowIndex;
+      if (
+        Number.isInteger(detected?.index)
+      ) {
+        index = detected.index;
+      }
+    } catch {
+      // Keep the general header detection.
     }
 
     if (
@@ -1428,6 +1467,13 @@ export default function CallCenterScheduleUpload({
   const previewExcel = () => {
     clearMessages();
 
+    if (!therapist) {
+      setError(
+        "Select a physiotherapist before previewing."
+      );
+      return;
+    }
+
     if (
       !validDate(date)
     ) {
@@ -1452,17 +1498,14 @@ export default function CallCenterScheduleUpload({
       result =
         extractScheduleAppointments({
           rows: sheetRows,
-          headerRowIndex,
-          headers,
-          columnMapping,
-          selectedTherapist: therapist,
           therapistUsers:
             therapistOptions,
-          date,
-          fileName:
-            excelFile?.name || "",
-          sheetName:
-            selectedSheet,
+          selectedTherapist:
+            therapist,
+          appointmentDate:
+            date,
+          existingAppointments:
+            appointments,
         });
     } catch (err) {
       setError(
@@ -1557,7 +1600,7 @@ export default function CallCenterScheduleUpload({
 
     setSuccess(
       `${sorted.length} appointment(s) ready. ` +
-      `${duplicates} duplicate(s) skipped.` +
+      `${duplicates} additional duplicate(s) skipped.` +
       (
         unassigned
           ? ` ${unassigned} require therapist assignment.`
@@ -1812,18 +1855,26 @@ export default function CallCenterScheduleUpload({
 
     setEditingAppointment({
       ...emptyAppointment(),
+
       localId: newLocalId(),
+
       therapist:
-        selected?.value ||
+        selected?.value ??
         therapist,
+
       therapist_id:
-        selected?.value ||
+        selected?.value ??
         therapist,
+
       therapist_name:
         selected?.label ||
         therapistName,
+
       date,
       appointment_date: date,
+
+      approval_status: "approved",
+
       isNew: true,
       isDirty: true,
     });
@@ -1862,7 +1913,14 @@ export default function CallCenterScheduleUpload({
         editingAppointment,
         selected
       ),
+
+      time:
+        getAppointmentTime(
+          editingAppointment
+        ),
+
       isDirty: true,
+
       isNew:
         editingAppointment.isNew ||
         !editingAppointment.id,
@@ -2011,14 +2069,18 @@ export default function CallCenterScheduleUpload({
         previous
           ? {
               ...previous,
+
               patient_id:
                 patient.id,
+
               patient_name:
                 patient.name,
+
               file_number:
                 patient.file_number ||
                 patient.patient_id ||
                 "",
+
               matched: true,
               isDirty: true,
             }
@@ -2124,8 +2186,6 @@ export default function CallCenterScheduleUpload({
               date
           );
 
-        // Ensure the selected registered therapist
-        // is sent instead of the main filter therapist.
         payload.therapist =
           selected.value;
 
@@ -2150,6 +2210,7 @@ export default function CallCenterScheduleUpload({
 
         saved.push({
           localId: row.localId,
+
           id:
             response.data?.appointment?.id ??
             response.data?.id ??
@@ -2186,8 +2247,6 @@ export default function CallCenterScheduleUpload({
         `${completed} appointment(s) saved successfully.`
       );
 
-      // Refresh only when the loaded workspace
-      // represents one therapist's appointments.
       const oneTherapist =
         changed.every(
           (row) =>
@@ -2229,7 +2288,6 @@ export default function CallCenterScheduleUpload({
         }
       }
 
-      // Refresh follow-up alerts after saving.
       await loadAlerts();
     } catch (err) {
       setAppointments((previous) =>
@@ -2427,7 +2485,7 @@ export default function CallCenterScheduleUpload({
         )
       );
     } catch {
-      // Keep history included in the appointment.
+      // Keep history included in appointment.
     }
   };
 
@@ -2511,7 +2569,7 @@ export default function CallCenterScheduleUpload({
             "Schedule History",
           ],
         ].map(
-          ([value, label]) => (
+          ([value, tabLabel]) => (
             <button
               type="button"
               key={value}
@@ -2527,7 +2585,7 @@ export default function CallCenterScheduleUpload({
                 }
               }}
             >
-              {label}
+              {tabLabel}
             </button>
           )
         )}
@@ -2630,9 +2688,7 @@ export default function CallCenterScheduleUpload({
             importPreview={importPreview}
             importSkipped={importSkipped}
             importWarnings={importWarnings}
-            therapistOptions={
-              therapistOptions
-            }
+            therapistOptions={therapistOptions}
             busy={busy}
             updateImportPreviewRow={
               updateImportPreviewRow
@@ -2692,177 +2748,26 @@ export default function CallCenterScheduleUpload({
             }
           />
 
-          {/* APPOINTMENT TABLE */}
+          {/* UPDATED THERAPIST APPOINTMENTS TABLE */}
 
-          <section className="csu-panel">
-            <div className="csu-section-header">
-              <h3>
-                Therapist Appointments
-              </h3>
-
-              <button
-                type="button"
-                className="csu-primary"
-                disabled={
-                  !changedCount ||
-                  busy
-                }
-                onClick={
-                  saveAppointments
-                }
-              >
-                {saving
-                  ? "Saving..."
-                  : `Save Changes (${changedCount})`}
-              </button>
-            </div>
-
-            {totals.missingTime > 0 && (
-              <div className="csu-alert error">
-                {totals.missingTime} appointment(s)
-                have invalid times.
-              </div>
-            )}
-
-            <div className="csu-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Patient</th>
-                    <th>File Number</th>
-                    <th>Therapist</th>
-                    <th>Status</th>
-                    <th>Type</th>
-                    <th>Claims Approval</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {sortedAppointments.length ===
-                  0 ? (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="csu-empty"
-                      >
-                        No appointments found.
-                      </td>
-                    </tr>
-                  ) : (
-                    sortedAppointments.map(
-                      (row) => (
-                        <tr
-                          key={row.localId}
-                        >
-                          <td>
-                            {row.time ||
-                              "Missing"}
-                          </td>
-
-                          <td>
-                            {row.patient_name}
-                          </td>
-
-                          <td>
-                            {row.file_number ||
-                              "Not matched"}
-                          </td>
-
-                          <td>
-                            {row.therapist_name ||
-                              therapistOptions.find(
-                                (option) =>
-                                  normalizeId(
-                                    option.value
-                                  ) ===
-                                  getTherapistId(
-                                    row
-                                  )
-                              )?.label ||
-                              "Unassigned"}
-                          </td>
-
-                          <td>
-                            <StatusBadge
-                              status={
-                                row.confirmation_status
-                              }
-                            />
-                          </td>
-
-                          <td>
-                            <TypeBadge
-                              type={
-                                row.appointment_type
-                              }
-                            />
-                          </td>
-
-                          <td>
-                            {row.claim_approval_status ||
-                              row.insurance_approval_status ||
-                              row.approval_status ||
-                              "Not verified"}
-                          </td>
-
-                          <td>
-                            <div className="csu-row-actions">
-                              <button
-                                type="button"
-                                className="csu-secondary"
-                                onClick={() =>
-                                  setEditingAppointment({
-                                    ...row,
-                                  })
-                                }
-                              >
-                                Edit
-                              </button>
-
-                              <button
-                                type="button"
-                                className="csu-secondary"
-                                onClick={() =>
-                                  openDetails(
-                                    row
-                                  )
-                                }
-                              >
-                                Details
-                              </button>
-
-                              {row.isNew && (
-                                <button
-                                  type="button"
-                                  className="csu-remove"
-                                  onClick={() =>
-                                    removeDraftAppointment(
-                                      row
-                                    )
-                                  }
-                                >
-                                  Remove
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    )
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {loadedSchedule && (
-              <p className="csu-note">
-                Saved appointments were loaded
-                from Django.
-              </p>
-            )}
-          </section>
+          <ScheduleTable
+            appointments={sortedAppointments}
+            therapistOptions={therapistOptions}
+            busy={busy}
+            saving={saving}
+            changedCount={changedCount}
+            loadedSchedule={loadedSchedule}
+            saveAppointments={saveAppointments}
+            editAppointment={(row) =>
+              setEditingAppointment({
+                ...row,
+              })
+            }
+            openDetails={openDetails}
+            removeDraftAppointment={
+              removeDraftAppointment
+            }
+          />
         </>
       )}
 
@@ -2922,15 +2827,9 @@ export default function CallCenterScheduleUpload({
 
       {editingAppointment && (
         <AppointmentEditor
-          row={
-            editingAppointment
-          }
-          therapistOptions={
-            therapistOptions
-          }
-          onChange={
-            setEditingAppointment
-          }
+          row={editingAppointment}
+          therapistOptions={therapistOptions}
+          onChange={setEditingAppointment}
           onFindPatient={() => {
             setPatientQuery(
               editingAppointment.patient_name ||
@@ -2940,17 +2839,11 @@ export default function CallCenterScheduleUpload({
             setPatientMatches([]);
             setPatientSearchOpen(true);
           }}
-          onSave={
-            saveEditorToDraft
-          }
+          onSave={saveEditorToDraft}
           onClose={() =>
-            setEditingAppointment(
-              null
-            )
+            setEditingAppointment(null)
           }
-          disabled={
-            saving
-          }
+          disabled={saving}
         />
       )}
 
@@ -2973,9 +2866,7 @@ export default function CallCenterScheduleUpload({
                 type="button"
                 className="csu-close"
                 onClick={() =>
-                  setPatientSearchOpen(
-                    false
-                  )
+                  setPatientSearchOpen(false)
                 }
               >
                 ×
@@ -2989,9 +2880,7 @@ export default function CallCenterScheduleUpload({
 
             <div className="csu-search-row">
               <input
-                value={
-                  patientQuery
-                }
+                value={patientQuery}
                 onChange={(event) =>
                   setPatientQuery(
                     event.target.value
@@ -2999,8 +2888,7 @@ export default function CallCenterScheduleUpload({
                 }
                 onKeyDown={(event) => {
                   if (
-                    event.key ===
-                    "Enter"
+                    event.key === "Enter"
                   ) {
                     findPatient();
                   }
@@ -3011,12 +2899,8 @@ export default function CallCenterScheduleUpload({
               <button
                 type="button"
                 className="csu-primary"
-                disabled={
-                  searchingPatients
-                }
-                onClick={
-                  findPatient
-                }
+                disabled={searchingPatients}
+                onClick={findPatient}
               >
                 {searchingPatients
                   ? "Searching..."
@@ -3029,13 +2913,9 @@ export default function CallCenterScheduleUpload({
                 (patient) => (
                   <button
                     type="button"
-                    key={
-                      patient.id
-                    }
+                    key={patient.id}
                     onClick={() =>
-                      selectPatient(
-                        patient
-                      )
+                      selectPatient(patient)
                     }
                   >
                     <strong>
@@ -3075,9 +2955,7 @@ export default function CallCenterScheduleUpload({
                 type="button"
                 className="csu-close"
                 onClick={() =>
-                  setDetailsAppointment(
-                    null
-                  )
+                  setDetailsAppointment(null)
                 }
               >
                 ×
@@ -3123,9 +3001,7 @@ export default function CallCenterScheduleUpload({
                 ],
                 [
                   "Claims Approval",
-                  detailsAppointment.claim_approval_status ||
-                    detailsAppointment.insurance_approval_status ||
-                    "Not verified",
+                  getApproval(detailsAppointment),
                 ],
                 [
                   "Notes",
@@ -3133,14 +3009,10 @@ export default function CallCenterScheduleUpload({
                     "—",
                 ],
               ].map(
-                ([label, value]) => (
-                  <div
-                    key={
-                      label
-                    }
-                  >
+                ([detailLabel, value]) => (
+                  <div key={detailLabel}>
                     <small>
-                      {label}
+                      {detailLabel}
                     </small>
 
                     <strong>
@@ -3155,8 +3027,7 @@ export default function CallCenterScheduleUpload({
               Change History
             </h4>
 
-            {detailsHistory.length ===
-            0 ? (
+            {detailsHistory.length === 0 ? (
               <p className="csu-note">
                 No audit events returned.
               </p>
@@ -3166,10 +3037,7 @@ export default function CallCenterScheduleUpload({
                   (event, index) => (
                     <div
                       className="csu-timeline-item"
-                      key={
-                        event.id ||
-                        index
-                      }
+                      key={event.id || index}
                     >
                       <strong>
                         {event.action}
@@ -3209,8 +3077,7 @@ export default function CallCenterScheduleUpload({
             )}
 
             <div className="csu-actions">
-              {activeTab ===
-                "create" && (
+              {activeTab === "create" && (
                 <button
                   type="button"
                   className="csu-primary"
@@ -3219,9 +3086,7 @@ export default function CallCenterScheduleUpload({
                       ...detailsAppointment,
                     });
 
-                    setDetailsAppointment(
-                      null
-                    );
+                    setDetailsAppointment(null);
                   }}
                 >
                   Edit Appointment
@@ -3232,9 +3097,7 @@ export default function CallCenterScheduleUpload({
                 type="button"
                 className="csu-secondary"
                 onClick={() =>
-                  setDetailsAppointment(
-                    null
-                  )
+                  setDetailsAppointment(null)
                 }
               >
                 Close
