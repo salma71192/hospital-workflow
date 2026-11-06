@@ -25,14 +25,14 @@ import {
 import {
   detectScheduleHeader,
   extractScheduleAppointments,
-  appointmentImportKey,
   matchTherapist,
   parseExcelTime,
 } from "./excelImportRules";
 
-/*
- * Excel state.
- */
+// ============================================================
+// CONSTANTS
+// ============================================================
+
 const EMPTY_EXCEL = {
   file: null,
   sheets: [],
@@ -47,19 +47,32 @@ const EMPTY_EXCEL = {
   unmatchedTherapists: 0,
 };
 
-/*
- * General helpers.
- */
+const APPROVAL_FIELDS = [
+  "claim_approval_status",
+  "insurance_approval_status",
+  "approval_status",
+];
+
 const confirmDiscard = () =>
   window.confirm("Discard unsaved appointment changes?");
+
+const clean = (value) => String(value ?? "").trim();
+
+const normalizePatientName = (value) =>
+  clean(value)
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
 
 const normalizeSaved = (rows) =>
   rows.map((row) => normalizeAppointment(row, true));
 
 const sortByTime = (rows) =>
   [...rows].sort((a, b) => {
-    const aTime = parseExcelTime(a.time) || "99:99";
-    const bTime = parseExcelTime(b.time) || "99:99";
+    const aTime =
+      parseExcelTime(a.time ?? a.appointment_time) || "99:99";
+    const bTime =
+      parseExcelTime(b.time ?? b.appointment_time) || "99:99";
 
     return aTime.localeCompare(bTime);
   });
@@ -67,7 +80,7 @@ const sortByTime = (rows) =>
 const isValidTherapist = (value) =>
   value !== null &&
   value !== undefined &&
-  String(value).trim() !== "";
+  clean(value) !== "";
 
 const isFollowUpStatus = (status) =>
   status === "unconfirmed" ||
@@ -93,20 +106,266 @@ const getTherapistId = (row) => {
 };
 
 const getAppointmentDate = (row, fallbackDate) =>
-  row.appointment_date ||
-  row.date ||
-  fallbackDate;
+  row.appointment_date || row.date || fallbackDate;
+
+const getAppointmentTime = (row) =>
+  parseExcelTime(row.time ?? row.appointment_time);
+
+const getStatus = (row) =>
+  clean(
+    row.confirmation_status ||
+    row.status ||
+    "unconfirmed"
+  ).toLowerCase();
+
+const getApproval = (row) => {
+  for (const field of APPROVAL_FIELDS) {
+    const value = row?.[field];
+
+    if (
+      value !== undefined &&
+      value !== null &&
+      clean(value) !== ""
+    ) {
+      return clean(value).toLowerCase();
+    }
+  }
+
+  return "unknown";
+};
 
 /*
- * Normalize raw Django users without losing
- * their registered names.
+ * Preserve the actual approval value.
  *
- * Supports:
- * - Django User
- * - Physiotherapist profile
- * - React select option
- * - Nested user object
+ * A missing approval is not evidence of approval.
+ * New Excel appointments can still carry the
+ * approved default assigned by excelImportRules.
  */
+function preserveApproval(row, responseRow = null) {
+  const result = {
+    ...row,
+    ...(responseRow || {}),
+  };
+
+  const originalApproval = getApproval(row);
+  const responseApproval = responseRow
+    ? getApproval(responseRow)
+    : "unknown";
+
+  if (responseApproval !== "unknown") {
+    return result;
+  }
+
+  if (originalApproval !== "unknown") {
+    for (const field of APPROVAL_FIELDS) {
+      if (
+        responseRow?.[field] === undefined ||
+        responseRow?.[field] === null ||
+        clean(responseRow[field]) === ""
+      ) {
+        if (
+          row[field] !== undefined &&
+          row[field] !== null &&
+          clean(row[field]) !== ""
+        ) {
+          result[field] = row[field];
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/*
+ * One patient per appointment date.
+ * Case, spacing and Unicode normalization
+ * differences do not create new identities.
+ *
+ * Different dates are allowed.
+ */
+function patientDateKey(row, fallbackDate) {
+  const name = normalizePatientName(row.patient_name);
+  const appointmentDate = getAppointmentDate(
+    row,
+    fallbackDate
+  );
+
+  if (!name || !appointmentDate) return "";
+
+  return `${appointmentDate}::${name}`;
+}
+
+function sameAppointment(a, b) {
+  if (a.id && b.id) {
+    return String(a.id) === String(b.id);
+  }
+
+  if (a.localId && b.localId) {
+    return String(a.localId) === String(b.localId);
+  }
+
+  return false;
+}
+
+function findDuplicate(rows, candidate, fallbackDate) {
+  const key = patientDateKey(candidate, fallbackDate);
+
+  if (!key) return null;
+
+  return (
+    rows.find(
+      (row) =>
+        !sameAppointment(row, candidate) &&
+        patientDateKey(row, fallbackDate) === key
+    ) || null
+  );
+}
+
+function deduplicateAppointments(rows, fallbackDate) {
+  const seen = new Set();
+  const accepted = [];
+  const duplicates = [];
+
+  for (const row of rows) {
+    const key = patientDateKey(row, fallbackDate);
+
+    if (key && seen.has(key)) {
+      duplicates.push(row);
+      continue;
+    }
+
+    if (key) seen.add(key);
+    accepted.push(row);
+  }
+
+  return { accepted, duplicates };
+}
+
+/*
+ * A rescheduled appointment requires an explicit
+ * replacement date and time.
+ *
+ * The editor should populate:
+ *   rescheduled_date: YYYY-MM-DD
+ *   rescheduled_time: HH:mm
+ *
+ * Original date/time are retained as the
+ * original booking information.
+ */
+function validateRescheduling(row, fallbackDate) {
+  if (getStatus(row) !== "rescheduled") {
+    return "";
+  }
+
+  const newDate = clean(
+    row.rescheduled_date ??
+    row.new_appointment_date ??
+    ""
+  );
+
+  const newTime = parseExcelTime(
+    row.rescheduled_time ??
+    row.new_appointment_time ??
+    ""
+  );
+
+  if (!validDate(newDate) || !validTime(newTime)) {
+    return (
+      "Rescheduled appointments require a new " +
+      "appointment date and time."
+    );
+  }
+
+  const originalDate = getAppointmentDate(
+    row,
+    fallbackDate
+  );
+
+  const originalTime = getAppointmentTime(row);
+
+  if (
+    newDate === originalDate &&
+    newTime === originalTime
+  ) {
+    return (
+      "The new date and time must differ " +
+      "from the original appointment."
+    );
+  }
+
+  return "";
+}
+
+function validateScheduleRow(row, fallbackDate) {
+  const issue = validateAppointment(row);
+  if (issue) return issue;
+
+  const reschedulingIssue = validateRescheduling(
+    row,
+    fallbackDate
+  );
+
+  if (reschedulingIssue) return reschedulingIssue;
+
+  return "";
+}
+
+/*
+ * The backend must accept these rescheduling
+ * fields for persistence. If its serializer uses
+ * different field names, update this mapping.
+ */
+function buildAppointmentPayload(
+  row,
+  therapistId,
+  appointmentDate
+) {
+  const payload = payloadForAppointment(
+    row,
+    therapistId,
+    appointmentDate
+  );
+
+  if (getStatus(row) === "rescheduled") {
+    payload.rescheduled_date = clean(
+      row.rescheduled_date ??
+      row.new_appointment_date
+    );
+
+    payload.rescheduled_time = parseExcelTime(
+      row.rescheduled_time ??
+      row.new_appointment_time
+    );
+  }
+
+  /*
+   * Do not overwrite a saved claims decision.
+   * The backend remains the authority for
+   * verified claims approval.
+   *
+   * For new records, preserve any approval
+   * field already present in the appointment.
+   */
+  if (!row.id || row.isNew) {
+    for (const field of APPROVAL_FIELDS) {
+      if (
+        row[field] !== undefined &&
+        row[field] !== null &&
+        clean(row[field]) !== ""
+      ) {
+        payload[field] = row[field];
+      }
+    }
+  }
+
+  return payload;
+}
+
+// ============================================================
+// THERAPIST HELPERS
+// ============================================================
+
 function buildTherapistOptions(rawUsers = []) {
   const source = Array.isArray(rawUsers)
     ? rawUsers
@@ -149,7 +408,7 @@ function buildTherapistOptions(rawUsers = []) {
         .join(" ")
         .trim();
 
-      const label = String(
+      const label = clean(
         item.full_name ||
         user.full_name ||
         composedName ||
@@ -159,7 +418,7 @@ function buildTherapistOptions(rawUsers = []) {
         user.username ||
         item.username ||
         ""
-      ).trim();
+      );
 
       return {
         value: id,
@@ -184,12 +443,6 @@ function buildTherapistOptions(rawUsers = []) {
     );
 }
 
-/*
- * Combine raw registered users and normalized
- * therapist options.
- *
- * Keep the best available display name.
- */
 function combineTherapists(
   frontendUsers = [],
   backendUsers = []
@@ -204,18 +457,14 @@ function combineTherapists(
   const map = new Map();
 
   for (const item of combined) {
-    const id = String(
-      item.value ?? item.id ?? ""
-    );
-
+    const id = clean(item.value ?? item.id);
     if (!id) continue;
 
-    const label = String(
+    const label = clean(
       item.label ||
       item.full_name ||
-      item.name ||
-      ""
-    ).trim();
+      item.name
+    );
 
     if (!label) continue;
 
@@ -230,15 +479,11 @@ function combineTherapists(
       continue;
     }
 
-    // Prefer a more complete registered name.
-    const previousWords =
-      String(previous.label)
-        .trim()
-        .split(/\s+/)
-        .length;
+    const previousWords = clean(previous.label)
+      .split(/\s+/)
+      .length;
 
-    const currentWords =
-      label.split(/\s+/).length;
+    const currentWords = label.split(/\s+/).length;
 
     if (
       currentWords > previousWords ||
@@ -259,12 +504,6 @@ function combineTherapists(
   return Array.from(map.values());
 }
 
-/*
- * Match an imported appointment to the
- * latest registered therapist list.
- *
- * Never overwrite a manually assigned therapist.
- */
 function reconcilePreviewTherapists(
   preview = [],
   therapistOptions = [],
@@ -273,16 +512,22 @@ function reconcilePreviewTherapists(
   return preview.map((row) => {
     const currentId = getTherapistId(row);
 
-    // A valid manually selected therapist takes priority.
+    const existing = therapistOptions.find(
+      (option) =>
+        String(option.value) === String(currentId)
+    );
+
     if (
       row.therapist_manually_assigned &&
-      therapistOptions.some(
-        (option) =>
-          String(option.value) ===
-          String(currentId)
-      )
+      existing
     ) {
-      return row;
+      return {
+        ...row,
+        therapist: existing.value,
+        therapist_id: existing.value,
+        therapist_name: existing.label,
+        therapist_matched: true,
+      };
     }
 
     const excelName =
@@ -297,17 +542,11 @@ function reconcilePreviewTherapists(
     );
 
     if (!matched) {
-      // Preserve a previously valid assignment.
-      const existing = therapistOptions.find(
-        (option) =>
-          String(option.value) ===
-          String(currentId)
-      );
-
       if (existing) {
         return {
           ...row,
           therapist: existing.value,
+          therapist_id: existing.value,
           therapist_name: existing.label,
           therapist_matched: true,
         };
@@ -316,6 +555,7 @@ function reconcilePreviewTherapists(
       return {
         ...row,
         therapist: "",
+        therapist_id: "",
         therapist_name: excelName,
         therapist_matched: false,
       };
@@ -324,158 +564,87 @@ function reconcilePreviewTherapists(
     return {
       ...row,
       therapist: matched.id,
+      therapist_id: matched.id,
       therapist_name: matched.name,
       therapist_matched: true,
     };
   });
 }
 
-export default function useScheduleData(
-  therapists = []
-) {
-  /*
-   * Main schedule state.
-   */
-  const [activeTab, setActiveTab] =
-    useState("create");
+// ============================================================
+// MAIN HOOK
+// ============================================================
 
-  const [therapist, setTherapist] =
-    useState("");
+export default function useScheduleData(therapists = []) {
+  const [activeTab, setActiveTab] = useState("create");
+  const [therapist, setTherapist] = useState("");
+  const [date, setDate] = useState(today());
 
-  const [date, setDate] =
-    useState(today());
-
-  const [
-    backendTherapists,
-    setBackendTherapists,
-  ] = useState([]);
-
-  const [appointments, setAppointments] =
+  const [backendTherapists, setBackendTherapists] =
     useState([]);
 
-  const [
-    historyAppointments,
-    setHistoryAppointments,
-  ] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [historyAppointments, setHistoryAppointments] =
+    useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [excel, setExcel] = useState(EMPTY_EXCEL);
 
-  const [alerts, setAlerts] =
+  const [loading, setLoading] = useState(false);
+  const [loadingHistory, setLoadingHistory] =
+    useState(false);
+  const [loadingAlerts, setLoadingAlerts] =
+    useState(false);
+  const [loadingTherapists, setLoadingTherapists] =
+    useState(false);
+  const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [alertsError, setAlertsError] = useState("");
+
+  const [hasDraft, setHasDraft] = useState(false);
+  const [loadedSchedule, setLoadedSchedule] =
+    useState(false);
+
+  /*
+   * Show the working appointment table only
+   * after a draft has been created or an
+   * existing schedule has explicitly loaded.
+   */
+  const [showScheduleTable, setShowScheduleTable] =
+    useState(false);
+
+  const [editingAppointment, setEditingAppointment] =
+    useState(null);
+
+  const [detailsAppointment, setDetailsAppointment] =
+    useState(null);
+
+  const [detailsHistory, setDetailsHistory] =
     useState([]);
 
-  const [excel, setExcel] =
-    useState(EMPTY_EXCEL);
-
-  /*
-   * Loading state.
-   */
-  const [loading, setLoading] =
+  const [patientSearchOpen, setPatientSearchOpen] =
     useState(false);
 
-  const [
-    loadingHistory,
-    setLoadingHistory,
-  ] = useState(false);
-
-  const [
-    loadingAlerts,
-    setLoadingAlerts,
-  ] = useState(false);
-
-  const [
-    loadingTherapists,
-    setLoadingTherapists,
-  ] = useState(false);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [importing, setImporting] =
-    useState(false);
-
-  /*
-   * Messages.
-   */
-  const [error, setError] =
+  const [patientQuery, setPatientQuery] =
     useState("");
 
-  const [success, setSuccess] =
-    useState("");
+  const [patientMatches, setPatientMatches] =
+    useState([]);
 
-  const [alertsError, setAlertsError] =
-    useState("");
-
-  /*
-   * Draft state.
-   */
-  const [hasDraft, setHasDraft] =
+  const [searchingPatients, setSearchingPatients] =
     useState(false);
 
-  const [
-    loadedSchedule,
-    setLoadedSchedule,
-  ] = useState(false);
+  const [historyFilter, setHistoryFilter] =
+    useState("all");
 
-  /*
-   * Appointment editor.
-   */
-  const [
-    editingAppointment,
-    setEditingAppointment,
-  ] = useState(null);
+  const [historyQuery, setHistoryQuery] =
+    useState("");
 
-  const [
-    detailsAppointment,
-    setDetailsAppointment,
-  ] = useState(null);
+  const [scheduleFilter, setScheduleFilter] =
+    useState("all");
 
-  const [
-    detailsHistory,
-    setDetailsHistory,
-  ] = useState([]);
-
-  /*
-   * Patient search.
-   */
-  const [
-    patientSearchOpen,
-    setPatientSearchOpen,
-  ] = useState(false);
-
-  const [
-    patientQuery,
-    setPatientQuery,
-  ] = useState("");
-
-  const [
-    patientMatches,
-    setPatientMatches,
-  ] = useState([]);
-
-  const [
-    searchingPatients,
-    setSearchingPatients,
-  ] = useState(false);
-
-  /*
-   * Filters.
-   */
-  const [
-    historyFilter,
-    setHistoryFilter,
-  ] = useState("all");
-
-  const [
-    historyQuery,
-    setHistoryQuery,
-  ] = useState("");
-
-  const [
-    scheduleFilter,
-    setScheduleFilter,
-  ] = useState("all");
-
-  /*
-   * References.
-   */
   const fileInputRef = useRef(null);
   const workbookRef = useRef(null);
 
@@ -484,18 +653,24 @@ export default function useScheduleData(
   const patientRequestRef = useRef(0);
   const alertsRequestRef = useRef(0);
 
-  const busy =
-    loading ||
-    saving ||
-    importing;
+  /*
+   * Prevent double-clicking Save from starting
+   * multiple overlapping requests.
+   */
+  const saveLockRef = useRef(false);
 
   /*
-   * Registered physiotherapists.
-   *
-   * IMPORTANT:
-   * This combines frontend users and Django users,
-   * preserving their full names and IDs.
+   * Tracks successful POST/PATCH responses
+   * during a save attempt.
    */
+  const savedRecordsRef = useRef(new Map());
+
+  const busy = loading || saving || importing;
+
+  // ==========================================================
+  // THERAPISTS
+  // ==========================================================
+
   const therapistOptions = useMemo(
     () =>
       combineTherapists(
@@ -508,13 +683,9 @@ export default function useScheduleData(
   const therapistName =
     therapistOptions.find(
       (item) =>
-        String(item.value) ===
-        String(therapist)
+        String(item.value) === String(therapist)
     )?.label || therapist;
 
-  /*
-   * Load registered therapists from Django.
-   */
   useEffect(() => {
     let active = true;
 
@@ -531,27 +702,19 @@ export default function useScheduleData(
 
         const data = response.data;
 
-        const users =
-          Array.isArray(data)
-            ? data
-            : data?.therapists ||
-              data?.results ||
-              data?.users ||
-              [];
+        const users = Array.isArray(data)
+          ? data
+          : data?.therapists ||
+            data?.results ||
+            data?.users ||
+            [];
 
         setBackendTherapists(
-          Array.isArray(users)
-            ? users
-            : []
+          Array.isArray(users) ? users : []
         );
       } catch (err) {
-        if (
-          active &&
-          !therapists.length
-        ) {
-          setError(
-            errorMessage(err)
-          );
+        if (active && !therapists.length) {
+          setError(errorMessage(err));
         }
       } finally {
         if (active) {
@@ -567,53 +730,35 @@ export default function useScheduleData(
     };
   }, [therapists.length]);
 
-  /*
-   * Automatically retry therapist matching
-   * when registered users become available.
-   *
-   * This fixes the case where Excel preview
-   * was created before Django users loaded.
-   */
   useEffect(() => {
-    if (!therapistOptions.length) {
-      return;
-    }
+    if (!therapistOptions.length) return;
 
     setExcel((previous) => {
       if (!previous.preview.length) {
         return previous;
       }
 
-      const preview =
-        reconcilePreviewTherapists(
-          previous.preview,
-          therapistOptions,
-          therapist
-        );
-
-      const unmatchedTherapists =
-        preview.filter(
-          (row) =>
-            !isValidTherapist(
-              getTherapistId(row)
-            )
-        ).length;
-
-      const changed = preview.some(
-        (row, index) => {
-          const old =
-            previous.preview[index];
-
-          return (
-            String(row.therapist) !==
-              String(old.therapist) ||
-            row.therapist_name !==
-              old.therapist_name ||
-            row.therapist_matched !==
-              old.therapist_matched
-          );
-        }
+      const preview = reconcilePreviewTherapists(
+        previous.preview,
+        therapistOptions,
+        therapist
       );
+
+      const unmatchedTherapists = preview.filter(
+        (row) =>
+          !isValidTherapist(getTherapistId(row))
+      ).length;
+
+      const changed = preview.some((row, index) => {
+        const old = previous.preview[index];
+
+        return (
+          String(row.therapist) !==
+            String(old.therapist) ||
+          row.therapist_name !== old.therapist_name ||
+          row.therapist_matched !== old.therapist_matched
+        );
+      });
 
       if (
         !changed &&
@@ -631,15 +776,14 @@ export default function useScheduleData(
     });
   }, [therapistOptions, therapist]);
 
-  /*
-   * Summary cards.
-   */
+  // ==========================================================
+  // SUMMARY AND FILTERS
+  // ==========================================================
+
   const totals = useMemo(() => {
     const count = (status) =>
       appointments.filter(
-        (row) =>
-          row.confirmation_status ===
-          status
+        (row) => getStatus(row) === status
       ).length;
 
     return {
@@ -652,85 +796,50 @@ export default function useScheduleData(
       phone_off: count("phone_off"),
       evaluations: appointments.filter(
         (row) =>
-          row.appointment_type ===
-          "evaluation"
+          row.appointment_type === "evaluation"
       ).length,
       missingTime: appointments.filter(
-        (row) =>
-          !validTime(row.time)
+        (row) => !validTime(getAppointmentTime(row))
       ).length,
     };
   }, [appointments]);
 
-  /*
-   * Schedule filtering.
-   * Earliest appointment first.
-   */
   const filteredAppointments = useMemo(
     () =>
       sortByTime(
         appointments.filter((row) => {
-          if (
-            scheduleFilter === "all"
-          ) {
-            return true;
+          if (scheduleFilter === "all") return true;
+
+          if (scheduleFilter === "evaluations") {
+            return row.appointment_type === "evaluation";
           }
 
-          if (
-            scheduleFilter ===
-            "evaluations"
-          ) {
-            return (
-              row.appointment_type ===
-              "evaluation"
-            );
-          }
-
-          return (
-            row.confirmation_status ===
-            scheduleFilter
-          );
+          return getStatus(row) === scheduleFilter;
         })
       ),
     [appointments, scheduleFilter]
   );
 
-  /*
-   * History filtering.
-   */
   const filteredHistory = useMemo(() => {
-    const query =
-      historyQuery
-        .trim()
-        .toLowerCase();
+    const query = historyQuery.trim().toLowerCase();
 
     return sortByTime(
-      historyAppointments.filter(
-        (row) => {
-          const statusMatches =
-            historyFilter === "all" ||
-            row.confirmation_status ===
-              historyFilter;
+      historyAppointments.filter((row) => {
+        const statusMatches =
+          historyFilter === "all" ||
+          getStatus(row) === historyFilter;
 
-          const searchMatches =
-            !query ||
-            String(
-              row.patient_name || ""
-            )
-              .toLowerCase()
-              .includes(query) ||
-            String(
-              row.file_number || ""
-            )
-              .toLowerCase()
-              .includes(query);
+        const searchMatches =
+          !query ||
+          clean(row.patient_name)
+            .toLowerCase()
+            .includes(query) ||
+          clean(row.file_number)
+            .toLowerCase()
+            .includes(query);
 
-          return (
-            statusMatches &&
-            searchMatches
-          );
-        }
-      )
+        return statusMatches && searchMatches;
+      })
     );
   }, [
     historyAppointments,
@@ -738,32 +847,24 @@ export default function useScheduleData(
     historyQuery,
   ]);
 
-  /*
-   * Follow-up alerts.
-   */
   const followUpAlerts = useMemo(
     () =>
       sortByTime(
-        alerts.filter(
-          (row) =>
-            isFollowUpStatus(
-              row.confirmation_status
-            )
+        alerts.filter((row) =>
+          isFollowUpStatus(getStatus(row))
         )
       ),
     [alerts]
   );
 
-  const changedCount =
-    appointments.filter(
-      (row) =>
-        row.isNew ||
-        row.isDirty
-    ).length;
+  const changedCount = appointments.filter(
+    (row) => row.isNew || row.isDirty
+  ).length;
 
-  /*
-   * Message helpers.
-   */
+  // ==========================================================
+  // MESSAGE AND WORKSPACE HELPERS
+  // ==========================================================
+
   const clearMessages = () => {
     setError("");
     setSuccess("");
@@ -778,12 +879,8 @@ export default function useScheduleData(
     }));
   };
 
-  /*
-   * Clear Excel.
-   */
   const clearExcel = () => {
     workbookRef.current = null;
-
     setExcel(EMPTY_EXCEL);
 
     if (fileInputRef.current) {
@@ -791,9 +888,6 @@ export default function useScheduleData(
     }
   };
 
-  /*
-   * Cancel preview.
-   */
   const cancelPreview = () => {
     updateExcel({
       preview: [],
@@ -805,9 +899,6 @@ export default function useScheduleData(
     clearMessages();
   };
 
-  /*
-   * Reset workspace.
-   */
   const resetWorkspace = () => {
     requestRef.current++;
     historyRequestRef.current++;
@@ -820,6 +911,7 @@ export default function useScheduleData(
 
     setHasDraft(false);
     setLoadedSchedule(false);
+    setShowScheduleTable(false);
 
     setEditingAppointment(null);
     setDetailsAppointment(null);
@@ -831,60 +923,43 @@ export default function useScheduleData(
 
     setScheduleFilter("all");
 
+    savedRecordsRef.current.clear();
+
     clearExcel();
     clearMessages();
   };
 
-  /*
-   * Change selected physiotherapist or date.
-   */
-  const changeContext = (
-    field,
-    value
-  ) => {
+  const changeContext = (field, value) => {
     if (busy) return;
 
-    if (
-      hasDraft &&
-      !confirmDiscard()
-    ) {
+    if (hasDraft && !confirmDiscard()) {
       return;
     }
 
     resetWorkspace();
 
-    if (
-      field === "therapist"
-    ) {
+    if (field === "therapist") {
       setTherapist(value);
     } else {
       setDate(value);
     }
   };
 
-  /*
-   * Load schedule.
-   */
+  // ==========================================================
+  // LOAD EXISTING SCHEDULE
+  // ==========================================================
+
   const loadSchedule = async () => {
-    if (
-      !therapist ||
-      !validDate(date)
-    ) {
-      setError(
-        "Select a therapist and valid date."
-      );
+    if (!therapist || !validDate(date)) {
+      setError("Select a therapist and valid date.");
       return;
     }
 
-    if (
-      hasDraft &&
-      !confirmDiscard()
-    ) {
+    if (hasDraft && !confirmDiscard()) {
       return;
     }
 
-    const requestId =
-      ++requestRef.current;
+    const requestId = ++requestRef.current;
 
     setLoading(true);
     clearMessages();
@@ -893,90 +968,72 @@ export default function useScheduleData(
       const response = await api.get(
         `${API}list/`,
         {
-          params: {
-            therapist,
-            date,
-          },
+          params: { therapist, date },
           timeout: 30000,
         }
       );
 
-      if (
-        requestId !==
-        requestRef.current
-      ) {
+      if (requestId !== requestRef.current) {
         return;
       }
 
-      const rows =
-        extractRows(response.data);
-
-      setAppointments(
-        normalizeSaved(rows)
+      const rows = normalizeSaved(
+        extractRows(response.data)
       );
 
+      const { accepted, duplicates } =
+        deduplicateAppointments(rows, date);
+
+      setAppointments(sortByTime(accepted));
       setHasDraft(false);
       setLoadedSchedule(true);
+      setShowScheduleTable(accepted.length > 0);
+
+      savedRecordsRef.current.clear();
 
       setSuccess(
-        `${rows.length} appointments loaded.`
+        `${accepted.length} appointments loaded.` +
+        (
+          duplicates.length
+            ? ` ${duplicates.length} duplicate records hidden.`
+            : ""
+        )
       );
     } catch (err) {
-      if (
-        requestId ===
-        requestRef.current
-      ) {
-        setError(
-          errorMessage(err)
-        );
+      if (requestId === requestRef.current) {
+        setError(errorMessage(err));
       }
     } finally {
-      if (
-        requestId ===
-        requestRef.current
-      ) {
+      if (requestId === requestRef.current) {
         setLoading(false);
       }
     }
   };
 
-  /*
-   * Load worksheet.
-   */
-  const loadSheet = (
-    workbook,
-    sheetName
-  ) => {
-    const sheet =
-      workbook.Sheets[sheetName];
+  // ==========================================================
+  // EXCEL WORKBOOK
+  // ==========================================================
 
+  const loadSheet = (workbook, sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
     if (!sheet) return;
 
-    const rows =
-      XLSX.utils.sheet_to_json(
-        sheet,
-        {
-          header: 1,
-          raw: true,
-          defval: "",
-          blankrows: false,
-        }
-      );
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      raw: true,
+      defval: "",
+      blankrows: false,
+    });
 
     let headerRowIndex = 0;
     let headers = rows[0] || [];
 
     try {
-      const detected =
-        detectScheduleHeader(rows);
-
-      headerRowIndex =
-        detected.index;
-
-      headers =
-        rows[headerRowIndex] || [];
+      const detected = detectScheduleHeader(rows);
+      headerRowIndex = detected.index;
+      headers = rows[headerRowIndex] || [];
     } catch {
-      // Header validation occurs during preview.
+      // Preview performs final header validation.
     }
 
     updateExcel({
@@ -992,46 +1049,27 @@ export default function useScheduleData(
     });
   };
 
-  /*
-   * Upload Excel.
-   */
-  const handleExcelFile = async (
-    event
-  ) => {
-    const file =
-      event.target.files?.[0];
-
+  const handleExcelFile = async (event) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
     clearMessages();
 
-    const extension =
-      `.${file.name
-        .split(".")
-        .pop()
-        .toLowerCase()}`;
+    const extension = `.${file.name
+      .split(".")
+      .pop()
+      .toLowerCase()}`;
 
-    if (
-      !ACCEPTED_EXTENSIONS.includes(
-        extension
-      )
-    ) {
-      setError(
-        "Select an XLSX, XLS, or CSV file."
-      );
-
+    if (!ACCEPTED_EXTENSIONS.includes(extension)) {
+      setError("Select an XLSX, XLS, or CSV file.");
       event.target.value = "";
       return;
     }
 
-    if (
-      !file.size ||
-      file.size > MAX_FILE_SIZE
-    ) {
+    if (!file.size || file.size > MAX_FILE_SIZE) {
       setError(
         "Excel file is empty or exceeds the size limit."
       );
-
       event.target.value = "";
       return;
     }
@@ -1047,67 +1085,52 @@ export default function useScheduleData(
         }
       );
 
-      if (
-        !workbook.SheetNames.length
-      ) {
+      if (!workbook.SheetNames.length) {
         throw new Error(
           "Excel file has no worksheets."
         );
       }
 
-      workbookRef.current =
-        workbook;
+      workbookRef.current = workbook;
 
-      let selectedSheet =
-        workbook.SheetNames[0];
+      let selectedSheet = workbook.SheetNames[0];
 
-      for (
-        const sheetName of
-        workbook.SheetNames
-      ) {
-        const sheet =
-          workbook.Sheets[sheetName];
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
 
-        const rows =
-          XLSX.utils.sheet_to_json(
-            sheet,
-            {
-              header: 1,
-              raw: true,
-              defval: "",
-              blankrows: false,
-            }
-          );
+        const rows = XLSX.utils.sheet_to_json(
+          sheet,
+          {
+            header: 1,
+            raw: true,
+            defval: "",
+            blankrows: false,
+          }
+        );
 
         try {
           detectScheduleHeader(rows);
           selectedSheet = sheetName;
           break;
         } catch {
-          // Continue checking worksheets.
+          // Check the next worksheet.
         }
       }
 
       updateExcel({
         file,
-        sheets:
-          workbook.SheetNames,
+        sheets: workbook.SheetNames,
       });
 
-      loadSheet(
-        workbook,
-        selectedSheet
-      );
+      loadSheet(workbook, selectedSheet);
 
       setSuccess(
         "Excel loaded. Preview appointments."
       );
     } catch (err) {
       clearExcel();
-
       setError(
-        err.message ||
-        "Unable to read Excel."
+        err.message || "Unable to read Excel."
       );
     } finally {
       setImporting(false);
@@ -1115,264 +1138,203 @@ export default function useScheduleData(
     }
   };
 
-  const changeSheet = (
-    sheetName
-  ) => {
-    if (
-      workbookRef.current
-    ) {
-      loadSheet(
-        workbookRef.current,
-        sheetName
-      );
+  const changeSheet = (sheetName) => {
+    if (workbookRef.current) {
+      loadSheet(workbookRef.current, sheetName);
     }
   };
 
-  /*
-   * Legacy compatibility.
-   */
-  const changeHeaderRow = (
-    value
-  ) => {
-    const index =
-      Number(value);
+  const changeHeaderRow = (value) => {
+    const index = Number(value);
 
     updateExcel({
       headerRowIndex: index,
-      headers:
-        excel.rows[index] || [],
+      headers: excel.rows[index] || [],
       preview: [],
     });
   };
 
   const updateMapping = () => {
-    // Automatic column detection is used.
+    // Automatic Excel column detection.
   };
 
-  /*
-   * Preview Excel appointments.
-   */
+  // ==========================================================
+  // EXCEL PREVIEW
+  // ==========================================================
+
   const previewExcel = () => {
     clearMessages();
 
     if (!validDate(date)) {
-      setError(
-        "Select a valid appointment date."
-      );
+      setError("Select a valid appointment date.");
       return;
     }
 
     if (!excel.rows.length) {
-      setError(
-        "Upload an Excel schedule first."
-      );
+      setError("Upload an Excel schedule first.");
       return;
     }
 
     try {
-      const result =
-        extractScheduleAppointments({
-          rows: excel.rows,
-          therapistUsers:
-            therapistOptions,
-          selectedTherapist:
-            therapist,
-          appointmentDate:
-            date,
-          existingAppointments:
-            appointments,
-        });
+      const result = extractScheduleAppointments({
+        rows: excel.rows,
+        therapistUsers: therapistOptions,
+        selectedTherapist: therapist,
+        appointmentDate: date,
+        existingAppointments: appointments,
+      });
 
-      if (
-        result.appointments.length >
-        MAX_APPOINTMENTS
-      ) {
+      if (result.appointments.length > MAX_APPOINTMENTS) {
         throw new Error(
           `Maximum ${MAX_APPOINTMENTS} appointments allowed.`
         );
       }
 
-      const preview =
-        reconcilePreviewTherapists(
-          result.appointments,
-          therapistOptions,
-          therapist
+      const reconciled = reconcilePreviewTherapists(
+        result.appointments,
+        therapistOptions,
+        therapist
+      );
+
+      const { accepted, duplicates } =
+        deduplicateAppointments(
+          reconciled,
+          date
         );
 
-      const unmatchedTherapists =
-        preview.filter(
-          (row) =>
-            !isValidTherapist(
-              getTherapistId(row)
-            )
-        ).length;
+      const unmatchedTherapists = accepted.filter(
+        (row) =>
+          !isValidTherapist(getTherapistId(row))
+      ).length;
 
       updateExcel({
-        preview:
-          sortByTime(preview),
+        preview: sortByTime(accepted),
         skipped:
-          result.skipped,
-        warnings:
-          result.warnings,
+          result.skipped + duplicates.length,
+        warnings: [
+          ...result.warnings,
+          ...duplicates.map(
+            (row) =>
+              `Duplicate patient skipped: ${row.patient_name}`
+          ),
+        ],
         unmatchedTherapists,
       });
 
       setSuccess(
-        `${preview.length} appointments ready. ` +
+        `${accepted.length} appointments ready. ` +
         `${unmatchedTherapists} therapists unmatched. ` +
-        `${result.skipped} rows skipped.`
+        `${result.skipped + duplicates.length} rows skipped.`
       );
     } catch (err) {
       setError(
-        err.message ||
-        "Excel preview failed."
+        err.message || "Excel preview failed."
       );
     }
   };
 
-  /*
-   * Edit preview appointment.
-   */
   const updateImportPreviewRow = (
     localId,
     field,
     value
   ) => {
     updateExcel((previous) => {
-      const preview =
-        previous.preview.map(
-          (row) => {
-            if (
-              row.localId !==
-              localId
-            ) {
-              return row;
-            }
+      const preview = previous.preview.map((row) => {
+        if (row.localId !== localId) return row;
 
-            if (
-              field === "therapist" ||
-              field === "therapist_id"
-            ) {
-              const selected =
-                therapistOptions.find(
-                  (option) =>
-                    String(
-                      option.value
-                    ) ===
-                    String(value)
-                );
+        if (
+          field === "therapist" ||
+          field === "therapist_id"
+        ) {
+          const selected = therapistOptions.find(
+            (option) =>
+              String(option.value) === String(value)
+          );
 
-              return {
-                ...row,
-                therapist:
-                  selected?.value ?? "",
-                therapist_name:
-                  selected?.label ??
-                  row.excel_therapist_name ??
-                  "",
-                therapist_matched:
-                  Boolean(selected),
-                therapist_manually_assigned:
-                  Boolean(selected),
-                isDirty: true,
-              };
-            }
+          return {
+            ...row,
+            therapist: selected?.value ?? "",
+            therapist_id: selected?.value ?? "",
+            therapist_name:
+              selected?.label ??
+              row.excel_therapist_name ??
+              "",
+            therapist_matched: Boolean(selected),
+            therapist_manually_assigned:
+              Boolean(selected),
+            isDirty: true,
+          };
+        }
 
-            if (
-              field === "time"
-            ) {
-              return {
-                ...row,
-                time:
-                  parseExcelTime(value),
-                isDirty: true,
-              };
-            }
+        if (
+          field === "time" ||
+          field === "rescheduled_time"
+        ) {
+          return {
+            ...row,
+            [field]: parseExcelTime(value),
+            isDirty: true,
+          };
+        }
 
-            return {
-              ...row,
-              [field]: value,
-              isDirty: true,
-            };
-          }
-        );
+        return {
+          ...row,
+          [field]: value,
+          isDirty: true,
+        };
+      });
 
       return {
-        preview:
-          sortByTime(preview),
-        unmatchedTherapists:
-          preview.filter(
-            (row) =>
-              !isValidTherapist(
-                getTherapistId(row)
-              )
-          ).length,
+        preview: sortByTime(preview),
+        unmatchedTherapists: preview.filter(
+          (row) =>
+            !isValidTherapist(getTherapistId(row))
+        ).length,
       };
     });
   };
 
-  /*
-   * Remove preview appointment.
-   */
-  const removeImportPreviewRow = (
-    localId
-  ) => {
+  const removeImportPreviewRow = (localId) => {
     updateExcel((previous) => {
-      const preview =
-        previous.preview.filter(
-          (row) =>
-            row.localId !==
-            localId
-        );
+      const preview = previous.preview.filter(
+        (row) => row.localId !== localId
+      );
 
       return {
         preview,
-        unmatchedTherapists:
-          preview.filter(
-            (row) =>
-              !isValidTherapist(
-                getTherapistId(row)
-              )
-          ).length,
+        unmatchedTherapists: preview.filter(
+          (row) =>
+            !isValidTherapist(getTherapistId(row))
+        ).length,
       };
     });
   };
 
-  /*
-   * Add preview to draft.
-   */
+  // ==========================================================
+  // PREVIEW -> DRAFT
+  // ==========================================================
+
   const addPreviewToDraft = () => {
     clearMessages();
 
-    if (
-      !excel.preview.length
-    ) {
+    if (!excel.preview.length) {
       setError(
         "No appointments available to import."
       );
       return;
     }
 
-    const unmatched =
-      excel.preview.filter(
-        (row) =>
-          !isValidTherapist(
-            getTherapistId(row)
-          ) ||
-          !therapistOptions.some(
-            (option) =>
-              String(
-                option.value
-              ) ===
-              String(
-                getTherapistId(row)
-              )
-          )
-      );
+    const unmatched = excel.preview.filter(
+      (row) =>
+        !isValidTherapist(getTherapistId(row)) ||
+        !therapistOptions.some(
+          (option) =>
+            String(option.value) ===
+            String(getTherapistId(row))
+        )
+    );
 
-    if (
-      unmatched.length
-    ) {
+    if (unmatched.length) {
       setError(
         `${unmatched.length} appointments have unmatched therapists. ` +
         "Assign registered physiotherapists before importing."
@@ -1380,62 +1342,47 @@ export default function useScheduleData(
       return;
     }
 
-    for (
-      const row of
-      excel.preview
-    ) {
-      if (
-        !row.patient_name?.trim() ||
-        !validTime(row.time)
-      ) {
+    for (const row of excel.preview) {
+      const issue = validateScheduleRow(row, date);
+
+      if (issue) {
         setError(
-          `${row.patient_name || "Appointment"}: ` +
-          "Valid patient name and time are required."
+          `${row.patient_name || "Appointment"}: ${issue}`
         );
         return;
       }
     }
 
-    const seen =
-      new Set(
-        appointments.map(
-          appointmentImportKey
-        )
-      );
+    const seen = new Set(
+      appointments
+        .map((row) => patientDateKey(row, date))
+        .filter(Boolean)
+    );
 
     const accepted = [];
     let duplicateCount = 0;
 
-    for (
-      const row of
-      excel.preview
-    ) {
-      const key =
-        appointmentImportKey(row);
+    for (const row of excel.preview) {
+      const key = patientDateKey(row, date);
 
-      if (
-        seen.has(key)
-      ) {
+      if (key && seen.has(key)) {
         duplicateCount++;
         continue;
       }
 
-      seen.add(key);
+      if (key) seen.add(key);
       accepted.push(row);
     }
 
-    if (
-      !accepted.length
-    ) {
+    if (!accepted.length) {
       setError(
-        "All appointments already exist."
+        "All appointments already exist in the draft."
       );
       return;
     }
 
     if (
-      appointments.length +
-      accepted.length >
+      appointments.length + accepted.length >
       MAX_APPOINTMENTS
     ) {
       setError(
@@ -1452,142 +1399,139 @@ export default function useScheduleData(
       return;
     }
 
-    setAppointments(
-      (previous) =>
-        sortByTime([
-          ...previous,
-          ...accepted.map(
-            (row) => ({
-              ...row,
-              isNew: true,
-              isDirty: true,
-            })
-          ),
-        ])
+    setAppointments((previous) =>
+      sortByTime([
+        ...previous,
+        ...accepted.map((row) => ({
+          ...row,
+          isNew: true,
+          isDirty: true,
+        })),
+      ])
     );
 
     setHasDraft(true);
+    setShowScheduleTable(true);
 
+    /*
+     * Remove the preview after adding the draft.
+     * This makes the Appointment Preview disappear.
+     */
     updateExcel({
       preview: [],
+      warnings: [],
+      skipped: 0,
       unmatchedTherapists: 0,
     });
 
+    setScheduleFilter("all");
+
     setSuccess(
       `${accepted.length} appointments added to draft.` +
-      (duplicateCount
-        ? ` ${duplicateCount} duplicates skipped.`
-        : "")
+      (
+        duplicateCount
+          ? ` ${duplicateCount} duplicates skipped.`
+          : ""
+      )
     );
   };
 
-  /*
-   * Manually add appointment.
-   */
+  // ==========================================================
+  // MANUAL APPOINTMENTS
+  // ==========================================================
+
   const addAppointment = () => {
-    if (
-      !therapist ||
-      !validDate(date)
-    ) {
+    if (!therapist || !validDate(date)) {
       setError(
         "Select therapist and date first."
       );
       return;
     }
 
-    if (
-      appointments.length >=
-      MAX_APPOINTMENTS
-    ) {
-      setError(
-        "Maximum appointments reached."
-      );
+    if (appointments.length >= MAX_APPOINTMENTS) {
+      setError("Maximum appointments reached.");
       return;
     }
 
     setEditingAppointment({
       ...emptyAppointment(),
       therapist,
-      therapist_name:
-        therapistName,
-      appointment_date:
-        date,
+      therapist_id: therapist,
+      therapist_name: therapistName,
+      appointment_date: date,
       date,
-      confirmation_status:
-        "unconfirmed",
-      approval_status:
-        "approved",
+      confirmation_status: "unconfirmed",
+      approval_status: "approved",
     });
 
     clearMessages();
   };
 
-  /*
-   * Save editor to draft.
-   */
   const saveEditorToDraft = () => {
-    if (
-      !editingAppointment
-    ) {
-      return;
-    }
+    if (!editingAppointment) return;
 
-    const issue =
-      validateAppointment(
-        editingAppointment
-      );
+    const issue = validateScheduleRow(
+      editingAppointment,
+      date
+    );
 
     if (issue) {
       setError(issue);
       return;
     }
 
+    const duplicate = findDuplicate(
+      appointments,
+      editingAppointment,
+      date
+    );
+
+    if (duplicate) {
+      setError(
+        `${editingAppointment.patient_name} already has ` +
+        "an appointment on this date. " +
+        "Edit the existing appointment instead."
+      );
+      return;
+    }
+
     const updated = {
       ...editingAppointment,
       isDirty: true,
+      isNew:
+        editingAppointment.isNew ||
+        !editingAppointment.id,
     };
 
-    setAppointments(
-      (previous) => {
-        const exists =
-          previous.some(
-            (row) =>
-              row.localId ===
-              updated.localId
-          );
+    setAppointments((previous) => {
+      const exists = previous.some(
+        (row) => sameAppointment(row, updated)
+      );
 
-        return sortByTime(
-          exists
-            ? previous.map(
-                (row) =>
-                  row.localId ===
-                  updated.localId
-                    ? updated
-                    : row
-              )
-            : [
-                ...previous,
-                updated,
-              ]
-        );
-      }
-    );
+      return sortByTime(
+        exists
+          ? previous.map((row) =>
+              sameAppointment(row, updated)
+                ? preserveApproval(row, updated)
+                : row
+            )
+          : [...previous, updated]
+      );
+    });
 
     setHasDraft(true);
+    setShowScheduleTable(true);
     setEditingAppointment(null);
     setError("");
 
     setSuccess(
-      "Appointment added to draft."
+      updated.id
+        ? "Appointment changes added to draft."
+        : "Appointment added to draft."
     );
   };
 
-  /*
-   * Remove draft appointment.
-   */
-  const removeDraftAppointment = (
-    row
-  ) => {
+  const removeDraftAppointment = (row) => {
     if (row.id) {
       setError(
         "Saved appointments must be cancelled, not deleted."
@@ -1603,95 +1547,73 @@ export default function useScheduleData(
       return;
     }
 
-    setAppointments(
-      (previous) =>
-        previous.filter(
-          (item) =>
-            item.localId !==
-            row.localId
-        )
-    );
+    setAppointments((previous) => {
+      const remaining = previous.filter(
+        (item) => !sameAppointment(item, row)
+      );
+
+      if (!remaining.length) {
+        setShowScheduleTable(false);
+      }
+
+      return remaining;
+    });
 
     setHasDraft(true);
   };
 
-  /*
-   * Search patients.
-   */
+  // ==========================================================
+  // PATIENT SEARCH
+  // ==========================================================
+
   const findPatient = async () => {
-    const query =
-      patientQuery.trim();
+    const query = patientQuery.trim();
 
-    if (
-      query.length < 2
-    ) {
-      return;
-    }
+    if (query.length < 2) return;
 
-    const requestId =
-      ++patientRequestRef.current;
-
+    const requestId = ++patientRequestRef.current;
     setSearchingPatients(true);
 
     try {
       const response = await api.get(
         `${API}patients/`,
         {
-          params: {
-            q: query,
-          },
+          params: { q: query },
           timeout: 30000,
         }
       );
 
-      if (
-        requestId ===
-        patientRequestRef.current
-      ) {
+      if (requestId === patientRequestRef.current) {
         setPatientMatches(
-          response.data?.matches ||
-          []
+          response.data?.matches || []
         );
       }
     } catch (err) {
-      if (
-        requestId ===
-        patientRequestRef.current
-      ) {
-        setError(
-          errorMessage(err)
-        );
+      if (requestId === patientRequestRef.current) {
+        setError(errorMessage(err));
       }
     } finally {
-      if (
-        requestId ===
-        patientRequestRef.current
-      ) {
+      if (requestId === patientRequestRef.current) {
         setSearchingPatients(false);
       }
     }
   };
 
-  const selectPatient = (
-    patient
-  ) => {
-    setEditingAppointment(
-      (previous) =>
-        previous
-          ? {
-              ...previous,
-              patient_id:
-                patient.id,
-              patient_name:
-                patient.name,
-              file_number:
-                patient.file_number ||
-                patient.patient_id ||
-                "",
-              matched: true,
-              isDirty: true,
-            }
-          : previous
+  const selectPatient = (patient) => {
+    setEditingAppointment((previous) =>
+      previous
+        ? {
+            ...previous,
+            patient_id: patient.id,
+            patient_name: patient.name,
+            file_number:
+              patient.file_number ||
+              patient.patient_id ||
+              "",
+            matched: true,
+            isDirty: true,
+          }
+        : previous
     );
 
     setPatientSearchOpen(false);
@@ -1699,32 +1621,78 @@ export default function useScheduleData(
     setPatientQuery("");
   };
 
-  /*
-   * Save appointments to Django.
-   */
-  const saveAppointments = async () => {
-    const changed =
-      appointments.filter(
-        (row) =>
-          row.isNew ||
-          row.isDirty
+  // ==========================================================
+  // ALERTS
+  // ==========================================================
+
+  const loadAlerts = async () => {
+    const requestId = ++alertsRequestRef.current;
+
+    setLoadingAlerts(true);
+    setAlertsError("");
+
+    try {
+      const response = await api.get(
+        `${API}alerts/`,
+        { timeout: 30000 }
       );
 
-    if (
-      !changed.length
-    ) {
-      setSuccess(
-        "No changes to save."
+      if (requestId !== alertsRequestRef.current) {
+        return;
+      }
+
+      const rows =
+        response.data?.alerts ||
+        extractRows(response.data);
+
+      setAlerts(normalizeSaved(rows));
+    } catch (err) {
+      if (requestId === alertsRequestRef.current) {
+        setAlerts([]);
+        setAlertsError(errorMessage(err));
+      }
+    } finally {
+      if (requestId === alertsRequestRef.current) {
+        setLoadingAlerts(false);
+      }
+    }
+  };
+
+  // ==========================================================
+  // SAVE TO DJANGO
+  // ==========================================================
+
+  const saveAppointments = async () => {
+    if (saveLockRef.current) return;
+
+    const changed = appointments.filter(
+      (row) => row.isNew || row.isDirty
+    );
+
+    if (!changed.length) {
+      setSuccess("No changes to save.");
+      return;
+    }
+
+    /*
+     * Check duplicates across the entire working
+     * schedule before making any API requests.
+     */
+    const { duplicates } = deduplicateAppointments(
+      appointments,
+      date
+    );
+
+    if (duplicates.length) {
+      setError(
+        `Duplicate appointment detected for ${duplicates[0].patient_name}. ` +
+        "Only one appointment per patient per date is allowed."
       );
       return;
     }
 
-    for (
-      const row of
-      changed
-    ) {
-      const issue =
-        validateAppointment(row);
+    for (const row of changed) {
+      const issue = validateScheduleRow(row, date);
 
       if (issue) {
         setError(
@@ -1735,17 +1703,9 @@ export default function useScheduleData(
 
       const therapistId =
         getTherapistId(row) ||
-        (
-          row.source !== "excel"
-            ? therapist
-            : ""
-        );
+        (row.source !== "excel" ? therapist : "");
 
-      if (
-        !isValidTherapist(
-          therapistId
-        )
-      ) {
+      if (!isValidTherapist(therapistId)) {
         setError(
           `${row.patient_name || "Appointment"}: ` +
           "Assign a physiotherapist before saving."
@@ -1762,32 +1722,48 @@ export default function useScheduleData(
       return;
     }
 
+    saveLockRef.current = true;
     setSaving(true);
     clearMessages();
 
     const saved = [];
 
+    const applySavedRecords = (previous) =>
+      previous.map((row) => {
+        const match = saved.find(
+          (item) => item.localId === row.localId
+        );
+
+        if (!match) return row;
+
+        const combined = preserveApproval(
+          row,
+          match.responseRow
+        );
+
+        return {
+          ...combined,
+          id: match.id,
+          isNew: false,
+          isDirty: false,
+        };
+      });
+
     try {
-      for (
-        const row of
-        changed
-      ) {
+      for (const row of changed) {
         const therapistId =
-          getTherapistId(row) ||
-          therapist;
+          getTherapistId(row) || therapist;
 
-        const appointmentDate =
-          getAppointmentDate(
-            row,
-            date
-          );
+        const appointmentDate = getAppointmentDate(
+          row,
+          date
+        );
 
-        const payload =
-          payloadForAppointment(
-            row,
-            therapistId,
-            appointmentDate
-          );
+        const payload = buildAppointmentPayload(
+          row,
+          therapistId,
+          appointmentDate
+        );
 
         const response =
           row.id && !row.isNew
@@ -1808,96 +1784,112 @@ export default function useScheduleData(
                 }
               );
 
+        const responseRow =
+          response.data?.appointment ||
+          response.data ||
+          {};
+
+        const savedId =
+          responseRow.id ??
+          row.id;
+
+        /*
+         * A successful create must return an ID.
+         * Without it, retrying may create duplicates.
+         */
+        if (!savedId) {
+          throw new Error(
+            `Appointment for ${row.patient_name} was sent, ` +
+            "but Django did not return an appointment ID. " +
+            "Check the saved schedule before retrying."
+          );
+        }
+
         saved.push({
-          localId:
-            row.localId,
-          id:
-            response.data?.appointment?.id ??
-            response.data?.id ??
-            row.id,
+          localId: row.localId,
+          id: savedId,
+          responseRow,
         });
+
+        savedRecordsRef.current.set(
+          String(row.localId),
+          savedId
+        );
       }
 
-      setAppointments(
-        (previous) =>
-          previous.map(
-            (row) => {
-              const match =
-                saved.find(
-                  (item) =>
-                    item.localId ===
-                    row.localId
-                );
-
-              return match
-                ? {
-                    ...row,
-                    id: match.id,
-                    isNew: false,
-                    isDirty: false,
-                  }
-                : row;
-            }
-          )
-      );
-
+      /*
+       * All requests succeeded.
+       *
+       * Clear only the working schedule, not the
+       * Django records or appointment history.
+       */
+      setAppointments([]);
       setHasDraft(false);
-      setLoadedSchedule(true);
+      setLoadedSchedule(false);
+      setShowScheduleTable(false);
+      setScheduleFilter("all");
+
+      setEditingAppointment(null);
+
+      updateExcel({
+        preview: [],
+        warnings: [],
+        skipped: 0,
+        unmatchedTherapists: 0,
+      });
+
+      savedRecordsRef.current.clear();
 
       setSuccess(
-        `${saved.length} appointments saved successfully.`
+        `${saved.length} appointments saved successfully. ` +
+        "The working schedule has been cleared. " +
+        "Saved appointments remain available in history."
       );
 
-      await loadAlerts();
+      /*
+       * Alert refresh failure should not cause
+       * successful appointment saving to be
+       * reported as a failure.
+       */
+      try {
+        await loadAlerts();
+      } catch {
+        // Appointment save is already complete.
+      }
     } catch (err) {
-      setAppointments(
-        (previous) =>
-          previous.map(
-            (row) => {
-              const match =
-                saved.find(
-                  (item) =>
-                    item.localId ===
-                    row.localId
-                );
-
-              return match
-                ? {
-                    ...row,
-                    id: match.id,
-                    isNew: false,
-                    isDirty: false,
-                  }
-                : row;
-            }
-          )
+      /*
+       * Preserve IDs of successful requests.
+       * Only unsaved rows remain dirty, avoiding
+       * duplicate POSTs during a retry.
+       */
+      setAppointments((previous) =>
+        applySavedRecords(previous)
       );
 
       setHasDraft(true);
+      setShowScheduleTable(true);
 
       setError(
-        `${saved.length}/${changed.length} saved. ` +
+        `${saved.length}/${changed.length} appointments saved. ` +
         errorMessage(err) +
-        " Review remaining changes before retrying."
+        " Review the remaining changes before retrying."
       );
     } finally {
+      saveLockRef.current = false;
       setSaving(false);
     }
   };
 
-  /*
-   * Load history.
-   */
+  // ==========================================================
+  // HISTORY
+  // ==========================================================
+
   const loadHistory = async () => {
-    if (
-      !therapist ||
-      !validDate(date)
-    ) {
+    if (!therapist || !validDate(date)) {
       return;
     }
 
-    const requestId =
-      ++historyRequestRef.current;
+    const requestId = ++historyRequestRef.current;
 
     setLoadingHistory(true);
 
@@ -1905,136 +1897,58 @@ export default function useScheduleData(
       const response = await api.get(
         `${API}list/`,
         {
-          params: {
-            therapist,
-            date,
-          },
+          params: { therapist, date },
           timeout: 30000,
         }
       );
 
       if (
-        requestId ===
-        historyRequestRef.current
+        requestId === historyRequestRef.current
       ) {
         setHistoryAppointments(
-          normalizeSaved(
-            extractRows(
-              response.data
+          sortByTime(
+            normalizeSaved(
+              extractRows(response.data)
             )
           )
         );
       }
     } catch (err) {
       if (
-        requestId ===
-        historyRequestRef.current
+        requestId === historyRequestRef.current
       ) {
-        setError(
-          errorMessage(err)
-        );
+        setError(errorMessage(err));
       }
     } finally {
       if (
-        requestId ===
-        historyRequestRef.current
+        requestId === historyRequestRef.current
       ) {
         setLoadingHistory(false);
       }
     }
   };
 
-  /*
-   * Load alerts.
-   */
-  const loadAlerts = async () => {
-    const requestId =
-      ++alertsRequestRef.current;
-
-    setLoadingAlerts(true);
-    setAlertsError("");
-
-    try {
-      const response = await api.get(
-        `${API}alerts/`,
-        {
-          timeout: 30000,
-        }
-      );
-
-      if (
-        requestId !==
-        alertsRequestRef.current
-      ) {
-        return;
-      }
-
-      const rows =
-        response.data?.alerts ||
-        extractRows(
-          response.data
-        );
-
-      setAlerts(
-        normalizeSaved(rows)
-      );
-    } catch (err) {
-      if (
-        requestId ===
-        alertsRequestRef.current
-      ) {
-        setAlerts([]);
-        setAlertsError(
-          errorMessage(err)
-        );
-      }
-    } finally {
-      if (
-        requestId ===
-        alertsRequestRef.current
-      ) {
-        setLoadingAlerts(false);
-      }
-    }
-  };
-
-  /*
-   * Load history and alerts
-   * when the history tab opens.
-   */
   useEffect(() => {
-    if (
-      activeTab !== "history"
-    ) {
+    if (activeTab !== "history") {
       return;
     }
 
-    if (
-      therapist &&
-      validDate(date)
-    ) {
+    if (therapist && validDate(date)) {
       loadHistory();
     }
 
     loadAlerts();
-  }, [
-    activeTab,
-    therapist,
-    date,
-  ]);
+  }, [activeTab, therapist, date]);
 
-  /*
-   * Open appointment details.
-   */
-  const openDetails = async (
-    row
-  ) => {
+  // ==========================================================
+  // APPOINTMENT DETAILS
+  // ==========================================================
+
+  const openDetails = async (row) => {
     setDetailsAppointment(row);
 
     setDetailsHistory(
-      normalizeHistory(
-        row.history
-      )
+      normalizeHistory(row.history)
     );
 
     if (!row.id) return;
@@ -2052,20 +1966,17 @@ export default function useScheduleData(
         )
       );
     } catch {
-      // Preserve available history.
+      // Keep any history already available.
     }
   };
 
-  /*
-   * Record call attempt.
-   */
-  const recordCallAttempt = async (
-    row
-  ) => {
+  // ==========================================================
+  // CALL ATTEMPTS
+  // ==========================================================
+
+  const recordCallAttempt = async (row) => {
     if (!row.id) {
-      setError(
-        "Save appointment first."
-      );
+      setError("Save appointment first.");
       return;
     }
 
@@ -2079,17 +1990,16 @@ export default function useScheduleData(
         }
       );
 
-      setSuccess(
-        "Call attempt recorded."
-      );
-
+      setSuccess("Call attempt recorded.");
       await loadAlerts();
     } catch (err) {
-      setError(
-        errorMessage(err)
-      );
+      setError(errorMessage(err));
     }
   };
+
+  // ==========================================================
+  // RETURN
+  // ==========================================================
 
   return {
     activeTab,
@@ -2111,6 +2021,12 @@ export default function useScheduleData(
     changedCount,
     hasDraft,
     loadedSchedule,
+
+    /*
+     * Use this in the parent component to
+     * control ScheduleTable visibility.
+     */
+    showScheduleTable,
 
     excel,
     updateExcel,

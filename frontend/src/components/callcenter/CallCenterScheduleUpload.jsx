@@ -2733,20 +2733,8 @@ export default function CallCenterScheduleUpload({
             </p>
           </section>
 
-          {/* SUMMARY CARDS */}
-
-          <ScheduleSummaryCards
-            totals={totals}
-            activeFilter={
-              scheduleFilter
-            }
-            onFilterChange={
-              setScheduleFilter
-            }
-            setFilter={
-              setScheduleFilter
-            }
-          />
+  
+              
 
           {/* UPDATED THERAPIST APPOINTMENTS TABLE */}
 

@@ -1,3 +1,4 @@
+
 import React, {
   useCallback,
   useEffect,
@@ -9,69 +10,60 @@ import api from "../api/api";
 
 const MONTHLY_LIMIT = 6;
 
+const SPECIALTY_OPTIONS = [
+  "Pediatrics",
+  "Neuro",
+  "TMJ",
+  "Scoliosis",
+  "Women Health - Pregnancy",
+  "Women Health - Pelvic",
+  "Lymphedema",
+  "Lipodema",
+  "Sports",
+];
+
 const COLORS = {
   navy: "#203B63",
   blue: "#3478F6",
   blueLight: "#EAF2FF",
   cyan: "#20B8C9",
-  cyanLight: "#E7FAFC",
   purple: "#8B5CF6",
   purpleLight: "#F2ECFF",
   coral: "#FF806E",
   coralLight: "#FFF0ED",
   green: "#20A879",
   greenLight: "#E7F8F1",
-  yellow: "#F2B544",
-  yellowLight: "#FFF7E6",
   ink: "#263B53",
   muted: "#71839A",
-  border: "#E5ECF5",
-  background: "#F3F7FD",
-  white: "#FFFFFF",
 };
 
 const currentMonthKey = () => {
   const date = new Date();
-  return `${date.getFullYear()}-${String(
-    date.getMonth() + 1
-  ).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 };
 
 const shiftMonth = (month, offset) => {
   const [year, monthNumber] = month.split("-").map(Number);
   const date = new Date(year, monthNumber - 1 + offset, 1);
-
-  return `${date.getFullYear()}-${String(
-    date.getMonth() + 1
-  ).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 };
 
 const formatMonth = (month, short = false) => {
   if (!month) return "";
-
   const [year, monthNumber] = month.split("-").map(Number);
-
-  return new Date(year, monthNumber - 1, 1).toLocaleDateString(
-    "en-GB",
-    {
-      month: short ? "short" : "long",
-      year: "numeric",
-    }
-  );
+  return new Date(year, monthNumber - 1, 1).toLocaleDateString("en-GB", {
+    month: short ? "short" : "long",
+    year: "numeric",
+  });
 };
 
 const parseLocalDate = (value) => {
   if (!value) return null;
-
   const text = String(value);
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
 
   const date = match
-    ? new Date(
-        Number(match[1]),
-        Number(match[2]) - 1,
-        Number(match[3])
-      )
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
     : new Date(value);
 
   return Number.isNaN(date.getTime()) ? null : date;
@@ -79,7 +71,6 @@ const parseLocalDate = (value) => {
 
 const formatDate = (value) => {
   const date = parseLocalDate(value);
-
   if (!date) return "-";
 
   return date.toLocaleDateString("en-GB", {
@@ -103,30 +94,22 @@ const getValue = (object, keys, fallback = "-") => {
           fallback
         );
       }
-
       return value;
     }
   }
-
   return fallback;
 };
 
 const getMonthKey = (value) => {
   if (!value) return "";
-
   const text = String(value);
 
-  if (/^\d{4}-\d{2}/.test(text)) {
-    return text.slice(0, 7);
-  }
+  if (/^\d{4}-\d{2}/.test(text)) return text.slice(0, 7);
 
   const date = parseLocalDate(value);
-
   if (!date) return "";
 
-  return `${date.getFullYear()}-${String(
-    date.getMonth() + 1
-  ).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 };
 
 const getVisitDate = (visit) =>
@@ -144,21 +127,12 @@ const getVisitDate = (visit) =>
   );
 
 const getVisitNumber = (visit, index) =>
-  getValue(
-    visit,
-    ["visit_number", "appointment_number", "number"],
-    index + 1
-  );
+  getValue(visit, ["visit_number", "appointment_number", "number"], index + 1);
 
 const getRegisteredBy = (visit) =>
   getValue(
     visit,
-    [
-      "registered_by",
-      "registered_by_name",
-      "created_by_name",
-      "created_by",
-    ],
+    ["registered_by", "registered_by_name", "created_by_name", "created_by"],
     "-"
   );
 
@@ -178,22 +152,15 @@ const getPhysio = (visit) =>
 const getRegistrationCategory = (visit) =>
   getValue(
     visit,
-    [
-      "category",
-      "registration_type",
-      "visit_type",
-      "appointment_type",
-      "type",
-    ],
+    ["category", "registration_type", "visit_type", "appointment_type", "type"],
     "Registration"
   );
 
 const getPhysician = (visit) =>
-  getValue(
-    visit,
-    ["referring_physician", "physician_name", "doctor_name"],
-    "-"
-  );
+  getValue(visit, ["referring_physician", "physician_name", "doctor_name"], "-");
+
+const getAssignmentId = (visit) =>
+  visit?.id || visit?.pk || visit?.assignment_id || "";
 
 const getVisitRecord = (visit) => {
   const visitUnder =
@@ -217,48 +184,84 @@ const getVisitRecord = (visit) => {
 
   if (!therapistName || therapistName === "-") return "";
 
-  if (therapistName.toLowerCase().startsWith("visit under:")) {
-    return therapistName;
-  }
-
-  return `${therapistName}`;
+  return therapistName.toLowerCase().startsWith("visit under:")
+    ? therapistName
+    : therapistName;
 };
 
 const getSessionDate = (session) =>
-  getValue(
-    session,
-    ["session_date", "date", "visit_date", "created_at"],
-    null
-  );
+  getValue(session, ["session_date", "date", "visit_date", "created_at"], null);
 
-/*
- * Only Walk-in and Appointment registrations are counted
- * as utilized sessions.
- *
- * Other registration categories are excluded.
- */
+const isTherapistUser = () => {
+  if (typeof window === "undefined") return false;
+
+  const possibleStorageKeys = [
+    "user",
+    "currentUser",
+    "current_user",
+    "authUser",
+    "loggedInUser",
+    "userData",
+  ];
+
+  const therapistRoles = [
+    "physio",
+    "physiotherapist",
+    "therapist",
+    "pt",
+  ];
+
+  for (const key of possibleStorageKeys) {
+    try {
+      const storedValue = localStorage.getItem(key);
+      if (!storedValue) continue;
+
+      const user = JSON.parse(storedValue);
+
+      const role = String(
+        user?.role ||
+          user?.user_role ||
+          user?.userType ||
+          user?.user_type ||
+          user?.account_type ||
+          ""
+      )
+        .trim()
+        .toLowerCase();
+
+      if (therapistRoles.includes(role)) return true;
+    } catch {
+      // Continue checking other possible storage keys.
+    }
+  }
+
+  const standaloneRole = String(
+    localStorage.getItem("role") ||
+      localStorage.getItem("user_role") ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  return therapistRoles.includes(standaloneRole);
+};
+
 const isUtilizationRegistration = (visit) => {
   const category = String(
     getValue(
       visit,
-      [
-        "category",
-        "registration_type",
-        "visit_type",
-        "appointment_type",
-        "type",
-      ],
+      ["category", "registration_type", "visit_type", "appointment_type", "type"],
       ""
     )
-  ).toLowerCase().replace(/[_-]/g, " ");
+  )
+    .toLowerCase()
+    .replace(/[_-]/g, " ");
 
   const explicitWalkIn =
-    visit?.is_walk_in === true ||
-    visit?.walk_in === true;
+    visit?.is_walk_in === true || visit?.walk_in === true;
 
   const explicitAppointment =
-    visit?.is_appointment === true ||
-    visit?.appointment === true;
+    visit?.is_appointment === true || visit?.appointment === true;
 
   if (explicitWalkIn || explicitAppointment) return true;
 
@@ -271,16 +274,12 @@ const isUtilizationRegistration = (visit) => {
 
 function DonutChart({ used, allowed }) {
   const hasData = used !== null && used !== undefined;
-
   const percentage =
-    hasData && allowed > 0
-      ? Math.min((used / allowed) * 100, 100)
-      : 0;
+    hasData && allowed > 0 ? Math.min((used / allowed) * 100, 100) : 0;
 
   const radius = 48;
   const circumference = 2 * Math.PI * radius;
-  const offset =
-    circumference - (percentage / 100) * circumference;
+  const offset = circumference - (percentage / 100) * circumference;
 
   return (
     <div className="donut-wrap">
@@ -319,21 +318,11 @@ function DonutChart({ used, allowed }) {
           />
         )}
 
-        <text
-          x="60"
-          y="56"
-          textAnchor="middle"
-          className="donut-number"
-        >
+        <text x="60" y="56" textAnchor="middle" className="donut-number">
           {hasData ? `${percentage.toFixed(0)}%` : "N/A"}
         </text>
 
-        <text
-          x="60"
-          y="73"
-          textAnchor="middle"
-          className="donut-caption"
-        >
+        <text x="60" y="73" textAnchor="middle" className="donut-caption">
           UTILIZED
         </text>
       </svg>
@@ -414,18 +403,23 @@ export default function PatientDetails() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  // 1 = selected month only, 3 = three months, 6 = six months.
+  // Separate specialty management section
+  const [canEditSpecialty, setCanEditSpecialty] = useState(false);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState("");
+  const [selectedSpecialty, setSelectedSpecialty] = useState("");
+  const [savingSpecialty, setSavingSpecialty] = useState(false);
+  const [specialtyError, setSpecialtyError] = useState("");
+  const [specialtySuccess, setSpecialtySuccess] = useState("");
+
   const [utilizationPeriod, setUtilizationPeriod] = useState("3");
+  const [utilizationMonth, setUtilizationMonth] = useState(currentMonthKey());
 
-  const [utilizationMonth, setUtilizationMonth] = useState(
-    currentMonthKey()
-  );
+  const [registrationFilter, setRegistrationFilter] = useState("month");
+  const [registrationMonth, setRegistrationMonth] = useState(currentMonthKey());
 
-  const [registrationFilter, setRegistrationFilter] =
-    useState("month");
-
-  const [registrationMonth, setRegistrationMonth] =
-    useState(currentMonthKey());
+  useEffect(() => {
+    setCanEditSpecialty(isTherapistUser());
+  }, []);
 
   const loadPatient = useCallback(
     async (showLoader = true) => {
@@ -457,8 +451,8 @@ export default function PatientDetails() {
       } catch (err) {
         setError(
           err.response?.data?.detail ||
-          err.response?.data?.error ||
-          "Unable to load patient information from the backend."
+            err.response?.data?.error ||
+            "Unable to load patient information from the backend."
         );
       } finally {
         setLoading(false);
@@ -471,6 +465,161 @@ export default function PatientDetails() {
   useEffect(() => {
     loadPatient();
   }, [loadPatient]);
+
+  const normalizedVisits = useMemo(() => {
+    return registrationHistory
+      .map((visit, index) => {
+        const visitDate = getVisitDate(visit);
+
+        return {
+          ...visit,
+          _index: index,
+          _date: visitDate,
+          _month: getMonthKey(visitDate),
+        };
+      })
+      .filter((visit) => visit._month)
+      .sort((a, b) => {
+        const dateA = parseLocalDate(a._date);
+        const dateB = parseLocalDate(b._date);
+
+        return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
+      });
+  }, [registrationHistory]);
+
+  // Select the most recent registration by default.
+  useEffect(() => {
+    if (!normalizedVisits.length) {
+      setSelectedAssignmentId("");
+      setSelectedSpecialty("");
+      return;
+    }
+
+    const currentSelectionExists = normalizedVisits.some(
+      (visit) =>
+        String(getAssignmentId(visit)) === String(selectedAssignmentId)
+    );
+
+    if (!currentSelectionExists) {
+      const firstVisit = normalizedVisits.find(
+        (visit) => getAssignmentId(visit)
+      );
+
+      setSelectedAssignmentId(
+        firstVisit ? String(getAssignmentId(firstVisit)) : ""
+      );
+      setSelectedSpecialty(firstVisit?.speciality || "");
+    }
+  }, [normalizedVisits, selectedAssignmentId]);
+
+  const selectedVisit = useMemo(
+    () =>
+      normalizedVisits.find(
+        (visit) =>
+          String(getAssignmentId(visit)) === String(selectedAssignmentId)
+      ) || null,
+    [normalizedVisits, selectedAssignmentId]
+  );
+
+  const handleSelectVisit = (assignmentId) => {
+    setSelectedAssignmentId(assignmentId);
+
+    const visit = normalizedVisits.find(
+      (item) => String(getAssignmentId(item)) === String(assignmentId)
+    );
+
+    setSelectedSpecialty(visit?.speciality || "");
+    setSpecialtyError("");
+    setSpecialtySuccess("");
+  };
+
+  const handleSaveSpecialty = async () => {
+    if (!selectedAssignmentId) {
+      setSpecialtyError("Please select a registration.");
+      return;
+    }
+
+    if (!selectedSpecialty) {
+      setSpecialtyError("Please select a specialty.");
+      return;
+    }
+
+    try {
+      setSavingSpecialty(true);
+      setSpecialtyError("");
+      setSpecialtySuccess("");
+
+      await api.patch(
+        `patients/${id}/visits/${selectedAssignmentId}/speciality/`,
+        { speciality: selectedSpecialty }
+      );
+
+      setRegistrationHistory((previous) =>
+        previous.map((item) =>
+          String(getAssignmentId(item)) === String(selectedAssignmentId)
+            ? { ...item, speciality: selectedSpecialty }
+            : item
+        )
+      );
+
+      setSpecialtySuccess("Specialty saved successfully.");
+    } catch (err) {
+      setSpecialtyError(
+        err.response?.data?.detail ||
+          err.response?.data?.error ||
+          "Unable to update specialty. Please try again."
+      );
+    } finally {
+      setSavingSpecialty(false);
+    }
+  };
+
+  const handleRemoveSpecialty = async () => {
+    if (!selectedAssignmentId) {
+      setSpecialtyError("Please select a registration.");
+      return;
+    }
+
+    if (!selectedVisit?.speciality) {
+      setSpecialtyError("There is no specialty assigned to this registration.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Are you sure you want to remove the specialty from this registration?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setSavingSpecialty(true);
+      setSpecialtyError("");
+      setSpecialtySuccess("");
+
+      await api.delete(
+        `patients/${id}/visits/${selectedAssignmentId}/speciality/`
+      );
+
+      setRegistrationHistory((previous) =>
+        previous.map((item) =>
+          String(getAssignmentId(item)) === String(selectedAssignmentId)
+            ? { ...item, speciality: "" }
+            : item
+        )
+      );
+
+      setSelectedSpecialty("");
+      setSpecialtySuccess("Specialty removed successfully.");
+    } catch (err) {
+      setSpecialtyError(
+        err.response?.data?.detail ||
+          err.response?.data?.error ||
+          "Unable to remove specialty. Please try again."
+      );
+    } finally {
+      setSavingSpecialty(false);
+    }
+  };
 
   const patientName = getValue(
     patient,
@@ -505,69 +654,33 @@ export default function PatientDetails() {
     String(approvalStatus).toLowerCase()
   );
 
-  const normalizedVisits = useMemo(() => {
-    return registrationHistory
-      .map((visit, index) => {
-        const visitDate = getVisitDate(visit);
-
-        return {
-          ...visit,
-          _index: index,
-          _date: visitDate,
-          _month: getMonthKey(visitDate),
-        };
-      })
-      .filter((visit) => visit._month)
-      .sort((a, b) => {
-        const dateA = parseLocalDate(a._date);
-        const dateB = parseLocalDate(b._date);
-
-        return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
-      });
-  }, [registrationHistory]);
-
-  /*
-   * Utilization is imported from registration_history.
-   * Only Walk-in and Appointment categories are included.
-   */
   const utilizationRegistrations = useMemo(
     () => normalizedVisits.filter(isUtilizationRegistration),
     [normalizedVisits]
   );
 
-  // This is the only calculation that changes the displayed period.
   const periodMonths = Number(utilizationPeriod);
 
   const displayedMonths = useMemo(() => {
-    return Array.from(
-      { length: periodMonths },
-      (_, index) => {
-        const monthKey = shiftMonth(
-          utilizationMonth,
-          index - (periodMonths - 1)
-        );
+    return Array.from({ length: periodMonths }, (_, index) => {
+      const monthKey = shiftMonth(
+        utilizationMonth,
+        index - (periodMonths - 1)
+      );
 
-        const used = utilizationRegistrations.filter(
-          (visit) => visit._month === monthKey
-        ).length;
+      const used = utilizationRegistrations.filter(
+        (visit) => visit._month === monthKey
+      ).length;
 
-        return {
-          month: monthKey,
-          month_label: formatMonth(monthKey),
-          sessions_used: used,
-          sessions_allowed: MONTHLY_LIMIT,
-          remaining_sessions: Math.max(
-            MONTHLY_LIMIT - used,
-            0
-          ),
-        };
-      }
-    );
-  }, [
-    utilizationMonth,
-    periodMonths,
-    utilizationRegistrations,
-  ]);
+      return {
+        month: monthKey,
+        month_label: formatMonth(monthKey),
+        sessions_used: used,
+        sessions_allowed: MONTHLY_LIMIT,
+        remaining_sessions: Math.max(MONTHLY_LIMIT - used, 0),
+      };
+    });
+  }, [utilizationMonth, periodMonths, utilizationRegistrations]);
 
   const totalUsed = displayedMonths.reduce(
     (sum, month) => sum + month.sessions_used,
@@ -575,23 +688,12 @@ export default function PatientDetails() {
   );
 
   const totalAllowed = MONTHLY_LIMIT * periodMonths;
-
-  const remainingSessions = Math.max(
-    totalAllowed - totalUsed,
-    0
-  );
-
-  const utilizationPercentage =
-    totalAllowed > 0
-      ? Math.min((totalUsed / totalAllowed) * 100, 100)
-      : 0;
+  const remainingSessions = Math.max(totalAllowed - totalUsed, 0);
 
   const periodTitle =
     periodMonths === 1
       ? formatMonth(utilizationMonth)
-      : `${periodMonths} Months Ending ${formatMonth(
-          utilizationMonth
-        )}`;
+      : `${periodMonths} Months Ending ${formatMonth(utilizationMonth)}`;
 
   const currentRegistrationVisits = useMemo(
     () =>
@@ -650,9 +752,7 @@ export default function PatientDetails() {
   return (
     <div style={styles.page}>
       <style>{`
-        * {
-          box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         .utilization-controls {
           display: flex;
@@ -669,15 +769,13 @@ export default function PatientDetails() {
           gap: 9px;
         }
 
-        .period-tabs,
-        .registration-tabs {
+        .period-tabs, .registration-tabs {
           display: flex;
           flex-wrap: wrap;
           gap: 9px;
         }
 
-        .period-tab,
-        .registration-tab {
+        .period-tab, .registration-tab {
           border: 1px solid #DCE6F5;
           background: #FFFFFF;
           color: #647B96;
@@ -686,11 +784,9 @@ export default function PatientDetails() {
           font-size: 12px;
           font-weight: 800;
           cursor: pointer;
-          transition: .2s ease;
         }
 
-        .period-tab:hover,
-        .registration-tab:hover {
+        .period-tab:hover, .registration-tab:hover {
           background: #EEF4FF;
           border-color: #9DBCF7;
         }
@@ -699,14 +795,12 @@ export default function PatientDetails() {
           background: #3478F6;
           border-color: #3478F6;
           color: #FFFFFF;
-          box-shadow: 0 4px 12px rgba(52,120,246,.2);
         }
 
         .registration-tab.active {
           background: #18AFC0;
           border-color: #18AFC0;
           color: #FFFFFF;
-          box-shadow: 0 4px 12px rgba(24,175,192,.18);
         }
 
         .month-picker {
@@ -721,7 +815,7 @@ export default function PatientDetails() {
           outline: none;
         }
 
-        .month-picker:focus {
+        .month-picker:focus, .specialty-select:focus {
           border-color: #3478F6;
           box-shadow: 0 0 0 3px rgba(52,120,246,.12);
         }
@@ -762,22 +856,9 @@ export default function PatientDetails() {
           vertical-align: middle;
         }
 
-        .patient-table tbody tr {
-          background: #FFFFFF;
-          transition: background .15s ease;
-        }
-
-        .patient-table tbody tr:nth-child(even) {
-          background: #F8FBFF;
-        }
-
-        .patient-table tbody tr:hover {
-          background: #EEF6FF;
-        }
-
-        .patient-table tbody tr:last-child td {
-          border-bottom: none;
-        }
+        .patient-table tbody tr:nth-child(even) { background: #F8FBFF; }
+        .patient-table tbody tr:hover { background: #EEF6FF; }
+        .patient-table tbody tr:last-child td { border-bottom: none; }
 
         .visit-number {
           display: inline-flex;
@@ -802,26 +883,111 @@ export default function PatientDetails() {
           white-space: nowrap;
         }
 
-        .other-physio-yes {
+        .specialty-value {
           display: inline-flex;
-          padding: 6px 10px;
-          border-radius: 20px;
-          background: #E5F8EF;
-          color: #16875F;
-          font-size: 10px;
-          font-weight: 900;
-          white-space: nowrap;
-        }
-
-        .other-physio-no {
-          display: inline-flex;
-          padding: 6px 10px;
-          border-radius: 20px;
-          background: #F0F3F8;
-          color: #7A8DA4;
+          padding: 7px 10px;
+          border-radius: 8px;
+          color: #6941C6;
+          background: #F2ECFF;
           font-size: 10px;
           font-weight: 800;
-          white-space: nowrap;
+          line-height: 1.4;
+        }
+
+        .specialty-empty { color: #A0AEC0; }
+
+        .specialty-management {
+          border: 1px solid #DCE8FA;
+          border-radius: 15px;
+          padding: 22px;
+          background: linear-gradient(120deg, #F7FAFF, #FFFFFF);
+          display: grid;
+          gap: 17px;
+        }
+
+        .specialty-management-grid {
+          display: grid;
+          grid-template-columns: minmax(220px, 1.2fr) minmax(220px, 1fr);
+          gap: 15px;
+        }
+
+        .specialty-field {
+          display: grid;
+          gap: 8px;
+        }
+
+        .specialty-field label {
+          color: #71839A;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: .6px;
+        }
+
+        .specialty-select {
+          width: 100%;
+          min-height: 43px;
+          padding: 10px 12px;
+          border: 1px solid #C9D9EF;
+          border-radius: 9px;
+          background: #FFFFFF;
+          color: #365575;
+          font-size: 12px;
+          outline: none;
+        }
+
+        .specialty-management-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 9px;
+        }
+
+        .specialty-management-button {
+          border: none;
+          border-radius: 9px;
+          padding: 11px 18px;
+          font-size: 12px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .specialty-management-button:disabled {
+          opacity: .5;
+          cursor: not-allowed;
+        }
+
+        .specialty-save-button {
+          background: #3478F6;
+          color: #FFFFFF;
+        }
+
+        .specialty-remove-button {
+          background: #FFF0ED;
+          color: #C94F4F;
+        }
+
+        .specialty-current {
+          color: #526984;
+          font-size: 11px;
+          line-height: 1.5;
+        }
+
+        .specialty-message {
+          padding: 11px 13px;
+          border-radius: 9px;
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .specialty-message.error {
+          background: #FFF0ED;
+          color: #C94F4F;
+          border: 1px solid #FFD8D2;
+        }
+
+        .specialty-message.success {
+          background: #E7F8F1;
+          color: #16875F;
+          border: 1px solid #C7EFDE;
         }
 
         .empty-state {
@@ -844,29 +1010,10 @@ export default function PatientDetails() {
           margin-top: 7px;
         }
 
-        .donut-wrap {
-          width: 160px;
-          max-width: 100%;
-          margin: 0 auto;
-        }
-
-        .donut-svg {
-          width: 100%;
-          display: block;
-        }
-
-        .donut-number {
-          fill: #203B63;
-          font-size: 21px;
-          font-weight: 900;
-        }
-
-        .donut-caption {
-          fill: #8294AB;
-          font-size: 8px;
-          font-weight: 900;
-          letter-spacing: .6px;
-        }
+        .donut-wrap { width: 160px; max-width: 100%; margin: 0 auto; }
+        .donut-svg { width: 100%; display: block; }
+        .donut-number { fill: #203B63; font-size: 21px; font-weight: 900; }
+        .donut-caption { fill: #8294AB; font-size: 8px; font-weight: 900; letter-spacing: .6px; }
 
         .utilization-layout {
           display: grid;
@@ -925,124 +1072,22 @@ export default function PatientDetails() {
           font-size: 10px;
         }
 
-        .bar-chart {
-          position: relative;
-          min-height: 245px;
-          padding: 10px 5px 0 35px;
-        }
+        .bar-chart { position: relative; min-height: 245px; padding: 10px 5px 0 35px; }
+        .bar-chart-grid { position: absolute; top: 10px; bottom: 40px; left: 0; right: 0; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+        .chart-grid-line { display: flex; align-items: center; gap: 9px; height: 1px; }
+        .chart-grid-line span { width: 17px; color: #94A5BB; font-size: 9px; text-align: right; }
+        .chart-grid-line div { height: 1px; flex: 1; background: #EAF0F8; }
+        .bar-chart-columns { position: relative; display: flex; justify-content: space-around; align-items: stretch; gap: 12px; min-height: 235px; }
+        .bar-column { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 7px; z-index: 1; }
+        .bar-area { width: min(45px, 75%); height: 185px; display: flex; align-items: flex-end; justify-content: center; position: relative; border-radius: 8px 8px 0 0; background: #F1F5FC; overflow: hidden; }
+        .bar-allowed { position: absolute; bottom: 0; width: 100%; background: #D9E7FF; border-radius: 7px 7px 0 0; }
+        .bar-used { position: absolute; bottom: 0; width: 65%; background: linear-gradient(180deg, #20B8C9, #3478F6); border-radius: 6px 6px 0 0; z-index: 2; }
+        .bar-column strong { color: #526D8A; font-size: 10px; white-space: nowrap; }
+        .bar-column span { color: #8799B0; font-size: 9px; text-align: center; }
 
-        .bar-chart-grid {
-          position: absolute;
-          top: 10px;
-          bottom: 40px;
-          left: 0;
-          right: 0;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          pointer-events: none;
-        }
-
-        .chart-grid-line {
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          height: 1px;
-        }
-
-        .chart-grid-line span {
-          width: 17px;
-          color: #94A5BB;
-          font-size: 9px;
-          text-align: right;
-        }
-
-        .chart-grid-line div {
-          height: 1px;
-          flex: 1;
-          background: #EAF0F8;
-        }
-
-        .bar-chart-columns {
-          position: relative;
-          display: flex;
-          justify-content: space-around;
-          align-items: stretch;
-          gap: 12px;
-          min-height: 235px;
-        }
-
-        .bar-column {
-          flex: 1;
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: flex-end;
-          gap: 7px;
-          z-index: 1;
-        }
-
-        .bar-area {
-          width: min(45px, 75%);
-          height: 185px;
-          display: flex;
-          align-items: flex-end;
-          justify-content: center;
-          position: relative;
-          border-radius: 8px 8px 0 0;
-          background: #F1F5FC;
-          overflow: hidden;
-        }
-
-        .bar-allowed {
-          position: absolute;
-          bottom: 0;
-          width: 100%;
-          background: #D9E7FF;
-          border-radius: 7px 7px 0 0;
-        }
-
-        .bar-used {
-          position: absolute;
-          bottom: 0;
-          width: 65%;
-          background: linear-gradient(180deg, #20B8C9, #3478F6);
-          border-radius: 6px 6px 0 0;
-          z-index: 2;
-        }
-
-        .bar-column strong {
-          color: #526D8A;
-          font-size: 10px;
-          white-space: nowrap;
-        }
-
-        .bar-column span {
-          color: #8799B0;
-          font-size: 9px;
-          text-align: center;
-        }
-
-        .legend {
-          display: flex;
-          gap: 18px;
-          flex-wrap: wrap;
-          color: #788DA6;
-          font-size: 10px;
-        }
-
-        .legend-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .legend-dot {
-          width: 9px;
-          height: 9px;
-          border-radius: 3px;
-        }
+        .legend { display: flex; gap: 18px; flex-wrap: wrap; color: #788DA6; font-size: 10px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-dot { width: 9px; height: 9px; border-radius: 3px; }
 
         .spinner {
           width: 22px;
@@ -1054,35 +1099,16 @@ export default function PatientDetails() {
           animation: spin 1s linear infinite;
         }
 
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
         @media (max-width: 760px) {
-          .patient-page-main {
-            padding: 17px !important;
-          }
-
-          .patient-header-card {
-            padding: 19px !important;
-          }
-
-          .utilization-layout {
-            grid-template-columns: 1fr;
-          }
-
-          .bar-chart-columns {
-            gap: 5px;
-          }
-
-          .utilization-control-group {
-            width: 100%;
-          }
-
-          .utilization-control-group .month-picker {
-            flex: 1;
-            min-width: 145px;
-          }
+          .patient-page-main { padding: 17px !important; }
+          .patient-header-card { padding: 19px !important; }
+          .utilization-layout { grid-template-columns: 1fr; }
+          .bar-chart-columns { gap: 5px; }
+          .utilization-control-group { width: 100%; }
+          .utilization-control-group .month-picker { flex: 1; min-width: 145px; }
+          .specialty-management-grid { grid-template-columns: 1fr; }
         }
       `}</style>
 
@@ -1106,20 +1132,14 @@ export default function PatientDetails() {
               {refreshing ? "Refreshing..." : "↻ Refresh"}
             </button>
 
-            <button
-              style={styles.backButton}
-              onClick={() => navigate(-1)}
-            >
+            <button style={styles.backButton} onClick={() => navigate(-1)}>
               ← Back
             </button>
           </div>
         </header>
 
         {/* PATIENT INFORMATION */}
-        <section
-          className="patient-header-card"
-          style={styles.patientCard}
-        >
+        <section className="patient-header-card" style={styles.patientCard}>
           <div style={styles.patientIdentity}>
             <div style={styles.avatar}>
               {String(patientName).charAt(0).toUpperCase()}
@@ -1144,18 +1164,14 @@ export default function PatientDetails() {
               <span
                 style={{
                   ...styles.statusBadge,
-                  background: isApproved
-                    ? COLORS.greenLight
-                    : COLORS.coralLight,
+                  background: isApproved ? COLORS.greenLight : COLORS.coralLight,
                   color: isApproved ? COLORS.green : "#D45E55",
                 }}
               >
                 <span
                   style={{
                     ...styles.statusDot,
-                    background: isApproved
-                      ? COLORS.green
-                      : COLORS.coral,
+                    background: isApproved ? COLORS.green : COLORS.coral,
                   }}
                 />
                 {approvalStatus}
@@ -1165,25 +1181,17 @@ export default function PatientDetails() {
         </section>
 
         {/* UTILIZATION */}
-        <section
-          className="patient-page-main"
-          style={styles.section}
-        >
+        <section className="patient-page-main" style={styles.section}>
           <div style={styles.sectionHeader}>
             <div>
-              <div style={styles.sectionEyebrow}>
-                REHABILITATION
-              </div>
-              <h2 style={styles.sectionTitle}>
-                Session Utilization
-              </h2>
+              <div style={styles.sectionEyebrow}>REHABILITATION</div>
+              <h2 style={styles.sectionTitle}>Session Utilization</h2>
               <p style={styles.description}>
                 Utilized sessions are counted from Walk-in and Appointment registrations.
               </p>
             </div>
           </div>
 
-          {/* PERIOD OPTIONS AND MONTH PICKER ON THE SAME ROW */}
           <div className="utilization-controls">
             <div className="utilization-control-group">
               <div className="period-tabs">
@@ -1198,9 +1206,7 @@ export default function PatientDetails() {
                     className={`period-tab ${
                       utilizationPeriod === option.value ? "active" : ""
                     }`}
-                    onClick={() =>
-                      setUtilizationPeriod(option.value)
-                    }
+                    onClick={() => setUtilizationPeriod(option.value)}
                   >
                     {option.label}
                   </button>
@@ -1212,9 +1218,7 @@ export default function PatientDetails() {
                 type="month"
                 value={utilizationMonth}
                 aria-label="Select utilization month"
-                onChange={(event) =>
-                  setUtilizationMonth(event.target.value)
-                }
+                onChange={(event) => setUtilizationMonth(event.target.value)}
               />
             </div>
           </div>
@@ -1224,31 +1228,20 @@ export default function PatientDetails() {
               <label style={styles.settingLabel}>
                 ESTIMATED SESSIONS PER MONTH
               </label>
-              <strong style={styles.settingValue}>
-                {MONTHLY_LIMIT} sessions
-              </strong>
+              <strong style={styles.settingValue}>{MONTHLY_LIMIT} sessions</strong>
             </div>
 
             <div style={styles.settingItem}>
-              <label style={styles.settingLabel}>
-                TOTAL ESTIMATED ALLOWANCE
-              </label>
-              <strong style={styles.allowanceValue}>
-                {totalAllowed} sessions
-              </strong>
+              <label style={styles.settingLabel}>TOTAL ESTIMATED ALLOWANCE</label>
+              <strong style={styles.allowanceValue}>{totalAllowed} sessions</strong>
             </div>
           </div>
 
           <div style={styles.selectedMonthBanner}>
             <div>
-              <span style={styles.selectedMonthCaption}>
-                SELECTED PERIOD
-              </span>
-              <strong style={styles.selectedMonthTitle}>
-                {periodTitle}
-              </strong>
+              <span style={styles.selectedMonthCaption}>SELECTED PERIOD</span>
+              <strong style={styles.selectedMonthTitle}>{periodTitle}</strong>
             </div>
-
             <span style={styles.currentMonthBadge}>
               {totalAllowed} ESTIMATED SESSIONS
             </span>
@@ -1258,18 +1251,12 @@ export default function PatientDetails() {
             <div
               className="utilization-card"
               style={{
-                background:
-                  "linear-gradient(145deg, #F0F6FF, #FFFFFF)",
+                background: "linear-gradient(145deg, #F0F6FF, #FFFFFF)",
                 borderColor: "#DCE8FF",
               }}
             >
               <h3>Overall Utilization</h3>
-
-              <DonutChart
-                used={totalUsed}
-                allowed={totalAllowed}
-              />
-
+              <DonutChart used={totalUsed} allowed={totalAllowed} />
               <p>{totalUsed} utilized sessions recorded</p>
 
               <div className="utilization-numbers">
@@ -1293,14 +1280,11 @@ export default function PatientDetails() {
             <div className="utilization-card">
               <div style={styles.chartHeader}>
                 <div>
-                  <h3 style={styles.chartTitle}>
-                    Monthly Session Utilization
-                  </h3>
+                  <h3 style={styles.chartTitle}>Monthly Session Utilization</h3>
                   <p style={styles.chartSubtitle}>
                     Walk-ins and appointments compared with estimated allowance
                   </p>
                 </div>
-
                 <span style={styles.chartAllowanceBadge}>
                   {MONTHLY_LIMIT} sessions / month
                 </span>
@@ -1310,18 +1294,11 @@ export default function PatientDetails() {
 
               <div className="legend">
                 <div className="legend-item">
-                  <span
-                    className="legend-dot"
-                    style={{ background: "#D9E7FF" }}
-                  />
+                  <span className="legend-dot" style={{ background: "#D9E7FF" }} />
                   Estimated sessions
                 </div>
-
                 <div className="legend-item">
-                  <span
-                    className="legend-dot"
-                    style={{ background: "#20B8C9" }}
-                  />
+                  <span className="legend-dot" style={{ background: "#20B8C9" }} />
                   Utilized sessions
                 </div>
               </div>
@@ -1334,21 +1311,151 @@ export default function PatientDetails() {
           </div>
         </section>
 
+        {/* SEPARATE SPECIALTY MANAGEMENT */}
+        
+          <section className="patient-page-main" style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <div>
+                <div style={styles.sectionEyebrow}>THERAPIST MANAGEMENT</div>
+                <h2 style={styles.sectionTitle}>Visit Specialty</h2>
+                <p style={styles.description}>
+                  Add, update or remove a specialty for one selected registration.
+                  Changes will not affect other registrations.
+                </p>
+              </div>
+            </div>
+
+            {normalizedVisits.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-title">
+                  No registration records available
+                </div>
+                <div className="empty-state-text">
+                  A registration must be available before assigning a specialty.
+                </div>
+              </div>
+            ) : (
+              <div className="specialty-management">
+                <div className="specialty-management-grid">
+                  <div className="specialty-field">
+                    <label htmlFor="specialty-visit-select">
+                      SELECT REGISTRATION / VISIT
+                    </label>
+
+                    <select
+                      id="specialty-visit-select"
+                      className="specialty-select"
+                      value={selectedAssignmentId}
+                      onChange={(event) => handleSelectVisit(event.target.value)}
+                      disabled={savingSpecialty}
+                    >
+                      <option value="">Select a registration</option>
+
+                      {normalizedVisits
+                        .filter((visit) => getAssignmentId(visit))
+                        .map((visit) => {
+                          const assignmentId = getAssignmentId(visit);
+                          const visitDate = formatDate(visit._date);
+                          const category = getRegistrationCategory(visit);
+                          const visitNumber = getVisitNumber(visit, visit._index);
+
+                          return (
+                            <option
+                              key={assignmentId}
+                              value={String(assignmentId)}
+                            >
+                              Visit {visitNumber} — {visitDate} — {category}
+                            </option>
+                          );
+                        })}
+                    </select>
+                  </div>
+
+                  <div className="specialty-field">
+                    <label htmlFor="specialty-select">
+                      SELECT SPECIALTY
+                    </label>
+
+                    <select
+                      id="specialty-select"
+                      className="specialty-select"
+                      value={selectedSpecialty}
+                      onChange={(event) => {
+                        setSelectedSpecialty(event.target.value);
+                        setSpecialtyError("");
+                        setSpecialtySuccess("");
+                      }}
+                      disabled={!selectedAssignmentId || savingSpecialty}
+                    >
+                      <option value="">Select specialty</option>
+                      {SPECIALTY_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {selectedVisit && (
+                  <div className="specialty-current">
+                    <strong>Current specialty: </strong>
+                    {selectedVisit.speciality || "No specialty assigned"}
+                  </div>
+                )}
+
+                <div className="specialty-management-actions">
+                  <button
+                    type="button"
+                    className="specialty-management-button specialty-save-button"
+                    onClick={handleSaveSpecialty}
+                    disabled={
+                      savingSpecialty ||
+                      !selectedAssignmentId ||
+                      !selectedSpecialty
+                    }
+                  >
+                    {savingSpecialty ? "Saving..." : "Save Specialty"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="specialty-management-button specialty-remove-button"
+                    onClick={handleRemoveSpecialty}
+                    disabled={
+                      savingSpecialty ||
+                      !selectedAssignmentId ||
+                      !selectedVisit?.speciality
+                    }
+                  >
+                    {savingSpecialty ? "Please wait..." : "Remove Specialty"}
+                  </button>
+                </div>
+
+                {specialtyError && (
+                  <div className="specialty-message error">
+                    {specialtyError}
+                  </div>
+                )}
+
+                {specialtySuccess && (
+                  <div className="specialty-message success">
+                    {specialtySuccess}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        
+
         {/* REGISTRATION HISTORY */}
-        <section
-          className="patient-page-main"
-          style={styles.section}
-        >
+        <section className="patient-page-main" style={styles.section}>
           <div style={styles.sectionHeader}>
             <div>
-              <div style={styles.sectionEyebrow}>
-                PATIENT ACTIVITY
-              </div>
-              <h2 style={styles.sectionTitle}>
-                Registration History
-              </h2>
+              <div style={styles.sectionEyebrow}>PATIENT ACTIVITY</div>
+              <h2 style={styles.sectionTitle}>Registration History</h2>
               <p style={styles.description}>
-                View registration dates, therapist assignments and visit details.
+                View registration dates, therapist assignments, specialties and visit details.
               </p>
             </div>
 
@@ -1356,7 +1463,6 @@ export default function PatientDetails() {
               <label style={styles.monthPickerLabel}>
                 SELECT REGISTRATION MONTH
               </label>
-
               <input
                 className="month-picker"
                 type="month"
@@ -1394,9 +1500,7 @@ export default function PatientDetails() {
 
             <div style={styles.registrationCount}>
               <strong>{filteredVisits.length}</strong>
-              <span>
-                {filteredVisits.length === 1 ? "record" : "records"}
-              </span>
+              <span>{filteredVisits.length === 1 ? "record" : "records"}</span>
             </div>
           </div>
 
@@ -1413,14 +1517,10 @@ export default function PatientDetails() {
 
           {filteredVisits.length === 0 ? (
             <div className="empty-state">
-              <div style={{ fontSize: 30, marginBottom: 12 }}>
-                📋
-              </div>
-
+              <div style={{ fontSize: 30, marginBottom: 12 }}>📋</div>
               <div className="empty-state-title">
                 No registration records found
               </div>
-
               <div className="empty-state-text">
                 No registrations are available for this selection.
               </div>
@@ -1435,6 +1535,7 @@ export default function PatientDetails() {
                     <th>Registered By</th>
                     <th>Physiotherapist</th>
                     <th>Category</th>
+                    <th>Specialty</th>
                     <th>Referring Physician</th>
                     <th>Visit Record</th>
                   </tr>
@@ -1443,12 +1544,12 @@ export default function PatientDetails() {
                 <tbody>
                   {filteredVisits.map((visit) => {
                     const visitRecord = getVisitRecord(visit);
+                    const specialty = visit.speciality || "";
 
                     return (
                       <tr
                         key={
-                          visit.id ||
-                          visit.pk ||
+                          getAssignmentId(visit) ||
                           visit._index
                         }
                       >
@@ -1480,6 +1581,17 @@ export default function PatientDetails() {
                           <span className="category-label">
                             {getRegistrationCategory(visit)}
                           </span>
+                        </td>
+
+                        {/* Display only. Specialty is managed above the table. */}
+                        <td>
+                          {specialty ? (
+                            <span className="specialty-value">
+                              {specialty}
+                            </span>
+                          ) : (
+                            <span className="specialty-empty">—</span>
+                          )}
                         </td>
 
                         <td>
@@ -1520,12 +1632,8 @@ export default function PatientDetails() {
         {sessionHistory.length > 0 && (
           <section style={styles.section}>
             <div>
-              <div style={styles.sectionEyebrow}>
-                SESSION RECORDS
-              </div>
-              <h2 style={styles.sectionTitle}>
-                Recent Recorded Sessions
-              </h2>
+              <div style={styles.sectionEyebrow}>SESSION RECORDS</div>
+              <h2 style={styles.sectionTitle}>Recent Recorded Sessions</h2>
               <p style={styles.description}>
                 Session records received from the backend.
               </p>
@@ -1559,9 +1667,7 @@ export default function PatientDetails() {
                     </div>
                   </div>
 
-                  <span style={styles.sessionRecordedBadge}>
-                    Recorded
-                  </span>
+                  <span style={styles.sessionRecordedBadge}>Recorded</span>
                 </div>
               ))}
             </div>

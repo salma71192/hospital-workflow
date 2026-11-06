@@ -1,5 +1,11 @@
 
-import React, { useMemo } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import {
   formatTime12,
   parseExcelTime,
@@ -9,31 +15,15 @@ import {
 // CONFIGURATION
 // ============================================================
 
+const HOSPITAL_TIME_ZONE = "Asia/Dubai";
+
 const STATUS_INFO = {
-  unconfirmed: {
-    label: "Unconfirmed",
-    icon: "◷",
-  },
-  confirmed: {
-    label: "Confirmed",
-    icon: "✓",
-  },
-  no_answer: {
-    label: "No Answer",
-    icon: "◷",
-  },
-  phone_off: {
-    label: "Phone Off",
-    icon: "◷",
-  },
-  cancelled: {
-    label: "Cancelled",
-    icon: "✕",
-  },
-  rescheduled: {
-    label: "Rescheduled",
-    icon: "↻",
-  },
+  unconfirmed: { label: "Unconfirmed", icon: "◷" },
+  confirmed: { label: "Confirmed", icon: "✓" },
+  no_answer: { label: "No Answer", icon: "◷" },
+  phone_off: { label: "Phone Off", icon: "◷" },
+  cancelled: { label: "Cancelled", icon: "✕" },
+  rescheduled: { label: "Rescheduled", icon: "↻" },
 };
 
 const APPROVAL_LABELS = {
@@ -46,11 +36,11 @@ const APPROVAL_LABELS = {
   not_verified: "Not Verified",
 };
 
-const pad = (value) =>
-  String(value).padStart(2, "0");
-
 const clean = (value) =>
   String(value ?? "").trim();
+
+const pad = (value) =>
+  String(value).padStart(2, "0");
 
 const label = (value) =>
   clean(value)
@@ -60,8 +50,139 @@ const label = (value) =>
     );
 
 // ============================================================
-// APPOINTMENT HELPERS
+// DATE HELPERS
 // ============================================================
+
+function getHospitalToday() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: HOSPITAL_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const values = Object.fromEntries(
+    parts.map((part) => [
+      part.type,
+      part.value,
+    ])
+  );
+
+  return [
+    values.year,
+    values.month,
+    values.day,
+  ].join("-");
+}
+
+function normalizeDate(value) {
+  if (!value) return "";
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return "";
+    }
+
+    return [
+      value.getFullYear(),
+      pad(value.getMonth() + 1),
+      pad(value.getDate()),
+    ].join("-");
+  }
+
+  const text = clean(value);
+
+  const iso = text.match(
+    /^(\d{4})-(\d{2})-(\d{2})/
+  );
+
+  if (iso) {
+    return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  }
+
+  const slash = text.match(
+    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/
+  );
+
+  if (slash) {
+    return [
+      slash[3],
+      pad(slash[2]),
+      pad(slash[1]),
+    ].join("-");
+  }
+
+  return "";
+}
+
+function isValidDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const [year, month, day] = value
+    .split("-")
+    .map(Number);
+
+  const date = new Date(
+    Date.UTC(year, month - 1, day)
+  );
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() + 1 === month &&
+    date.getUTCDate() === day
+  );
+}
+
+function isPastDate(value, today) {
+  const date = normalizeDate(value);
+
+  return (
+    isValidDate(date) &&
+    date < today
+  );
+}
+
+function getDate(row, fallbackDate = "") {
+  return normalizeDate(
+    row.appointment_date ??
+      row.date ??
+      fallbackDate
+  );
+}
+
+function formatDisplayDate(value) {
+  const date = normalizeDate(value);
+
+  if (!isValidDate(date)) {
+    return "Date unavailable";
+  }
+
+  const [year, month, day] = date
+    .split("-")
+    .map(Number);
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(
+    new Date(Date.UTC(year, month - 1, day))
+  );
+}
+
+// ============================================================
+// NORMALIZATION
+// ============================================================
+
+function normalizePatientName(value) {
+  return clean(value)
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
 
 function getTime(row) {
   return parseExcelTime(
@@ -81,11 +202,12 @@ function getStatus(row) {
     : "unconfirmed";
 }
 
-// Do not infer claims approval from appointment
-// confirmation or assign "approved" automatically.
-//
-// Prefer the approval status returned by Django.
-// If no approval has been verified, show Not Verified.
+// ============================================================
+// CLAIMS APPROVAL
+// ============================================================
+
+// Read-only display. Approval fields are never
+// modified by this component.
 
 function getApproval(row) {
   const candidates = [
@@ -105,12 +227,17 @@ function getApproval(row) {
     return "unknown";
   }
 
-  const normalized = clean(actual)
-    .toLowerCase()
-    .replace(/[\s-]+/g, "_");
-
-  return normalized || "unknown";
+  return (
+    clean(actual)
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_") ||
+    "unknown"
+  );
 }
+
+// ============================================================
+// THERAPIST
+// ============================================================
 
 function getTherapistName(
   row,
@@ -190,10 +317,40 @@ function getTherapistName(
 }
 
 function getAppointmentType(row) {
-  return row.appointment_type ===
-    "evaluation"
+  return row.appointment_type === "evaluation"
     ? "Evaluation"
     : "Follow-up";
+}
+
+// ============================================================
+// DUPLICATE DETECTION
+// ============================================================
+
+function findDuplicates(
+  appointments,
+  fallbackDate
+) {
+  const seen = new Set();
+  const duplicates = [];
+
+  for (const row of appointments) {
+    const name = normalizePatientName(
+      row.patient_name
+    );
+
+    if (!name) continue;
+
+    const date = getDate(row, fallbackDate);
+    const key = `${date}::${name}`;
+
+    if (seen.has(key)) {
+      duplicates.push(row);
+    } else {
+      seen.add(key);
+    }
+  }
+
+  return duplicates;
 }
 
 // ============================================================
@@ -227,8 +384,7 @@ function SummaryCard({
 // ============================================================
 
 function TherapistDisplay({ name }) {
-  const assigned =
-    name !== "Unassigned";
+  const assigned = name !== "Unassigned";
 
   return (
     <div className="st-therapist">
@@ -246,11 +402,324 @@ function TherapistDisplay({ name }) {
 }
 
 // ============================================================
+// SAVE MODAL
+// ============================================================
+
+function ScheduleModal({
+  mode,
+  appointments,
+  therapistOptions,
+  changedCount,
+  savedCount,
+  error,
+  onClose,
+  onConfirm,
+  onViewHistory,
+}) {
+  const modalRef = useRef(null);
+
+  const changedRows = useMemo(() => {
+    const rows = appointments.filter(
+      (row) => row.isNew || row.isDirty
+    );
+
+    return rows.length
+      ? rows
+      : appointments;
+  }, [appointments]);
+
+  const newCount = changedRows.filter(
+    (row) => row.isNew || !row.id
+  ).length;
+
+  const updatedCount = changedRows.filter(
+    (row) => row.id && !row.isNew
+  ).length;
+
+  const isSaving = mode === "saving";
+
+  useEffect(() => {
+    modalRef.current?.focus();
+
+    const handleEscape = (event) => {
+      if (
+        event.key === "Escape" &&
+        !isSaving
+      ) {
+        onClose();
+      }
+    };
+
+    window.addEventListener(
+      "keydown",
+      handleEscape
+    );
+
+    return () =>
+      window.removeEventListener(
+        "keydown",
+        handleEscape
+      );
+  }, [isSaving, onClose]);
+
+  const handleBackdrop = (event) => {
+    if (
+      event.target === event.currentTarget &&
+      !isSaving
+    ) {
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      className="st-modal-overlay"
+      onMouseDown={handleBackdrop}
+    >
+      <div
+        ref={modalRef}
+        tabIndex={-1}
+        className="st-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="st-modal-title"
+      >
+        {mode === "confirm" && (
+          <>
+            <div className="st-modal-icon st-modal-icon-confirm">
+              ▦
+            </div>
+
+            <h2 id="st-modal-title">
+              Save Appointment Schedule?
+            </h2>
+
+            <p className="st-modal-description">
+              Review the appointments before
+              saving them to the hospital
+              scheduling system.
+            </p>
+
+            <div className="st-modal-stats">
+              <div>
+                <strong>{changedCount}</strong>
+                <span>Changes</span>
+              </div>
+
+              <div>
+                <strong>{newCount}</strong>
+                <span>New</span>
+              </div>
+
+              <div>
+                <strong>{updatedCount}</strong>
+                <span>Updated</span>
+              </div>
+            </div>
+
+            <div className="st-modal-patient-list">
+              <h4>Appointments to save</h4>
+
+              {changedRows
+                .slice(0, 5)
+                .map((row, index) => (
+                  <div
+                    key={
+                      row.localId ||
+                      row.id ||
+                      index
+                    }
+                    className="st-modal-patient"
+                  >
+                    <span className="st-modal-patient-check">
+                      ✓
+                    </span>
+
+                    <div>
+                      <strong>
+                        {row.patient_name ||
+                          "Unnamed patient"}
+                      </strong>
+
+                      <small>
+                        {getTime(row)
+                          ? formatTime12(
+                              getTime(row)
+                            )
+                          : "No time"}
+                        {" · "}
+                        {getTherapistName(
+                          row,
+                          therapistOptions
+                        )}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+
+              {changedRows.length > 5 && (
+                <p className="st-modal-more">
+                  + {changedRows.length - 5}
+                  {" "}more appointments
+                </p>
+              )}
+            </div>
+
+            <div className="st-modal-info">
+              <span>ⓘ</span>
+
+              <p>
+                After the hospital system
+                confirms saving, the working
+                table will be cleared.
+                Saved records will remain
+                in Scheduled History.
+              </p>
+            </div>
+
+            <div className="st-modal-actions">
+              <button
+                type="button"
+                className="st-modal-secondary"
+                onClick={onClose}
+              >
+                Continue Editing
+              </button>
+
+              <button
+                type="button"
+                className="st-modal-primary"
+                onClick={onConfirm}
+              >
+                ✓ Confirm & Save
+              </button>
+            </div>
+          </>
+        )}
+
+        {mode === "saving" && (
+          <div className="st-modal-centered">
+            <div className="st-spinner" />
+
+            <h2 id="st-modal-title">
+              Saving Appointments
+            </h2>
+
+            <p className="st-modal-description">
+              Please wait while the hospital
+              scheduling system processes
+              your changes.
+            </p>
+
+            <div className="st-saving-progress">
+              <div />
+            </div>
+
+            <p className="st-saving-note">
+              Do not close this page
+              until saving is completed.
+            </p>
+          </div>
+        )}
+
+        {mode === "success" && (
+          <div className="st-modal-centered">
+            <div className="st-modal-icon st-modal-icon-success">
+              ✓
+            </div>
+
+            <h2 id="st-modal-title">
+              Appointments Saved!
+            </h2>
+
+            <p className="st-modal-description">
+              Your appointment changes have
+              been saved successfully.
+            </p>
+
+            <div className="st-success-count">
+              <strong>{savedCount}</strong>
+              <span>Appointments saved</span>
+            </div>
+
+            <div className="st-success-message">
+              <span>✓</span>
+
+              <p>
+                The working table has been
+                cleared. Your saved records
+                are available in Scheduled
+                History.
+              </p>
+            </div>
+
+            <div className="st-modal-actions">
+              <button
+                type="button"
+                className="st-modal-secondary"
+                onClick={onClose}
+              >
+                Close
+              </button>
+
+              <button
+                type="button"
+                className="st-modal-primary"
+                onClick={onViewHistory}
+              >
+                View Scheduled History
+              </button>
+            </div>
+          </div>
+        )}
+
+        {mode === "error" && (
+          <div className="st-modal-centered">
+            <div className="st-modal-icon st-modal-icon-error">
+              !
+            </div>
+
+            <h2 id="st-modal-title">
+              Save Not Completed
+            </h2>
+
+            <p className="st-modal-description">
+              {error ||
+                "The scheduling system could not confirm the save."}
+            </p>
+
+            <div className="st-error-message">
+              The working table has been
+              retained. Please review the
+              appointments before trying
+              again. If some records were
+              saved, refresh history before
+              retrying to avoid duplicates.
+            </div>
+
+            <div className="st-modal-actions">
+              <button
+                type="button"
+                className="st-modal-primary st-modal-full"
+                onClick={onClose}
+              >
+                Return to Appointments
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 
 export default function ScheduleTable({
   appointments = [],
+  date,
   therapistOptions = [],
   busy = false,
   saving = false,
@@ -260,26 +729,150 @@ export default function ScheduleTable({
   editAppointment,
   openDetails,
   removeDraftAppointment,
+  onSaveSuccess,
+  onViewHistory,
 }) {
+  const [modalMode, setModalMode] =
+    useState(null);
+
+  const [saveError, setSaveError] =
+    useState("");
+
+  const [savedCount, setSavedCount] =
+    useState(0);
+
+  const [today, setToday] = useState(
+    getHospitalToday
+  );
+
+  const saveInProgressRef = useRef(false);
+
   // ----------------------------------------------------------
-  // SORT APPOINTMENTS
+  // KEEP TODAY CURRENT
+  // ----------------------------------------------------------
+
+  useEffect(() => {
+    const updateToday = () => {
+      setToday(getHospitalToday());
+    };
+
+    const interval = window.setInterval(
+      updateToday,
+      30000
+    );
+
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        updateToday();
+      }
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibility
+    );
+
+    return () => {
+      window.clearInterval(interval);
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibility
+      );
+    };
+  }, []);
+
+  // ----------------------------------------------------------
+  // DATE VALIDATION
+  // ----------------------------------------------------------
+
+  const scheduleDate = normalizeDate(date);
+
+  const scheduleIsPast =
+    isValidDate(scheduleDate) &&
+    scheduleDate < today;
+
+  const datedAppointments = useMemo(
+    () =>
+      appointments.map((row) => ({
+        row,
+        appointmentDate: getDate(
+          row,
+          scheduleDate
+        ),
+      })),
+    [appointments, scheduleDate]
+  );
+
+  const pastAppointments =
+    datedAppointments.filter(
+      ({ appointmentDate }) =>
+        isPastDate(appointmentDate, today)
+    );
+
+  const invalidDateAppointments =
+    datedAppointments.filter(
+      ({ appointmentDate }) =>
+        !isValidDate(appointmentDate)
+    );
+
+  const hasPastAppointments =
+    pastAppointments.length > 0;
+
+  const hasInvalidDates =
+    invalidDateAppointments.length > 0;
+
+  const isRowPast = (row) =>
+    isPastDate(
+      getDate(row, scheduleDate),
+      today
+    );
+
+  // ----------------------------------------------------------
+  // DUPLICATES
+  // ----------------------------------------------------------
+
+  const duplicates = useMemo(
+    () =>
+      findDuplicates(
+        appointments,
+        scheduleDate
+      ),
+    [appointments, scheduleDate]
+  );
+
+  const duplicateCount =
+    duplicates.length;
+
+  // ----------------------------------------------------------
+  // SORT
   // ----------------------------------------------------------
 
   const sorted = useMemo(() => {
-    return [...appointments].sort(
-      (a, b) => {
-        const aTime =
-          getTime(a) || "99:99";
+    return [...appointments].sort((a, b) => {
+      const dateA = getDate(
+        a,
+        scheduleDate
+      );
 
-        const bTime =
-          getTime(b) || "99:99";
+      const dateB = getDate(
+        b,
+        scheduleDate
+      );
 
-        return aTime.localeCompare(
-          bTime
-        );
+      if (dateA !== dateB) {
+        return dateA.localeCompare(dateB);
       }
-    );
-  }, [appointments]);
+
+      const timeA =
+        getTime(a) || "99:99";
+
+      const timeB =
+        getTime(b) || "99:99";
+
+      return timeA.localeCompare(timeB);
+    });
+  }, [appointments, scheduleDate]);
 
   // ----------------------------------------------------------
   // SUMMARY
@@ -321,231 +914,450 @@ export default function ScheduleTable({
   ]);
 
   // ----------------------------------------------------------
-  // SAVE
+  // SAVE VALIDATION
   // ----------------------------------------------------------
 
-  const handleSave = () => {
-    if (
-      busy ||
-      saving ||
-      !changedCount ||
-      typeof saveAppointments !==
-        "function"
-    ) {
+  const canSave =
+    !busy &&
+    !saving &&
+    !saveInProgressRef.current &&
+    modalMode !== "saving" &&
+    !scheduleIsPast &&
+    !hasPastAppointments &&
+    !hasInvalidDates &&
+    changedCount > 0 &&
+    duplicateCount === 0 &&
+    summary.missingTime === 0 &&
+    summary.unassigned === 0 &&
+    typeof saveAppointments === "function";
+
+  // ----------------------------------------------------------
+  // OPEN CONFIRMATION
+  // ----------------------------------------------------------
+
+  const handleSaveClick = () => {
+    if (!canSave) return;
+
+    setSaveError("");
+    setModalMode("confirm");
+  };
+
+  // ----------------------------------------------------------
+  // CONFIRMED SAVE
+  // ----------------------------------------------------------
+
+  const handleConfirmedSave = async () => {
+    if (saveInProgressRef.current) {
       return;
     }
 
-    // Parent handles the Django request.
-    // Parent must clear appointments only
-    // after all records save successfully.
-    saveAppointments();
+    // Recheck hospital date immediately
+    // before starting the save.
+    const currentToday =
+      getHospitalToday();
+
+    const blocked = appointments.some(
+      (row) => {
+        const rowDate = getDate(
+          row,
+          scheduleDate
+        );
+
+        return (
+          !isValidDate(rowDate) ||
+          rowDate < currentToday
+        );
+      }
+    );
+
+    if (
+      blocked ||
+      (isValidDate(scheduleDate) &&
+        scheduleDate < currentToday)
+    ) {
+      setSaveError(
+        "Past schedules cannot be updated. Review the appointment dates and try again."
+      );
+
+      setModalMode("error");
+      return;
+    }
+
+    if (
+      busy ||
+      saving ||
+      duplicateCount > 0 ||
+      summary.missingTime > 0 ||
+      summary.unassigned > 0 ||
+      changedCount <= 0 ||
+      typeof saveAppointments !== "function"
+    ) {
+      setSaveError(
+        "The schedule is not ready to save. Review duplicate patients, appointment times, and therapist assignments."
+      );
+
+      setModalMode("error");
+      return;
+    }
+
+    saveInProgressRef.current = true;
+
+    setSaveError("");
+    setModalMode("saving");
+
+    const expectedCount = changedCount;
+
+    try {
+      /*
+       * saveAppointments must return true,
+       * or { success: true, savedCount } only
+       * when the Django operation succeeds.
+       *
+       * Undefined is NOT treated as success.
+       */
+
+      const result = await saveAppointments({
+        skipConfirmation: true,
+      });
+
+      const success =
+        result === true ||
+        result?.success === true;
+
+      if (!success) {
+        throw new Error(
+          result?.message ||
+            "Saving was not confirmed by the scheduling system."
+        );
+      }
+
+      const completed =
+        result &&
+        typeof result === "object" &&
+        Number.isFinite(
+          Number(result.savedCount)
+        )
+          ? Number(result.savedCount)
+          : expectedCount;
+
+      /*
+       * Parent callback should:
+       * 1. Refresh Scheduled History.
+       * 2. Clear the draft appointments.
+       * 3. Clear import preview.
+       * 4. Preserve Claims approval values.
+       *
+       * It must not clear the draft if
+       * history synchronization fails.
+       */
+
+      if (
+        typeof onSaveSuccess !== "function"
+      ) {
+        throw new Error(
+          "Appointments were saved, but the parent has no onSaveSuccess callback to refresh history and clear the working draft. Refresh Scheduled History before retrying."
+        );
+      }
+
+      const completion =
+        await onSaveSuccess(result);
+
+      if (
+        completion === false ||
+        completion?.success === false
+      ) {
+        throw new Error(
+          completion?.message ||
+            "Appointments were saved, but the working table could not be finalized. Refresh Scheduled History before retrying."
+        );
+      }
+
+      setSavedCount(completed);
+      setModalMode("success");
+    } catch (error) {
+      setSaveError(
+        error?.message ||
+          "Unable to complete the save."
+      );
+
+      setModalMode("error");
+    } finally {
+      saveInProgressRef.current = false;
+    }
   };
+
+  // ----------------------------------------------------------
+  // HISTORY NAVIGATION
+  // ----------------------------------------------------------
+
+  const handleViewHistory = () => {
+    setModalMode(null);
+    onViewHistory?.();
+  };
+
+  // ----------------------------------------------------------
+  // VISIBILITY
+  // ----------------------------------------------------------
+
+  if (
+    appointments.length === 0 &&
+    modalMode !== "success"
+  ) {
+    return null;
+  }
 
   // ==========================================================
   // RENDER
   // ==========================================================
 
   return (
-    <section className="st-schedule">
-      {/* HEADER */}
+    <>
+      {appointments.length > 0 && (
+        <section className="st-schedule">
 
-      <header className="st-header">
-        <div className="st-heading-left">
-          <div className="st-heading-icon">
-            ▦
+          {/* HEADER */}
+
+          <header className="st-header">
+            <div className="st-heading-left">
+              <div className="st-heading-icon">
+                ▦
+              </div>
+
+              <div>
+                <h2>
+                  Therapist Appointments
+                </h2>
+
+                <p>
+                  Manage appointments,
+                  confirmations, approvals
+                  and patient records
+                </p>
+              </div>
+            </div>
+
+            <div className="st-header-actions">
+              <div className="st-header-pill">
+                <span className="st-live-dot" />
+                {summary.total} Appointments
+              </div>
+
+              <button
+                type="button"
+                className="st-save-button"
+                disabled={!canSave}
+                onClick={handleSaveClick}
+              >
+                {saving ||
+                modalMode === "saving"
+                  ? "Saving..."
+                  : `Save Changes (${changedCount})`}
+              </button>
+            </div>
+          </header>
+
+          {/* SUMMARY CARDS */}
+
+          <div className="st-summary-grid">
+            <SummaryCard
+              label="Total Booked"
+              value={summary.total}
+              type="total"
+              icon="▦"
+            />
+
+            <SummaryCard
+              label="Confirmed"
+              value={summary.confirmed}
+              type="confirmed"
+              icon="✓"
+            />
+
+            <SummaryCard
+              label="Unconfirmed"
+              value={summary.unconfirmed}
+              type="unconfirmed"
+              icon="◷"
+            />
+
+            <SummaryCard
+              label="Rescheduled"
+              value={summary.rescheduled}
+              type="rescheduled"
+              icon="↻"
+            />
+
+            <SummaryCard
+              label="Cancelled"
+              value={summary.cancelled}
+              type="cancelled"
+              icon="✕"
+            />
           </div>
 
-          <div>
-            <h2>
-              Therapist Appointments
-            </h2>
+          {/* HISTORICAL SCHEDULE WARNING */}
 
-            <p>
-              Manage appointments,
-              confirmations, approvals
-              and patient records
-            </p>
+          {(
+            scheduleIsPast ||
+            hasPastAppointments
+          ) && (
+            <div className="st-warning-banner st-readonly-banner">
+              <span className="st-warning-icon">
+                🔒
+              </span>
+
+              <div>
+                <strong>
+                  Historical Schedule — Read Only
+                </strong>
+
+                <p>
+                  Appointments dated before
+                  {` ${formatDisplayDate(today)}`}
+                  cannot be edited, removed,
+                  or saved. Historical records
+                  remain available in
+                  Scheduled History.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* INVALID DATE WARNING */}
+
+          {hasInvalidDates && (
+            <div className="st-warning-banner">
+              <span className="st-warning-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  {invalidDateAppointments.length}
+                  {" "}appointments need a valid date
+                </strong>
+
+                <p>
+                  Correct the appointment dates
+                  before saving. Every appointment
+                  must have a valid date.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* DUPLICATE WARNING */}
+
+          {duplicateCount > 0 && (
+            <div className="st-warning-banner">
+              <span className="st-warning-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  {duplicateCount} duplicate
+                  patient appointment
+                  {duplicateCount === 1
+                    ? ""
+                    : "s"} detected
+                </strong>
+
+                <p>
+                  Duplicate patient names
+                  on the same date must be
+                  reviewed before saving.
+                  No records were removed
+                  automatically.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* TIME WARNING */}
+
+          {summary.missingTime > 0 && (
+            <div className="st-warning-banner">
+              <span className="st-warning-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  {summary.missingTime}
+                  {" "}appointments need
+                  a valid time
+                </strong>
+
+                <p>
+                  Edit these appointments
+                  before saving.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* THERAPIST WARNING */}
+
+          {summary.unassigned > 0 && (
+            <div className="st-warning-banner">
+              <span className="st-warning-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  {summary.unassigned}
+                  {" "}appointments have
+                  no therapist assignment
+                </strong>
+
+                <p>
+                  Select a registered
+                  physiotherapist before saving.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* TABLE HEADING */}
+
+          <div className="st-table-heading">
+            <div>
+              <h3>
+                Appointment Schedule
+              </h3>
+
+              <span>
+                Earliest appointments first
+              </span>
+            </div>
+
+            <div className="st-sort-badge">
+              ↑ Time: Earliest First
+            </div>
           </div>
-        </div>
 
-        <div className="st-header-actions">
-          <div className="st-header-pill">
-            <span className="st-live-dot" />
+          {/* TABLE */}
 
-            {summary.total} Appointments
-          </div>
+          <div className="st-table-scroll">
+            <table className="st-table">
+              <thead>
+                <tr>
+                  <th>Appointment Time</th>
+                  <th>Patient Details</th>
+                  <th>Therapist</th>
+                  <th>Confirmation Status</th>
+                  <th>Type</th>
+                  <th>Claims Approval</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
 
-          <button
-            type="button"
-            className="st-save-button"
-            disabled={
-              busy ||
-              saving ||
-              !changedCount
-            }
-            onClick={handleSave}
-          >
-            {saving
-              ? "Saving..."
-              : `Save Changes (${changedCount})`}
-          </button>
-        </div>
-      </header>
-
-      {/* SUMMARY CARDS */}
-
-      <div className="st-summary-grid">
-        <SummaryCard
-          label="Total Booked"
-          value={summary.total}
-          type="total"
-          icon="▦"
-        />
-
-        <SummaryCard
-          label="Confirmed"
-          value={summary.confirmed}
-          type="confirmed"
-          icon="✓"
-        />
-
-        <SummaryCard
-          label="Unconfirmed"
-          value={summary.unconfirmed}
-          type="unconfirmed"
-          icon="◷"
-        />
-
-        <SummaryCard
-          label="Rescheduled"
-          value={summary.rescheduled}
-          type="rescheduled"
-          icon="↻"
-        />
-
-        <SummaryCard
-          label="Cancelled"
-          value={summary.cancelled}
-          type="cancelled"
-          icon="✕"
-        />
-      </div>
-
-      {/* VALIDATION WARNINGS */}
-
-      {summary.missingTime > 0 && (
-        <div className="st-warning-banner">
-          <span className="st-warning-icon">
-            !
-          </span>
-
-          <div>
-            <strong>
-              {summary.missingTime} appointments
-              need a valid time
-            </strong>
-
-            <p>
-              Edit these appointments
-              before saving.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {summary.unassigned > 0 && (
-        <div className="st-warning-banner">
-          <span className="st-warning-icon">
-            !
-          </span>
-
-          <div>
-            <strong>
-              {summary.unassigned} appointments
-              have no therapist assignment
-            </strong>
-
-            <p>
-              Select a registered
-              physiotherapist before saving.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* TABLE HEADING */}
-
-      <div className="st-table-heading">
-        <div>
-          <h3>
-            Appointment Schedule
-          </h3>
-
-          <span>
-            Earliest appointments first
-          </span>
-        </div>
-
-        <div className="st-sort-badge">
-          ↑ Time: Earliest First
-        </div>
-      </div>
-
-      {/* TABLE */}
-
-      <div className="st-table-scroll">
-        <table className="st-table">
-          <thead>
-            <tr>
-              <th>
-                Appointment Time
-              </th>
-
-              <th>
-                Patient Details
-              </th>
-
-              <th>
-                Therapist
-              </th>
-
-              <th>
-                Confirmation Status
-              </th>
-
-              <th>
-                Type
-              </th>
-
-              <th>
-                Claims Approval
-              </th>
-
-              <th>
-                Actions
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {sorted.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="st-empty"
-                >
-                  No appointments loaded.
-                </td>
-              </tr>
-            ) : (
-              sorted.map(
-                (row, index) => {
-                  const time =
-                    getTime(row);
-
-                  const status =
-                    getStatus(row);
-
+              <tbody>
+                {sorted.map((row, index) => {
+                  const time = getTime(row);
+                  const status = getStatus(row);
                   const statusInfo =
                     STATUS_INFO[status];
 
@@ -558,12 +1370,27 @@ export default function ScheduleTable({
                       therapistOptions
                     );
 
+                  const rowIsPast =
+                    scheduleIsPast ||
+                    isRowPast(row);
+
+                  const disableEditing =
+                    busy ||
+                    saving ||
+                    modalMode === "saving" ||
+                    rowIsPast;
+
                   return (
                     <tr
                       key={
                         row.localId ||
                         row.id ||
                         `${row.patient_name}-${index}`
+                      }
+                      className={
+                        rowIsPast
+                          ? "st-past-row"
+                          : ""
                       }
                     >
                       {/* TIME */}
@@ -586,9 +1413,7 @@ export default function ScheduleTable({
                             </span>
 
                             {time
-                              ? formatTime12(
-                                  time
-                                )
+                              ? formatTime12(time)
                               : "Missing time"}
                           </span>
                         </div>
@@ -610,6 +1435,12 @@ export default function ScheduleTable({
                                 "Not matched"}
                             </b>
                           </span>
+
+                          {rowIsPast && (
+                            <span className="st-row-lock">
+                              🔒 Historical record
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -617,9 +1448,7 @@ export default function ScheduleTable({
 
                       <td>
                         <TherapistDisplay
-                          name={
-                            therapistName
-                          }
+                          name={therapistName}
                         />
                       </td>
 
@@ -650,9 +1479,7 @@ export default function ScheduleTable({
                               : "st-type-followup"
                           }`}
                         >
-                          {getAppointmentType(
-                            row
-                          )}
+                          {getAppointmentType(row)}
                         </span>
                       </td>
 
@@ -664,9 +1491,7 @@ export default function ScheduleTable({
                         >
                           <span className="st-approval-dot" />
 
-                          {APPROVAL_LABELS[
-                            approval
-                          ] ||
+                          {APPROVAL_LABELS[approval] ||
                             label(approval)}
                         </span>
                       </td>
@@ -678,12 +1503,17 @@ export default function ScheduleTable({
                           <button
                             type="button"
                             className="st-action-edit"
-                            disabled={busy}
-                            onClick={() =>
-                              editAppointment?.(
-                                row
-                              )
+                            disabled={disableEditing}
+                            title={
+                              rowIsPast
+                                ? "Past appointments are read-only"
+                                : "Edit appointment"
                             }
+                            onClick={() => {
+                              if (!disableEditing) {
+                                editAppointment?.(row);
+                              }
+                            }}
                           >
                             Edit
                           </button>
@@ -692,9 +1522,7 @@ export default function ScheduleTable({
                             type="button"
                             className="st-action-details"
                             onClick={() =>
-                              openDetails?.(
-                                row
-                              )
+                              openDetails?.(row)
                             }
                           >
                             Details
@@ -704,12 +1532,14 @@ export default function ScheduleTable({
                             <button
                               type="button"
                               className="st-action-remove"
-                              disabled={busy}
-                              onClick={() =>
-                                removeDraftAppointment?.(
-                                  row
-                                )
-                              }
+                              disabled={disableEditing}
+                              onClick={() => {
+                                if (!disableEditing) {
+                                  removeDraftAppointment?.(
+                                    row
+                                  );
+                                }
+                              }}
                             >
                               ✕ Remove
                             </button>
@@ -718,45 +1548,68 @@ export default function ScheduleTable({
                       </td>
                     </tr>
                   );
-                }
-              )
-            )}
-          </tbody>
-        </table>
-      </div>
+                })}
+              </tbody>
+            </table>
+          </div>
 
-      {/* FOOTER */}
+          {/* FOOTER */}
 
-      <footer className="st-footer">
-        <div className="st-footer-note">
-          <strong>
-            {changedCount > 0
-              ? `${changedCount} unsaved changes`
-              : "Appointment schedule"}
-          </strong>
+          <footer className="st-footer">
+            <div className="st-footer-note">
+              <strong>
+                {scheduleIsPast ||
+                hasPastAppointments
+                  ? "Historical appointments are locked"
+                  : duplicateCount > 0
+                    ? `${duplicateCount} duplicate records require attention`
+                    : changedCount > 0
+                      ? `${changedCount} unsaved changes`
+                      : "Appointment schedule"}
+              </strong>
 
-          <span>
-            {loadedSchedule
-              ? "Saved appointments are available in Django."
-              : "Appointments are saved after selecting Save Changes."}
-          </span>
-        </div>
+              <span>
+                {scheduleIsPast ||
+                hasPastAppointments
+                  ? "Previous-day appointments cannot be modified."
+                  : loadedSchedule
+                    ? "Existing records are available in Django. Save only the changes you intend to make."
+                    : "Appointments will appear in Scheduled History after saving."}
+              </span>
+            </div>
 
-        <button
-          type="button"
-          className="st-footer-save"
-          disabled={
-            busy ||
-            saving ||
-            !changedCount
+            <button
+              type="button"
+              className="st-footer-save"
+              disabled={!canSave}
+              onClick={handleSaveClick}
+            >
+              {saving ||
+              modalMode === "saving"
+                ? "Saving..."
+                : `Save Changes (${changedCount})`}
+            </button>
+          </footer>
+        </section>
+      )}
+
+      {/* SAVE MODAL */}
+
+      {modalMode && (
+        <ScheduleModal
+          mode={modalMode}
+          appointments={appointments}
+          therapistOptions={therapistOptions}
+          changedCount={changedCount}
+          savedCount={savedCount}
+          error={saveError}
+          onClose={() =>
+            setModalMode(null)
           }
-          onClick={handleSave}
-        >
-          {saving
-            ? "Saving..."
-            : `Save Changes (${changedCount})`}
-        </button>
-      </footer>
+          onConfirm={handleConfirmedSave}
+          onViewHistory={handleViewHistory}
+        />
+      )}
 
       {/* STYLES */}
 
@@ -986,6 +1839,24 @@ export default function ScheduleTable({
           line-height: 1.5;
         }
 
+        .st-readonly-banner {
+          background: #f1f5f9;
+          border-color: #cbd5e1;
+        }
+
+        .st-readonly-banner .st-warning-icon {
+          background: #475569;
+          font-size: 12px;
+        }
+
+        .st-readonly-banner strong {
+          color: #334155;
+        }
+
+        .st-readonly-banner p {
+          color: #64748b;
+        }
+
         .st-table-heading {
           display: flex;
           justify-content: space-between;
@@ -1053,6 +1924,20 @@ export default function ScheduleTable({
 
         .st-table tbody tr:hover {
           background: #edf5ff;
+        }
+
+        .st-past-row {
+          background: #f8fafc !important;
+        }
+
+        .st-past-row:hover {
+          background: #f1f5f9 !important;
+        }
+
+        .st-row-lock {
+          color: #64748b !important;
+          font-size: 10px !important;
+          font-weight: 800 !important;
         }
 
         .st-time-cell {
@@ -1300,14 +2185,6 @@ export default function ScheduleTable({
           cursor: not-allowed;
         }
 
-        .st-empty {
-          text-align: center;
-          padding: 35px !important;
-          color: #94a3b8;
-          font-size: 13px;
-          font-weight: 700;
-        }
-
         .st-footer {
           display: flex;
           align-items: center;
@@ -1358,6 +2235,332 @@ export default function ScheduleTable({
           cursor: not-allowed;
         }
 
+        /* MODAL */
+
+        .st-modal-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 99999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          background: rgba(9,24,54,.65);
+          backdrop-filter: blur(5px);
+        }
+
+        .st-modal {
+          width: min(100%, 500px);
+          max-height: 92vh;
+          overflow-y: auto;
+          padding: 30px;
+          background: white;
+          border-radius: 22px;
+          box-shadow: 0 25px 90px
+            rgba(0,0,0,.28);
+          outline: none;
+          animation: st-modal-pop .22s ease-out;
+        }
+
+        @keyframes st-modal-pop {
+          from {
+            opacity: 0;
+            transform: translateY(12px) scale(.96);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        .st-modal-icon {
+          display: grid;
+          place-items: center;
+          width: 62px;
+          height: 62px;
+          margin: 0 auto 18px;
+          border-radius: 19px;
+          font-size: 31px;
+          font-weight: 900;
+        }
+
+        .st-modal-icon-confirm {
+          background: #e8f0ff;
+          color: #2457d8;
+        }
+
+        .st-modal-icon-success {
+          background: #dcfce7;
+          color: #059669;
+        }
+
+        .st-modal-icon-error {
+          background: #ffe4e6;
+          color: #e11d48;
+        }
+
+        .st-modal h2 {
+          margin: 0;
+          text-align: center;
+          color: #162641;
+          font-size: 23px;
+          font-weight: 850;
+        }
+
+        .st-modal-description {
+          margin: 12px 0 0;
+          text-align: center;
+          color: #718096;
+          font-size: 13px;
+          line-height: 1.7;
+        }
+
+        .st-modal-stats {
+          display: grid;
+          grid-template-columns: repeat(3,1fr);
+          gap: 10px;
+          margin: 24px 0;
+        }
+
+        .st-modal-stats > div {
+          padding: 16px 10px;
+          border-radius: 13px;
+          background: #f0f5ff;
+          text-align: center;
+        }
+
+        .st-modal-stats strong {
+          display: block;
+          color: #2457d8;
+          font-size: 26px;
+          font-weight: 900;
+        }
+
+        .st-modal-stats span {
+          color: #66758d;
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .st-modal-patient-list {
+          padding: 17px;
+          border: 1px solid #e6ecf6;
+          border-radius: 13px;
+          background: #fcfdff;
+        }
+
+        .st-modal-patient-list h4 {
+          margin: 0 0 12px;
+          color: #223454;
+          font-size: 13px;
+        }
+
+        .st-modal-patient {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 9px 0;
+          border-bottom: 1px solid #eef2f8;
+        }
+
+        .st-modal-patient:last-child {
+          border-bottom: none;
+        }
+
+        .st-modal-patient-check {
+          display: grid;
+          place-items: center;
+          width: 25px;
+          height: 25px;
+          border-radius: 50%;
+          background: #dcfce7;
+          color: #059669;
+          font-weight: 900;
+          flex-shrink: 0;
+        }
+
+        .st-modal-patient strong {
+          display: block;
+          color: #253653;
+          font-size: 12px;
+        }
+
+        .st-modal-patient small {
+          display: block;
+          margin-top: 4px;
+          color: #8190a6;
+          font-size: 11px;
+        }
+
+        .st-modal-more {
+          margin: 12px 0 0;
+          color: #2457d8;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .st-modal-info {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          margin-top: 18px;
+          padding: 14px;
+          border-radius: 12px;
+          background: #eaf2ff;
+          color: #2457b8;
+        }
+
+        .st-modal-info > span {
+          font-size: 18px;
+          font-weight: 900;
+        }
+
+        .st-modal-info p {
+          margin: 0;
+          font-size: 12px;
+          line-height: 1.6;
+        }
+
+        .st-modal-actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 11px;
+          margin-top: 23px;
+        }
+
+        .st-modal-actions button {
+          padding: 13px 10px;
+          border-radius: 11px;
+          font-size: 12px;
+          font-weight: 850;
+          cursor: pointer;
+        }
+
+        .st-modal-secondary {
+          border: 1px solid #d7dfed;
+          background: white;
+          color: #52627a;
+        }
+
+        .st-modal-primary {
+          border: none;
+          background: linear-gradient(
+            110deg,
+            #2457d8,
+            #387cf2
+          );
+          color: white;
+        }
+
+        .st-modal-full {
+          grid-column: 1 / -1;
+        }
+
+        .st-modal-centered {
+          text-align: center;
+        }
+
+        .st-spinner {
+          width: 54px;
+          height: 54px;
+          margin: 5px auto 24px;
+          border: 5px solid #e2eaff;
+          border-top-color: #2457d8;
+          border-radius: 50%;
+          animation: st-spin .8s linear infinite;
+        }
+
+        @keyframes st-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        .st-saving-progress {
+          height: 8px;
+          margin-top: 26px;
+          border-radius: 999px;
+          overflow: hidden;
+          background: #e5edff;
+        }
+
+        .st-saving-progress div {
+          width: 35%;
+          height: 100%;
+          border-radius: 999px;
+          background: #2563eb;
+          animation: st-progress 1.5s ease-in-out infinite;
+        }
+
+        @keyframes st-progress {
+          0% {
+            transform: translateX(-110%);
+          }
+          100% {
+            transform: translateX(300%);
+          }
+        }
+
+        .st-saving-note {
+          margin-top: 17px;
+          color: #94a3b8;
+          font-size: 11px;
+        }
+
+        .st-success-count {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+          margin: 25px 0;
+          padding: 20px;
+          border-radius: 14px;
+          background: #ecfdf5;
+        }
+
+        .st-success-count strong {
+          color: #059669;
+          font-size: 39px;
+          font-weight: 900;
+        }
+
+        .st-success-count span {
+          color: #047857;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .st-success-message {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 15px;
+          border-radius: 12px;
+          background: #f0fdf4;
+          color: #166534;
+          text-align: left;
+        }
+
+        .st-success-message > span {
+          font-size: 20px;
+          font-weight: 900;
+        }
+
+        .st-success-message p {
+          margin: 0;
+          font-size: 12px;
+          line-height: 1.6;
+        }
+
+        .st-error-message {
+          margin-top: 22px;
+          padding: 15px;
+          border-radius: 12px;
+          background: #fff1f2;
+          color: #be123c;
+          font-size: 12px;
+          line-height: 1.6;
+        }
+
         @media (max-width: 1100px) {
           .st-summary-grid {
             grid-template-columns:
@@ -1395,8 +2598,24 @@ export default function ScheduleTable({
           .st-footer-save {
             width: 100%;
           }
+
+          .st-modal {
+            padding: 23px 19px;
+          }
+
+          .st-modal h2 {
+            font-size: 20px;
+          }
+
+          .st-modal-actions {
+            grid-template-columns: 1fr;
+          }
+
+          .st-modal-full {
+            grid-column: auto;
+          }
         }
       `}</style>
-    </section>
+    </>
   );
 }

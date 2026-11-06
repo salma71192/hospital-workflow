@@ -2,6 +2,10 @@
 import React, { useMemo, useState } from "react";
 import { parseExcelTime } from "./excelImportRules";
 
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
 const STATUS_OPTIONS = [
   { value: "unconfirmed", label: "Unconfirmed" },
   { value: "confirmed", label: "Confirmed" },
@@ -10,10 +14,22 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_INFO = {
-  unconfirmed: { label: "Unconfirmed", icon: "◷" },
-  confirmed: { label: "Confirmed", icon: "✓" },
-  cancelled: { label: "Cancelled", icon: "✕" },
-  rescheduled: { label: "Rescheduled", icon: "↻" },
+  unconfirmed: {
+    label: "Unconfirmed",
+    icon: "◷",
+  },
+  confirmed: {
+    label: "Confirmed",
+    icon: "✓",
+  },
+  cancelled: {
+    label: "Cancelled",
+    icon: "✕",
+  },
+  rescheduled: {
+    label: "Rescheduled",
+    icon: "↻",
+  },
 };
 
 const APPROVAL_LABELS = {
@@ -22,40 +38,92 @@ const APPROVAL_LABELS = {
   rejected: "Rejected",
   denied: "Denied",
   expired: "Expired",
+  unknown: "Not Verified",
+  not_verified: "Not Verified",
 };
 
-const pad = (value) => String(value).padStart(2, "0");
+const pad = (value) =>
+  String(value).padStart(2, "0");
 
 function getApproval(row) {
-  return String(
-    row.claim_approval_status ??
-      row.insurance_approval_status ??
-      row.approval_status ??
-      "approved"
-  ).trim().toLowerCase();
+  const values = [
+    row.claim_approval_status,
+    row.insurance_approval_status,
+    row.approval_status,
+  ];
+
+  const selected = values.find(
+    (value) =>
+      value !== null &&
+      value !== undefined &&
+      String(value).trim() !== ""
+  );
+
+  return String(selected ?? "unknown")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
 }
 
-function TimeEditor({ value, onChange, disabled, label }) {
+function approvalLabel(value) {
+  return (
+    APPROVAL_LABELS[value] ||
+    String(value)
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (letter) =>
+        letter.toUpperCase()
+      )
+  );
+}
+
+// ============================================================
+// TIME EDITOR
+// ============================================================
+
+function TimeEditor({
+  value,
+  onChange,
+  disabled,
+  label,
+}) {
   const normalized = parseExcelTime(value);
-  const valid = /^\d{2}:\d{2}$/.test(normalized);
+
+  const valid =
+    /^([01]\d|2[0-3]):[0-5]\d$/.test(
+      normalized
+    );
 
   const [hours, minutes] = valid
     ? normalized.split(":").map(Number)
     : [9, 0];
 
-  const hour12 = pad(hours % 12 || 12);
-  const period = hours >= 12 ? "PM" : "AM";
+  const hour12 = pad(
+    hours % 12 || 12
+  );
 
-  const update = (hour, minute, meridiem) => {
+  const period =
+    hours >= 12 ? "PM" : "AM";
+
+  const update = (
+    hour,
+    minute,
+    meridiem
+  ) => {
     const convertedHour =
-      (Number(hour) % 12) + (meridiem === "PM" ? 12 : 0);
+      (Number(hour) % 12) +
+      (meridiem === "PM" ? 12 : 0);
 
-    onChange(`${pad(convertedHour)}:${pad(minute)}`);
+    onChange(
+      `${pad(convertedHour)}:${pad(minute)}`
+    );
   };
 
   return (
     <div className="sp-time-editor">
-      <span className="sp-clock-icon" aria-hidden="true">
+      <span
+        className="sp-clock-icon"
+        aria-hidden="true"
+      >
         ◷
       </span>
 
@@ -64,35 +132,53 @@ function TimeEditor({ value, onChange, disabled, label }) {
         disabled={disabled}
         aria-label={`${label} hour`}
         onChange={(event) =>
-          update(event.target.value, minutes, period)
+          update(
+            event.target.value,
+            minutes,
+            period
+          )
         }
       >
-        {Array.from({ length: 12 }, (_, i) => pad(i + 1)).map(
-          (hour) => (
-            <option key={hour} value={hour}>
-              {hour}
-            </option>
-          )
-        )}
+        {Array.from(
+          { length: 12 },
+          (_, i) => pad(i + 1)
+        ).map((hour) => (
+          <option
+            key={hour}
+            value={hour}
+          >
+            {hour}
+          </option>
+        ))}
       </select>
 
-      <span className="sp-time-colon">:</span>
+      <span className="sp-time-colon">
+        :
+      </span>
 
       <select
         value={pad(minutes)}
         disabled={disabled}
         aria-label={`${label} minute`}
         onChange={(event) =>
-          update(hour12, event.target.value, period)
+          update(
+            hour12,
+            event.target.value,
+            period
+          )
         }
       >
-        {Array.from({ length: 60 }, (_, i) => pad(i)).map(
-          (minute) => (
-            <option key={minute} value={minute}>
-              {minute}
-            </option>
-          )
-        )}
+        {Array.from(
+          { length: 60 },
+          (_, i) => pad(i)
+        ).map((minute) => (
+          <option
+            key={minute}
+            value={minute}
+          >
+            {minute}
+          </option>
+        ))}
       </select>
 
       <select
@@ -101,15 +187,27 @@ function TimeEditor({ value, onChange, disabled, label }) {
         disabled={disabled}
         aria-label={`${label} AM or PM`}
         onChange={(event) =>
-          update(hour12, minutes, event.target.value)
+          update(
+            hour12,
+            minutes,
+            event.target.value
+          )
         }
       >
-        <option value="AM">AM</option>
-        <option value="PM">PM</option>
+        <option value="AM">
+          AM
+        </option>
+
+        <option value="PM">
+          PM
+        </option>
       </select>
 
       {!valid && (
-        <span className="sp-time-error" title="Set a valid time">
+        <span
+          className="sp-time-error"
+          title="Set a valid time"
+        >
           !
         </span>
       )}
@@ -117,10 +215,24 @@ function TimeEditor({ value, onChange, disabled, label }) {
   );
 }
 
-function SummaryCard({ label, value, type, icon }) {
+// ============================================================
+// SUMMARY CARD
+// ============================================================
+
+function SummaryCard({
+  label,
+  value,
+  type,
+  icon,
+}) {
   return (
-    <div className={`sp-summary-card sp-summary-${type}`}>
-      <div className="sp-summary-icon">{icon}</div>
+    <div
+      className={`sp-summary-card sp-summary-${type}`}
+    >
+      <div className="sp-summary-icon">
+        {icon}
+      </div>
+
       <div className="sp-summary-content">
         <span>{label}</span>
         <strong>{value}</strong>
@@ -129,84 +241,174 @@ function SummaryCard({ label, value, type, icon }) {
   );
 }
 
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+
 export default function SchedulePreview({
   importPreview = [],
   importWarnings = [],
   importSkipped = 0,
   skippedRows,
   busy = false,
+  therapistOptions = [],
   updateImportPreviewRow,
   removeImportPreviewRow,
   addPreviewToDraft,
   cancelPreview,
 }) {
-  const [showWarnings, setShowWarnings] = useState(false);
+  const [
+    showWarnings,
+    setShowWarnings,
+  ] = useState(false);
 
-  const rows = useMemo(
-    () =>
-      [...importPreview].sort((a, b) => {
-        const aTime = parseExcelTime(a.time) || "99:99";
-        const bTime = parseExcelTime(b.time) || "99:99";
+  // ----------------------------------------------------------
+  // SORT ROWS
+  // ----------------------------------------------------------
 
-        return aTime.localeCompare(bTime);
-      }),
-    [importPreview]
-  );
+  const rows = useMemo(() => {
+    return [...importPreview].sort(
+      (a, b) => {
+        const aTime =
+          parseExcelTime(a.time) ||
+          "99:99";
+
+        const bTime =
+          parseExcelTime(b.time) ||
+          "99:99";
+
+        return aTime.localeCompare(
+          bTime
+        );
+      }
+    );
+  }, [importPreview]);
+
+  // ----------------------------------------------------------
+  // SUMMARY
+  // ----------------------------------------------------------
 
   const summary = useMemo(() => {
     const count = (status) =>
       rows.filter(
         (row) =>
-          (row.confirmation_status || "unconfirmed") ===
-          status
+          (
+            row.confirmation_status ||
+            "unconfirmed"
+          ) === status
       ).length;
 
     return {
       total: rows.length,
-      unconfirmed: count("unconfirmed"),
-      confirmed: count("confirmed"),
-      cancelled: count("cancelled"),
-      rescheduled: count("rescheduled"),
+      unconfirmed:
+        count("unconfirmed"),
+      confirmed:
+        count("confirmed"),
+      cancelled:
+        count("cancelled"),
+      rescheduled:
+        count("rescheduled"),
     };
   }, [rows]);
 
-  const skipped = skippedRows ?? importSkipped;
+  const skipped =
+    skippedRows ?? importSkipped;
 
-  const update = (row, field, value) => {
-    updateImportPreviewRow?.(row.localId, field, value);
+  // ----------------------------------------------------------
+  // ACTIONS
+  // ----------------------------------------------------------
+
+  const update = (
+    row,
+    field,
+    value
+  ) => {
+    updateImportPreviewRow?.(
+      row.localId,
+      field,
+      value
+    );
   };
 
   const remove = (row) => {
-    if (typeof removeImportPreviewRow !== "function") {
+    removeImportPreviewRow?.(
+      row.localId
+    );
+  };
+
+  const handleAddToDraft = () => {
+    if (
+      busy ||
+      rows.length === 0 ||
+      typeof addPreviewToDraft !==
+        "function"
+    ) {
       return;
     }
 
-    removeImportPreviewRow(row.localId);
+    // The parent owns both tables.
+    //
+    // On successful draft creation, the
+    // parent moves these appointments into
+    // its appointments state and clears
+    // importPreview.
+    //
+    // Clearing importPreview automatically
+    // hides this component.
+
+    addPreviewToDraft();
   };
 
-  if (!rows.length && !importWarnings.length) {
+  // ==========================================================
+  // IMPORTANT:
+  // HIDE PREVIEW AFTER ADDING TO DRAFT
+  // ==========================================================
+
+  // Do not keep this component visible
+  // merely because warnings remain.
+  //
+  // The parent clears importPreview after
+  // successfully adding the appointments
+  // to the Therapist Appointments table.
+
+  if (rows.length === 0) {
     return null;
   }
 
+  // ==========================================================
+  // RENDER
+  // ==========================================================
+
   return (
     <section className="sp-preview">
+      {/* HEADER */}
+
       <header className="sp-header">
         <div className="sp-heading-left">
-          <div className="sp-heading-icon">▦</div>
+          <div className="sp-heading-icon">
+            ▦
+          </div>
 
           <div>
-            <h2>Appointment Preview</h2>
+            <h2>
+              Appointment Preview
+            </h2>
+
             <p>
-              Review, edit and organize imported appointments
+              Review, edit and organize
+              imported appointments
             </p>
           </div>
         </div>
 
         <div className="sp-header-pill">
           <span className="sp-live-dot" />
+
           {summary.total} Appointments
         </div>
       </header>
+
+      {/* SUMMARY CARDS */}
 
       <div className="sp-summary-grid">
         <SummaryCard
@@ -245,11 +447,17 @@ export default function SchedulePreview({
         />
       </div>
 
+      {/* TABLE HEADING */}
+
       <div className="sp-table-heading">
         <div>
-          <h3>Imported Schedule</h3>
+          <h3>
+            Imported Schedule
+          </h3>
+
           <span>
-            Earliest appointments first · Edit times and status
+            Earliest appointments first ·
+            Edit times and status
           </span>
         </div>
 
@@ -258,33 +466,78 @@ export default function SchedulePreview({
         </div>
       </div>
 
-      {rows.length > 0 && (
-        <div className="sp-table-scroll">
-          <table className="sp-table">
-            <thead>
-              <tr>
-                <th>Appointment Time</th>
-                <th>Patient Details</th>
-                <th>Therapist</th>
-                <th>Confirmation Status</th>
-                <th>Claims Approval</th>
-                <th>Action</th>
-              </tr>
-            </thead>
+      {/* TABLE */}
 
-            <tbody>
-              {rows.map((row, index) => {
+      <div className="sp-table-scroll">
+        <table className="sp-table">
+          <thead>
+            <tr>
+              <th>
+                Appointment Time
+              </th>
+
+              <th>
+                Patient Details
+              </th>
+
+              <th>
+                Therapist
+              </th>
+
+              <th>
+                Confirmation Status
+              </th>
+
+              <th>
+                Claims Approval
+              </th>
+
+              <th>
+                Action
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.map(
+              (row, index) => {
                 const status =
-                  row.confirmation_status || "unconfirmed";
+                  row.confirmation_status ||
+                  "unconfirmed";
 
-                const approval = getApproval(row);
+                const approval =
+                  getApproval(row);
 
                 const statusInfo =
                   STATUS_INFO[status] ||
                   STATUS_INFO.unconfirmed;
 
+                const selectedTherapist =
+                  therapistOptions.find(
+                    (option) =>
+                      String(option.value) ===
+                      String(
+                        row.therapist_id ??
+                        row.therapist ??
+                        ""
+                      )
+                  );
+
+                const therapistName =
+                  selectedTherapist?.label ||
+                  row.therapist_name ||
+                  row.excel_therapist_name ||
+                  "Unassigned";
+
                 return (
-                  <tr key={row.localId}>
+                  <tr
+                    key={
+                      row.localId ||
+                      `${row.patient_name}-${index}`
+                    }
+                  >
+                    {/* TIME */}
+
                     <td>
                       <div className="sp-time-cell">
                         <span className="sp-row-index">
@@ -296,30 +549,42 @@ export default function SchedulePreview({
                           disabled={busy}
                           label={`Time for ${row.patient_name}`}
                           onChange={(value) =>
-                            update(row, "time", value)
+                            update(
+                              row,
+                              "time",
+                              value
+                            )
                           }
                         />
                       </div>
                     </td>
 
+                    {/* PATIENT */}
+
                     <td>
                       <div className="sp-patient">
                         <strong>
-                          {row.patient_name || "Unnamed patient"}
+                          {row.patient_name ||
+                            "Unnamed patient"}
                         </strong>
 
                         <span>
                           File No.{" "}
-                          <b>{row.file_number || "—"}</b>
+                          <b>
+                            {row.file_number ||
+                              "—"}
+                          </b>
                         </span>
                       </div>
                     </td>
+
+                    {/* THERAPIST */}
 
                     <td>
                       <div className="sp-therapist">
                         <span className="sp-therapist-avatar">
                           {String(
-                            row.therapist_name || "?"
+                            therapistName
                           )
                             .trim()
                             .charAt(0)
@@ -327,10 +592,12 @@ export default function SchedulePreview({
                         </span>
 
                         <strong>
-                          {row.therapist_name || "Unassigned"}
+                          {therapistName}
                         </strong>
                       </div>
                     </td>
+
+                    {/* STATUS */}
 
                     <td>
                       <div
@@ -352,27 +619,39 @@ export default function SchedulePreview({
                             )
                           }
                         >
-                          {STATUS_OPTIONS.map((option) => (
-                            <option
-                              key={option.value}
-                              value={option.value}
-                            >
-                              {option.label}
-                            </option>
-                          ))}
+                          {STATUS_OPTIONS.map(
+                            (option) => (
+                              <option
+                                key={
+                                  option.value
+                                }
+                                value={
+                                  option.value
+                                }
+                              >
+                                {option.label}
+                              </option>
+                            )
+                          )}
                         </select>
                       </div>
                     </td>
+
+                    {/* APPROVAL */}
 
                     <td>
                       <span
                         className={`sp-approval sp-approval-${approval}`}
                       >
                         <span className="sp-approval-dot" />
-                        {APPROVAL_LABELS[approval] ||
-                          approval}
+
+                        {approvalLabel(
+                          approval
+                        )}
                       </span>
                     </td>
+
+                    {/* ACTION */}
 
                     <td>
                       <button
@@ -383,72 +662,112 @@ export default function SchedulePreview({
                           typeof removeImportPreviewRow !==
                             "function"
                         }
-                        onClick={() => remove(row)}
+                        onClick={() =>
+                          remove(row)
+                        }
                         aria-label={`Remove ${row.patient_name}`}
                       >
-                        <span aria-hidden="true">✕</span>
+                        <span aria-hidden="true">
+                          ✕
+                        </span>
+
                         Remove
                       </button>
                     </td>
                   </tr>
                 );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+              }
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* UNCONFIRMED ALERT */}
 
       {summary.unconfirmed > 0 && (
         <div className="sp-alert-banner">
-          <span className="sp-alert-symbol">!</span>
+          <span className="sp-alert-symbol">
+            !
+          </span>
 
           <div>
             <strong>
-              {summary.unconfirmed} appointments require
-              confirmation
+              {summary.unconfirmed} appointments
+              require confirmation
             </strong>
 
             <p>
-              Once saved, these appointments should appear
-              in the Alerts tab for follow-up calls.
+              Once saved, these appointments
+              should appear in the Alerts
+              tab for follow-up calls.
             </p>
           </div>
         </div>
       )}
+
+      {/* IMPORT WARNINGS */}
 
       {importWarnings.length > 0 && (
         <div className="sp-warning-section">
           <button
             type="button"
             className="sp-warning-toggle"
-            onClick={() => setShowWarnings((value) => !value)}
+            onClick={() =>
+              setShowWarnings(
+                (value) => !value
+              )
+            }
           >
             <span>
-              Import Warnings ({importWarnings.length})
-              {skipped > 0 ? ` · ${skipped} skipped` : ""}
+              Import Warnings (
+              {importWarnings.length})
+              {skipped > 0
+                ? ` · ${skipped} skipped`
+                : ""}
             </span>
 
-            <span>{showWarnings ? "−" : "+"}</span>
+            <span>
+              {showWarnings
+                ? "−"
+                : "+"}
+            </span>
           </button>
 
           {showWarnings && (
             <ul>
-              {importWarnings.slice(0, 30).map(
-                (warning, index) => (
-                  <li key={index}>{warning}</li>
-                )
-              )}
+              {importWarnings
+                .slice(0, 30)
+                .map(
+                  (
+                    warning,
+                    index
+                  ) => (
+                    <li
+                      key={index}
+                    >
+                      {warning}
+                    </li>
+                  )
+                )}
             </ul>
           )}
         </div>
       )}
 
+      {/* FOOTER */}
+
       <footer className="sp-footer">
         <div className="sp-footer-note">
-          <strong>Ready to import?</strong>
+          <strong>
+            Ready to import?
+          </strong>
+
           <span>
-            Appointments are saved permanently only after
-            selecting Save Changes.
+            Add to Draft to move
+            appointments into the
+            Therapist Appointments table.
+            Save Changes will save
+            them permanently.
           </span>
         </div>
 
@@ -458,7 +777,9 @@ export default function SchedulePreview({
               type="button"
               className="sp-cancel-button"
               disabled={busy}
-              onClick={cancelPreview}
+              onClick={
+                cancelPreview
+              }
             >
               Cancel
             </button>
@@ -470,14 +791,19 @@ export default function SchedulePreview({
             disabled={
               busy ||
               rows.length === 0 ||
-              typeof addPreviewToDraft !== "function"
+              typeof addPreviewToDraft !==
+                "function"
             }
-            onClick={addPreviewToDraft}
+            onClick={
+              handleAddToDraft
+            }
           >
             + Add {rows.length} to Draft
           </button>
         </div>
       </footer>
+
+      {/* STYLES */}
 
       <style>{`
         .sp-preview {
@@ -489,9 +815,11 @@ export default function SchedulePreview({
           border: 1px solid var(--sp-border);
           border-radius: 20px;
           overflow: hidden;
-          font-family: Inter, system-ui, -apple-system,
-            BlinkMacSystemFont, "Segoe UI", sans-serif;
-          box-shadow: 0 8px 35px rgba(28, 49, 92, 0.07);
+          font-family: Inter, system-ui,
+            -apple-system, BlinkMacSystemFont,
+            "Segoe UI", sans-serif;
+          box-shadow: 0 8px 35px
+            rgba(28,49,92,.07);
         }
 
         .sp-preview * {
@@ -534,7 +862,7 @@ export default function SchedulePreview({
         .sp-header h2 {
           margin: 0 0 5px;
           font-size: 23px;
-          color: #ffffff;
+          color: white;
           font-weight: 850;
           letter-spacing: -.6px;
         }
@@ -554,7 +882,7 @@ export default function SchedulePreview({
           border: 1px solid rgba(255,255,255,.25);
           border-radius: 999px;
           background: rgba(255,255,255,.16);
-          color: #ffffff;
+          color: white;
           font-size: 13px;
           font-weight: 800;
         }
@@ -564,12 +892,14 @@ export default function SchedulePreview({
           height: 9px;
           background: #6fffc4;
           border-radius: 50%;
-          box-shadow: 0 0 0 4px rgba(111,255,196,.18);
+          box-shadow: 0 0 0 4px
+            rgba(111,255,196,.18);
         }
 
         .sp-summary-grid {
           display: grid;
-          grid-template-columns: repeat(5, minmax(0,1fr));
+          grid-template-columns:
+            repeat(5,minmax(0,1fr));
           gap: 13px;
           padding: 23px 25px;
           background: #f8faff;
@@ -582,8 +912,9 @@ export default function SchedulePreview({
           padding: 15px 13px;
           border: 1px solid #e8edf6;
           border-radius: 14px;
-          background: #ffffff;
-          box-shadow: 0 3px 12px rgba(30,50,90,.035);
+          background: white;
+          box-shadow: 0 3px 12px
+            rgba(30,50,90,.035);
         }
 
         .sp-summary-icon {
@@ -614,7 +945,6 @@ export default function SchedulePreview({
           color: #14233d;
           font-size: 25px;
           font-weight: 900;
-          line-height: 1;
         }
 
         .sp-summary-total .sp-summary-icon {
@@ -697,14 +1027,6 @@ export default function SchedulePreview({
           border-bottom: 2px solid #dfe8f7;
         }
 
-        .sp-table thead th:first-child {
-          border-radius: 10px 0 0 0;
-        }
-
-        .sp-table thead th:last-child {
-          border-radius: 0 10px 0 0;
-        }
-
         .sp-table tbody td {
           padding: 15px 12px;
           border-bottom: 1px solid #edf1f7;
@@ -752,7 +1074,8 @@ export default function SchedulePreview({
 
         .sp-time-editor:focus-within {
           border-color: #2563eb;
-          box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+          box-shadow: 0 0 0 3px
+            rgba(37,99,235,.12);
         }
 
         .sp-clock-icon {
@@ -773,6 +1096,8 @@ export default function SchedulePreview({
           color: #123c91;
           cursor: pointer;
           text-align: center;
+          width: auto;
+          min-width: 35px;
         }
 
         .sp-time-colon {
@@ -782,7 +1107,7 @@ export default function SchedulePreview({
 
         .sp-time-editor .sp-period-select {
           background: #285fd0;
-          color: #ffffff;
+          color: white;
           border-radius: 6px;
           padding: 7px 8px;
           font-size: 11px;
@@ -861,6 +1186,7 @@ export default function SchedulePreview({
           font-weight: 850;
           cursor: pointer;
           padding: 4px 2px;
+          width: auto;
         }
 
         .sp-status-icon {
@@ -942,12 +1268,10 @@ export default function SchedulePreview({
           font-size: 11px;
           font-weight: 850;
           cursor: pointer;
-          transition: background .15s, transform .15s;
         }
 
         .sp-remove-button:hover:not(:disabled) {
           background: #ffdbe3;
-          transform: translateY(-1px);
         }
 
         .sp-remove-button:disabled {
@@ -1067,9 +1391,14 @@ export default function SchedulePreview({
 
         .sp-add-button {
           border: none;
-          background: linear-gradient(110deg, #2457d8, #387cf2);
+          background: linear-gradient(
+            110deg,
+            #2457d8,
+            #387cf2
+          );
           color: white;
-          box-shadow: 0 5px 13px rgba(37,99,235,.2);
+          box-shadow: 0 5px 13px
+            rgba(37,99,235,.2);
         }
 
         .sp-add-button:hover:not(:disabled) {
@@ -1083,7 +1412,8 @@ export default function SchedulePreview({
 
         @media (max-width: 1100px) {
           .sp-summary-grid {
-            grid-template-columns: repeat(3, minmax(0,1fr));
+            grid-template-columns:
+              repeat(3,minmax(0,1fr));
           }
         }
 
@@ -1097,7 +1427,8 @@ export default function SchedulePreview({
           }
 
           .sp-summary-grid {
-            grid-template-columns: repeat(2, minmax(0,1fr));
+            grid-template-columns:
+              repeat(2,minmax(0,1fr));
             padding: 15px;
           }
 
