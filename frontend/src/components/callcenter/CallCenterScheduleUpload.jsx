@@ -56,8 +56,6 @@ import ManualAppointmentEntry from "./schedule/ManualAppointmentEntry";
 
 const HOSPITAL_TIME_ZONE = "Asia/Dubai";
 const MONTH_REQUEST_BATCH_SIZE = 5;
-
-// Must match your actual PatientDetails route.
 const PATIENT_FILE_ROUTE = "/patients";
 
 // ============================================================
@@ -107,14 +105,19 @@ function isEditableDate(value) {
   );
 }
 
+function isToday(value) {
+  return Boolean(
+    validDate(value) &&
+      value === getHospitalToday()
+  );
+}
+
 function validMonth(value) {
   if (!/^\d{4}-\d{2}$/.test(value || "")) {
     return false;
   }
 
-  const [year, month] = value
-    .split("-")
-    .map(Number);
+  const [year, month] = value.split("-").map(Number);
 
   return (
     year >= 1900 &&
@@ -278,9 +281,9 @@ function resolveTherapist(
   if (byId) return byId;
 
   const sourceName =
-    row.excel_therapist_name ||
-    row.import_therapist ||
-    row.therapist_name ||
+    row?.excel_therapist_name ||
+    row?.import_therapist ||
+    row?.therapist_name ||
     "";
 
   return findTherapistByName(
@@ -337,17 +340,62 @@ function sortAppointments(rows = []) {
   });
 }
 
-function getApproval(row) {
-  const value =
-    row?.claim_approval_status ??
-    row?.insurance_approval_status ??
-    row?.approval_status;
+// ============================================================
+// CLAIMS APPROVAL HELPERS
+// ============================================================
 
-  if (!hasValue(value)) {
-    return "unknown";
+function readApprovalValue(value) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
   }
 
-  return String(value);
+  if (typeof value === "object") {
+    return String(
+      value.approval_status ??
+        value.claim_approval_status ??
+        value.status ??
+        value.value ??
+        ""
+    ).trim();
+  }
+
+  return String(value).trim();
+}
+
+function getApproval(row) {
+  const candidates = [
+    row?.claim_approval_status,
+    row?.claims_approval_status,
+    row?.insurance_approval_status,
+    row?.authorization_status,
+    row?.rcm_approval_status,
+    row?.approval_status,
+    row?.claim?.approval_status,
+    row?.claims?.approval_status,
+  ];
+
+  for (const candidate of candidates) {
+    const value = readApprovalValue(candidate);
+
+    if (
+      value &&
+      ![
+        "unknown",
+        "not_verified",
+        "null",
+        "none",
+      ].includes(
+        value.toLowerCase().replace(/[\s-]+/g, "_")
+      )
+    ) {
+      return value;
+    }
+  }
+
+  return "unknown";
 }
 
 function approvalLabel(row) {
@@ -369,16 +417,28 @@ function approvalLabel(row) {
     );
 }
 
+// ============================================================
+// NORMALIZATION
+// ============================================================
+
 function normalizeSavedRow(row) {
   const normalized = normalizeAppointment(
     row,
     true
   );
 
+  const savedDate = appointmentDate(
+    row,
+    appointmentDate(normalized)
+  );
+
   return {
     ...normalized,
 
-    // Preserve the real patient database ID.
+    id:
+      row?.id ??
+      normalized.id,
+
     patient_id:
       row?.patient_id ??
       (
@@ -388,6 +448,9 @@ function normalizeSavedRow(row) {
       ) ??
       normalized.patient_id ??
       null,
+
+    date: savedDate,
+    appointment_date: savedDate,
 
     localId:
       normalized.localId ||
@@ -455,14 +518,8 @@ function normalizeImportedRow(
 }
 
 // ============================================================
-// PATIENT FILE HELPERS
+// PATIENT FILE
 // ============================================================
-
-// The PatientDetails page expects the database
-// patient ID in its route parameter.
-//
-// Do not substitute the hospital file number,
-// appointment ID or medical record number.
 
 function getPatientDatabaseId(row) {
   const patient =
@@ -493,7 +550,7 @@ function getPatientDatabaseId(row) {
 }
 
 // ============================================================
-// DUPLICATE DETECTION
+// DUPLICATES
 // ============================================================
 
 function patientDuplicateKey(
@@ -566,7 +623,7 @@ function sameAppointment(a, b) {
 }
 
 // ============================================================
-// HISTORY DEDUPLICATION
+// HISTORY
 // ============================================================
 
 function deduplicateHistory(rows = []) {
@@ -594,7 +651,7 @@ function deduplicateHistory(rows = []) {
 }
 
 // ============================================================
-// DISPLAY COMPONENTS
+// BADGES
 // ============================================================
 
 function StatusBadge({ status }) {
@@ -627,7 +684,7 @@ function TypeBadge({ type }) {
 }
 
 // ============================================================
-// MAIN COMPONENT
+// MAIN
 // ============================================================
 
 export default function CallCenterScheduleUpload({
@@ -636,15 +693,11 @@ export default function CallCenterScheduleUpload({
   const navigate = useNavigate();
 
   // ==========================================================
-  // NAVIGATION
+  // TABS AND FILTERS
   // ==========================================================
 
   const [activeTab, setActiveTab] =
     useState("create");
-
-  // ==========================================================
-  // CREATE SCHEDULE FILTERS
-  // ==========================================================
 
   const [therapist, setTherapist] =
     useState("");
@@ -656,10 +709,6 @@ export default function CallCenterScheduleUpload({
     backendTherapists,
     setBackendTherapists,
   ] = useState([]);
-
-  // ==========================================================
-  // HISTORY FILTERS
-  // ==========================================================
 
   const [historyMode, setHistoryMode] =
     useState("day");
@@ -688,7 +737,7 @@ export default function CallCenterScheduleUpload({
   ] = useState("");
 
   // ==========================================================
-  // APPOINTMENTS
+  // APPOINTMENT DATA
   // ==========================================================
 
   const [
@@ -705,7 +754,7 @@ export default function CallCenterScheduleUpload({
     useState([]);
 
   // ==========================================================
-  // EXCEL STATE
+  // EXCEL
   // ==========================================================
 
   const [excelFile, setExcelFile] =
@@ -814,6 +863,14 @@ export default function CallCenterScheduleUpload({
     setEditingAppointment,
   ] = useState(null);
 
+  // Tracks an appointment opened from history.
+  // Its original date cannot be changed.
+
+  const [
+    historyEditId,
+    setHistoryEditId,
+  ] = useState(null);
+
   const [
     detailsAppointment,
     setDetailsAppointment,
@@ -856,6 +913,7 @@ export default function CallCenterScheduleUpload({
   const detailsRequestRef = useRef(0);
 
   const saveInProgressRef = useRef(false);
+  const historyEditRequestRef = useRef(0);
 
   const busy =
     loading ||
@@ -879,10 +937,7 @@ export default function CallCenterScheduleUpload({
         item.value
       );
 
-      if (
-        !key ||
-        seen.has(key)
-      ) {
+      if (!key || seen.has(key)) {
         return false;
       }
 
@@ -913,7 +968,7 @@ export default function CallCenterScheduleUpload({
     hasPastAppointments;
 
   // ==========================================================
-  // APPOINTMENT COUNTS
+  // COUNTS
   // ==========================================================
 
   const sortedAppointments = useMemo(
@@ -941,7 +996,7 @@ export default function CallCenterScheduleUpload({
   );
 
   // ==========================================================
-  // ALERT FILTER
+  // ALERTS
   // ==========================================================
 
   const followUpAlerts = useMemo(
@@ -972,7 +1027,7 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // OPEN PATIENT FILE
+  // PATIENT FILE NAVIGATION
   // ==========================================================
 
   const openPatientFile = useCallback(
@@ -982,16 +1037,12 @@ export default function CallCenterScheduleUpload({
 
       if (!patientId) {
         setError(
-          "This appointment is not linked to a registered patient database ID. The hospital file number cannot be used as the patient database ID."
+          "This appointment does not contain a registered patient database ID."
         );
 
         setSuccess("");
         return;
       }
-
-      // Navigate to the existing PatientDetails
-      // route. PatientDetails uses useParams()
-      // to obtain the patient database ID.
 
       navigate(
         `${PATIENT_FILE_ROUTE}/${encodeURIComponent(
@@ -1003,7 +1054,7 @@ export default function CallCenterScheduleUpload({
   );
 
   // ==========================================================
-  // FETCH REGISTERED THERAPISTS
+  // FETCH THERAPISTS
   // ==========================================================
 
   useEffect(() => {
@@ -1076,8 +1127,7 @@ export default function CallCenterScheduleUpload({
           if (
             getTherapistId(row) ===
               normalizeId(matched.value) &&
-            row.therapist_matched ===
-              true &&
+            row.therapist_matched === true &&
             row.therapist_name ===
               matched.label
           ) {
@@ -1134,11 +1184,12 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // RESET CREATE WORKSPACE
+  // RESET WORKSPACE
   // ==========================================================
 
   const resetWorkspace = () => {
     requestRef.current += 1;
+    historyEditRequestRef.current += 1;
     patientRequestRef.current += 1;
 
     setAppointments([]);
@@ -1146,6 +1197,7 @@ export default function CallCenterScheduleUpload({
     setLoadedSchedule(false);
 
     setEditingAppointment(null);
+    setHistoryEditId(null);
 
     setPatientQuery("");
     setPatientMatches([]);
@@ -1156,7 +1208,7 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // CHANGE CREATE SCHEDULE CONTEXT
+  // CHANGE CREATE CONTEXT
   // ==========================================================
 
   const changeContext = (field, value) => {
@@ -1170,12 +1222,11 @@ export default function CallCenterScheduleUpload({
       showError(
         "Past schedules are locked. Choose today or a future date."
       );
-
       return;
     }
 
     if (
-      hasDraft &&
+      (hasDraft || editingAppointment) &&
       !window.confirm(
         "Discard unsaved appointment changes?"
       )
@@ -1222,10 +1273,14 @@ export default function CallCenterScheduleUpload({
       };
     }
 
-    if (hasDraft) {
+    if (
+      hasDraft ||
+      editingAppointment
+    ) {
       return {
         success: false,
-        message: "Unsaved draft exists.",
+        message:
+          "Finish or cancel current appointment changes first.",
       };
     }
 
@@ -1297,7 +1352,201 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // LOAD EXCEL WORKSHEET
+  // EDIT FROM HISTORY — TODAY ONLY
+  // ==========================================================
+
+  const editHistoryAppointment = async (row) => {
+    const rowDate = appointmentDate(row);
+    const today = getHospitalToday();
+
+    if (
+      !validDate(rowDate) ||
+      rowDate !== today
+    ) {
+      showError(
+        "Only today's appointments can be edited. Previous-day appointments are read-only."
+      );
+      return;
+    }
+
+    if (!row?.id) {
+      showError(
+        "This appointment must be saved before it can be edited from history."
+      );
+      return;
+    }
+
+    if (
+      busy ||
+      saveInProgressRef.current
+    ) {
+      showError(
+        "Another operation is in progress."
+      );
+      return;
+    }
+
+    if (
+      hasDraft ||
+      editingAppointment
+    ) {
+      showError(
+        "Finish or discard existing appointment changes before editing from history."
+      );
+      return;
+    }
+
+    const selected = resolveTherapist(
+      row,
+      therapistOptions
+    );
+
+    if (!selected) {
+      showError(
+        "The appointment's physiotherapist could not be matched to a registered therapist."
+      );
+      return;
+    }
+
+    // A fresh request is important here.
+    // It prevents editing stale history records
+    // and preserves the therapist's other
+    // saved appointments in the working table.
+
+    const editRequestId =
+      ++historyEditRequestRef.current;
+
+    const scheduleRequestId =
+      ++requestRef.current;
+
+    setLoading(true);
+    clearMessages();
+
+    try {
+      const response = await api.get(
+        `${API}list/`,
+        {
+          params: {
+            therapist: selected.value,
+            date: rowDate,
+          },
+          timeout: 30000,
+        }
+      );
+
+      if (
+        editRequestId !==
+          historyEditRequestRef.current ||
+        scheduleRequestId !==
+          requestRef.current
+      ) {
+        return;
+      }
+
+      // Check again after the API request.
+      // The hospital day may have changed
+      // while the request was running.
+
+      if (!isToday(rowDate)) {
+        showError(
+          "The appointment is no longer dated today and cannot be edited."
+        );
+        return;
+      }
+
+      const loadedRows = extractRows(
+        response.data
+      ).map(normalizeSavedRow);
+
+      const target = loadedRows.find(
+        (item) =>
+          String(item.id) ===
+          String(row.id)
+      );
+
+      if (!target) {
+        showError(
+          "The selected appointment could not be found in the latest saved schedule. Refresh history and try again."
+        );
+        return;
+      }
+
+      if (
+        !isToday(
+          appointmentDate(target)
+        )
+      ) {
+        showError(
+          "The saved appointment date is not today."
+        );
+        return;
+      }
+
+      // Preserve the entire selected therapist's
+      // daily schedule instead of replacing
+      // it with one appointment.
+
+      setTherapist(
+        selected.value
+      );
+
+      setDate(rowDate);
+
+      setAppointments(
+        loadedRows
+      );
+
+      setLoadedSchedule(true);
+      setHasDraft(false);
+
+      setEditingAppointment({
+        ...applyTherapist(
+          target,
+          selected
+        ),
+        isNew: false,
+        isDirty: false,
+      });
+
+      setHistoryEditId(
+        String(target.id)
+      );
+
+      setPatientQuery("");
+      setPatientMatches([]);
+      setSearchingPatients(false);
+
+      clearExcel();
+
+      setActiveTab("create");
+
+      setSuccess(
+        `Editing today's appointment for ${
+          target.patient_name ||
+          "the selected patient"
+        }. Update the details, save to draft, then save the appointment.`
+      );
+    } catch (err) {
+      if (
+        editRequestId ===
+        historyEditRequestRef.current
+      ) {
+        showError(
+          `Unable to open appointment for editing: ${errorMessage(err)}`
+        );
+      }
+    } finally {
+      if (
+        editRequestId ===
+        historyEditRequestRef.current
+      ) {
+        setLoading(false);
+      }
+    }
+  };
+
+  // ==========================================================
+  // LOAD EXCEL SHEET
   // ==========================================================
 
   const loadSheet = (workbook, name) => {
@@ -1525,7 +1774,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Select a physiotherapist and a current or future date."
       );
-
       return;
     }
 
@@ -1533,7 +1781,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Upload an Excel file first."
       );
-
       return;
     }
 
@@ -1557,7 +1804,6 @@ export default function CallCenterScheduleUpload({
         err.message ||
         "Unable to extract appointments."
       );
-
       return;
     }
 
@@ -1583,7 +1829,6 @@ export default function CallCenterScheduleUpload({
       showError(
         `Maximum ${MAX_APPOINTMENTS} appointments allowed.`
       );
-
       return;
     }
 
@@ -1607,7 +1852,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "The Excel file contains an appointment with a past or invalid date."
       );
-
       return;
     }
 
@@ -1653,7 +1897,7 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // UPDATE EXCEL PREVIEW
+  // UPDATE IMPORT PREVIEW
   // ==========================================================
 
   const updateImportPreviewRow = (
@@ -1745,7 +1989,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Past schedules cannot be changed."
       );
-
       return;
     }
 
@@ -1753,7 +1996,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "No appointments available to import."
       );
-
       return;
     }
 
@@ -1780,7 +2022,6 @@ export default function CallCenterScheduleUpload({
       showError(
         `${unassigned.length} appointment(s) require a registered physiotherapist.`
       );
-
       return;
     }
 
@@ -1793,9 +2034,11 @@ export default function CallCenterScheduleUpload({
 
     if (invalidTime) {
       showError(
-        `${invalidTime.patient_name || "Appointment"} has an invalid time.`
+        `${
+          invalidTime.patient_name ||
+          "Appointment"
+        } has an invalid time.`
       );
-
       return;
     }
 
@@ -1810,7 +2053,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "The preview contains a past or invalid appointment date."
       );
-
       return;
     }
 
@@ -1827,7 +2069,6 @@ export default function CallCenterScheduleUpload({
       showError(
         `${duplicates.length} duplicate appointment(s) detected. Resolve them before importing.`
       );
-
       return;
     }
 
@@ -1839,7 +2080,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Maximum appointment count exceeded."
       );
-
       return;
     }
 
@@ -1874,7 +2114,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Select a physiotherapist and current or future date."
       );
-
       return;
     }
 
@@ -1885,7 +2124,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Maximum appointment count reached."
       );
-
       return;
     }
 
@@ -1899,9 +2137,10 @@ export default function CallCenterScheduleUpload({
       showError(
         "Select a registered physiotherapist."
       );
-
       return;
     }
+
+    setHistoryEditId(null);
 
     setEditingAppointment({
       ...emptyAppointment(),
@@ -1921,8 +2160,6 @@ export default function CallCenterScheduleUpload({
       appointment_type:
         "followup",
 
-      // Claims approval must be determined
-      // by the Claims system.
       approval_status:
         "unknown",
 
@@ -1939,22 +2176,32 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // EDIT APPOINTMENT
+  // EDIT FROM CREATE TABLE
   // ==========================================================
 
   const editAppointment = (row) => {
     if (
       busy ||
-      isPastDate(date) ||
-      isPastDate(
+      !isEditableDate(date) ||
+      !isEditableDate(
         appointmentDate(row, date)
       )
     ) {
       showError(
         "Previous-day appointments are read-only."
       );
-
       return;
+    }
+
+    // Mark historical edits only when this
+    // specific appointment was opened
+    // through Scheduled History.
+
+    if (
+      String(row.id) !==
+      String(historyEditId)
+    ) {
+      setHistoryEditId(null);
     }
 
     setEditingAppointment({
@@ -1968,7 +2215,7 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // SAVE INLINE EDITOR TO DRAFT
+  // SAVE EDITOR TO DRAFT
   // ==========================================================
 
   const saveEditorToDraft = () => {
@@ -1976,20 +2223,56 @@ export default function CallCenterScheduleUpload({
       return;
     }
 
+    const editedDate = appointmentDate(
+      editingAppointment,
+      date
+    );
+
     if (
       !isEditableDate(date) ||
-      !isEditableDate(
-        appointmentDate(
-          editingAppointment,
-          date
-        )
-      )
+      !isEditableDate(editedDate)
     ) {
       showError(
         "Past appointments cannot be modified."
       );
-
       return;
+    }
+
+    // Appointments opened from history may
+    // only be edited while their original
+    // saved date is still today.
+    //
+    // Do not allow changing that date
+    // from the history edit workflow.
+
+    if (historyEditId) {
+      const originalRow = appointments.find(
+        (row) =>
+          String(row.id) ===
+          String(historyEditId)
+      );
+
+      if (
+        !originalRow ||
+        !isToday(
+          appointmentDate(originalRow)
+        )
+      ) {
+        showError(
+          "This historical appointment can no longer be edited."
+        );
+        return;
+      }
+
+      if (
+        editedDate !==
+        appointmentDate(originalRow)
+      ) {
+        showError(
+          "Changing the appointment date is not allowed in the same-day history editor."
+        );
+        return;
+      }
     }
 
     const selected =
@@ -2004,7 +2287,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Select a registered physiotherapist."
       );
-
       return;
     }
 
@@ -2060,7 +2342,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "This patient already has an appointment on the selected date."
       );
-
       return;
     }
 
@@ -2081,7 +2362,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Maximum appointments reached."
       );
-
       return;
     }
 
@@ -2120,12 +2400,12 @@ export default function CallCenterScheduleUpload({
 
     setError("");
     setSuccess(
-      "Appointment added to working draft."
+      "Appointment updated in the working draft. Save changes to Django to complete the update."
     );
   };
 
   // ==========================================================
-  // REMOVE DRAFT APPOINTMENT
+  // REMOVE DRAFT
   // ==========================================================
 
   const removeDraftAppointment = (
@@ -2141,7 +2421,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Past schedules cannot be modified."
       );
-
       return;
     }
 
@@ -2149,7 +2428,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "Saved appointments cannot be removed. Update their status instead."
       );
-
       return;
     }
 
@@ -2256,7 +2534,6 @@ export default function CallCenterScheduleUpload({
       showError(
         "The selected patient does not have a valid database ID."
       );
-
       return;
     }
 
@@ -2289,7 +2566,7 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // HISTORY API — SINGLE DAY
+  // HISTORY API
   // ==========================================================
 
   const fetchHistoryDay = useCallback(
@@ -2330,7 +2607,7 @@ export default function CallCenterScheduleUpload({
   );
 
   // ==========================================================
-  // LOAD DAY OR COMPLETE MONTH HISTORY
+  // LOAD HISTORY
   // ==========================================================
 
   const loadHistory = useCallback(
@@ -2380,12 +2657,6 @@ export default function CallCenterScheduleUpload({
 
       try {
         const combined = [];
-
-        // The existing backend supports
-        // fetching history by date.
-        //
-        // Retrieve all days in batches
-        // for a complete monthly view.
 
         for (
           let i = 0;
@@ -2523,7 +2794,7 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // AUTOMATIC HISTORY LOADING
+  // AUTO LOAD HISTORY
   // ==========================================================
 
   useEffect(() => {
@@ -2544,7 +2815,7 @@ export default function CallCenterScheduleUpload({
   ]);
 
   // ==========================================================
-  // ALERTS API
+  // ALERT API
   // ==========================================================
 
   const loadAlerts = useCallback(
@@ -2595,10 +2866,6 @@ export default function CallCenterScheduleUpload({
     },
     []
   );
-
-  // ==========================================================
-  // LOAD ALERTS WHEN TAB OPENS
-  // ==========================================================
 
   useEffect(() => {
     if (
@@ -2690,7 +2957,10 @@ export default function CallCenterScheduleUpload({
 
       if (!isEditableDate(rowDate)) {
         const message =
-          `${row.patient_name || "Appointment"} has an invalid or past date.`;
+          `${
+            row.patient_name ||
+            "Appointment"
+          } has an invalid or past date.`;
 
         showError(message);
 
@@ -2698,6 +2968,41 @@ export default function CallCenterScheduleUpload({
           success: false,
           message,
         };
+      }
+
+      // Verify original saved date
+      // for an appointment opened
+      // through Scheduled History.
+
+      if (
+        historyEditId &&
+        String(row.id) ===
+          String(historyEditId)
+      ) {
+        const original = historyAppointments.find(
+          (item) =>
+            String(item.id) ===
+            String(historyEditId)
+        );
+
+        if (
+          !original ||
+          !isToday(
+            appointmentDate(original)
+          ) ||
+          rowDate !==
+            appointmentDate(original)
+        ) {
+          const message =
+            "The selected history appointment is not eligible for same-day editing.";
+
+          showError(message);
+
+          return {
+            success: false,
+            message,
+          };
+        }
       }
 
       const selected =
@@ -2708,7 +3013,10 @@ export default function CallCenterScheduleUpload({
 
       if (!selected) {
         const message =
-          `${row.patient_name || "Appointment"}: Select a registered physiotherapist.`;
+          `${
+            row.patient_name ||
+            "Appointment"
+          }: Select a registered physiotherapist.`;
 
         showError(message);
 
@@ -2725,7 +3033,10 @@ export default function CallCenterScheduleUpload({
 
       if (issue) {
         const message =
-          `${row.patient_name || "Appointment"}: ${issue}`;
+          `${
+            row.patient_name ||
+            "Appointment"
+          }: ${issue}`;
 
         showError(message);
 
@@ -2774,6 +3085,17 @@ export default function CallCenterScheduleUpload({
           );
         }
 
+        if (
+          historyEditId &&
+          String(row.id) ===
+            String(historyEditId) &&
+          !isToday(rowDate)
+        ) {
+          throw new Error(
+            "Only today's history appointment can be edited."
+          );
+        }
+
         const selected =
           findRegisteredTherapist(
             getTherapistId(row),
@@ -2802,12 +3124,13 @@ export default function CallCenterScheduleUpload({
         payload.therapist =
           selected.value;
 
-        // Claims approval is managed
-        // by the Claims system only.
+        // Approval is managed by Claims.
 
         delete payload.approval_status;
         delete payload.claim_approval_status;
         delete payload.insurance_approval_status;
+        delete payload.claims_approval_status;
+        delete payload.rcm_approval_status;
 
         const response =
           row.id && !row.isNew
@@ -2870,6 +3193,7 @@ export default function CallCenterScheduleUpload({
 
       setHasDraft(false);
       setLoadedSchedule(true);
+      setHistoryEditId(null);
 
       setSuccess(
         `${completed} appointment(s) saved successfully.`
@@ -2926,13 +3250,12 @@ export default function CallCenterScheduleUpload({
       };
     } finally {
       setSaving(false);
-
       saveInProgressRef.current = false;
     }
   };
 
   // ==========================================================
-  // SAVE SUCCESS CALLBACK
+  // SAVE SUCCESS
   // ==========================================================
 
   const handleSaveSuccess = async (
@@ -2955,6 +3278,7 @@ export default function CallCenterScheduleUpload({
     setImportSkipped(0);
 
     setEditingAppointment(null);
+    setHistoryEditId(null);
 
     setPatientMatches([]);
     setPatientQuery("");
@@ -2968,9 +3292,6 @@ export default function CallCenterScheduleUpload({
       `${result?.savedCount ?? "All"} appointment(s) saved. The working table has been cleared.`
     );
 
-    // Refresh independently so history failure
-    // does not invalidate successful writes.
-
     const historyResult =
       await loadHistory({
         silent: true,
@@ -2980,7 +3301,7 @@ export default function CallCenterScheduleUpload({
       historyResult?.success === false
     ) {
       setError(
-        "Appointments saved, but history could not be refreshed."
+        "Appointments were saved, but history could not be refreshed."
       );
     }
 
@@ -3047,19 +3368,17 @@ export default function CallCenterScheduleUpload({
       showError(
         "Save appointment first."
       );
-
       return;
     }
 
     if (
-      isPastDate(
+      !isEditableDate(
         appointmentDate(row)
       )
     ) {
       showError(
         "Previous-day appointments are read-only."
       );
-
       return;
     }
 
@@ -3086,13 +3405,17 @@ export default function CallCenterScheduleUpload({
   };
 
   // ==========================================================
-  // TAB NAVIGATION
+  // TAB CHANGE
   // ==========================================================
 
   const handleTabChange = (
     nextTab
   ) => {
     if (busy) return;
+
+    // Preserve unsaved work when moving
+    // between tabs. Do not silently
+    // discard the editor or draft.
 
     setActiveTab(nextTab);
     clearMessages();
@@ -3130,7 +3453,7 @@ export default function CallCenterScheduleUpload({
         </span>
       </header>
 
-      {/* THREE TABS */}
+      {/* TABS */}
 
       <nav
         className="csu-tabs"
@@ -3183,14 +3506,12 @@ export default function CallCenterScheduleUpload({
         </div>
       )}
 
-      {/* =====================================================
-          CREATE SCHEDULE TAB
-      ===================================================== */}
+      {/* ================================================
+          CREATE SCHEDULE
+      ================================================ */}
 
       {activeTab === "create" && (
         <>
-          {/* CREATE SCHEDULE FILTERS ONLY */}
-
           <ScheduleFilters
             activeTab="create"
             therapist={therapist}
@@ -3218,7 +3539,10 @@ export default function CallCenterScheduleUpload({
             onLoadSchedule={
               loadSchedule
             }
-            autoLoadSchedule={true}
+            autoLoadSchedule={
+              !editingAppointment &&
+              !hasDraft
+            }
             hasDraft={hasDraft}
           />
 
@@ -3238,6 +3562,28 @@ export default function CallCenterScheduleUpload({
                   cannot be modified.
                   Review them in
                   Scheduled History.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* HISTORY EDIT NOTICE */}
+
+          {historyEditId &&
+            isToday(date) && (
+            <div className="csu-edit-banner">
+              <span>✏️</span>
+
+              <div>
+                <strong>
+                  Editing Today's Saved Appointment
+                </strong>
+
+                <p>
+                  Make your changes in the appointment
+                  editor. Save to the working draft,
+                  then save the appointment to Django.
+                  Earlier appointments remain locked.
                 </p>
               </div>
             </div>
@@ -3337,7 +3683,7 @@ export default function CallCenterScheduleUpload({
             }
           />
 
-          {/* MANUAL APPOINTMENT ENTRY */}
+          {/* MANUAL APPOINTMENT EDITOR */}
 
           <ManualAppointmentEntry
             row={
@@ -3366,6 +3712,8 @@ export default function CallCenterScheduleUpload({
               patientRequestRef.current += 1;
 
               setEditingAppointment(null);
+              setHistoryEditId(null);
+
               setPatientQuery("");
               setPatientMatches([]);
               setSearchingPatients(false);
@@ -3436,9 +3784,9 @@ export default function CallCenterScheduleUpload({
         </>
       )}
 
-      {/* =====================================================
-          SCHEDULED HISTORY TAB
-      ===================================================== */}
+      {/* ================================================
+          SCHEDULED HISTORY
+      ================================================ */}
 
       {activeTab === "history" && (
         <ScheduleHistory
@@ -3511,12 +3859,23 @@ export default function CallCenterScheduleUpload({
           TypeBadge={
             TypeBadge
           }
+
+          // NEW HISTORY EDIT INTEGRATION
+
+          onEditAppointment={
+            editHistoryAppointment
+          }
+          editingDisabled={
+            busy ||
+            hasDraft ||
+            Boolean(editingAppointment)
+          }
         />
       )}
 
-      {/* =====================================================
-          THIRD TAB — CALL CENTER ALERTS
-      ===================================================== */}
+      {/* ================================================
+          CALL CENTER ALERTS
+      ================================================ */}
 
       {activeTab === "alerts" && (
         <section className="csu-panel csu-alerts-panel">
@@ -3546,7 +3905,7 @@ export default function CallCenterScheduleUpload({
             </button>
           </div>
 
-          {/* ALERT SUMMARY */}
+          {/* ALERT COUNTS */}
 
           <div className="csu-alert-summary">
             <div>
@@ -3592,11 +3951,15 @@ export default function CallCenterScheduleUpload({
             </div>
           </div>
 
+          {/* ALERT ERROR */}
+
           {alertsError && (
             <div className="csu-alert error">
               {alertsError}
             </div>
           )}
+
+          {/* ALERT LIST */}
 
           {followUpAlerts.length === 0 ? (
             <div className="csu-empty-state">
@@ -3695,6 +4058,26 @@ export default function CallCenterScheduleUpload({
                         Open Patient File
                       </button>
 
+                      {/* SAME-DAY EDIT OPTION */}
+
+                      <button
+                        type="button"
+                        className="csu-secondary"
+                        disabled={
+                          !isToday(rowDate) ||
+                          busy ||
+                          hasDraft ||
+                          Boolean(editingAppointment)
+                        }
+                        onClick={() =>
+                          editHistoryAppointment(row)
+                        }
+                      >
+                        {isToday(rowDate)
+                          ? "Edit Appointment"
+                          : "Read Only"}
+                      </button>
+
                       <button
                         type="button"
                         className="csu-primary"
@@ -3719,9 +4102,9 @@ export default function CallCenterScheduleUpload({
         </section>
       )}
 
-      {/* =====================================================
+      {/* ================================================
           APPOINTMENT DETAILS MODAL
-      ===================================================== */}
+      ================================================ */}
 
       {detailsAppointment && (
         <div className="csu-modal-backdrop">
@@ -3746,7 +4129,7 @@ export default function CallCenterScheduleUpload({
               </button>
             </div>
 
-            {/* PATIENT DETAILS */}
+            {/* DETAILS */}
 
             <div className="csu-detail-grid">
               {[
@@ -3882,27 +4265,29 @@ export default function CallCenterScheduleUpload({
             {/* MODAL ACTIONS */}
 
             <div className="csu-actions">
-              {activeTab === "create" &&
+              {isToday(
+                appointmentDate(
+                  detailsAppointment
+                )
+              ) &&
                 !busy &&
-                !scheduleLocked &&
-                !isPastDate(
-                  appointmentDate(
-                    detailsAppointment,
-                    date
-                  )
-                ) && (
+                !hasDraft &&
+                !editingAppointment && (
                   <button
                     type="button"
                     className="csu-primary"
                     onClick={() => {
-                      editAppointment(
-                        detailsAppointment
-                      );
+                      const selected =
+                        detailsAppointment;
 
                       closeDetails();
+
+                      editHistoryAppointment(
+                        selected
+                      );
                     }}
                   >
-                    Edit Appointment
+                    Edit Today's Appointment
                   </button>
                 )}
 
@@ -3938,13 +4323,18 @@ export default function CallCenterScheduleUpload({
 // ============================================================
 
 const styles = `
+
 .csu-root {
   width: 100%;
   min-width: 0;
   color: #172b4d;
-  font-family: Inter, system-ui,
-    -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 .csu-root * {
@@ -4060,6 +4450,38 @@ const styles = `
 }
 
 /* ==========================================================
+   SAME-DAY EDIT BANNER
+========================================================== */
+
+.csu-edit-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 16px;
+  margin-bottom: 18px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+}
+
+.csu-edit-banner > span {
+  font-size: 22px;
+}
+
+.csu-edit-banner strong {
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.csu-edit-banner p {
+  margin: 5px 0 0;
+  color: #47658a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ==========================================================
    GENERAL PANELS
 ========================================================== */
 
@@ -4070,8 +4492,8 @@ const styles = `
   border-radius: 18px;
   margin-bottom: 18px;
   min-width: 0;
-  box-shadow: 0 8px 28px
-    rgba(15,23,42,.055);
+  box-shadow:
+    0 8px 28px rgba(15,23,42,.055);
 }
 
 .csu-panel h3 {
@@ -4278,7 +4700,7 @@ const styles = `
 }
 
 /* ==========================================================
-   LEGACY STATS
+   STATS
 ========================================================== */
 
 .csu-stats {
@@ -4309,7 +4731,7 @@ const styles = `
 }
 
 /* ==========================================================
-   LEGACY TABLE STYLES
+   LEGACY TABLE
 ========================================================== */
 
 .csu-table-wrap {
@@ -4346,7 +4768,7 @@ const styles = `
 }
 
 /* ==========================================================
-   STATUS AND TYPE BADGES
+   STATUS AND TYPE
 ========================================================== */
 
 .csu-status-badge {
@@ -4403,7 +4825,7 @@ const styles = `
 }
 
 /* ==========================================================
-   WARNINGS AND LOCK
+   LOCK
 ========================================================== */
 
 .csu-warning-panel {
@@ -4453,7 +4875,7 @@ const styles = `
 }
 
 /* ==========================================================
-   THIRD TAB — ALERTS
+   CALL CENTER ALERTS
 ========================================================== */
 
 .csu-alerts-panel {
@@ -4697,7 +5119,7 @@ const styles = `
 }
 
 /* ==========================================================
-   APPROVAL BADGES
+   APPROVAL
 ========================================================== */
 
 .csu-approval-badge {
