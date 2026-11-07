@@ -3453,7 +3453,9 @@ export default function CallCenterScheduleUpload({
         </span>
       </header>
 
-      {/* TABS */}
+      {/* =====================================================
+          FIVE NAVIGATION TABS
+      ===================================================== */}
 
       <nav
         className="csu-tabs"
@@ -3462,7 +3464,9 @@ export default function CallCenterScheduleUpload({
         {[
           ["create", "Create Schedule"],
           ["history", "Scheduled History"],
-          ["alerts", "Call Center Alerts"],
+          ["published", "Published Schedules"],
+          ["alerts", "Unconfirmed Follow Up"],
+          ["noshow", "No Show Follow-ups"],
         ].map(([value, label]) => (
           <button
             key={value}
@@ -3859,9 +3863,6 @@ export default function CallCenterScheduleUpload({
           TypeBadge={
             TypeBadge
           }
-
-          // NEW HISTORY EDIT INTEGRATION
-
           onEditAppointment={
             editHistoryAppointment
           }
@@ -3874,7 +3875,104 @@ export default function CallCenterScheduleUpload({
       )}
 
       {/* ================================================
-          CALL CENTER ALERTS
+          NEW TAB — PUBLISHED SCHEDULES
+      ================================================ */}
+
+      {activeTab === "published" && (
+        <section className="csu-panel csu-new-tab-panel">
+          <div className="csu-new-tab-header">
+            <span className="csu-new-tab-icon">
+              📋
+            </span>
+
+            <div>
+              <h3>
+                Published Schedules
+              </h3>
+
+              <p className="csu-note">
+                Review finalized and published
+                physiotherapy schedules.
+              </p>
+            </div>
+          </div>
+
+          <div className="csu-new-tab-body">
+            <div className="csu-new-tab-empty-icon">
+              📅
+            </div>
+
+            <h4>
+              Published Schedule Records
+            </h4>
+
+            <p>
+              This section will display schedules
+              that have been officially marked
+              as published.
+            </p>
+
+            <p className="csu-new-tab-hint">
+              Publication status must be supplied
+              by the scheduling backend.
+              Saved appointments are not
+              automatically considered published.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* ================================================
+          NEW TAB — NO SHOW FOLLOW-UPS
+      ================================================ */}
+
+      {activeTab === "noshow" && (
+        <section className="csu-panel csu-new-tab-panel">
+          <div className="csu-new-tab-header">
+            <span className="csu-new-tab-icon">
+              👤
+            </span>
+
+            <div>
+              <h3>
+                No Show Follow-ups
+              </h3>
+
+              <p className="csu-note">
+                Track patients marked as
+                no-show and manage their
+                follow-up requirements.
+              </p>
+            </div>
+          </div>
+
+          <div className="csu-new-tab-body">
+            <div className="csu-new-tab-empty-icon">
+              📞
+            </div>
+
+            <h4>
+              No Show Appointment Records
+            </h4>
+
+            <p>
+              Appointments explicitly marked
+              as no-show will appear here
+              after attendance tracking
+              is connected.
+            </p>
+
+            <p className="csu-new-tab-hint">
+              Appointments are not classified
+              as no-show simply because
+              their scheduled time has passed.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* ================================================
+          UNCONFIRMED FOLLOW UP
       ================================================ */}
 
       {activeTab === "alerts" && (
@@ -3882,7 +3980,7 @@ export default function CallCenterScheduleUpload({
           <div className="csu-section-header">
             <div>
               <h3>
-                Internal Call Center Alerts
+                Unconfirmed Follow Up
               </h3>
 
               <p className="csu-note">
@@ -4396,33 +4494,41 @@ const styles = `
 }
 
 /* ==========================================================
-   TABS
+   FIVE TABS
 ========================================================== */
 
 .csu-tabs {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
   margin-bottom: 18px;
-  border-bottom: 1px solid #e2e8f0;
+  padding: 5px;
+  background: #f1f5fb;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
 .csu-tabs button {
-  flex-shrink: 0;
-  padding: 14px 20px;
+  flex: 1 0 auto;
+  min-height: 43px;
+  padding: 10px 15px;
   background: transparent;
-  border: 0;
-  border-bottom: 3px solid transparent;
+  border: none;
+  border-radius: 9px;
   color: #64748b;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
 }
 
 .csu-tabs button.active {
-  color: #2457d8;
-  border-bottom-color: #2457d8;
+  background: #2563eb;
+  color: white;
+  box-shadow: 0 3px 9px
+    rgba(37,99,235,.18);
 }
 
 /* ==========================================================
@@ -4595,6 +4701,91 @@ const styles = `
   font-size: 12px;
   line-height: 1.6;
   margin-top: 13px;
+}
+
+/* ==========================================================
+   NEW TAB PANELS
+========================================================== */
+
+.csu-new-tab-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.csu-new-tab-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 24px 26px;
+  background: linear-gradient(
+    105deg,
+    #eef4ff,
+    #ffffff
+  );
+  border-bottom: 1px solid #e5ebf5;
+}
+
+.csu-new-tab-icon {
+  display: grid;
+  place-items: center;
+  width: 49px;
+  height: 49px;
+  flex-shrink: 0;
+  background: #e5edff;
+  border-radius: 13px;
+  font-size: 24px;
+}
+
+.csu-new-tab-header h3 {
+  margin: 0 0 5px;
+  color: #1d3559;
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.csu-new-tab-header .csu-note {
+  margin: 0;
+}
+
+.csu-new-tab-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 290px;
+  padding: 35px 24px;
+  text-align: center;
+}
+
+.csu-new-tab-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  margin-bottom: 12px;
+  border-radius: 17px;
+  background: #eff5ff;
+  font-size: 29px;
+}
+
+.csu-new-tab-body h4 {
+  margin: 8px 0 10px;
+  color: #233b5c;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.csu-new-tab-body p {
+  max-width: 500px;
+  margin: 0 0 11px;
+  color: #71819b;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.csu-new-tab-body .csu-new-tab-hint {
+  color: #94a3b8;
+  font-size: 11px;
 }
 
 /* ==========================================================
@@ -4875,7 +5066,7 @@ const styles = `
 }
 
 /* ==========================================================
-   CALL CENTER ALERTS
+   UNCONFIRMED FOLLOW UP
 ========================================================== */
 
 .csu-alerts-panel {
@@ -5166,6 +5357,12 @@ const styles = `
     align-items: flex-start;
     flex-direction: column;
   }
+
+  .csu-tabs button {
+    flex: 0 0 auto;
+    padding: 10px 13px;
+    font-size: 11px;
+  }
 }
 
 /* ==========================================================
@@ -5185,7 +5382,8 @@ const styles = `
     padding: 15px;
   }
 
-  .csu-alerts-panel {
+  .csu-alerts-panel,
+  .csu-new-tab-panel {
     padding: 0;
   }
 
@@ -5198,8 +5396,22 @@ const styles = `
   }
 
   .csu-tabs button {
+    flex: 0 0 auto;
     padding: 12px 11px;
     font-size: 11px;
+  }
+
+  .csu-new-tab-header {
+    padding: 17px;
+  }
+
+  .csu-new-tab-header h3 {
+    font-size: 16px;
+  }
+
+  .csu-new-tab-body {
+    min-height: 240px;
+    padding: 25px 16px;
   }
 
   .csu-detail-grid,
